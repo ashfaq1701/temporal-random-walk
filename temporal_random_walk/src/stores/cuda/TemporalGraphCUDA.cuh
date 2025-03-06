@@ -23,6 +23,12 @@ public:
     HOST void sort_and_merge_edges(size_t start_idx) override;
 
     HOST void delete_old_edges() override;
+
+    // Timestamp group counting
+    [[nodiscard]] HOST size_t count_timestamps_less_than(int64_t timestamp) const override;
+    [[nodiscard]] HOST size_t count_timestamps_greater_than(int64_t timestamp) const override;
+    [[nodiscard]] HOST size_t count_node_timestamps_less_than(int node_id, int64_t timestamp) const override;
+    [[nodiscard]] HOST size_t count_node_timestamps_greater_than(int node_id, int64_t timestamp) const override;
     #endif
 };
 
