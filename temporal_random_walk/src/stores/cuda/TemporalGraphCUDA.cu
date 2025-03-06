@@ -6,6 +6,13 @@
 #include "NodeEdgeIndexCUDA.cuh"
 #include "NodeMappingCUDA.cuh"
 
+#ifdef HAS_CUDA
+#include <thrust/binary_search.h>
+#include <thrust/gather.h>
+#include <thrust/detail/sequence.inl>
+#include <thrust/detail/sort.inl>
+#endif
+
 template<GPUUsageMode GPUUsage>
 HOST TemporalGraphCUDA<GPUUsage>::TemporalGraphCUDA(
     const bool directed,
@@ -18,6 +25,7 @@ HOST TemporalGraphCUDA<GPUUsage>::TemporalGraphCUDA(
     this->node_mapping = new NodeMappingCUDA<GPUUsage>();
 }
 
+#ifdef HAS_CUDA
 template<GPUUsageMode GPUUsage>
 HOST void TemporalGraphCUDA<GPUUsage>::add_multiple_edges(const typename ITemporalGraph<GPUUsage>::EdgeVector& new_edges) {
     const size_t start_idx = this->edges->size();
@@ -101,6 +109,209 @@ HOST void TemporalGraphCUDA<GPUUsage>::add_multiple_edges(const typename ITempor
     }
 }
 
-#ifdef HAS_CUDA
+template<GPUUsageMode GPUUsage>
+void TemporalGraphCUDA<GPUUsage>::sort_and_merge_edges(const size_t start_idx) {
+    if (start_idx >= this->edges->size()) return;
+
+    // Create index array
+    typename ITemporalGraph<GPUUsage>::SizeVector indices(this->edges->size() - start_idx);
+    thrust::sequence(
+        DEVICE_EXECUTION_POLICY,
+        indices.begin(),
+        indices.end(),
+        start_idx
+    );
+
+    // Sort indices based on timestamps
+    const int64_t* timestamps_ptr = thrust::raw_pointer_cast(this->edges->timestamps.data());
+    thrust::sort(
+        DEVICE_EXECUTION_POLICY,
+        indices.begin(),
+        indices.end(),
+        [timestamps_ptr] __host__ __device__ (const size_t i, const size_t j) {
+            return timestamps_ptr[i] < timestamps_ptr[j];
+        }
+    );
+
+    // Create temporary vectors for sorted data
+    typename ITemporalGraph<GPUUsage>::IntVector sorted_sources(this->edges->size() - start_idx);
+    typename ITemporalGraph<GPUUsage>::IntVector sorted_targets(this->edges->size() - start_idx);
+    typename ITemporalGraph<GPUUsage>::Int64TVector sorted_timestamps(this->edges->size() - start_idx);
+
+    // Apply permutation using gather
+    thrust::gather(
+        DEVICE_EXECUTION_POLICY,
+        indices.begin(),
+        indices.end(),
+        this->edges->sources.begin(),
+        sorted_sources.begin()
+    );
+    thrust::gather(
+        DEVICE_EXECUTION_POLICY,
+        indices.begin(),
+        indices.end(),
+        this->edges->targets.begin(),
+        sorted_targets.begin()
+    );
+    thrust::gather(
+        DEVICE_EXECUTION_POLICY,
+        indices.begin(),
+        indices.end(),
+        this->edges->timestamps.begin(),
+        sorted_timestamps.begin()
+    );
+
+    // Copy sorted data back
+    thrust::copy(
+        DEVICE_EXECUTION_POLICY,
+        sorted_sources.begin(),
+        sorted_sources.end(),
+        this->edges->sources.begin() + start_idx
+    );
+    thrust::copy(
+        DEVICE_EXECUTION_POLICY,
+        sorted_targets.begin(),
+        sorted_targets.end(),
+        this->edges->targets.begin() + start_idx
+    );
+    thrust::copy(
+        DEVICE_EXECUTION_POLICY,
+        sorted_timestamps.begin(),
+        sorted_timestamps.end(),
+        this->edges->timestamps.begin() + start_idx
+    );
+
+    // Handle merging if we have existing edges
+    if (start_idx > 0) {
+        typename ITemporalGraph<GPUUsage>::IntVector merged_sources(this->edges->size());
+        typename ITemporalGraph<GPUUsage>::IntVector merged_targets(this->edges->size());
+        typename ITemporalGraph<GPUUsage>::Int64TVector merged_timestamps(this->edges->size());
+
+        // Create iterators for merge operation
+        auto first1 = thrust::make_zip_iterator(thrust::make_tuple(
+            this->edges->sources.begin(),
+            this->edges->targets.begin(),
+            this->edges->timestamps.begin()
+        ));
+        auto last1 = thrust::make_zip_iterator(thrust::make_tuple(
+            this->edges->sources.begin() + start_idx,
+            this->edges->targets.begin() + start_idx,
+            this->edges->timestamps.begin() + start_idx
+        ));
+        auto first2 = thrust::make_zip_iterator(thrust::make_tuple(
+            this->edges->sources.begin() + start_idx,
+            this->edges->targets.begin() + start_idx,
+            this->edges->timestamps.begin() + start_idx
+        ));
+        auto last2 = thrust::make_zip_iterator(thrust::make_tuple(
+            this->edges->sources.end(),
+            this->edges->targets.end(),
+            this->edges->timestamps.end()
+        ));
+        auto result = thrust::make_zip_iterator(thrust::make_tuple(
+            merged_sources.begin(),
+            merged_targets.begin(),
+            merged_timestamps.begin()
+        ));
+
+        // Merge based on timestamps
+        thrust::merge(
+            DEVICE_EXECUTION_POLICY,
+            first1, last1,
+            first2, last2,
+            result,
+            [] __host__ __device__ (const thrust::tuple<int, int, int64_t>& a,
+                                   const thrust::tuple<int, int, int64_t>& b) {
+                return thrust::get<2>(a) <= thrust::get<2>(b);
+            }
+        );
+
+        // Move merged results back
+        this->edges->sources.swap(merged_sources);
+        this->edges->targets.swap(merged_targets);
+        this->edges->timestamps.swap(merged_timestamps);
+    }
+}
+
+template<GPUUsageMode GPUUsage>
+void TemporalGraphCUDA<GPUUsage>::delete_old_edges() {
+    if (this->time_window <= 0 || this->edges->empty()) return;
+
+    const int64_t cutoff_time = this->latest_timestamp - this->time_window;
+
+    auto it = thrust::upper_bound(
+        DEVICE_EXECUTION_POLICY,
+        this->edges->timestamps.begin(),
+        this->edges->timestamps.end(),
+        cutoff_time
+    );
+    if (it == this->edges->timestamps.begin()) return;
+
+    const int delete_count = static_cast<int>(it - this->edges->timestamps.begin());
+    const size_t remaining = this->edges->size() - delete_count;
+
+    // Create bool vector for tracking nodes with edges
+    typename SelectVectorType<bool, GPUUsage>::type has_edges(this->node_mapping->sparse_to_dense.size(), false);
+    bool* has_edges_ptr = thrust::raw_pointer_cast(has_edges.data());
+
+    if (remaining > 0) {
+        // Move edges using thrust::copy
+        thrust::copy(
+            DEVICE_EXECUTION_POLICY,
+            this->edges->sources.begin() + delete_count,
+            this->edges->sources.end(),
+            this->edges->sources.begin()
+        );
+        thrust::copy(
+            DEVICE_EXECUTION_POLICY,
+            this->edges->targets.begin() + delete_count,
+            this->edges->targets.end(),
+            this->edges->targets.begin()
+        );
+        thrust::copy(
+            DEVICE_EXECUTION_POLICY,
+            this->edges->timestamps.begin() + delete_count,
+            this->edges->timestamps.end(),
+            this->edges->timestamps.begin()
+        );
+
+        // Mark nodes with edges in parallel
+        const int* sources_ptr = thrust::raw_pointer_cast(this->edges->sources.data());
+        const int* targets_ptr = thrust::raw_pointer_cast(this->edges->targets.data());
+
+        thrust::for_each(
+            DEVICE_EXECUTION_POLICY,
+            thrust::make_counting_iterator<size_t>(0),
+            thrust::make_counting_iterator<size_t>(remaining),
+            [sources_ptr, targets_ptr, has_edges_ptr] __host__ __device__ (const size_t i) {
+                has_edges_ptr[sources_ptr[i]] = true;
+                has_edges_ptr[targets_ptr[i]] = true;
+            }
+        );
+    }
+
+    this->edges->resize(remaining);
+
+    bool* d_is_deleted = thrust::raw_pointer_cast(this->node_mapping->is_deleted.data());
+    const auto is_deleted_size = this->node_mapping->is_deleted.size();
+
+    // Mark deleted nodes in parallel
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(has_edges.size()),
+        [has_edges_ptr, d_is_deleted, is_deleted_size] __host__ __device__ (const size_t i) {
+            if (!has_edges_ptr[i]) {
+                mark_node_deleted(d_is_deleted, static_cast<int>(i), is_deleted_size);
+            }
+        }
+    );
+
+    // Update data structures
+    this->edges->update_timestamp_groups();
+    this->node_mapping->update(this->edges, 0, this->edges->size());
+    this->node_index->rebuild(this->edges, this->node_mapping, this->is_directed);
+}
+
 template class TemporalGraphCUDA<GPUUsageMode::ON_GPU>;
 #endif
