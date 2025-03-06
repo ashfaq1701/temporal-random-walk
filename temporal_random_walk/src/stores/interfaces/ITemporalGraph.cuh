@@ -55,10 +55,10 @@ public:
     /**
     * HOST METHODS
     */
-    virtual HOST void sort_and_merge_edges(size_t start_idx) {}
-
     // Edge addition
     virtual HOST void add_multiple_edges(const EdgeVector& new_edges) {}
+
+    virtual HOST void sort_and_merge_edges(size_t start_idx) {}
 
     virtual HOST void update_temporal_weights();
 

@@ -17,6 +17,8 @@ public:
         bool enable_weight_computation = false,
         double timescale_bound=-1);
 
+    HOST void add_multiple_edges(const typename ITemporalGraph<GPUUsage>::EdgeVector& new_edges);
+
     #ifdef HAS_CUDA
 
     #endif
