@@ -25,7 +25,6 @@ public:
         const IEdgeData<GPUUsage>* edges,
         typename INodeEdgeIndex<GPUUsage>::IntVector& dense_sources,
         typename INodeEdgeIndex<GPUUsage>::IntVector& dense_targets,
-        size_t num_nodes,
         bool is_directed) override;
 
     HOST void compute_node_edge_indices(
@@ -47,8 +46,6 @@ public:
     /**
      * END METHODS FOR REBUILD
      */
-
-    HOST void rebuild(const IEdgeData<GPUUsage>* edges, const INodeMapping<GPUUsage>* mapping, bool is_directed) override;
 
     HOST void compute_temporal_weights(
         const IEdgeData<GPUUsage>* edges,

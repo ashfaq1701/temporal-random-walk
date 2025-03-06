@@ -47,6 +47,36 @@ HOST void INodeEdgeIndex<GPUUsage>::allocate_node_timestamp_indices(bool is_dire
 }
 
 template<GPUUsageMode GPUUsage>
+HOST void INodeEdgeIndex<GPUUsage>::rebuild(
+   const IEdgeData<GPUUsage>* edges,
+   const INodeMapping<GPUUsage>* mapping,
+   const bool is_directed) {
+
+    const size_t num_nodes = mapping->size();
+    const size_t num_edges = edges->size();
+
+    IntVector dense_sources(num_edges);
+    IntVector dense_targets(num_edges);
+    populate_dense_ids(edges, mapping, dense_sources, dense_targets);
+
+    this->allocate_node_edge_offsets(num_nodes, is_directed);
+    compute_node_edge_offsets(edges, dense_sources, dense_targets, is_directed);
+
+    this->allocate_node_edge_indices(is_directed);
+
+    size_t outbound_edge_indices_len = is_directed ? num_edges : num_edges * 2;
+    EdgeWithEndpointTypeVector outbound_edge_indices_buffer(outbound_edge_indices_len);
+
+    compute_node_edge_indices(edges, dense_sources, dense_targets, outbound_edge_indices_buffer, is_directed);
+
+    compute_node_timestamp_offsets(edges, num_nodes, is_directed);
+
+    this->allocate_node_timestamp_indices(is_directed);
+
+    compute_node_timestamp_indices(edges, num_nodes, is_directed);
+}
+
+template<GPUUsageMode GPUUsage>
 HOST void INodeEdgeIndex<GPUUsage>::update_temporal_weights(const IEdgeData<GPUUsage>* edges, double timescale_bound) {
     const size_t num_nodes = this->outbound_offsets.size() - 1;
 

@@ -56,7 +56,6 @@ public:
         const IEdgeData<GPUUsage>* edges,
         IntVector& dense_sources,
         IntVector& dense_targets,
-        size_t num_nodes,
         bool is_directed) {}
 
     virtual HOST void allocate_node_edge_indices(bool is_directed);
@@ -83,7 +82,7 @@ public:
      * END METHODS FOR REBUILD
      */
 
-    virtual HOST void rebuild(const IEdgeData<GPUUsage>* edges, const INodeMapping<GPUUsage>* mapping, bool is_directed) {}
+    virtual HOST void rebuild(const IEdgeData<GPUUsage>* edges, const INodeMapping<GPUUsage>* mapping, bool is_directed);
 
     // Core access methods
     [[nodiscard]] virtual HOST SizeRange get_edge_range(int dense_node_id, bool forward, bool is_directed) const;
