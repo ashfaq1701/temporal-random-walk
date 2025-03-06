@@ -209,15 +209,19 @@ std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk<GPUUsage>::get_edg
     std::vector<std::tuple<int, int, int64_t>> result;
     result.reserve(edges.size());
 
-    if constexpr (GPUUsage == GPUUsageMode::ON_CPU) {
-        for (const auto& edge : edges) {
-            result.push_back({edge.u, edge.i, edge.ts});
-        }
-    } else {
+    #ifdef HAS_CUDA
+    if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
         std::vector<Edge> host_edges(edges.size());
         thrust::copy(edges.begin(), edges.end(), host_edges.begin());
 
         for (const auto& edge : host_edges) {
+            result.push_back({edge.u, edge.i, edge.ts});
+        }
+    }
+    else
+    #endif
+    {
+        for (const auto& edge : edges) {
             result.push_back({edge.u, edge.i, edge.ts});
         }
     }
