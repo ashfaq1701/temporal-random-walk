@@ -1,5 +1,8 @@
 #include "NodeEdgeIndexCPU.cuh"
 
+#include <iostream>
+#include <ostream>
+
 /**
  * START METHODS FOR REBUILD
 */
@@ -38,7 +41,7 @@ HOST void NodeEdgeIndexCPU<GPUUsage>::compute_node_edge_offsets(
     }
 
     // Calculate prefix sums for edge offsets
-    for (size_t i = 1; i <= this->outbound_offsets.size(); i++) {
+    for (auto i = 1; i < this->outbound_offsets.size(); i++) {
         this->outbound_offsets[i] += this->outbound_offsets[i-1];
         if (is_directed) {
             this->inbound_offsets[i] += this->inbound_offsets[i-1];
