@@ -1,5 +1,9 @@
 #include "NodeEdgeIndex.cuh"
 
+#include "EdgeData.cuh"
+#include "../cpu/EdgeDataCPU.cuh"
+#include "../cuda/EdgeDataCUDA.cuh"
+
 template<GPUUsageMode GPUUsage>
 NodeEdgeIndex<GPUUsage>::NodeEdgeIndex(): node_edge_index(new BaseType()) {}
 
@@ -15,7 +19,13 @@ void NodeEdgeIndex<GPUUsage>::clear()
 template<GPUUsageMode GPUUsage>
 void NodeEdgeIndex<GPUUsage>::rebuild(const IEdgeData<GPUUsage>* edges, const INodeMapping<GPUUsage>* mapping, bool is_directed)
 {
-    node_edge_index->rebuild(edges, mapping, is_directed);
+    using EdgeDataType = typename INodeEdgeIndex<GPUUsage>::EdgeDataType;
+    using NodeMappingType = typename INodeEdgeIndex<GPUUsage>::NodeMappingType;
+
+    const auto* typed_edges = static_cast<const EdgeDataType*>(edges);
+    const auto* typed_mapping = static_cast<const NodeMappingType*>(mapping);
+
+    node_edge_index->rebuild(typed_edges, typed_mapping, is_directed);
 }
 
 template<GPUUsageMode GPUUsage>
@@ -41,7 +51,10 @@ size_t NodeEdgeIndex<GPUUsage>::get_timestamp_group_count(int dense_node_id, boo
 template<GPUUsageMode GPUUsage>
 void NodeEdgeIndex<GPUUsage>::update_temporal_weights(const IEdgeData<GPUUsage>* edges, double timescale_bound)
 {
-    node_edge_index->update_temporal_weights(edges, timescale_bound);
+    using EdgeDataType = typename INodeEdgeIndex<GPUUsage>::EdgeDataType;
+    const auto* typed_edges = static_cast<const EdgeDataType*>(edges);
+
+    node_edge_index->update_temporal_weights(typed_edges, timescale_bound);
 }
 
 template class NodeEdgeIndex<GPUUsageMode::ON_CPU>;

@@ -4,16 +4,26 @@
 #include "../../data/enums.h"
 #include "../../cuda_common/types.cuh"
 
-#include "../interfaces/IEdgeData.cuh"
+#include "../cpu/EdgeDataCPU.cuh"
+#include "../cuda/EdgeDataCUDA.cuh"
 
 template<GPUUsageMode GPUUsage>
 class INodeMapping {
 
-protected:
+public:
+    #ifdef HAS_CUDA
+    using EdgeDataType = std::conditional_t<
+        GPUUsage == GPUUsageMode::ON_CPU,
+        EdgeDataCPU<GPUUsage>,
+        EdgeDataCUDA<GPUUsage>
+    >;
+    #else
+    using EdgeDataType = NodeMappingCPU<GPUUsage>;
+    #endif
+
     using IntVector = typename SelectVectorType<int, GPUUsage>::type;
     using BoolVector = typename SelectVectorType<bool, GPUUsage>::type;
 
-public:
     virtual ~INodeMapping() = default;
 
     IntVector sparse_to_dense{};    // Maps sparse ID to dense index
@@ -21,10 +31,11 @@ public:
 
     BoolVector is_deleted{};        // Tracks deleted status of nodes
 
+
     /**
     * HOST METHODS
     */
-    virtual HOST void update(const IEdgeData<GPUUsage>* edges, size_t start_idx, size_t end_idx) {}
+    virtual HOST void update(const EdgeDataType* edges, size_t start_idx, size_t end_idx) {}
     [[nodiscard]] virtual HOST int to_dense(int sparse_id) const;
     [[nodiscard]] virtual HOST int to_sparse(int dense_idx) const;
     [[nodiscard]] virtual HOST size_t size() const;

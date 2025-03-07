@@ -402,5 +402,27 @@ size_t TemporalGraphCUDA<GPUUsage>::count_node_timestamps_greater_than(int node_
     return thrust::distance(it, timestamp_group_indices.begin() + static_cast<int>(group_end));
 }
 
+template<GPUUsageMode GPUUsage>
+DEVICE Edge TemporalGraphCUDA<GPUUsage>::get_edge_at_device(
+    RandomPicker<GPUUsage>* picker,
+    int64_t timestamp,
+    bool forward) {
+    return Edge{-1, -1, -1};
+}
+
+template<GPUUsageMode GPUUsage>
+DEVICE Edge TemporalGraphCUDA<GPUUsage>::get_node_edge_at_device(
+    int node_id,
+    RandomPicker<GPUUsage>* picker,
+    int64_t timestamp,
+    bool forward) const {
+    return Edge{-1, -1, -1};
+}
+
+template<GPUUsageMode GPUUsage>
+HOST TemporalGraphCUDA<GPUUsage>* TemporalGraphCUDA<GPUUsage>::to_device_ptr() {
+    return nullptr;
+}
+
 template class TemporalGraphCUDA<GPUUsageMode::ON_GPU>;
 #endif

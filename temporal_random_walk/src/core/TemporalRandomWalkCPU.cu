@@ -4,7 +4,6 @@
 #include "../utils/rand_utils.cuh"
 #include "../random/UniformRandomPicker.cuh"
 #include "../random/LinearRandomPicker.cuh"
-#include "../stores/cpu/TemporalGraphCPU.cuh"
 #include "../random/ExponentialIndexRandomPicker.cuh"
 #include "../random/WeightBasedRandomPicker.cuh"
 
@@ -21,7 +20,7 @@ TemporalRandomWalkCPU<GPUUsage>::TemporalRandomWalkCPU(
     ITemporalRandomWalk<GPUUsage>(is_directed, max_time_capacity, enable_weight_computation, timescale_bound),
     n_threads(static_cast<int>(n_threads)), thread_pool(n_threads)
 {
-    this->temporal_graph = new TemporalGraphCPU<GPUUsage>(
+    this->temporal_graph = new typename ITemporalRandomWalk<GPUUsage>::TemporalGraphType(
         is_directed, max_time_capacity, enable_weight_computation, timescale_bound);
 }
 
@@ -280,7 +279,7 @@ HOST bool TemporalRandomWalkCPU<GPUUsage>::get_is_directed() const {
 
 template<GPUUsageMode GPUUsage>
 HOST void TemporalRandomWalkCPU<GPUUsage>::clear() {
-    this->temporal_graph = new TemporalGraphCPU<GPUUsage>(
+    this->temporal_graph = new typename ITemporalRandomWalk<GPUUsage>::TemporalGraphType(
         this->is_directed, this->max_time_capacity,
         this->enable_weight_computation, this->timescale_bound);
 }

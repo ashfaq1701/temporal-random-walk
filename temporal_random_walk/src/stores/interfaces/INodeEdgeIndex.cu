@@ -48,8 +48,8 @@ HOST void INodeEdgeIndex<GPUUsage>::allocate_node_timestamp_indices(bool is_dire
 
 template<GPUUsageMode GPUUsage>
 HOST void INodeEdgeIndex<GPUUsage>::rebuild(
-   const IEdgeData<GPUUsage>* edges,
-   const INodeMapping<GPUUsage>* mapping,
+   const EdgeDataType* edges,
+   const NodeMappingType* mapping,
    const bool is_directed) {
 
     const size_t num_nodes = mapping->size();
@@ -77,7 +77,7 @@ HOST void INodeEdgeIndex<GPUUsage>::rebuild(
 }
 
 template<GPUUsageMode GPUUsage>
-HOST void INodeEdgeIndex<GPUUsage>::update_temporal_weights(const IEdgeData<GPUUsage>* edges, double timescale_bound) {
+HOST void INodeEdgeIndex<GPUUsage>::update_temporal_weights(const EdgeDataType* edges, double timescale_bound) {
     const size_t num_nodes = this->outbound_offsets.size() - 1;
 
     this->outbound_forward_cumulative_weights_exponential.resize(this->outbound_timestamp_group_indices.size());

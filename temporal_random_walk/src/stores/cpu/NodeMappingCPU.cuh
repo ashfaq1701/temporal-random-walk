@@ -10,7 +10,9 @@ class NodeMappingCPU : public INodeMapping<GPUUsage> {
 public:
    ~NodeMappingCPU() override = default;
 
-   HOST void update(const IEdgeData<GPUUsage>* edges, size_t start_idx, size_t end_idx) override;
+   HOST void update(const typename INodeMapping<GPUUsage>::EdgeDataType* edges, size_t start_idx, size_t end_idx) override;
+
+   HOST NodeMappingCPU* to_device_ptr();
 };
 
 #endif //NODEMAPPING_CPU_H

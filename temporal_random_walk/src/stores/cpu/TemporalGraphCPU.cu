@@ -531,4 +531,9 @@ HOST Edge TemporalGraphCPU<GPUUsage>::get_node_edge_at_host(
     };
 }
 
+template<GPUUsageMode GPUUsage>
+HOST TemporalGraphCPU<GPUUsage>* TemporalGraphCPU<GPUUsage>::to_device_ptr() {
+    throw std::runtime_error("Unsupported operation");
+}
+
 template class TemporalGraphCPU<GPUUsageMode::ON_CPU>;

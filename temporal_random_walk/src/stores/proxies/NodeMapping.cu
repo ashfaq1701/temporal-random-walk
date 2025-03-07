@@ -9,7 +9,10 @@ NodeMapping<GPUUsage>::NodeMapping(INodeMapping<GPUUsage>* node_mapping): node_m
 template<GPUUsageMode GPUUsage>
 void NodeMapping<GPUUsage>::update(const IEdgeData<GPUUsage>* edges, size_t start_idx, size_t end_idx)
 {
-    node_mapping->update(edges, start_idx, end_idx);
+    using EdgeDataType = typename INodeMapping<GPUUsage>::EdgeDataType;
+    const auto* typed_edges = static_cast<const EdgeDataType*>(edges);
+
+    node_mapping->update(typed_edges, start_idx, end_idx);
 }
 
 template<GPUUsageMode GPUUsage>

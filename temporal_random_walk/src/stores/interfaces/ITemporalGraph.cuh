@@ -9,14 +9,41 @@
 
 #include "../../random/RandomPicker.h"
 
-#include "../interfaces/INodeMapping.cuh"
-#include "../interfaces/IEdgeData.cuh"
-#include "../interfaces/INodeEdgeIndex.cuh"
+#include "../cpu/NodeMappingCPU.cuh"
+#include "../cuda/NodeMappingCUDA.cuh"
+
+#include "../cpu/EdgeDataCPU.cuh"
+#include "../cuda/EdgeDataCUDA.cuh"
+
+#include "../cpu/NodeEdgeIndexCPU.cuh"
+#include "../cuda/NodeEdgeIndexCUDA.cuh"
 
 template<GPUUsageMode GPUUsage>
 class ITemporalGraph
 {
 public:
+    #ifdef HAS_CUDA
+    using NodeMappingType = std::conditional_t<
+        GPUUsage == GPUUsageMode::ON_CPU,
+        NodeMappingCPU<GPUUsage>,
+        NodeMappingCUDA<GPUUsage>
+    >;
+    using EdgeDataType = std::conditional_t<
+        GPUUsage == GPUUsageMode::ON_CPU,
+        EdgeDataCPU<GPUUsage>,
+        EdgeDataCUDA<GPUUsage>
+    >;
+    using NodeEdgeIndexType = std::conditional_t<
+        GPUUsage == GPUUsageMode::ON_CPU,
+        NodeEdgeIndexCPU<GPUUsage>,
+        NodeEdgeIndexCUDA<GPUUsage>
+    >;
+    #else
+    using NodeMappingType = NodeMappingCPU<GPUUsage>;
+    using EdgeDataType = EdgeDataCPU<GPUUsage>;
+    using NodeEdgeIndexType = NodeEdgeIndexCPU<GPUUsage>;
+    #endif
+
     using SizeVector = typename SelectVectorType<size_t, GPUUsage>::type;
     using IntVector = typename SelectVectorType<int, GPUUsage>::type;
     using Int64TVector = typename SelectVectorType<int64_t, GPUUsage>::type;
@@ -38,9 +65,9 @@ public:
 
     bool is_directed = false;
 
-    INodeEdgeIndex<GPUUsage>* node_index = nullptr; // Node to edge mappings
-    IEdgeData<GPUUsage>* edges = nullptr; // Main edge storage
-    INodeMapping<GPUUsage>* node_mapping = nullptr; // Sparse to dense node ID mapping
+    NodeEdgeIndexType* node_index = nullptr; // Node to edge mappings
+    EdgeDataType* edges = nullptr; // Main edge storage
+    NodeMappingType* node_mapping = nullptr; // Sparse to dense node ID mapping
 
     explicit ITemporalGraph(
         bool directed,

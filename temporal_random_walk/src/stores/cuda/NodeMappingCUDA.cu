@@ -18,7 +18,7 @@ HOST DEVICE void mark_node_deleted(bool* is_deleted, const int sparse_id, const 
 }
 
 template<GPUUsageMode GPUUsage>
-HOST void NodeMappingCUDA<GPUUsage>::update(const IEdgeData<GPUUsage>* edges, size_t start_idx, size_t end_idx) {
+HOST void NodeMappingCUDA<GPUUsage>::update(const typename INodeMapping<GPUUsage>::EdgeDataType* edges, size_t start_idx, size_t end_idx) {
     auto max_source = thrust::max_element(
         DEVICE_EXECUTION_POLICY,
         edges->sources.begin() + start_idx,
@@ -110,6 +110,11 @@ HOST void NodeMappingCUDA<GPUUsage>::update(const IEdgeData<GPUUsage>* edges, si
             }
         }
     );
+}
+
+template<GPUUsageMode GPUUsage>
+HOST NodeMappingCUDA<GPUUsage>* NodeMappingCUDA<GPUUsage>::to_device_ptr() {
+    return nullptr;
 }
 
 template class NodeMappingCUDA<GPUUsageMode::ON_GPU>;

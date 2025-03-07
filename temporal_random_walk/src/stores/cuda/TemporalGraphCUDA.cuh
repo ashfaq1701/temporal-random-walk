@@ -29,7 +29,19 @@ public:
     [[nodiscard]] HOST size_t count_timestamps_greater_than(int64_t timestamp) const override;
     [[nodiscard]] HOST size_t count_node_timestamps_less_than(int node_id, int64_t timestamp) const override;
     [[nodiscard]] HOST size_t count_node_timestamps_greater_than(int node_id, int64_t timestamp) const override;
+
+    DEVICE Edge get_edge_at_device(
+        RandomPicker<GPUUsage>* picker, int64_t timestamp = -1,
+        bool forward = true);
+
+    DEVICE Edge get_node_edge_at_device(int node_id,
+        RandomPicker<GPUUsage>* picker,
+        int64_t timestamp = -1,
+        bool forward = true) const;
+
     #endif
+
+    HOST TemporalGraphCUDA* to_device_ptr();
 };
 
 #endif //TEMPORALGRAPHCUDA_H

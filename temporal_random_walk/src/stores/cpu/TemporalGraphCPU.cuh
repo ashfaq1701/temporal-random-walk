@@ -41,6 +41,8 @@ public:
                                                 RandomPicker<GPUUsage>* picker,
                                                 int64_t timestamp = -1,
                                                 bool forward = true) const override;
+
+    HOST TemporalGraphCPU* to_device_ptr();
 };
 
 #endif //TEMPORALGRAPH_CPU_H

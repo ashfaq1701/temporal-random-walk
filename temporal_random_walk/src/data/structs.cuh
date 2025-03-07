@@ -115,7 +115,13 @@ struct WalkSet
     typename SelectVectorType<int64_t, GPUUsage>::type timestamps;
     typename SelectVectorType<size_t, GPUUsage>::type walk_lens;
 
-    HOST DEVICE WalkSet(): num_walks(0), max_len(0), nodes({}), timestamps({}), walk_lens({}) {}
+    int* nodes_ptr;
+    int64_t* timestamps_ptr;
+    size_t* walk_lens_ptr;
+
+    size_t total_len;
+
+    HOST WalkSet(): num_walks(0), max_len(0), nodes({}), timestamps({}), walk_lens({}) {}
 
     HOST DEVICE explicit WalkSet(size_t num_walks, size_t max_len)
         : num_walks(num_walks), max_len(max_len), nodes({}), timestamps({}), walk_lens({})
@@ -123,6 +129,10 @@ struct WalkSet
         nodes.resize(num_walks * max_len);
         timestamps.resize(num_walks * max_len);
         walk_lens.resize(num_walks);
+
+        #ifdef HAS_CUDA
+
+        #endif
     }
 
     HOST DEVICE void add_hop(int walk_number, int node, int64_t timestamp)

@@ -175,5 +175,10 @@ HOST size_t EdgeDataCUDA<GPUUsage>::find_group_before_timestamp(int64_t timestam
     return (it - begin) - 1;
 }
 
+template<GPUUsageMode GPUUsage>
+HOST EdgeDataCUDA<GPUUsage>* EdgeDataCUDA<GPUUsage>::to_device_ptr() {
+    return nullptr;
+}
+
 template class EdgeDataCUDA<GPUUsageMode::ON_GPU>;
 #endif

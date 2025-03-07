@@ -1,17 +1,30 @@
 #ifndef I_TEMPORAL_RANDOM_WALK_H
 #define I_TEMPORAL_RANDOM_WALK_H
 
+#include <stores/cuda/TemporalGraphCUDA.cuh>
+
 #include "../config/constants.h"
 #include "../data/structs.cuh"
 #include "../cuda_common/types.cuh"
 #include "../data/enums.h"
 #include "../random/RandomPicker.h"
-#include "../stores/interfaces/ITemporalGraph.cuh"
+#include "../stores/cpu/TemporalGraphCPU.cuh"
+#include "../stores/cuda/NodeMappingCUDA.cuh"
 
 template<GPUUsageMode GPUUsage>
 class ITemporalRandomWalk {
 
 public:
+    #ifdef HAS_CUDA
+    using TemporalGraphType = std::conditional_t<
+        GPUUsage == GPUUsageMode::ON_CPU,
+        TemporalGraphCPU<GPUUsage>,
+        TemporalGraphCUDA<GPUUsage>
+    >;
+    #else
+    using TemporalGraphType = TemporalGraphCUDA<GPUUsage>;
+    #endif
+
     using EdgeVector = typename SelectVectorType<Edge, GPUUsage>::type;
     using IntVector = typename SelectVectorType<int, GPUUsage>::type;
 
@@ -25,7 +38,7 @@ public:
 
     int64_t max_edge_time = 0;
 
-    ITemporalGraph<GPUUsage>* temporal_graph = nullptr;
+    TemporalGraphType* temporal_graph = nullptr;
 
     explicit HOST ITemporalRandomWalk(
         bool is_directed,

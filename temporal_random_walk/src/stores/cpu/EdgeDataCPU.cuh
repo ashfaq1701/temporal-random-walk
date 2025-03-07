@@ -19,6 +19,8 @@ public:
     // Group lookup
     [[nodiscard]] HOST size_t find_group_after_timestamp(int64_t timestamp) const override;  // For forward walks
     [[nodiscard]] HOST size_t find_group_before_timestamp(int64_t timestamp) const override; // For backward walks
+
+    HOST EdgeDataCPU* to_device_ptr();
 };
 
 #endif //EDGEDATA_CPU_H

@@ -101,4 +101,9 @@ HOST size_t EdgeDataCPU<GPUUsage>::find_group_before_timestamp(int64_t timestamp
     return (it - begin) - 1;
 }
 
+template<GPUUsageMode GPUUsage>
+HOST EdgeDataCPU<GPUUsage>* EdgeDataCPU<GPUUsage>::to_device_ptr() {
+    throw std::runtime_error("Unsupported operation");
+}
+
 template class EdgeDataCPU<GPUUsageMode::ON_CPU>;

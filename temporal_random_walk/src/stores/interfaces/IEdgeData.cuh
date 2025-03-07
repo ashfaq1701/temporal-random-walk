@@ -31,6 +31,23 @@ public:
     DoubleVector forward_cumulative_weights_exponential{};  // For forward temporal sampling
     DoubleVector backward_cumulative_weights_exponential{}; // For backward temporal sampling
 
+    int* sources_ptr = nullptr;
+    size_t sources_size = 0;
+    int* targets_ptr = nullptr;
+    size_t targets_size = 0;
+    int64_t* timestamps_ptr = nullptr;
+    size_t timestamps_size = 0;
+
+    size_t* timestamp_group_offsets_ptr = nullptr;
+    size_t timestamp_group_offsets_size = 0;
+    int64_t* unique_timestamps_ptr = nullptr;
+    size_t unique_timestamps_size = 0;
+
+    double* forward_cumulative_weights_exponential_ptr = nullptr;
+    size_t forward_cumulative_weights_exponential_size = 0;
+    double* backward_cumulative_weights_exponential_ptr = nullptr;
+    size_t backward_cumulative_weights_exponential_size = 0;
+
     /**
     * HOST METHODS
     */

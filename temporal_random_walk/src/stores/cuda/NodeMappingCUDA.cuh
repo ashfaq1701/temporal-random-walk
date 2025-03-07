@@ -12,9 +12,18 @@ HOST DEVICE void mark_node_deleted(bool* is_deleted, int sparse_id, int size);
 template<GPUUsageMode GPUUsage>
 class NodeMappingCUDA : public INodeMapping<GPUUsage> {
 public:
+    int* sparse_to_dense_ptr = nullptr;
+    size_t sparse_to_dense_size = 0;
+    int* dense_to_sparse_ptr = nullptr;
+    size_t dense_to_sparse_size = 0;
+    bool* is_deleted_ptr = nullptr;
+    size_t is_deleted_size = 0;
+
     #ifdef HAS_CUDA
 
-    HOST void update(const IEdgeData<GPUUsage>* edges, size_t start_idx, size_t end_idx);
+    HOST void update(const typename INodeMapping<GPUUsage>::EdgeDataType* edges, size_t start_idx, size_t end_idx) override;
+
+    HOST NodeMappingCUDA* to_device_ptr();
 
     #endif
 };

@@ -4,14 +4,33 @@
 #include "../../data/structs.cuh"
 #include "../../data/enums.h"
 
-#include "INodeMapping.cuh"
-#include "IEdgeData.cuh"
+#include "../cpu/NodeMappingCPU.cuh"
+#include "../cuda/NodeMappingCUDA.cuh"
+
+#include "../cpu/EdgeDataCPU.cuh"
+#include "../cuda/EdgeDataCUDA.cuh"
 
 template<GPUUsageMode GPUUsage>
 class INodeEdgeIndex
 {
 public:
     virtual ~INodeEdgeIndex() = default;
+
+    #ifdef HAS_CUDA
+    using NodeMappingType = std::conditional_t<
+        GPUUsage == GPUUsageMode::ON_CPU,
+        NodeMappingCPU<GPUUsage>,
+        NodeMappingCUDA<GPUUsage>
+    >;
+    using EdgeDataType = std::conditional_t<
+        GPUUsage == GPUUsageMode::ON_CPU,
+        EdgeDataCPU<GPUUsage>,
+        EdgeDataCUDA<GPUUsage>
+    >;
+    #else
+    using NodeMappingType = NodeMappingCPU<GPUUsage>;
+    using EdgeDataType = EdgeDataCPU<GPUUsage>;
+    #endif
 
     using IntVector = typename SelectVectorType<int, GPUUsage>::type;
     using SizeVector = typename SelectVectorType<size_t, GPUUsage>::type;
@@ -45,15 +64,15 @@ public:
      * START METHODS FOR REBUILD
      */
     virtual HOST void populate_dense_ids(
-        const IEdgeData<GPUUsage>* edges,
-        const INodeMapping<GPUUsage>* mapping,
+        const EdgeDataType* edges,
+        const NodeMappingType* mapping,
         IntVector& dense_sources,
         IntVector& dense_targets) {}
 
     virtual HOST void allocate_node_edge_offsets(size_t num_nodes, bool is_directed);
 
     virtual HOST void compute_node_edge_offsets(
-        const IEdgeData<GPUUsage>* edges,
+        const EdgeDataType* edges,
         IntVector& dense_sources,
         IntVector& dense_targets,
         bool is_directed) {}
@@ -61,28 +80,28 @@ public:
     virtual HOST void allocate_node_edge_indices(bool is_directed);
 
     virtual HOST void compute_node_edge_indices(
-        const IEdgeData<GPUUsage>* edges,
+        const EdgeDataType* edges,
         IntVector& dense_sources,
         IntVector& dense_targets,
         EdgeWithEndpointTypeVector& outbound_edge_indices_buffer,
         bool is_directed) {}
 
     virtual HOST void compute_node_timestamp_offsets(
-        const IEdgeData<GPUUsage>* edges,
+        const EdgeDataType* edges,
         size_t num_nodes,
         bool is_directed) {}
 
     virtual HOST void allocate_node_timestamp_indices(bool is_directed);
 
     virtual HOST void compute_node_timestamp_indices(
-        const IEdgeData<GPUUsage>* edges,
+        const EdgeDataType* edges,
         size_t num_nodes,
         bool is_directed) {}
     /**
      * END METHODS FOR REBUILD
      */
 
-    virtual HOST void rebuild(const IEdgeData<GPUUsage>* edges, const INodeMapping<GPUUsage>* mapping, bool is_directed);
+    virtual HOST void rebuild(const EdgeDataType* edges, const NodeMappingType* mapping, bool is_directed);
 
     // Core access methods
     [[nodiscard]] virtual HOST SizeRange get_edge_range(int dense_node_id, bool forward, bool is_directed) const;
@@ -91,11 +110,11 @@ public:
     [[nodiscard]] virtual HOST size_t get_timestamp_group_count(int dense_node_id, bool forward, bool directed) const;
 
     virtual HOST void compute_temporal_weights(
-        const IEdgeData<GPUUsage>* edges,
+        const EdgeDataType* edges,
         double timescale_bound,
         size_t num_nodes) {}
 
-    virtual HOST void update_temporal_weights(const IEdgeData<GPUUsage>* edges, double timescale_bound);
+    virtual HOST void update_temporal_weights(const EdgeDataType* edges, double timescale_bound);
 
 protected:
     virtual HOST SizeVector get_timestamp_offset_vector(bool forward, bool directed) const;

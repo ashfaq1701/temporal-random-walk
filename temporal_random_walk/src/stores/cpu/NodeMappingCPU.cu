@@ -2,7 +2,7 @@
 #include <algorithm>
 
 template<GPUUsageMode GPUUsage>
-HOST void NodeMappingCPU<GPUUsage>::update(const IEdgeData<GPUUsage>* edges, const size_t start_idx, const size_t end_idx) {
+HOST void NodeMappingCPU<GPUUsage>::update(const typename INodeMapping<GPUUsage>::EdgeDataType* edges, const size_t start_idx, const size_t end_idx) {
     // First pass: find max node ID
     int max_node_id = 0;
     for (size_t i = start_idx; i < end_idx; i++) {
@@ -40,6 +40,11 @@ HOST void NodeMappingCPU<GPUUsage>::update(const IEdgeData<GPUUsage>* edges, con
             this->dense_to_sparse.push_back(node);
         }
     }
+}
+
+template<GPUUsageMode GPUUsage>
+HOST NodeMappingCPU<GPUUsage>* NodeMappingCPU<GPUUsage>::to_device_ptr() {
+    throw std::runtime_error("Unsupported operation");
 }
 
 template class NodeMappingCPU<GPUUsageMode::ON_CPU>;

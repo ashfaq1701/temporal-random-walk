@@ -13,10 +13,10 @@
 */
 template<GPUUsageMode GPUUsage>
 HOST void NodeEdgeIndexCUDA<GPUUsage>::populate_dense_ids(
-        const IEdgeData<GPUUsage>* edges,
-        const INodeMapping<GPUUsage>* mapping,
-        typename INodeEdgeIndex<GPUUsage>::IntVector& dense_sources,
-        typename INodeEdgeIndex<GPUUsage>::IntVector& dense_targets) {
+    const typename INodeEdgeIndex<GPUUsage>::EdgeDataType* edges,
+    const typename INodeEdgeIndex<GPUUsage>::NodeMappingType* mapping,
+    typename INodeEdgeIndex<GPUUsage>::IntVector& dense_sources,
+    typename INodeEdgeIndex<GPUUsage>::IntVector& dense_targets) {
 
     const int* d_sparse_to_dense = thrust::raw_pointer_cast(mapping->sparse_to_dense.data());
     const auto sparse_to_dense_size = mapping->sparse_to_dense.size();
@@ -42,7 +42,7 @@ HOST void NodeEdgeIndexCUDA<GPUUsage>::populate_dense_ids(
 
 template<GPUUsageMode GPUUsage>
 HOST void NodeEdgeIndexCUDA<GPUUsage>::compute_node_edge_offsets(
-    const IEdgeData<GPUUsage>* edges,
+    const typename INodeEdgeIndex<GPUUsage>::EdgeDataType* edges,
     typename INodeEdgeIndex<GPUUsage>::IntVector& dense_sources,
     typename INodeEdgeIndex<GPUUsage>::IntVector& dense_targets,
     bool is_directed) {
@@ -94,7 +94,7 @@ HOST void NodeEdgeIndexCUDA<GPUUsage>::compute_node_edge_offsets(
 
 template<GPUUsageMode GPUUsage>
 HOST void NodeEdgeIndexCUDA<GPUUsage>::compute_node_edge_indices(
-    const IEdgeData<GPUUsage>* edges,
+    const typename INodeEdgeIndex<GPUUsage>::EdgeDataType* edges,
     typename INodeEdgeIndex<GPUUsage>::IntVector& dense_sources,
     typename INodeEdgeIndex<GPUUsage>::IntVector& dense_targets,
     typename INodeEdgeIndex<GPUUsage>::EdgeWithEndpointTypeVector& outbound_edge_indices_buffer,
@@ -169,7 +169,7 @@ HOST void NodeEdgeIndexCUDA<GPUUsage>::compute_node_edge_indices(
 
 template<GPUUsageMode GPUUsage>
 HOST void NodeEdgeIndexCUDA<GPUUsage>::compute_node_timestamp_offsets(
-    const IEdgeData<GPUUsage>* edges,
+    const typename INodeEdgeIndex<GPUUsage>::EdgeDataType* edges,
     size_t num_nodes,
     bool is_directed) {
     typename SelectVectorType<size_t, GPUUsage>::type d_outbound_group_count(num_nodes, 0);
@@ -254,7 +254,7 @@ HOST void NodeEdgeIndexCUDA<GPUUsage>::compute_node_timestamp_offsets(
 
 template<GPUUsageMode GPUUsage>
 HOST void NodeEdgeIndexCUDA<GPUUsage>::compute_node_timestamp_indices(
-    const IEdgeData<GPUUsage>* edges,
+    const typename INodeEdgeIndex<GPUUsage>::EdgeDataType* edges,
     size_t num_nodes,
     bool is_directed) {
 
@@ -317,7 +317,7 @@ HOST void NodeEdgeIndexCUDA<GPUUsage>::compute_node_timestamp_indices(
 
 template<GPUUsageMode GPUUsage>
 HOST void NodeEdgeIndexCUDA<GPUUsage>::compute_temporal_weights(
-    const IEdgeData<GPUUsage>* edges,
+    const typename INodeEdgeIndex<GPUUsage>::EdgeDataType* edges,
     double timescale_bound,
     size_t num_nodes) {
 
@@ -477,6 +477,11 @@ HOST void NodeEdgeIndexCUDA<GPUUsage>::compute_temporal_weights(
         // Copy results
         this->inbound_backward_cumulative_weights_exponential = backward_weights;
     }
+}
+
+template<GPUUsageMode GPUUsage>
+HOST NodeEdgeIndexCUDA<GPUUsage>* NodeEdgeIndexCUDA<GPUUsage>::to_device_ptr() {
+    return nullptr;
 }
 
 template class NodeEdgeIndexCUDA<GPUUsageMode::ON_GPU>;
