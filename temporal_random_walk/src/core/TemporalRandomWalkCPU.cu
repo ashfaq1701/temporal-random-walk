@@ -7,9 +7,6 @@
 #include "../random/ExponentialIndexRandomPicker.cuh"
 #include "../random/WeightBasedRandomPicker.cuh"
 
-
-constexpr int DEFAULT_CONTEXT_WINDOW_LEN = 2;
-
 template<GPUUsageMode GPUUsage>
 TemporalRandomWalkCPU<GPUUsage>::TemporalRandomWalkCPU(
     bool is_directed,

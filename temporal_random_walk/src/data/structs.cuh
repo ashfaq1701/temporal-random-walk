@@ -115,54 +115,66 @@ struct WalkSet
     typename SelectVectorType<int64_t, GPUUsage>::type timestamps;
     typename SelectVectorType<size_t, GPUUsage>::type walk_lens;
 
-    int* nodes_ptr;
-    int64_t* timestamps_ptr;
-    size_t* walk_lens_ptr;
+    int* nodes_ptr = nullptr;
+    int64_t* timestamps_ptr = nullptr;
+    size_t* walk_lens_ptr = nullptr;
 
     size_t total_len;
 
-    HOST WalkSet(): num_walks(0), max_len(0), nodes({}), timestamps({}), walk_lens({}) {}
+    HOST WalkSet(): num_walks(0), max_len(0), nodes({}), timestamps({}), walk_lens({}), total_len(0) {}
 
-    HOST DEVICE explicit WalkSet(size_t num_walks, size_t max_len)
+    HOST explicit WalkSet(size_t num_walks, size_t max_len)
         : num_walks(num_walks), max_len(max_len), nodes({}), timestamps({}), walk_lens({})
     {
-        nodes.resize(num_walks * max_len);
-        timestamps.resize(num_walks * max_len);
+        total_len = num_walks * max_len;
+
+        nodes.resize(total_len);
+        timestamps.resize(total_len);
         walk_lens.resize(num_walks);
 
         #ifdef HAS_CUDA
-
+        if (GPUUsage == GPUUsageMode::ON_GPU) {
+            nodes_ptr = thrust::raw_pointer_cast(nodes.data());
+            timestamps_ptr = thrust::raw_pointer_cast(timestamps.data());
+            walk_lens_ptr = thrust::raw_pointer_cast(walk_lens.data());
+        }
+        else
         #endif
+        {
+            nodes_ptr = nodes.data();
+            timestamps_ptr = timestamps.data();
+            walk_lens_ptr = walk_lens.data();
+        }
     }
 
     HOST DEVICE void add_hop(int walk_number, int node, int64_t timestamp)
     {
-        size_t offset = walk_number * max_len + walk_lens[walk_number];
-        nodes[offset] = node;
-        timestamps[offset] = timestamp;
-        ++walk_lens[walk_number];
+        const size_t offset = walk_number * max_len + walk_lens_ptr[walk_number];
+        nodes_ptr[offset] = node;
+        timestamps_ptr[offset] = timestamp;
+        walk_lens_ptr[walk_number] += 1;
     }
 
     HOST DEVICE size_t get_walk_len(int walk_number)
     {
-        return walk_lens[walk_number];
+        return walk_lens_ptr[walk_number];
     }
 
     HOST DEVICE NodeWithTime get_walk_hop(int walk_number, int hop_number)
     {
-        size_t walk_length = walk_lens[walk_number];
+        size_t walk_length = walk_lens_ptr[walk_number];
         if (hop_number < 0 || hop_number >= walk_length) {
             return NodeWithTime{-1, -1};  // Return invalid entry
         }
 
         // Compute offset safely
         size_t offset = walk_number * max_len + hop_number;
-        return NodeWithTime{nodes[offset], timestamps[offset]};
+        return NodeWithTime{nodes_ptr[offset], timestamps_ptr[offset]};
     }
 
     HOST DEVICE void reverse_walk(int walk_number)
     {
-        const size_t walk_length = walk_lens[walk_number];
+        const size_t walk_length = walk_lens_ptr[walk_number];
         if (walk_length <= 1) return; // No need to reverse if walk is empty or has one hop
 
         const size_t start = walk_number * max_len;
@@ -170,14 +182,14 @@ struct WalkSet
 
         for (size_t i = 0; i < walk_length / 2; ++i) {
             // Swap nodes
-            int temp_node = nodes[start + i];
-            nodes[start + i] = nodes[end - i];
-            nodes[end - i] = temp_node;
+            int temp_node = nodes_ptr[start + i];
+            nodes_ptr[start + i] = nodes_ptr[end - i];
+            nodes_ptr[end - i] = temp_node;
 
             // Swap timestamps
-            int64_t temp_time = timestamps[start + i];
-            timestamps[start + i] = timestamps[end - i];
-            timestamps[end - i] = temp_time;
+            int64_t temp_time = timestamps_ptr[start + i];
+            timestamps_ptr[start + i] = timestamps_ptr[end - i];
+            timestamps_ptr[end - i] = temp_time;
         }
     }
 };
@@ -188,8 +200,12 @@ struct DividedVector {
     typename SelectVectorType<size_t, GPUUsage>::type group_offsets;
     size_t num_groups;
 
+    IndexValuePair<int, T>* elements_ptr = nullptr;
+    size_t* group_offsets_ptr = nullptr;
+    size_t total_len;
+
     // Constructor - divides input vector into n groups
-    HOST DEVICE DividedVector(const typename SelectVectorType<T, GPUUsage>::type& input, int n)
+    HOST DividedVector(const typename SelectVectorType<T, GPUUsage>::type& input, int n)
         : num_groups(n)
     {
         const int total_size = static_cast<int>(input.size());
@@ -221,6 +237,19 @@ struct DividedVector {
                 elements[j] = IndexValuePair<int, T>(j, input[j]);
             }
         }
+
+        #ifdef HAS_CUDA
+        if (GPUUsage == GPUUsageMode::ON_GPU) {
+            elements_ptr = thrust::raw_pointer_cast(elements.data());
+            group_offsets_ptr = thrust::raw_pointer_cast(group_offsets.data());
+        }
+        else
+        #endif
+        {
+            elements_ptr = elements.data();
+            group_offsets_ptr = group_offsets.data();
+        }
+        total_len = elements.size();
     }
 
     // Get begin iterator for a specific group
@@ -228,7 +257,7 @@ struct DividedVector {
         if (group_idx >= num_groups) {
             return nullptr;
         }
-        return elements.data() + group_offsets[group_idx];
+        return elements_ptr + group_offsets_ptr[group_idx];
     }
 
     // Get end iterator for a specific group
@@ -236,7 +265,7 @@ struct DividedVector {
         if (group_idx >= num_groups) {
             return nullptr;
         }
-        return elements.data() + group_offsets[group_idx + 1];
+        return elements_ptr + group_offsets_ptr[group_idx + 1];
     }
 
     // Get size of a specific group
@@ -244,7 +273,7 @@ struct DividedVector {
         if (group_idx >= num_groups) {
             return 0;
         }
-        return group_offsets[group_idx + 1] - group_offsets[group_idx];
+        return group_offsets_ptr[group_idx + 1] - group_offsets_ptr[group_idx];
     }
 
     // Helper class for iterating over a group
