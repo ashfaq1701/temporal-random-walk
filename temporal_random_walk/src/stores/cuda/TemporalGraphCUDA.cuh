@@ -6,8 +6,6 @@
 
 template<GPUUsageMode GPUUsage>
 class TemporalGraphCUDA : public ITemporalGraph<GPUUsage> {
-    static_assert(GPUUsage != GPUUsageMode::ON_CPU, "TemporalGraphCUDA cannot be used with ON_CPU mode");
-
 public:
     ~TemporalGraphCUDA() override = default;
 

@@ -22,7 +22,7 @@ public:
         TemporalGraphCUDA<GPUUsage>
     >;
     #else
-    using TemporalGraphType = TemporalGraphCUDA<GPUUsage>;
+    using TemporalGraphType = TemporalGraphCPU<GPUUsage>;
     #endif
 
     using EdgeVector = typename SelectVectorType<Edge, GPUUsage>::type;

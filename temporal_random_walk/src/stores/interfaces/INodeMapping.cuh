@@ -18,7 +18,7 @@ public:
         EdgeDataCUDA<GPUUsage>
     >;
     #else
-    using EdgeDataType = NodeMappingCPU<GPUUsage>;
+    using EdgeDataType = EdgeDataCPU<GPUUsage>;
     #endif
 
     using IntVector = typename SelectVectorType<int, GPUUsage>::type;
