@@ -5,7 +5,6 @@
 #include "../data/enums.h"
 #include "../cuda_common/types.cuh"
 #include "../cuda_common/macros.cuh"
-#include "../cuda_common/functions.cuh"
 
 #ifdef HAS_CUDA
 #include <curand_kernel.h>

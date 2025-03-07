@@ -1,6 +1,6 @@
 #include "TemporalRandomWalkCUDA.cuh"
 
-#include "../cuda_common/CudaRandomStates.cuh"
+#include "../cuda_common/setup.cuh"
 
 template<GPUUsageMode GPUUsage>
 HOST TemporalRandomWalkCUDA<GPUUsage>::TemporalRandomWalkCUDA(

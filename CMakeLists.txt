@@ -33,7 +33,7 @@ if(HAS_CUDA)
 endif()
 
 set(SRC_FILES
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/cuda_common/CudaRandomStates.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/cuda_common/setup.cu
 
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/random/IndexBasedRandomPicker.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/random/WeightBasedRandomPicker.cu

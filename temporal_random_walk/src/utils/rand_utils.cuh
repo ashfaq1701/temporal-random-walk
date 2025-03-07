@@ -6,7 +6,7 @@
 #include "../data/enums.h"
 #ifdef HAS_CUDA
 #include <curand_kernel.h>
-#include "../cuda_common/CudaRandomStates.cuh"
+#include "../cuda_common/setup.cuh"
 #endif
 
 thread_local static std::mt19937 thread_local_gen{std::random_device{}()};

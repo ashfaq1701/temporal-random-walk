@@ -2,7 +2,6 @@
 #define INDEXBASEDRANDOMPICKER_H
 
 #include "RandomPicker.h"
-#include "../cuda_common/functions.cuh"
 #include "../cuda_common/macros.cuh"
 
 #ifdef HAS_CUDA

@@ -1,11 +1,12 @@
-#ifndef CUDA_RANDOM_STATES_CUH
-#define CUDA_RANDOM_STATES_CUH
+#ifndef CUDA_COMMON_SETUP_H
+#define CUDA_COMMON_SETUP_H
 
 #ifdef HAS_CUDA
 
 #include <curand_kernel.h>
 #include <cuda_runtime.h>
-#include <ctime>
+
+__global__ void setup_curand_states(curandState* rand_states, const unsigned long seed);
 
 class CudaRandomStates {
 public:
@@ -34,5 +35,6 @@ private:
     static bool initialized;
 };
 
-#endif // HAS_CUDA
-#endif // CUDA_RANDOM_STATES_CUH
+#endif
+
+#endif //CUDA_COMMON_SETUP_H

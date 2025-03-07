@@ -1,4 +1,5 @@
 #include "IndexBasedRandomPicker.cuh"
+#include "../cuda_common/setup.cuh"
 
 #ifdef HAS_CUDA
 template<GPUUsageMode GPUUsage>

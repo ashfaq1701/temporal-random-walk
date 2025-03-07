@@ -1,8 +1,11 @@
-#include "CudaRandomStates.cuh"
+#include "setup.cuh"
 
 #ifdef HAS_CUDA
 
-#include <iostream>
+__global__ void setup_curand_states(curandState* rand_states, const unsigned long seed) {
+    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    curand_init(seed, tid, 0, &rand_states[tid]);
+}
 
 // Static member initialization
 curandState* CudaRandomStates::d_states = nullptr;
@@ -64,4 +67,4 @@ unsigned int CudaRandomStates::get_thread_count() { return total_threads; }
 dim3 CudaRandomStates::get_grid_dim() { return {num_blocks, 1, 1}; }
 dim3 CudaRandomStates::get_block_dim() { return {num_threads, 1, 1}; }
 
-#endif // HAS_CUDA
+#endif

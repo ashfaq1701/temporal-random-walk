@@ -1,6 +1,8 @@
 #include "WeightBasedRandomPicker.cuh"
 
 #include "../utils/rand_utils.cuh"
+#include "../cuda_common/setup.cuh"
+
 #ifdef HAS_CUDA
 #include "cuda/std/__algorithm_"
 #endif
