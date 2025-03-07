@@ -59,7 +59,7 @@ HOST void NodeEdgeIndexCPU<GPUUsage>::compute_node_edge_indices(
 {
     auto edges_size = edges->size();
 
-    for (size_t i = 0; i < edges_size; i++)
+    for (long i = 0; i < edges_size; i++)
     {
         size_t outbound_index = is_directed ? i : i * 2;
         outbound_edge_indices_buffer[outbound_index] = EdgeWithEndpointType{i, true};

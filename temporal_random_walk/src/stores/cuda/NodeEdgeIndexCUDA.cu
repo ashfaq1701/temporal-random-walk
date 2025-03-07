@@ -111,10 +111,10 @@ HOST void NodeEdgeIndexCUDA<GPUUsage>::compute_node_edge_indices(
         [outbound_buffer = thrust::raw_pointer_cast(outbound_edge_indices_buffer.data()),
          is_directed] __device__ (const size_t i) {
             size_t outbound_index = is_directed ? i : i * 2;
-            outbound_buffer[outbound_index] = EdgeWithEndpointType{i, true};
+            outbound_buffer[outbound_index] = EdgeWithEndpointType{static_cast<long>(i), true};
 
             if (!is_directed) {
-                outbound_buffer[outbound_index + 1] = EdgeWithEndpointType{i, false};
+                outbound_buffer[outbound_index + 1] = EdgeWithEndpointType{static_cast<long>(i), false};
             }
         }
     );

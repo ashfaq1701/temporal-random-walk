@@ -281,7 +281,7 @@ HOST Edge TemporalGraphCPU<GPUUsage>::get_edge_at_host(
     const size_t num_groups = this->edges->get_timestamp_group_count();
     if (num_groups == 0) return Edge{-1, -1, -1};
 
-    size_t group_idx;
+    long group_idx;
     if (timestamp != -1) {
         if (forward) {
             const size_t first_group = this->edges->find_group_after_timestamp(timestamp);
@@ -290,7 +290,7 @@ HOST Edge TemporalGraphCPU<GPUUsage>::get_edge_at_host(
 
             if (picker->get_picker_type() == INDEX_BASED_PICKER_TYPE) {
                 auto* index_picker = static_cast<IndexBasedRandomPicker<GPUUsage>*>(picker);
-                const size_t index = index_picker->pick_random_host(0, static_cast<int>(available_groups), false);
+                const auto index = index_picker->pick_random_host(0, static_cast<int>(available_groups), false);
                 if (index == -1) return Edge{-1, -1, -1};
 
                 if (index >= available_groups) return Edge{-1, -1, -1};
@@ -311,7 +311,7 @@ HOST Edge TemporalGraphCPU<GPUUsage>::get_edge_at_host(
             const size_t available_groups = last_group + 1;
             if (picker->get_picker_type() == INDEX_BASED_PICKER_TYPE) {
                 auto* index_picker = static_cast<IndexBasedRandomPicker<GPUUsage>*>(picker);
-                const size_t index = index_picker->pick_random_host(0, static_cast<int>(available_groups), true);
+                const auto index = index_picker->pick_random_host(0, static_cast<int>(available_groups), true);
                 if (index == -1) return Edge{-1, -1, -1};
 
                 if (index >= available_groups) return Edge{-1, -1, -1};
@@ -330,7 +330,7 @@ HOST Edge TemporalGraphCPU<GPUUsage>::get_edge_at_host(
         // No timestamp constraint - select from all groups
         if (picker->get_picker_type() == INDEX_BASED_PICKER_TYPE) {
             auto* index_picker = static_cast<IndexBasedRandomPicker<GPUUsage>*>(picker);
-            const size_t index = index_picker->pick_random_host(0, static_cast<int>(num_groups), !forward);
+            const auto index = index_picker->pick_random_host(0, static_cast<int>(num_groups), !forward);
             if (index == -1) return Edge{-1, -1, -1};
 
             if (index >= num_groups) return Edge{-1, -1, -1};
@@ -397,7 +397,7 @@ HOST Edge TemporalGraphCPU<GPUUsage>::get_node_edge_at_host(
     const size_t group_end_offset = timestamp_group_offsets[dense_idx + 1];
     if (group_start_offset == group_end_offset) return Edge{-1, -1, -1};
 
-    size_t group_pos;
+    long group_pos;
     if (timestamp != -1) {
         if (forward) {
             // Find first group after timestamp
@@ -418,7 +418,7 @@ HOST Edge TemporalGraphCPU<GPUUsage>::get_node_edge_at_host(
             const size_t start_pos = it - timestamp_group_indices.begin();
             if (picker->get_picker_type() == INDEX_BASED_PICKER_TYPE) {
                 auto* index_picker = static_cast<IndexBasedRandomPicker<GPUUsage>*>(picker);
-                const size_t index = index_picker->pick_random_host(0, static_cast<int>(available), false);
+                const auto index = index_picker->pick_random_host(0, static_cast<int>(available), false);
                 if (index == -1) return Edge{-1, -1, -1};
 
                 if (index >= available) return Edge{-1, -1, -1};
@@ -450,7 +450,7 @@ HOST Edge TemporalGraphCPU<GPUUsage>::get_node_edge_at_host(
 
             if (picker->get_picker_type() == INDEX_BASED_PICKER_TYPE) {
                 auto* index_picker = static_cast<IndexBasedRandomPicker<GPUUsage>*>(picker);
-                const size_t index = index_picker->pick_random_host(0, static_cast<int>(available), true);
+                const auto index = index_picker->pick_random_host(0, static_cast<int>(available), true);
                 if (index == -1) return Edge{-1, -1, -1};
 
                 if (index >= available) return Edge{-1, -1, -1};
@@ -476,7 +476,7 @@ HOST Edge TemporalGraphCPU<GPUUsage>::get_node_edge_at_host(
 
         if (picker->get_picker_type() == INDEX_BASED_PICKER_TYPE) {
             auto* index_picker = static_cast<IndexBasedRandomPicker<GPUUsage>*>(picker);
-            const size_t index = index_picker->pick_random_host(0, static_cast<int>(num_groups), !forward);
+            const auto index = index_picker->pick_random_host(0, static_cast<int>(num_groups), !forward);
             if (index == -1) return Edge{-1, -1, -1};
 
             if (index >= num_groups) return Edge{-1, -1, -1};

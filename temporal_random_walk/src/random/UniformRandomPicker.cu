@@ -4,7 +4,7 @@
 #include "../utils/rand_utils.cuh"
 
 template<GPUUsageMode GPUUsage>
-int UniformRandomPicker<GPUUsage>::pick_random_host(const int start, const int end, const bool prioritize_end) {
+HOST int UniformRandomPicker<GPUUsage>::pick_random_host(const int start, const int end, const bool prioritize_end) {
     if (start >= end) {
         throw std::invalid_argument("Start must be less than end.");
     }
@@ -14,7 +14,7 @@ int UniformRandomPicker<GPUUsage>::pick_random_host(const int start, const int e
 
 #ifdef HAS_CUDA
 template<GPUUsageMode GPUUsage>
-int UniformRandomPicker<GPUUsage>::pick_random_device(const int start, const int end, const bool prioritize_end, curandState* rand_state) {
+DEVICE int UniformRandomPicker<GPUUsage>::pick_random_device(const int start, const int end, const bool prioritize_end, curandState* rand_state) {
     if (start >= end) {
         return -1;
     }

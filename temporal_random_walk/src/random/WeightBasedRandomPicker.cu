@@ -60,7 +60,7 @@ int WeightBasedRandomPicker<GPUUsage>::pick_random_host(
 
 #ifdef HAS_CUDA
 template<GPUUsageMode GPUUsage>
-int WeightBasedRandomPicker<GPUUsage>::pick_random_device(
+DEVICE int WeightBasedRandomPicker<GPUUsage>::pick_random_device(
     const double* cumulative_weights_ptr,
     const size_t weights_size,
     const int group_start,
@@ -94,7 +94,7 @@ int WeightBasedRandomPicker<GPUUsage>::pick_random_device(
 #endif
 
 template<GPUUsageMode GPUUsage>
-[[nodiscard]] int WeightBasedRandomPicker<GPUUsage>::pick_random(
+HOST int WeightBasedRandomPicker<GPUUsage>::pick_random(
         const typename SelectVectorType<double, GPUUsage>::type& cumulative_weights,
         const int group_start,
         const int group_end)

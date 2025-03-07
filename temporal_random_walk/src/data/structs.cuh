@@ -86,12 +86,12 @@ struct NodeWithTime {
 };
 
 struct EdgeWithEndpointType {
-    size_t edge_id;
+    long edge_id;
     bool is_source;
 
     HOST DEVICE EdgeWithEndpointType(): edge_id(-1), is_source(true) {}
 
-    HOST DEVICE EdgeWithEndpointType(size_t edge_id, bool is_source): edge_id(edge_id), is_source(is_source) {}
+    HOST DEVICE EdgeWithEndpointType(long edge_id, bool is_source): edge_id(edge_id), is_source(is_source) {}
 
     HOST DEVICE EdgeWithEndpointType& operator=(const EdgeWithEndpointType& other)
     {
