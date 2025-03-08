@@ -1,5 +1,33 @@
 #include "TemporalGraph.cuh"
 
+#include "../../cuda_common/setup.cuh"
+
+template <GPUUsageMode GPUUsage>
+__global__ void get_edge_at_kernel(
+    Edge* result,
+    TemporalGraphCUDA<GPUUsage>* temporal_graph,
+    RandomPicker<GPUUsage>* picker,
+    curandState* rand_states,
+    int64_t timestamp,
+    bool forward) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        *result = temporal_graph->get_edge_at_device(picker, &rand_states[threadIdx.x], timestamp, forward);
+    }
+}
+
+template <GPUUsageMode GPUUsage>
+__global__ void get_node_edge_at_kernel(
+    Edge* result, TemporalGraphCUDA<GPUUsage>* temporal_graph,
+    int node_id,
+    RandomPicker<GPUUsage>* picker,
+    curandState* rand_states,
+    int64_t timestamp,
+    bool forward) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        *result = temporal_graph->get_node_edge_at_device(node_id, picker, &rand_states[threadIdx.x], timestamp, forward);
+    }
+}
+
 template<GPUUsageMode GPUUsage>
 TemporalGraph<GPUUsage>::TemporalGraph(
     bool directed,
@@ -65,15 +93,97 @@ size_t TemporalGraph<GPUUsage>::count_node_timestamps_greater_than(int node_id, 
 template<GPUUsageMode GPUUsage>
 Edge TemporalGraph<GPUUsage>::get_edge_at(RandomPicker<GPUUsage>* picker, int64_t timestamp, bool forward) const
 {
-    return temporal_graph->get_edge_at_host(picker, timestamp, forward);
+    #ifdef HAS_CUDA
+    if (GPUUsage == GPUUsageMode::ON_GPU) {
+        // Setup random state
+        curandState* d_rand_states;
+        cudaMalloc(&d_rand_states, sizeof(curandState));
+        setup_curand_states<<<1, 1>>>(d_rand_states, time(nullptr));
+
+        // Allocate device memory for the result
+        Edge host_result {-1, -1, -1};
+        Edge* d_result;
+        cudaMalloc(&d_result, sizeof(Edge));
+
+        // Use the picker's to_device_ptr method to copy it to the device
+        TemporalGraphCUDA<GPUUsage>* temporal_graph_cuda = static_cast<TemporalGraphCUDA<GPUUsage>*>(temporal_graph)->to_device_ptr();
+        RandomPicker<GPUUsage>* d_picker = picker->to_device_ptr();
+
+        // Launch the kernel
+        get_edge_at_kernel<GPUUsage><<<1, 1>>>(
+            d_result,
+            temporal_graph_cuda,
+            d_picker,
+            d_rand_states,
+            timestamp,
+            forward
+        );
+
+        // Copy the result back
+        cudaMemcpy(&host_result, d_result, sizeof(Edge), cudaMemcpyDeviceToHost);
+
+        // Free device memory
+        cudaFree(d_result);
+        cudaFree(d_picker);
+        cudaFree(temporal_graph_cuda);
+        cudaFree(d_rand_states);
+
+        return host_result;
+    }
+    else
+    #endif
+    {
+        return temporal_graph->get_edge_at_host(picker, timestamp, forward);
+    }
 }
 
 template<GPUUsageMode GPUUsage>
 Edge TemporalGraph<GPUUsage>::get_node_edge_at(int node_id, RandomPicker<GPUUsage>* picker, int64_t timestamp, bool forward) const
 {
-    return temporal_graph->get_node_edge_at_host(node_id, picker, timestamp, forward);
-}
+    #ifdef HAS_CUDA
+    if (GPUUsage == GPUUsageMode::ON_GPU) {
+        // Setup random state
+        curandState* d_rand_states;
+        cudaMalloc(&d_rand_states, sizeof(curandState));
+        setup_curand_states<<<1, 1>>>(d_rand_states, time(nullptr));
 
+        // Allocate device memory for the result
+        Edge host_result {-1, -1, -1};
+        Edge* d_result;
+        cudaMalloc(&d_result, sizeof(Edge));
+
+        // Use the picker's to_device_ptr method to copy it to the device
+        TemporalGraphCUDA<GPUUsage>* temporal_graph_cuda = static_cast<TemporalGraphCUDA<GPUUsage>*>(temporal_graph)->to_device_ptr();
+        RandomPicker<GPUUsage>* d_picker = picker->to_device_ptr();
+
+        // Launch the kernel
+        get_node_edge_at_kernel<GPUUsage><<<1, 1>>>(
+            d_result,
+            temporal_graph_cuda,
+            node_id,
+            d_picker,
+            d_rand_states,
+            timestamp,
+            forward
+        );
+
+        // Copy the result back
+        cudaMemcpy(&host_result, d_result, sizeof(Edge), cudaMemcpyDeviceToHost);
+
+        // Free device memory
+        cudaFree(d_result);
+        cudaFree(d_picker);
+        cudaFree(temporal_graph_cuda);
+        cudaFree(d_rand_states);
+
+        return host_result;
+    }
+    else
+    #endif
+    {
+        return temporal_graph->get_node_edge_at_host(node_id, picker, timestamp, forward);
+    }
+}
 template<GPUUsageMode GPUUsage>
 size_t TemporalGraph<GPUUsage>::get_total_edges() const
 {

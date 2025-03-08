@@ -1,5 +1,14 @@
 #include "NodeMapping.cuh"
 
+#include <stores/cuda/NodeEdgeIndexCUDA.cuh>
+
+template <GPUUsageMode GPUUsage>
+__global__ void to_dense_kernel(int* result, NodeMappingCUDA<GPUUsage>* node_mapping, int sparse_id) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        *result = node_mapping->to_dense_device(sparse_id);
+    }
+}
+
 template<GPUUsageMode GPUUsage>
 NodeMapping<GPUUsage>::NodeMapping(): node_mapping(new BaseType()) {}
 
@@ -18,7 +27,32 @@ void NodeMapping<GPUUsage>::update(const IEdgeData<GPUUsage>* edges, size_t star
 template<GPUUsageMode GPUUsage>
 int NodeMapping<GPUUsage>::to_dense(int sparse_id) const
 {
-    return node_mapping->to_dense(sparse_id);
+    #ifdef HAS_CUDA
+    if (GPUUsage == GPUUsageMode::ON_GPU) {
+        int host_result = -1;
+        int* d_result;
+        cudaMalloc(&d_result, sizeof(int));
+
+        NodeMappingCUDA<GPUUsage>* node_mapping_cuda = static_cast<NodeMappingCUDA<GPUUsage>*>(node_mapping)->to_device_ptr();
+
+        to_dense_kernel<GPUUsage><<<1, 1>>>(
+            d_result,
+            node_mapping_cuda,
+            sparse_id
+        );
+
+        cudaMemcpy(&host_result, d_result, sizeof(int), cudaMemcpyDeviceToHost);
+
+        cudaFree(d_result);
+        cudaFree(node_mapping_cuda);
+
+        return host_result;
+    }
+    else
+    #endif
+    {
+        return node_mapping->to_dense(sparse_id);
+    }
 }
 
 template<GPUUsageMode GPUUsage>

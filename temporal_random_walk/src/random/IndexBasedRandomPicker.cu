@@ -9,10 +9,9 @@ __global__ void pick_random_kernel(
     int end,
     bool prioritize_end,
     int* picked_value, curandState* rand_states) {
-    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
-    curandState localState = rand_states[tid];
+    curandState localState = rand_states[threadIdx.x];
     *picked_value = random_picker->pick_random_device(start, end, prioritize_end, &localState);
-    rand_states[tid] = localState;  // Store back the updated state
+    rand_states[threadIdx.x] = localState;  // Store back the updated state
 }
 #endif
 

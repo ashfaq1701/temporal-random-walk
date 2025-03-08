@@ -116,6 +116,8 @@ public:
 
     virtual HOST void update_temporal_weights(const EdgeDataType* edges, double timescale_bound);
 
+
+
 protected:
     virtual HOST SizeVector get_timestamp_offset_vector(bool forward, bool directed) const;
 };

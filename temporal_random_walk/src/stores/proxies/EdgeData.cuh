@@ -1,11 +1,25 @@
 #ifndef EDGEDATA_H
 #define EDGEDATA_H
 
-#include <functional>
 #include "../cpu/EdgeDataCPU.cuh"
 #include "../cuda/EdgeDataCUDA.cuh"
 
 #include "../../data/enums.h"
+
+template <GPUUsageMode GPUUsage>
+__global__ void check_empty_kernel(bool* result, EdgeDataCUDA<GPUUsage>* edge_data);
+
+template <GPUUsageMode GPUUsage>
+__global__ void get_timestamp_group_range_kernel(SizeRange* result, EdgeDataCUDA<GPUUsage>* edge_data, size_t group_idx);
+
+template <GPUUsageMode GPUUsage>
+__global__ void get_timestamp_group_count_kernel(size_t* result, EdgeDataCUDA<GPUUsage>* edge_data);
+
+template <GPUUsageMode GPUUsage>
+__global__ void find_group_after_timestamp_kernel(size_t* result, EdgeDataCUDA<GPUUsage>* edge_data, int64_t timestamp);
+
+template <GPUUsageMode GPUUsage>
+__global__ void find_group_before_timestamp_kernel(size_t* result, EdgeDataCUDA<GPUUsage>* edge_data, int64_t timestamp);
 
 template<GPUUsageMode GPUUsage>
 class EdgeData {

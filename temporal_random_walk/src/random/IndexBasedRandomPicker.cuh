@@ -16,16 +16,20 @@ public:
 
     virtual int pick_random(const int start, const int end, const bool prioritize_end);
 
-    virtual HOST int pick_random_host(int start, int end, bool prioritize_end) { return -1; }
+    virtual HOST int pick_random_host(int start, int end, bool prioritize_end) = 0;
 
     #ifdef HAS_CUDA
-    virtual DEVICE int pick_random_device(int start, int end, bool prioritize_end, curandState* rand_state) { return -1; };
+    virtual DEVICE int pick_random_device(int start, int end, bool prioritize_end, curandState* rand_state) = 0;
     #endif
 
     int HOST DEVICE get_picker_type() override
     {
         return INDEX_BASED_PICKER_TYPE;
     }
+
+    #ifdef HAS_CUDA
+    virtual RandomPicker<GPUUsage>* to_device_ptr() override = 0;
+    #endif
 };
 
 #ifdef HAS_CUDA

@@ -23,6 +23,20 @@ DEVICE int UniformRandomPicker<GPUUsage>::pick_random_device(const int start, co
 }
 #endif
 
+#ifdef HAS_CUDA
+template<GPUUsageMode GPUUsage>
+RandomPicker<GPUUsage>* UniformRandomPicker<GPUUsage>::to_device_ptr() {
+    // Allocate device memory for the picker
+    UniformRandomPicker<GPUUsage>* device_picker;
+    cudaMalloc(&device_picker, sizeof(UniformRandomPicker<GPUUsage>));
+
+    // Copy the object to device
+    cudaMemcpy(device_picker, this, sizeof(UniformRandomPicker<GPUUsage>), cudaMemcpyHostToDevice);
+
+    return device_picker;
+}
+#endif
+
 template class UniformRandomPicker<GPUUsageMode::ON_CPU>;
 #ifdef HAS_CUDA
 template class UniformRandomPicker<GPUUsageMode::ON_GPU>;

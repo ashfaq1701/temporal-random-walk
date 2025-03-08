@@ -77,6 +77,20 @@ DEVICE int ExponentialIndexRandomPicker<GPUUsage>::pick_random_device(const int 
 }
 #endif
 
+#ifdef HAS_CUDA
+template<GPUUsageMode GPUUsage>
+RandomPicker<GPUUsage>* ExponentialIndexRandomPicker<GPUUsage>::to_device_ptr() {
+    // Allocate device memory for the picker
+    ExponentialIndexRandomPicker<GPUUsage>* device_picker;
+    cudaMalloc(&device_picker, sizeof(ExponentialIndexRandomPicker<GPUUsage>));
+
+    // Copy the object to device
+    cudaMemcpy(device_picker, this, sizeof(ExponentialIndexRandomPicker<GPUUsage>), cudaMemcpyHostToDevice);
+
+    return device_picker;
+}
+#endif
+
 template class ExponentialIndexRandomPicker<GPUUsageMode::ON_CPU>;
 #ifdef HAS_CUDA
 template class ExponentialIndexRandomPicker<GPUUsageMode::ON_GPU>;

@@ -14,6 +14,10 @@ public:
     virtual ~RandomPicker() = default;
 
     virtual HOST DEVICE int get_picker_type() = 0;
+
+    #ifdef HAS_CUDA
+    virtual RandomPicker<GPUUsage>* to_device_ptr() = 0;
+    #endif
 };
 
 #endif //RANDOMPICKER_H

@@ -80,6 +80,20 @@ DEVICE int LinearRandomPicker<GPUUsage>::pick_random_device(const int start, con
 }
 #endif
 
+#ifdef HAS_CUDA
+template<GPUUsageMode GPUUsage>
+RandomPicker<GPUUsage>* LinearRandomPicker<GPUUsage>::to_device_ptr() {
+    // Allocate device memory for the picker
+    LinearRandomPicker<GPUUsage>* device_picker;
+    cudaMalloc(&device_picker, sizeof(LinearRandomPicker<GPUUsage>));
+
+    // Copy the object to device
+    cudaMemcpy(device_picker, this, sizeof(LinearRandomPicker<GPUUsage>), cudaMemcpyHostToDevice);
+
+    return device_picker;
+}
+#endif
+
 template class LinearRandomPicker<GPUUsageMode::ON_CPU>;
 #ifdef HAS_CUDA
 template class LinearRandomPicker<GPUUsageMode::ON_GPU>;

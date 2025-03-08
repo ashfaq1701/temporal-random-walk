@@ -8,6 +8,24 @@
 
 #include "../../data/enums.h"
 
+template <GPUUsageMode GPUUsage>
+__global__ void get_edge_at_kernel(
+    Edge* result,
+    TemporalGraphCUDA<GPUUsage>* temporal_graph,
+    RandomPicker<GPUUsage>* picker,
+    curandState* rand_states,
+    int64_t timestamp,
+    bool forward);
+
+template <GPUUsageMode GPUUsage>
+__global__ void get_node_edge_at_kernel(
+    Edge* result, TemporalGraphCUDA<GPUUsage>* temporal_graph,
+    int node_id,
+    RandomPicker<GPUUsage>* picker,
+    curandState* rand_states,
+    int64_t timestamp,
+    bool forward);
+
 template<GPUUsageMode GPUUsage>
 class TemporalGraph {
 

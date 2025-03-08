@@ -17,15 +17,14 @@ __global__ void pick_random_kernel(
     int group_end,
     int* picked_value,
     curandState* rand_states) {
-    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
-    curandState localState = rand_states[tid];
+    curandState localState = rand_states[threadIdx.x];
     *picked_value = random_picker->pick_random_device(
         cumulative_weights_ptr,
         weights_size,
         group_start,
         group_end,
         &localState);
-    rand_states[tid] = localState;
+    rand_states[threadIdx.x] = localState;
 }
 #endif
 
@@ -117,7 +116,7 @@ HOST int WeightBasedRandomPicker<GPUUsage>::pick_random(
             thrust::raw_pointer_cast(cumulative_weights.data()),
             cumulative_weights.size(),
             group_start,
-            group_start,
+            group_end,
             d_picked_value,
             d_rand_states);
 
@@ -134,6 +133,20 @@ HOST int WeightBasedRandomPicker<GPUUsage>::pick_random(
         return this->pick_random_host(cumulative_weights, group_start, group_end);
     }
 };
+
+#ifdef HAS_CUDA
+template<GPUUsageMode GPUUsage>
+RandomPicker<GPUUsage>* WeightBasedRandomPicker<GPUUsage>::to_device_ptr() {
+    // Allocate device memory for the picker
+    WeightBasedRandomPicker<GPUUsage>* device_picker;
+    cudaMalloc(&device_picker, sizeof(WeightBasedRandomPicker<GPUUsage>));
+
+    // Copy the object to device
+    cudaMemcpy(device_picker, this, sizeof(WeightBasedRandomPicker<GPUUsage>), cudaMemcpyHostToDevice);
+
+    return device_picker;
+}
+#endif
 
 template class WeightBasedRandomPicker<GPUUsageMode::ON_CPU>;
 #ifdef HAS_CUDA

@@ -19,6 +19,17 @@ public:
     [[nodiscard]] DEVICE int pick_random_device(int start, int end, bool prioritize_end, curandState* rand_state) override {
         return start;
     }
+
+    RandomPicker<GPUUsage>* to_device_ptr() override {
+        // Allocate device memory for the picker
+        FirstIndexPicker<GPUUsage>* device_picker;
+        cudaMalloc(&device_picker, sizeof(FirstIndexPicker<GPUUsage>));
+
+        // Copy the object to device
+        cudaMemcpy(device_picker, this, sizeof(FirstIndexPicker<GPUUsage>), cudaMemcpyHostToDevice);
+
+        return device_picker;
+    }
     #endif
 };
 
@@ -37,6 +48,17 @@ public:
     #ifdef HAS_CUDA
     [[nodiscard]] DEVICE int pick_random_device(int start, int end, bool prioritize_end, curandState* rand_state) override {
         return end - 1;
+    }
+
+    RandomPicker<GPUUsage>* to_device_ptr() override {
+        // Allocate device memory for the picker
+        LastIndexPicker<GPUUsage>* device_picker;
+        cudaMalloc(&device_picker, sizeof(LastIndexPicker<GPUUsage>));
+
+        // Copy the object to device
+        cudaMemcpy(device_picker, this, sizeof(LastIndexPicker<GPUUsage>), cudaMemcpyHostToDevice);
+
+        return device_picker;
     }
     #endif
 };

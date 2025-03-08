@@ -37,6 +37,10 @@ public:
     {
         return WEIGHT_BASED_PICKER_TYPE;
     }
+
+    #ifdef HAS_CUDA
+    RandomPicker<GPUUsage>* to_device_ptr() override;
+    #endif
 };
 
 #ifdef HAS_CUDA

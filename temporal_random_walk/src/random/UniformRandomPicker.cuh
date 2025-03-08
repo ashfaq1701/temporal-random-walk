@@ -17,6 +17,10 @@ public:
     #ifdef HAS_CUDA
     DEVICE int pick_random_device(int start, int end, bool prioritize_end, curandState* rand_state) override;
     #endif
+
+    #ifdef HAS_CUDA
+    RandomPicker<GPUUsage>* to_device_ptr() override;
+    #endif
 };
 
 #endif //UNIFORMRANDOMPICKER_H
