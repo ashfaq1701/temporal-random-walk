@@ -2,6 +2,7 @@
 
 #include "../../cuda_common/setup.cuh"
 
+#ifdef HAS_CUDA
 template <GPUUsageMode GPUUsage>
 __global__ void get_edge_at_kernel(
     Edge* result,
@@ -27,6 +28,7 @@ __global__ void get_node_edge_at_kernel(
         *result = temporal_graph->get_node_edge_at_device(node_id, picker, &rand_states[threadIdx.x], timestamp, forward);
     }
 }
+#endif
 
 template<GPUUsageMode GPUUsage>
 TemporalGraph<GPUUsage>::TemporalGraph(

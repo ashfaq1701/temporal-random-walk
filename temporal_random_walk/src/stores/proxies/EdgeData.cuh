@@ -6,6 +6,7 @@
 
 #include "../../data/enums.h"
 
+#ifdef HAS_CUDA
 template <GPUUsageMode GPUUsage>
 __global__ void check_empty_kernel(bool* result, EdgeDataCUDA<GPUUsage>* edge_data);
 
@@ -20,6 +21,7 @@ __global__ void find_group_after_timestamp_kernel(size_t* result, EdgeDataCUDA<G
 
 template <GPUUsageMode GPUUsage>
 __global__ void find_group_before_timestamp_kernel(size_t* result, EdgeDataCUDA<GPUUsage>* edge_data, int64_t timestamp);
+#endif
 
 template<GPUUsageMode GPUUsage>
 class EdgeData {

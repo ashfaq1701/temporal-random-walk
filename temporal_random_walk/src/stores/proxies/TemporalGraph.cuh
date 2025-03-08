@@ -8,6 +8,7 @@
 
 #include "../../data/enums.h"
 
+#ifdef HAS_CUDA
 template <GPUUsageMode GPUUsage>
 __global__ void get_edge_at_kernel(
     Edge* result,
@@ -25,6 +26,7 @@ __global__ void get_node_edge_at_kernel(
     curandState* rand_states,
     int64_t timestamp,
     bool forward);
+#endif
 
 template<GPUUsageMode GPUUsage>
 class TemporalGraph {

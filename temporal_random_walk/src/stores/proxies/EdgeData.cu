@@ -1,5 +1,6 @@
 #include "EdgeData.cuh"
 
+#ifdef HAS_CUDA
 template <GPUUsageMode GPUUsage>
 __global__ void check_empty_kernel(bool* result, EdgeDataCUDA<GPUUsage>* edge_data) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
@@ -34,6 +35,7 @@ __global__ void find_group_before_timestamp_kernel(size_t* result, EdgeDataCUDA<
         *result = edge_data->find_group_before_timestamp_device(timestamp);
     }
 }
+#endif
 
 template<GPUUsageMode GPUUsage>
 EdgeData<GPUUsage>::EdgeData(): edge_data(new BaseType()) {}

@@ -7,8 +7,10 @@
 
 #include "../../data/enums.h"
 
+#ifdef HAS_CUDA
 template <GPUUsageMode GPUUsage>
 __global__ void to_dense_kernel(int* result, NodeMappingCUDA<GPUUsage>* node_mapping, int sparse_id);
+#endif
 
 template<GPUUsageMode GPUUsage>
 class NodeMapping {

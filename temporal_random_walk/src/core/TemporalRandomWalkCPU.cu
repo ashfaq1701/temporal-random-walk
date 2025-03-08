@@ -2,10 +2,6 @@
 
 #include "../utils/utils.h"
 #include "../utils/rand_utils.cuh"
-#include "../random/UniformRandomPicker.cuh"
-#include "../random/LinearRandomPicker.cuh"
-#include "../random/ExponentialIndexRandomPicker.cuh"
-#include "../random/WeightBasedRandomPicker.cuh"
 
 template<GPUUsageMode GPUUsage>
 TemporalRandomWalkCPU<GPUUsage>::TemporalRandomWalkCPU(
@@ -21,41 +17,6 @@ TemporalRandomWalkCPU<GPUUsage>::TemporalRandomWalkCPU(
         is_directed, max_time_capacity, enable_weight_computation, timescale_bound);
 }
 
-bool get_should_walk_forward(const WalkDirection walk_direction) {
-    switch (walk_direction)
-    {
-    case WalkDirection::Forward_In_Time:
-        return true;
-    case WalkDirection::Backward_In_Time:
-        return false;
-    default:
-        throw std::invalid_argument("Invalid walk direction");
-    }
-}
-
-template<GPUUsageMode GPUUsage>
-HOST RandomPicker<GPUUsage>* TemporalRandomWalkCPU<GPUUsage>::get_random_picker(const RandomPickerType* picker_type) const {
-    if (!picker_type) {
-        throw std::invalid_argument("picker_type cannot be nullptr");
-    }
-
-    switch (*picker_type) {
-    case Uniform:
-        return new UniformRandomPicker<GPUUsage>();
-    case Linear:
-        return new LinearRandomPicker<GPUUsage>();
-    case ExponentialIndex:
-        return new ExponentialIndexRandomPicker<GPUUsage>();
-    case ExponentialWeight:
-        if (!this->enable_weight_computation) {
-            throw std::invalid_argument("To enable weight based random pickers, set enable_weight_computation constructor argument to true.");
-        }
-        return new WeightBasedRandomPicker<GPUUsage>();
-    default:
-        throw std::invalid_argument("Invalid picker type");
-    }
-}
-
 template<GPUUsageMode GPUUsage>
 HOST WalkSet<GPUUsage> TemporalRandomWalkCPU<GPUUsage>::get_random_walks_and_times_for_all_nodes(
         int max_walk_len,
@@ -64,10 +25,10 @@ HOST WalkSet<GPUUsage> TemporalRandomWalkCPU<GPUUsage>::get_random_walks_and_tim
         const RandomPickerType* initial_edge_bias,
         WalkDirection walk_direction)
 {
-    RandomPicker<GPUUsage>* edge_picker = get_random_picker(walk_bias);
-    RandomPicker<GPUUsage>* start_picker = initial_edge_bias ? get_random_picker(initial_edge_bias) : edge_picker;
+    RandomPicker<GPUUsage>* edge_picker = this->get_random_picker(walk_bias);
+    RandomPicker<GPUUsage>* start_picker = initial_edge_bias ? this->get_random_picker(initial_edge_bias) : edge_picker;
 
-    auto repeated_node_ids = repeat_elements<GPUUsage>(get_node_ids(), num_walks_per_node);
+    auto repeated_node_ids = repeat_elements<GPUUsage>(this->get_node_ids(), num_walks_per_node);
     shuffle_vector_host<int, GPUUsage>(repeated_node_ids);
     auto distributed_node_ids = divide_vector<int, GPUUsage>(repeated_node_ids, n_threads);
 
@@ -121,8 +82,8 @@ HOST WalkSet<GPUUsage> TemporalRandomWalkCPU<GPUUsage>::get_random_walks_and_tim
         const RandomPickerType* initial_edge_bias,
         WalkDirection walk_direction) {
 
-    RandomPicker<GPUUsage>* edge_picker = get_random_picker(walk_bias);
-    RandomPicker<GPUUsage>* start_picker = initial_edge_bias ? get_random_picker(initial_edge_bias) : edge_picker;
+    RandomPicker<GPUUsage>* edge_picker = this->get_random_picker(walk_bias);
+    RandomPicker<GPUUsage>* start_picker = initial_edge_bias ? this->get_random_picker(initial_edge_bias) : edge_picker;
 
     WalkSet<GPUUsage> walk_set(num_walks_total, max_walk_len);
 
@@ -242,43 +203,6 @@ HOST void TemporalRandomWalkCPU<GPUUsage>::generate_random_walk_and_time(
     if (!should_walk_forward) {
         walk_set.reverse_walk(walk_idx);
     }
-}
-
-template<GPUUsageMode GPUUsage>
-HOST void TemporalRandomWalkCPU<GPUUsage>::add_multiple_edges(const typename ITemporalRandomWalk<GPUUsage>::EdgeVector& edge_infos) const {
-    this->temporal_graph->add_multiple_edges(edge_infos);
-}
-
-template<GPUUsageMode GPUUsage>
-HOST size_t TemporalRandomWalkCPU<GPUUsage>::get_node_count() const {
-    return this->temporal_graph->get_node_count();
-}
-
-template<GPUUsageMode GPUUsage>
-HOST size_t TemporalRandomWalkCPU<GPUUsage>::get_edge_count() const {
-    return this->temporal_graph->get_total_edges();
-}
-
-template<GPUUsageMode GPUUsage>
-HOST typename ITemporalRandomWalk<GPUUsage>::IntVector TemporalRandomWalkCPU<GPUUsage>::get_node_ids() const {
-    return this->temporal_graph->get_node_ids();
-}
-
-template<GPUUsageMode GPUUsage>
-HOST typename ITemporalRandomWalk<GPUUsage>::EdgeVector TemporalRandomWalkCPU<GPUUsage>::get_edges() const {
-    return this->temporal_graph->get_edges();
-}
-
-template<GPUUsageMode GPUUsage>
-HOST bool TemporalRandomWalkCPU<GPUUsage>::get_is_directed() const {
-    return this->is_directed;
-}
-
-template<GPUUsageMode GPUUsage>
-HOST void TemporalRandomWalkCPU<GPUUsage>::clear() {
-    this->temporal_graph = new typename ITemporalRandomWalk<GPUUsage>::TemporalGraphType(
-        this->is_directed, this->max_time_capacity,
-        this->enable_weight_computation, this->timescale_bound);
 }
 
 template class TemporalRandomWalkCPU<GPUUsageMode::ON_CPU>;

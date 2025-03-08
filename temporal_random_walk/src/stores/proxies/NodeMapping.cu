@@ -2,12 +2,14 @@
 
 #include <stores/cuda/NodeEdgeIndexCUDA.cuh>
 
+#ifdef HAS_CUDA
 template <GPUUsageMode GPUUsage>
 __global__ void to_dense_kernel(int* result, NodeMappingCUDA<GPUUsage>* node_mapping, int sparse_id) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = node_mapping->to_dense_device(sparse_id);
     }
 }
+#endif
 
 template<GPUUsageMode GPUUsage>
 NodeMapping<GPUUsage>::NodeMapping(): node_mapping(new BaseType()) {}

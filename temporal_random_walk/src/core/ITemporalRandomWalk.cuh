@@ -11,6 +11,8 @@
 #include "../stores/cpu/TemporalGraphCPU.cuh"
 #include "../stores/cuda/NodeMappingCUDA.cuh"
 
+bool get_should_walk_forward(WalkDirection walk_direction);
+
 template<GPUUsageMode GPUUsage>
 class ITemporalRandomWalk {
 
@@ -53,7 +55,7 @@ public:
         delete temporal_graph;
     };
 
-    virtual HOST RandomPicker<GPUUsage>* get_random_picker(const RandomPickerType* picker_type) const { return nullptr; }
+    virtual HOST RandomPicker<GPUUsage>* get_random_picker(const RandomPickerType* picker_type) const;
 
     [[nodiscard]] virtual HOST WalkSet<GPUUsage> get_random_walks_and_times_for_all_nodes(
         int max_walk_len,
@@ -69,19 +71,19 @@ public:
         const RandomPickerType* initial_edge_bias=nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time) { return WalkSet<GPUUsage>(); }
 
-    virtual HOST void add_multiple_edges(const EdgeVector& edge_infos) const {}
+    virtual HOST void add_multiple_edges(const EdgeVector& edge_infos) const;
 
-    [[nodiscard]] virtual HOST size_t get_node_count() const { return 0; }
+    [[nodiscard]] virtual HOST size_t get_node_count() const;
 
-    [[nodiscard]] virtual HOST size_t get_edge_count() const { return 0; }
+    [[nodiscard]] virtual HOST size_t get_edge_count() const;
 
-    [[nodiscard]] virtual HOST IntVector get_node_ids() const { return {}; }
+    [[nodiscard]] virtual HOST IntVector get_node_ids() const;
 
-    [[nodiscard]] virtual HOST EdgeVector get_edges() const { return {}; }
+    [[nodiscard]] virtual HOST EdgeVector get_edges() const;
 
-    [[nodiscard]] virtual HOST bool get_is_directed() const { return false; }
+    [[nodiscard]] virtual HOST bool get_is_directed() const;
 
-    virtual HOST void clear() {}
+    virtual HOST void clear();
 };
 
 #endif //I_TEMPORAL_RANDOM_WALK_H

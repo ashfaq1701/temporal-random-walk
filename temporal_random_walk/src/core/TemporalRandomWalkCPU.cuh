@@ -24,8 +24,6 @@ protected:
         bool should_walk_forward,
         int start_node_id=-1) const;
 
-    HOST RandomPicker<GPUUsage>* get_random_picker(const RandomPickerType* picker_type) const override;
-
 public:
     explicit HOST TemporalRandomWalkCPU(
         bool is_directed,
@@ -47,20 +45,6 @@ public:
         int num_walks_total,
         const RandomPickerType* initial_edge_bias=nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time) override;
-
-    HOST void add_multiple_edges(const typename ITemporalRandomWalk<GPUUsage>::EdgeVector& edge_infos) const override;
-
-    [[nodiscard]] HOST size_t get_node_count() const override;
-
-    [[nodiscard]] HOST size_t get_edge_count() const override;
-
-    [[nodiscard]] HOST typename ITemporalRandomWalk<GPUUsage>::IntVector get_node_ids() const override;
-
-    [[nodiscard]] HOST typename ITemporalRandomWalk<GPUUsage>::EdgeVector get_edges() const override;
-
-    [[nodiscard]] HOST bool get_is_directed() const override;
-
-    HOST void clear() override;
 };
 
 #endif //TEMPORAL_RANDOM_WALK_CPU_H
