@@ -697,7 +697,27 @@ DEVICE Edge TemporalGraphCUDA<GPUUsage>::get_node_edge_at_device(
 
 template<GPUUsageMode GPUUsage>
 HOST TemporalGraphCUDA<GPUUsage>* TemporalGraphCUDA<GPUUsage>::to_device_ptr() {
-    return nullptr;
+    // Allocate device memory for the TemporalGraphCUDA object
+    TemporalGraphCUDA<GPUUsage>* device_temporal_graph;
+    cudaMalloc(&device_temporal_graph, sizeof(TemporalGraphCUDA<GPUUsage>));
+
+    // Create device copies of the component objects
+    if (this->node_index) {
+        this->node_index_device = this->node_index->to_device_ptr();
+    }
+
+    if (this->edges) {
+        this->edges_device = this->edges->to_device_ptr();
+    }
+
+    if (this->node_mapping) {
+        this->node_mapping_device = this->node_mapping->to_device_ptr();
+    }
+
+    // Copy the object with device pointers to the device
+    cudaMemcpy(device_temporal_graph, this, sizeof(TemporalGraphCUDA<GPUUsage>), cudaMemcpyHostToDevice);
+
+    return device_temporal_graph;
 }
 
 template class TemporalGraphCUDA<GPUUsageMode::ON_GPU>;

@@ -222,7 +222,54 @@ DEVICE size_t EdgeDataCUDA<GPUUsage>::find_group_before_timestamp_device(int64_t
 
 template<GPUUsageMode GPUUsage>
 HOST EdgeDataCUDA<GPUUsage>* EdgeDataCUDA<GPUUsage>::to_device_ptr() {
-    return nullptr;
+    // Allocate device memory for the EdgeDataCUDA object
+    EdgeDataCUDA<GPUUsage>* device_edge_data;
+    cudaMalloc(&device_edge_data, sizeof(EdgeDataCUDA<GPUUsage>));
+
+    // Set the pointers and sizes for device vectors directly
+    if (!this->sources.empty()) {
+        this->sources_ptr = thrust::raw_pointer_cast(this->sources.data());
+        this->sources_size = this->sources.size();
+    }
+
+    if (!this->targets.empty()) {
+        this->targets_ptr = thrust::raw_pointer_cast(this->targets.data());
+        this->targets_size = this->targets.size();
+    }
+
+    if (!this->timestamps.empty()) {
+        this->timestamps_ptr = thrust::raw_pointer_cast(this->timestamps.data());
+        this->timestamps_size = this->timestamps.size();
+    }
+
+    if (!this->timestamp_group_offsets.empty()) {
+        this->timestamp_group_offsets_ptr = thrust::raw_pointer_cast(this->timestamp_group_offsets.data());
+        this->timestamp_group_offsets_size = this->timestamp_group_offsets.size();
+    }
+
+    if (!this->unique_timestamps.empty()) {
+        this->unique_timestamps_ptr = thrust::raw_pointer_cast(this->unique_timestamps.data());
+        this->unique_timestamps_size = this->unique_timestamps.size();
+    }
+
+    if (!this->forward_cumulative_weights_exponential.empty()) {
+        this->forward_cumulative_weights_exponential_ptr =
+            thrust::raw_pointer_cast(this->forward_cumulative_weights_exponential.data());
+        this->forward_cumulative_weights_exponential_size =
+            this->forward_cumulative_weights_exponential.size();
+    }
+
+    if (!this->backward_cumulative_weights_exponential.empty()) {
+        this->backward_cumulative_weights_exponential_ptr =
+            thrust::raw_pointer_cast(this->backward_cumulative_weights_exponential.data());
+        this->backward_cumulative_weights_exponential_size =
+            this->backward_cumulative_weights_exponential.size();
+    }
+
+    // Copy the object with pointers to the device
+    cudaMemcpy(device_edge_data, this, sizeof(EdgeDataCUDA<GPUUsage>), cudaMemcpyHostToDevice);
+
+    return device_edge_data;
 }
 
 template class EdgeDataCUDA<GPUUsageMode::ON_GPU>;

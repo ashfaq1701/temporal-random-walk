@@ -481,7 +481,76 @@ HOST void NodeEdgeIndexCUDA<GPUUsage>::compute_temporal_weights(
 
 template<GPUUsageMode GPUUsage>
 HOST NodeEdgeIndexCUDA<GPUUsage>* NodeEdgeIndexCUDA<GPUUsage>::to_device_ptr() {
-    return nullptr;
+    // Allocate device memory for the NodeEdgeIndexCUDA object
+    NodeEdgeIndexCUDA<GPUUsage>* device_node_edge_index;
+    cudaMalloc(&device_node_edge_index, sizeof(NodeEdgeIndexCUDA<GPUUsage>));
+
+    // Set the pointers and sizes for device vectors directly
+    if (!this->outbound_offsets.empty()) {
+        this->outbound_offsets_ptr = thrust::raw_pointer_cast(this->outbound_offsets.data());
+        this->outbound_offsets_size = this->outbound_offsets.size();
+    }
+
+    if (!this->outbound_indices.empty()) {
+        this->outbound_indices_ptr = thrust::raw_pointer_cast(this->outbound_indices.data());
+        this->outbound_indices_size = this->outbound_indices.size();
+    }
+
+    if (!this->outbound_timestamp_group_offsets.empty()) {
+        this->outbound_timestamp_group_offsets_ptr = thrust::raw_pointer_cast(this->outbound_timestamp_group_offsets.data());
+        this->outbound_timestamp_group_offsets_size = this->outbound_timestamp_group_offsets.size();
+    }
+
+    if (!this->outbound_timestamp_group_indices.empty()) {
+        this->outbound_timestamp_group_indices_ptr = thrust::raw_pointer_cast(this->outbound_timestamp_group_indices.data());
+        this->outbound_timestamp_group_indices_size = this->outbound_timestamp_group_indices.size();
+    }
+
+    if (!this->inbound_offsets.empty()) {
+        this->inbound_offsets_ptr = thrust::raw_pointer_cast(this->inbound_offsets.data());
+        this->inbound_offsets_size = this->inbound_offsets.size();
+    }
+
+    if (!this->inbound_indices.empty()) {
+        this->inbound_indices_ptr = thrust::raw_pointer_cast(this->inbound_indices.data());
+        this->inbound_indices_size = this->inbound_indices.size();
+    }
+
+    if (!this->inbound_timestamp_group_offsets.empty()) {
+        this->inbound_timestamp_group_offsets_ptr = thrust::raw_pointer_cast(this->inbound_timestamp_group_offsets.data());
+        this->inbound_timestamp_group_offsets_size = this->inbound_timestamp_group_offsets.size();
+    }
+
+    if (!this->inbound_timestamp_group_indices.empty()) {
+        this->inbound_timestamp_group_indices_ptr = thrust::raw_pointer_cast(this->inbound_timestamp_group_indices.data());
+        this->inbound_timestamp_group_indices_size = this->inbound_timestamp_group_indices.size();
+    }
+
+    if (!this->outbound_forward_cumulative_weights_exponential.empty()) {
+        this->outbound_forward_cumulative_weights_exponential_ptr =
+            thrust::raw_pointer_cast(this->outbound_forward_cumulative_weights_exponential.data());
+        this->outbound_forward_cumulative_weights_exponential_size =
+            this->outbound_forward_cumulative_weights_exponential.size();
+    }
+
+    if (!this->outbound_backward_cumulative_weights_exponential.empty()) {
+        this->outbound_backward_cumulative_weights_exponential_ptr =
+            thrust::raw_pointer_cast(this->outbound_backward_cumulative_weights_exponential.data());
+        this->outbound_backward_cumulative_weights_exponential_size =
+            this->outbound_backward_cumulative_weights_exponential.size();
+    }
+
+    if (!this->inbound_backward_cumulative_weights_exponential.empty()) {
+        this->inbound_backward_cumulative_weights_exponential_ptr =
+            thrust::raw_pointer_cast(this->inbound_backward_cumulative_weights_exponential.data());
+        this->inbound_backward_cumulative_weights_exponential_size =
+            this->inbound_backward_cumulative_weights_exponential.size();
+    }
+
+    // Copy the object with pointers to the device
+    cudaMemcpy(device_node_edge_index, this, sizeof(NodeEdgeIndexCUDA<GPUUsage>), cudaMemcpyHostToDevice);
+
+    return device_node_edge_index;
 }
 
 template class NodeEdgeIndexCUDA<GPUUsageMode::ON_GPU>;

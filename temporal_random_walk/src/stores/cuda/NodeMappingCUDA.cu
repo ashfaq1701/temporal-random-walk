@@ -119,7 +119,30 @@ DEVICE int NodeMappingCUDA<GPUUsage>::to_dense_device(int sparse_id) const {
 
 template<GPUUsageMode GPUUsage>
 HOST NodeMappingCUDA<GPUUsage>* NodeMappingCUDA<GPUUsage>::to_device_ptr() {
-    return nullptr;
+    // Allocate device memory for the NodeMappingCUDA object
+    NodeMappingCUDA<GPUUsage>* device_node_mapping;
+    cudaMalloc(&device_node_mapping, sizeof(NodeMappingCUDA<GPUUsage>));
+
+    // Set the pointers and sizes for device vectors directly
+    if (!this->sparse_to_dense.empty()) {
+        this->sparse_to_dense_ptr = thrust::raw_pointer_cast(this->sparse_to_dense.data());
+        this->sparse_to_dense_size = this->sparse_to_dense.size();
+    }
+
+    if (!this->dense_to_sparse.empty()) {
+        this->dense_to_sparse_ptr = thrust::raw_pointer_cast(this->dense_to_sparse.data());
+        this->dense_to_sparse_size = this->dense_to_sparse.size();
+    }
+
+    if (!this->is_deleted.empty()) {
+        this->is_deleted_ptr = thrust::raw_pointer_cast(this->is_deleted.data());
+        this->is_deleted_size = this->is_deleted.size();
+    }
+
+    // Copy the object with pointers to the device
+    cudaMemcpy(device_node_mapping, this, sizeof(NodeMappingCUDA<GPUUsage>), cudaMemcpyHostToDevice);
+
+    return device_node_mapping;
 }
 
 template class NodeMappingCUDA<GPUUsageMode::ON_GPU>;
