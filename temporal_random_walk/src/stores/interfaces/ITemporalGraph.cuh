@@ -3,6 +3,10 @@
 
 #include <cstdint>
 
+#ifdef HAS_CUDA
+#include <curand_kernel.h>
+#endif
+
 #include "../../cuda_common/types.cuh"
 #include "../../data/structs.cuh"
 #include "../../data/enums.h"
@@ -69,6 +73,10 @@ public:
     EdgeDataType* edges = nullptr; // Main edge storage
     NodeMappingType* node_mapping = nullptr; // Sparse to dense node ID mapping
 
+    NodeEdgeIndexType* node_index_device = nullptr;
+    EdgeDataType* edges_device = nullptr;
+    NodeMappingType* node_mapping_device = nullptr;
+
     explicit ITemporalGraph(
         bool directed,
         int64_t window = -1,
@@ -99,13 +107,30 @@ public:
 
     // Edge selection
     [[nodiscard]] virtual HOST Edge get_edge_at_host(
-        RandomPicker<GPUUsage>* picker, int64_t timestamp = -1,
+        RandomPicker<GPUUsage>* picker,
+        int64_t timestamp = -1,
         bool forward = true) const { return Edge{-1, -1, -1}; }
 
-    [[nodiscard]] virtual HOST Edge get_node_edge_at_host(int node_id,
-                                                                 RandomPicker<GPUUsage>* picker,
-                                                                 int64_t timestamp = -1,
-                                                                 bool forward = true) const { return Edge{-1, -1, -1}; }
+    [[nodiscard]] virtual HOST Edge get_node_edge_at_host(
+        int node_id,
+        RandomPicker<GPUUsage>* picker,
+        int64_t timestamp = -1,
+        bool forward = true) const { return Edge{-1, -1, -1}; }
+
+    #ifdef HAS_CUDA
+    [[nodiscard]] virtual DEVICE Edge get_edge_at_device(
+        RandomPicker<GPUUsage>* picker,
+        curandState* rand_state,
+        int64_t timestamp = -1,
+        bool forward = true) const { return Edge{-1, -1, -1}; }
+
+    [[nodiscard]] virtual DEVICE Edge get_node_edge_at_device(
+        int node_id,
+        RandomPicker<GPUUsage>* picker,
+        curandState* rand_state,
+        int64_t timestamp = -1,
+        bool forward = true) const { return Edge{-1, -1, -1}; }
+    #endif
 
     // Utility methods
     [[nodiscard]] virtual HOST size_t get_total_edges() const;

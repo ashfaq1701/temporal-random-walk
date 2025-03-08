@@ -2,6 +2,7 @@
 #define RANDOMPICKER_H
 
 #include "../data/enums.h"
+#include "../cuda_common/macros.cuh"
 
 constexpr int INDEX_BASED_PICKER_TYPE = 1;
 constexpr int WEIGHT_BASED_PICKER_TYPE = 2;
@@ -12,7 +13,7 @@ class RandomPicker
 public:
     virtual ~RandomPicker() = default;
 
-    virtual int get_picker_type() = 0;
+    virtual HOST DEVICE int get_picker_type() = 0;
 };
 
 #endif //RANDOMPICKER_H

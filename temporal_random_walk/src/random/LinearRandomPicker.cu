@@ -18,17 +18,17 @@ HOST int LinearRandomPicker<GPUUsage>::pick_random_host(const int start, const i
     // When prioritizing end: weights are 1, 2, 3, ..., n
     // When prioritizing start: weights are n, n-1, n-2, ..., 1
     // Sum of arithmetic sequence = n(a1 + an)/2 = n(n+1)/2
-    const long double total_weight = static_cast<long double>(len_seq) *
-                                   (static_cast<long double>(len_seq) + 1.0L) / 2.0L;
+    const double total_weight = static_cast<double>(len_seq) *
+                                   (static_cast<double>(len_seq) + 1.0) / 2.0;
 
     // Generate random value in [0, total_weight)
-    const long double random_value = generate_random_value_host(0.0L, total_weight);
+    const double random_value = generate_random_value_host(0.0, total_weight);
 
     // For both cases, we solve quadratic equation i² + i - 2r = 0
     // where r is our random value (or transformed random value)
     // Using quadratic formula: (-1 ± √(1 + 8r))/2
-    const long double discriminant = 1.0L + 8.0L * random_value;
-    const long double root = (-1.0L + std::sqrt(discriminant)) / 2.0L;
+    const double discriminant = 1.0 + 8.0 * random_value;
+    const double root = (-1.0 + std::sqrt(discriminant)) / 2.0;
     const int index = static_cast<int>(std::floor(root));
 
     if (prioritize_end) {
@@ -55,17 +55,17 @@ DEVICE int LinearRandomPicker<GPUUsage>::pick_random_device(const int start, con
     // When prioritizing end: weights are 1, 2, 3, ..., n
     // When prioritizing start: weights are n, n-1, n-2, ..., 1
     // Sum of arithmetic sequence = n(a1 + an)/2 = n(n+1)/2
-    const long double total_weight = static_cast<long double>(len_seq) *
-                                   (static_cast<long double>(len_seq) + 1.0L) / 2.0L;
+    const double total_weight = static_cast<double>(len_seq) *
+                                   (static_cast<double>(len_seq) + 1.0) / 2.0;
 
     // Generate random value in [0, total_weight)
-    const long double random_value = generate_random_value_device(0.0L, total_weight, rand_state);
+    const double random_value = generate_random_value_device(0.0, total_weight, rand_state);
 
     // For both cases, we solve quadratic equation i² + i - 2r = 0
     // where r is our random value (or transformed random value)
     // Using quadratic formula: (-1 ± √(1 + 8r))/2
-    const long double discriminant = 1.0L + 8.0L * random_value;
-    const long double root = (-1.0L + std::sqrt(discriminant)) / 2.0L;
+    const double discriminant = 1.0 + 8.0 * random_value;
+    const double root = (-1.0 + std::sqrt(discriminant)) / 2.0;
     const int index = static_cast<int>(std::floor(root));
 
     if (prioritize_end) {

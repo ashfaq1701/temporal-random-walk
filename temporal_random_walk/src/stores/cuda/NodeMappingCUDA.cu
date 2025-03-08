@@ -113,6 +113,11 @@ HOST void NodeMappingCUDA<GPUUsage>::update(const typename INodeMapping<GPUUsage
 }
 
 template<GPUUsageMode GPUUsage>
+DEVICE int NodeMappingCUDA<GPUUsage>::to_dense_device(int sparse_id) const {
+    return sparse_id < this->sparse_to_dense_size ? this->sparse_to_dense_ptr[sparse_id] : -1;
+}
+
+template<GPUUsageMode GPUUsage>
 HOST NodeMappingCUDA<GPUUsage>* NodeMappingCUDA<GPUUsage>::to_device_ptr() {
     return nullptr;
 }

@@ -23,6 +23,8 @@ public:
 
     HOST void update(const typename INodeMapping<GPUUsage>::EdgeDataType* edges, size_t start_idx, size_t end_idx) override;
 
+    DEVICE int to_dense_device(int sparse_id) const override;
+
     HOST NodeMappingCUDA* to_device_ptr();
 
     #endif

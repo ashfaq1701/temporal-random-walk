@@ -22,7 +22,7 @@ public:
     virtual DEVICE int pick_random_device(int start, int end, bool prioritize_end, curandState* rand_state) { return -1; };
     #endif
 
-    int get_picker_type() override
+    int HOST DEVICE get_picker_type() override
     {
         return INDEX_BASED_PICKER_TYPE;
     }

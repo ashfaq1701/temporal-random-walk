@@ -9,6 +9,9 @@
 
 #ifdef HAS_CUDA
 
+#include <cuda/std/__algorithm/lower_bound.h>
+#include <cuda/std/__algorithm/upper_bound.h>
+
 template<GPUUsageMode GPUUsage>
 HOST void EdgeDataCUDA<GPUUsage>::update_timestamp_groups() {
     if (this->timestamps.empty()) {
@@ -152,6 +155,11 @@ HOST void EdgeDataCUDA<GPUUsage>::compute_temporal_weights(const double timescal
 }
 
 template<GPUUsageMode GPUUsage>
+DEVICE bool EdgeDataCUDA<GPUUsage>::empty_device() const {
+    return this->timestamps_size == 0;
+}
+
+template<GPUUsageMode GPUUsage>
 HOST size_t EdgeDataCUDA<GPUUsage>::find_group_after_timestamp(int64_t timestamp) const {
     if (this->unique_timestamps.empty()) return 0;
 
@@ -172,6 +180,43 @@ HOST size_t EdgeDataCUDA<GPUUsage>::find_group_before_timestamp(int64_t timestam
     const int64_t* end = begin + this->unique_timestamps.size();
 
     const auto it = thrust::lower_bound(begin, end, timestamp);
+    return (it - begin) - 1;
+}
+
+template<GPUUsageMode GPUUsage>
+DEVICE SizeRange EdgeDataCUDA<GPUUsage>::get_timestamp_group_range_device(size_t group_idx) const {
+    if (group_idx >= this->unique_timestamps_size) {
+        return SizeRange{0, 0};
+    }
+    return SizeRange{this->timestamp_group_offsets_ptr[group_idx], this->timestamp_group_offsets_ptr[group_idx + 1]};
+}
+
+template<GPUUsageMode GPUUsage>
+DEVICE size_t EdgeDataCUDA<GPUUsage>::get_timestamp_group_count_device() const {
+    return this->unique_timestamps_size;
+}
+
+template<GPUUsageMode GPUUsage>
+DEVICE size_t EdgeDataCUDA<GPUUsage>::find_group_after_timestamp_device(int64_t timestamp) const {
+    if (this->unique_timestamps_size == 0) return 0;
+
+    // Get raw pointer to data and use std::upper_bound directly
+    const int64_t* begin = this->unique_timestamps_ptr;
+    const int64_t* end = this->unique_timestamps_ptr + this->unique_timestamps_size;
+
+    const auto it = cuda::std::upper_bound(begin, end, timestamp);
+    return it - begin;
+}
+
+template<GPUUsageMode GPUUsage>
+DEVICE size_t EdgeDataCUDA<GPUUsage>::find_group_before_timestamp_device(int64_t timestamp) const {
+    if (this->unique_timestamps_size == 0) return 0;
+
+    // Get raw pointer to data and use std::lower_bound directly
+    const int64_t* begin = this->unique_timestamps_ptr;
+    const int64_t* end = this->unique_timestamps_ptr + this->unique_timestamps_size;
+
+    auto it = cuda::std::lower_bound(begin, end, timestamp);
     return (it - begin) - 1;
 }
 

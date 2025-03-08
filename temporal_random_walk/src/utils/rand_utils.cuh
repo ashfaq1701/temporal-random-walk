@@ -53,7 +53,7 @@ DEVICE inline int generate_random_int_device(int start, int end, curandState* st
 }
 
 DEVICE inline int generate_random_number_bounded_by_device(int max_bound, curandState* state) {
-    return curand(state) % max_bound;
+    return generate_random_int_device(0, max_bound - 1, state);
 }
 
 DEVICE inline bool generate_random_boolean_device(curandState* state) {

@@ -37,6 +37,7 @@ public:
     */
     virtual HOST void update(const EdgeDataType* edges, size_t start_idx, size_t end_idx) {}
     [[nodiscard]] virtual HOST int to_dense(int sparse_id) const;
+    [[nodiscard]] virtual DEVICE int to_dense_device(int sparse_id) const { return -1; }
     [[nodiscard]] virtual HOST int to_sparse(int dense_idx) const;
     [[nodiscard]] virtual HOST size_t size() const;
     [[nodiscard]] virtual HOST size_t active_size() const;

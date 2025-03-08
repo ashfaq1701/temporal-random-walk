@@ -33,7 +33,7 @@ public:
         curandState* rand_state);
     #endif
 
-    int get_picker_type() override
+    int HOST DEVICE get_picker_type() override
     {
         return WEIGHT_BASED_PICKER_TYPE;
     }

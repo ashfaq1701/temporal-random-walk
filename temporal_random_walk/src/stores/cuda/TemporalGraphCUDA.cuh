@@ -29,13 +29,16 @@ public:
     [[nodiscard]] HOST size_t count_node_timestamps_greater_than(int node_id, int64_t timestamp) const override;
 
     DEVICE Edge get_edge_at_device(
-        RandomPicker<GPUUsage>* picker, int64_t timestamp = -1,
-        bool forward = true);
+        RandomPicker<GPUUsage>* picker,
+        curandState* rand_state,
+        int64_t timestamp = -1,
+        bool forward = true) const override;
 
     DEVICE Edge get_node_edge_at_device(int node_id,
         RandomPicker<GPUUsage>* picker,
+        curandState* rand_state,
         int64_t timestamp = -1,
-        bool forward = true) const;
+        bool forward = true) const override;
 
     #endif
 

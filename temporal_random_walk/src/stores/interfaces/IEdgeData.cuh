@@ -55,6 +55,7 @@ public:
     virtual HOST void clear();
     [[nodiscard]] virtual HOST size_t size() const;
     [[nodiscard]] virtual HOST bool empty() const;
+    [[nodiscard]] virtual DEVICE bool empty_device() const { return true; }
     virtual HOST void resize(size_t new_size);
 
     virtual HOST void add_edges(int* src, int* tgt, int64_t* ts, size_t size);
@@ -69,11 +70,17 @@ public:
     virtual HOST void update_temporal_weights(double timescale_bound);
 
     [[nodiscard]] virtual HOST SizeRange get_timestamp_group_range(size_t group_idx) const;
+    [[nodiscard]] virtual DEVICE SizeRange get_timestamp_group_range_device(size_t group_idx) const { return SizeRange{0, 0}; }
+
     [[nodiscard]] virtual HOST size_t get_timestamp_group_count() const;
+    [[nodiscard]] virtual DEVICE size_t get_timestamp_group_count_device() const { return 0; }
 
     // Group lookup
     [[nodiscard]] virtual HOST size_t find_group_after_timestamp(int64_t timestamp) const { return 0; }  // For forward walks
+    [[nodiscard]] virtual DEVICE size_t find_group_after_timestamp_device(int64_t timestamp) const { return 0; }
+
     [[nodiscard]] virtual HOST size_t find_group_before_timestamp(int64_t timestamp) const { return 0; } // For backward walks
+    [[nodiscard]] virtual DEVICE size_t find_group_before_timestamp_device(int64_t timestamp) const { return 0; }
 };
 
 #endif //I_EDGEDATA_H
