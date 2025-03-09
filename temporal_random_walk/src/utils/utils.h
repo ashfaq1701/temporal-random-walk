@@ -11,35 +11,41 @@ typename SelectVectorType<int, GPUUsage>::type repeat_elements(
     const typename SelectVectorType<int, GPUUsage>::type& arr,
     int times) {
     #ifdef HAS_CUDA
-    const size_t input_size = arr.size();
-    const size_t output_size = input_size * times;
+    if  (GPUUsage == GPUUsageMode::ON_GPU) {
+        const size_t input_size = arr.size();
+        const size_t output_size = input_size * times;
 
-    typename SelectVectorType<int, GPUUsage>::type repeated_items;
-    repeated_items.resize(output_size);
+        const int* arr_ptr = thrust::raw_pointer_cast(arr.data());
 
-    thrust::transform(
-        thrust::counting_iterator(0),
-        thrust::counting_iterator<int>(output_size),
-        repeated_items.begin(),
-        [=] __device__ (const int idx) {
-            int original_idx = idx / times;
-            return thrust::raw_pointer_cast(arr.data())[original_idx];
-        }
-    );
+        typename SelectVectorType<int, GPUUsage>::type repeated_items;
+        repeated_items.resize(output_size);
 
-    return repeated_items;
-    #else
-    typename SelectVectorType<int, GPUUsage>::type repeated_items;
-    repeated_items.reserve(arr.size() * times);
+        thrust::transform(
+            thrust::counting_iterator(0),
+            thrust::counting_iterator<int>(output_size),
+            repeated_items.begin(),
+            [arr_ptr, times] __device__ (const int idx) {
+                const int original_idx = idx / times;
+                return arr_ptr[original_idx];
+            }
+        );
 
-    for (const auto& item : arr) {
-        for (int i = 0; i < times; ++i) {
-            repeated_items.push_back(item);
-        }
+        return repeated_items;
     }
-
-    return repeated_items;
+    else
     #endif
+    {
+        typename SelectVectorType<int, GPUUsage>::type repeated_items;
+        repeated_items.reserve(arr.size() * times);
+
+        for (const auto& item : arr) {
+            for (int i = 0; i < times; ++i) {
+                repeated_items.push_back(item);
+            }
+        }
+
+        return repeated_items;
+    }
 }
 
 template <typename T, GPUUsageMode GPUUsage>
