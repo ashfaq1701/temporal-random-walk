@@ -150,8 +150,6 @@ HOST NodeMappingCUDA<GPUUsage>* NodeMappingCUDA<GPUUsage>::to_device_ptr() {
 
 template <GPUUsageMode GPUUsage>
 HOST typename INodeMapping<GPUUsage>::IntVector NodeMappingCUDA<GPUUsage>::get_active_node_ids() const {
-    typename INodeMapping<GPUUsage>::IntVector active_ids;
-
     const bool* is_deleted_ptr = thrust::raw_pointer_cast(this->is_deleted.data());
 
     size_t num_active = thrust::count_if(
@@ -161,6 +159,7 @@ HOST typename INodeMapping<GPUUsage>::IntVector NodeMappingCUDA<GPUUsage>::get_a
             return !is_deleted_ptr[sparse_id];
         });
 
+    typename INodeMapping<GPUUsage>::IntVector active_ids;
     active_ids.resize(num_active);
 
     thrust::copy_if(

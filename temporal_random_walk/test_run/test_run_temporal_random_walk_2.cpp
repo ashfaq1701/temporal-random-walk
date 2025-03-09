@@ -4,7 +4,7 @@
 #include "test_utils.h"
 #include "../test/test_utils.h"
 
-constexpr GPUUsageMode GPU_USAGE_MODE = GPUUsageMode::ON_CPU;
+constexpr GPUUsageMode GPU_USAGE_MODE = GPUUsageMode::ON_GPU;
 
 int main(int argc, char* argv[]) {
     std::string file_path = "../../data/sample_data.csv";
