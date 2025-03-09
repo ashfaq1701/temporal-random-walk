@@ -11,7 +11,7 @@
 #include "../stores/cpu/TemporalGraphCPU.cuh"
 #include "../stores/cuda/NodeMappingCUDA.cuh"
 
-bool get_should_walk_forward(WalkDirection walk_direction);
+HOST DEVICE bool get_should_walk_forward(WalkDirection walk_direction);
 
 template<GPUUsageMode GPUUsage>
 class ITemporalRandomWalk {

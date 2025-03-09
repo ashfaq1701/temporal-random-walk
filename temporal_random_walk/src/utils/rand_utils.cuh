@@ -77,10 +77,9 @@ __global__ void shuffle_kernel(T* vec, const int size, curandState* states) {
 }
 
 template <typename T>
-void shuffle_vector(SelectVectorType<T, ON_GPU>& vec, size_t grid_dim, size_t block_dim) {
-    int size = vec.size();
+void shuffle_vector_device(T* data, size_t size, size_t grid_dim, size_t block_dim) {
     curandState* rand_states = get_cuda_rand_states(grid_dim, block_dim);
-    shuffle_kernel<<<grid_dim, block_dim>>>(thrust::raw_pointer_cast(vec.data()), size, rand_states);
+    shuffle_kernel<<<grid_dim, block_dim>>>(data, size, rand_states);
     cudaFree(rand_states);
 }
 

@@ -5,7 +5,7 @@
 #include "../random/WeightBasedRandomPicker.cuh"
 #include "../random/UniformRandomPicker.cuh"
 
-bool get_should_walk_forward(const WalkDirection walk_direction) {
+HOST DEVICE bool get_should_walk_forward(const WalkDirection walk_direction) {
     switch (walk_direction)
     {
     case WalkDirection::Forward_In_Time:
@@ -13,7 +13,7 @@ bool get_should_walk_forward(const WalkDirection walk_direction) {
     case WalkDirection::Backward_In_Time:
         return false;
     default:
-        throw std::invalid_argument("Invalid walk direction");
+        return true;
     }
 }
 

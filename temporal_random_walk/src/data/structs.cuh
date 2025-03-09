@@ -4,7 +4,7 @@
 #include "../cuda_common/macros.cuh"
 #include <cstddef>
 #include <cstdint>
-#include <cuda_common/types.cuh>
+#include "../cuda_common/types.cuh"
 
 #include "enums.h"
 
@@ -115,6 +115,11 @@ struct WalkSet
     typename SelectVectorType<int64_t, GPUUsage>::type timestamps;
     typename SelectVectorType<size_t, GPUUsage>::type walk_lens;
 
+    // CPU vectors for host access
+    std::vector<int> nodes_cpu;
+    std::vector<int64_t> timestamps_cpu;
+    std::vector<size_t> walk_lens_cpu;
+
     int* nodes_ptr = nullptr;
     int64_t* timestamps_ptr = nullptr;
     size_t* walk_lens_ptr = nullptr;
@@ -151,6 +156,7 @@ struct WalkSet
     HOST WalkSet(const WalkSet& other)
         : num_walks(other.num_walks), max_len(other.max_len),
           nodes(other.nodes), timestamps(other.timestamps), walk_lens(other.walk_lens),
+          nodes_cpu(other.nodes_cpu), timestamps_cpu(other.timestamps_cpu), walk_lens_cpu(other.walk_lens_cpu),
           total_len(other.total_len)
     {
         #ifdef HAS_CUDA
@@ -173,6 +179,8 @@ struct WalkSet
         : num_walks(other.num_walks), max_len(other.max_len),
           nodes(std::move(other.nodes)), timestamps(std::move(other.timestamps)),
           walk_lens(std::move(other.walk_lens)),
+          nodes_cpu(std::move(other.nodes_cpu)), timestamps_cpu(std::move(other.timestamps_cpu)),
+          walk_lens_cpu(std::move(other.walk_lens_cpu)),
           nodes_ptr(other.nodes_ptr), timestamps_ptr(other.timestamps_ptr),
           walk_lens_ptr(other.walk_lens_ptr),
           total_len(other.total_len)
@@ -197,6 +205,10 @@ struct WalkSet
             nodes = other.nodes;
             timestamps = other.timestamps;
             walk_lens = other.walk_lens;
+
+            nodes_cpu = other.nodes_cpu;
+            timestamps_cpu = other.timestamps_cpu;
+            walk_lens_cpu = other.walk_lens_cpu;
 
             #ifdef HAS_CUDA
             if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
@@ -227,6 +239,10 @@ struct WalkSet
             timestamps = std::move(other.timestamps);
             walk_lens = std::move(other.walk_lens);
 
+            nodes_cpu = std::move(other.nodes_cpu);
+            timestamps_cpu = std::move(other.timestamps_cpu);
+            walk_lens_cpu = std::move(other.walk_lens_cpu);
+
             nodes_ptr = other.nodes_ptr;
             timestamps_ptr = other.timestamps_ptr;
             walk_lens_ptr = other.walk_lens_ptr;
@@ -242,6 +258,40 @@ struct WalkSet
         return *this;
     }
 
+    HOST WalkSet* to_device_ptr() {
+        WalkSet* device_walk_set;
+        cudaMalloc(&device_walk_set, sizeof(WalkSet));
+        cudaMemcpy(device_walk_set, this, sizeof(WalkSet), cudaMemcpyHostToDevice);
+        return device_walk_set;
+    }
+
+    // Method to copy data from a device WalkSet to this host WalkSet
+    HOST void copy_from_device(WalkSet<GPUUsage>* d_walk_set) {
+        #ifdef HAS_CUDA
+        if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
+            // Get device pointers
+            int* d_nodes_ptr = nullptr;
+            int64_t* d_timestamps_ptr = nullptr;
+            size_t* d_walk_lens_ptr = nullptr;
+
+            // Copy pointer values from device WalkSet to local variables
+            cudaMemcpy(&d_nodes_ptr, &(d_walk_set->nodes_ptr), sizeof(int*), cudaMemcpyDeviceToHost);
+            cudaMemcpy(&d_timestamps_ptr, &(d_walk_set->timestamps_ptr), sizeof(int64_t*), cudaMemcpyDeviceToHost);
+            cudaMemcpy(&d_walk_lens_ptr, &(d_walk_set->walk_lens_ptr), sizeof(size_t*), cudaMemcpyDeviceToHost);
+
+            // Make sure CPU vectors are properly sized
+            nodes_cpu.resize(total_len);
+            timestamps_cpu.resize(total_len);
+            walk_lens_cpu.resize(num_walks);
+
+            // Copy data from device memory directly to CPU vectors
+            cudaMemcpy(nodes_cpu.data(), d_nodes_ptr, sizeof(int) * total_len, cudaMemcpyDeviceToHost);
+            cudaMemcpy(timestamps_cpu.data(), d_timestamps_ptr, sizeof(int64_t) * total_len, cudaMemcpyDeviceToHost);
+            cudaMemcpy(walk_lens_cpu.data(), d_walk_lens_ptr, sizeof(size_t) * num_walks, cudaMemcpyDeviceToHost);
+        }
+        #endif
+    }
+
     HOST DEVICE void add_hop(int walk_number, int node, int64_t timestamp)
     {
         const size_t offset = walk_number * max_len + walk_lens_ptr[walk_number];
@@ -250,21 +300,44 @@ struct WalkSet
         walk_lens_ptr[walk_number] += 1;
     }
 
-    HOST DEVICE size_t get_walk_len(int walk_number)
-    {
+    HOST size_t get_walk_len(int walk_number) {
+        #ifdef HAS_CUDA
+        if (GPUUsage == GPUUsageMode::ON_GPU) {
+            return walk_lens_cpu[walk_number];
+        }
+        else
+        #endif
+        {
+            return walk_lens_ptr[walk_number];
+        }
+    }
+
+    DEVICE size_t get_walk_len_device(int walk_number) {
         return walk_lens_ptr[walk_number];
     }
 
-    HOST DEVICE NodeWithTime get_walk_hop(int walk_number, int hop_number)
-    {
-        size_t walk_length = walk_lens_ptr[walk_number];
-        if (hop_number < 0 || hop_number >= walk_length) {
-            return NodeWithTime{-1, -1};  // Return invalid entry
-        }
+    HOST NodeWithTime get_walk_hop(int walk_number, int hop_number) {
+        #ifdef HAS_CUDA
+        if (GPUUsage == GPUUsageMode::ON_GPU) {
+            size_t walk_length = walk_lens_cpu[walk_number];
+            if (hop_number < 0 || hop_number >= walk_length) {
+                return NodeWithTime{-1, -1};  // Return invalid entry
+            }
 
-        // Compute offset safely
-        size_t offset = walk_number * max_len + hop_number;
-        return NodeWithTime{nodes_ptr[offset], timestamps_ptr[offset]};
+            size_t offset = walk_number * max_len + hop_number;
+            return NodeWithTime{nodes_cpu[offset], timestamps_cpu[offset]};
+        }
+        else
+        #endif
+        {
+            size_t walk_length = walk_lens_ptr[walk_number];
+            if (hop_number < 0 || hop_number >= walk_length) {
+                return NodeWithTime{-1, -1};  // Return invalid entry
+            }
+
+            size_t offset = walk_number * max_len + hop_number;
+            return NodeWithTime{nodes_ptr[offset], timestamps_ptr[offset]};
+        }
     }
 
     HOST DEVICE void reverse_walk(int walk_number)

@@ -171,7 +171,7 @@ HOST void TemporalRandomWalkCPU<GPUUsage>::generate_random_walk_and_time(
     } else {
         const int picked_node = start_node_id;
         walk_set.add_hop(walk_idx, picked_node, current_timestamp);
-        current_node = pick_other_number({start_src, start_dst}, picked_node);
+        current_node = pick_other_number(start_src, start_dst, picked_node);
     }
 
     current_timestamp = start_ts;
@@ -194,7 +194,7 @@ HOST void TemporalRandomWalkCPU<GPUUsage>::generate_random_walk_and_time(
         if (this->is_directed) {
             current_node = should_walk_forward ? picked_dst : picked_src;
         } else {
-            current_node = pick_other_number({picked_src, picked_dst}, current_node);
+            current_node = pick_other_number(picked_src, picked_dst, current_node);
         }
 
         current_timestamp = picked_ts;

@@ -70,9 +70,7 @@ typename SelectVectorType<int, GPUUsage>::type divide_number(int n, int i) {
     return parts;
 }
 
-inline int pick_other_number(const std::tuple<int, int>& number, const int picked_number) {
-    const int first = std::get<0>(number);
-    const int second = std::get<1>(number);
+inline HOST DEVICE int pick_other_number(const int first, const int second, const int picked_number) {
     return (picked_number == first) ? second : first;
 }
 

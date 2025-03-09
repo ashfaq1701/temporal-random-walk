@@ -8,6 +8,21 @@
 #include <curand_kernel.h>
 #endif
 
+#ifdef HAS_CUDA
+template<GPUUsageMode GPUUsage>
+__global__ void generate_random_walks_kernel(
+    WalkSet<GPUUsage>* walk_set,
+    typename ITemporalRandomWalk<GPUUsage>::TemporalGraphType* temporal_graph,
+    int* start_node_ids,
+    RandomPicker<GPUUsage>* edge_picker,
+    RandomPicker<GPUUsage>* start_picker,
+    curandState* rand_states,
+    int max_walk_len,
+    bool is_directed,
+    WalkDirection walk_direction,
+    int num_walks);
+#endif
+
 template<GPUUsageMode GPUUsage>
 class TemporalRandomWalkCUDA : public ITemporalRandomWalk<GPUUsage> {
     cudaDeviceProp* cuda_device_prop;
