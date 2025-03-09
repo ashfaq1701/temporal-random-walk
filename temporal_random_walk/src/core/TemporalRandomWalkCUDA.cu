@@ -19,6 +19,7 @@ HOST TemporalRandomWalkCUDA<GPUUsage>::TemporalRandomWalkCUDA(
         is_directed, max_time_capacity, enable_weight_computation, timescale_bound);
 }
 
+#ifdef HAS_CUDA
 template<GPUUsageMode GPUUsage>
 HOST WalkSet<GPUUsage> TemporalRandomWalkCUDA<GPUUsage>::get_random_walks_and_times_for_all_nodes(
         int max_walk_len,
@@ -55,6 +56,5 @@ HOST WalkSet<GPUUsage> TemporalRandomWalkCUDA<GPUUsage>::get_random_walks_and_ti
     return walk_set;
 }
 
-#ifdef HAS_CUDA
 template class TemporalRandomWalkCUDA<GPUUsageMode::ON_GPU>;
 #endif

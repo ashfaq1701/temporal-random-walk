@@ -8,20 +8,15 @@
 template <GPUUsageMode GPUUsage>
 TemporalRandomWalk<GPUUsage>::TemporalRandomWalk(bool is_directed, int64_t max_time_capacity, bool enable_weight_computation, double timescale_bound, size_t n_threads)
 {
-    if (GPUUsage == GPUUsageMode::ON_CPU) {
-        temporal_random_walk = new TemporalRandomWalkCPU<GPUUsage>(is_directed, max_time_capacity, enable_weight_computation, timescale_bound, n_threads);
-    }
     #ifdef HAS_CUDA
-    else {
-        temporal_random_walk = new TemporalRandomWalkCUDA<GPUUsage>(is_directed, max_time_capacity, enable_weight_computation, timescale_bound);
+    if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
+        temporal_random_walk = new TemporalRandomWalkType(is_directed, max_time_capacity, enable_weight_computation, timescale_bound);
     }
-    #else
-    else {
-        // Fallback to CPU implementation when CUDA is not available
-        std::cerr << "Warning: CUDA implementation requested but not available, using CPU implementation instead" << std::endl;
-        temporal_random_walk = new TemporalRandomWalkCPU<GPUUsage>(is_directed, max_time_capacity, enable_weight_computation, timescale_bound, n_threads);
-    }
+    else
     #endif
+    {
+        temporal_random_walk = new TemporalRandomWalkType(is_directed, max_time_capacity, enable_weight_computation, timescale_bound, n_threads);
+    }
 }
 
 template <GPUUsageMode GPUUsage>

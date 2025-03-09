@@ -101,7 +101,7 @@ HOST int WeightBasedRandomPicker<GPUUsage>::pick_random(
         const int group_end)
 {
     #ifdef HAS_CUDA
-    if (GPUUsage == GPUUsageMode::ON_GPU)
+    if constexpr (GPUUsage == GPUUsageMode::ON_GPU)
     {
         int* d_picked_value;
         int h_picked_value = -1;

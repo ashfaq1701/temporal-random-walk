@@ -5,11 +5,12 @@
 
 #include "ITemporalRandomWalk.cuh"
 #include "TemporalRandomWalk.cuh"
+#include "TemporalRandomWalkCPU.cuh"
+#include "TemporalRandomWalkCUDA.cuh"
 #include "../data/structs.cuh"
 #include "../data/enums.h"
 #include "../config/constants.h"
 #include "../../libs/thread-pool/ThreadPool.h"
-#include "../stores/cpu/TemporalGraphCPU.cuh"
 
 /**
  * @brief Main class for generating temporal random walks
@@ -22,8 +23,13 @@
 template<GPUUsageMode GPUUsage>
 class TemporalRandomWalk {
 
+    using TemporalRandomWalkType = std::conditional_t<
+        GPUUsage == GPUUsageMode::ON_CPU,
+        TemporalRandomWalkCPU<GPUUsage>,
+        TemporalRandomWalkCUDA<GPUUsage>
+    >;
 
-    ITemporalRandomWalk<GPUUsage>* temporal_random_walk;
+    TemporalRandomWalkType* temporal_random_walk;
 
 public:
 

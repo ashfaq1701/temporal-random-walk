@@ -96,7 +96,7 @@ template<GPUUsageMode GPUUsage>
 Edge TemporalGraph<GPUUsage>::get_edge_at(RandomPicker<GPUUsage>* picker, int64_t timestamp, bool forward) const
 {
     #ifdef HAS_CUDA
-    if (GPUUsage == GPUUsageMode::ON_GPU) {
+    if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
         // Setup random state
         curandState* d_rand_states;
         cudaMalloc(&d_rand_states, sizeof(curandState));
@@ -143,7 +143,7 @@ template<GPUUsageMode GPUUsage>
 Edge TemporalGraph<GPUUsage>::get_node_edge_at(int node_id, RandomPicker<GPUUsage>* picker, int64_t timestamp, bool forward) const
 {
     #ifdef HAS_CUDA
-    if (GPUUsage == GPUUsageMode::ON_GPU) {
+    if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
         // Setup random state
         curandState* d_rand_states;
         cudaMalloc(&d_rand_states, sizeof(curandState));

@@ -19,7 +19,7 @@ template<GPUUsageMode GPUUsage>
 int IndexBasedRandomPicker<GPUUsage>::pick_random(const int start, const int end, const bool prioritize_end)
 {
     #ifdef HAS_CUDA
-    if (GPUUsage == GPUUsageMode::ON_GPU)
+    if constexpr (GPUUsage == GPUUsageMode::ON_GPU)
     {
         int* d_picked_value;
         int h_picked_value = -1;

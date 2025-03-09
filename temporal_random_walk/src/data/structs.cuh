@@ -123,7 +123,7 @@ struct WalkSet
 
     HOST WalkSet(): num_walks(0), max_len(0), nodes({}), timestamps({}), walk_lens({}), total_len(0) {}
 
-    HOST explicit WalkSet(size_t num_walks, size_t max_len)
+    HOST WalkSet(size_t num_walks, const size_t max_len)
         : num_walks(num_walks), max_len(max_len), nodes({}), timestamps({}), walk_lens({})
     {
         total_len = num_walks * max_len;
@@ -133,7 +133,7 @@ struct WalkSet
         walk_lens.resize(num_walks);
 
         #ifdef HAS_CUDA
-        if (GPUUsage == GPUUsageMode::ON_GPU) {
+        if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
             nodes_ptr = thrust::raw_pointer_cast(nodes.data());
             timestamps_ptr = thrust::raw_pointer_cast(timestamps.data());
             walk_lens_ptr = thrust::raw_pointer_cast(walk_lens.data());
@@ -154,7 +154,7 @@ struct WalkSet
           total_len(other.total_len)
     {
         #ifdef HAS_CUDA
-        if (GPUUsage == GPUUsageMode::ON_GPU) {
+        if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
             nodes_ptr = thrust::raw_pointer_cast(nodes.data());
             timestamps_ptr = thrust::raw_pointer_cast(timestamps.data());
             walk_lens_ptr = thrust::raw_pointer_cast(walk_lens.data());
@@ -199,7 +199,7 @@ struct WalkSet
             walk_lens = other.walk_lens;
 
             #ifdef HAS_CUDA
-            if (GPUUsage == GPUUsageMode::ON_GPU) {
+            if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
                 nodes_ptr = thrust::raw_pointer_cast(nodes.data());
                 timestamps_ptr = thrust::raw_pointer_cast(timestamps.data());
                 walk_lens_ptr = thrust::raw_pointer_cast(walk_lens.data());
@@ -334,7 +334,7 @@ struct DividedVector {
         }
 
         #ifdef HAS_CUDA
-        if (GPUUsage == GPUUsageMode::ON_GPU) {
+        if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
             elements_ptr = thrust::raw_pointer_cast(elements.data());
             group_offsets_ptr = thrust::raw_pointer_cast(group_offsets.data());
         }

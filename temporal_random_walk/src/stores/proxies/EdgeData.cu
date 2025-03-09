@@ -65,7 +65,7 @@ template <GPUUsageMode GPUUsage>
 bool EdgeData<GPUUsage>::empty() const
 {
 #ifdef HAS_CUDA
-    if (GPUUsage == GPUUsageMode::ON_GPU) {
+    if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
         bool result = false;
         bool* d_result;
         cudaMalloc(&d_result, sizeof(bool));
@@ -135,7 +135,7 @@ template <GPUUsageMode GPUUsage>
 std::pair<size_t, size_t> EdgeData<GPUUsage>::get_timestamp_group_range(size_t group_idx)
 {
     #ifdef HAS_CUDA
-    if (GPUUsage == GPUUsageMode::ON_GPU) {
+    if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
         SizeRange host_result {0, 0};
         SizeRange* d_result;
         cudaMalloc(&d_result, sizeof(SizeRange));
@@ -167,7 +167,7 @@ template <GPUUsageMode GPUUsage>
 size_t EdgeData<GPUUsage>::get_timestamp_group_count() const
 {
     #ifdef HAS_CUDA
-    if (GPUUsage == GPUUsageMode::ON_GPU) {
+    if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
         size_t host_result = 0;
         size_t* d_result;
         cudaMalloc(&d_result, sizeof(size_t));
@@ -197,7 +197,7 @@ template <GPUUsageMode GPUUsage>
 size_t EdgeData<GPUUsage>::find_group_after_timestamp(int64_t timestamp) const
 {
     #ifdef HAS_CUDA
-    if (GPUUsage == GPUUsageMode::ON_GPU) {
+    if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
         size_t host_result = 0;
         size_t* d_result;
         cudaMalloc(&d_result, sizeof(size_t));
@@ -227,7 +227,7 @@ size_t EdgeData<GPUUsage>::find_group_after_timestamp(int64_t timestamp) const
 template <GPUUsageMode GPUUsage>
 size_t EdgeData<GPUUsage>::find_group_before_timestamp(int64_t timestamp) const {
     #ifdef HAS_CUDA
-    if (GPUUsage == GPUUsageMode::ON_GPU) {
+    if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
         size_t host_result = 0;
         size_t* d_result;
         cudaMalloc(&d_result, sizeof(size_t));

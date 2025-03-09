@@ -30,7 +30,7 @@ template<GPUUsageMode GPUUsage>
 int NodeMapping<GPUUsage>::to_dense(int sparse_id) const
 {
     #ifdef HAS_CUDA
-    if (GPUUsage == GPUUsageMode::ON_GPU) {
+    if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
         int host_result = -1;
         int* d_result;
         cudaMalloc(&d_result, sizeof(int));
