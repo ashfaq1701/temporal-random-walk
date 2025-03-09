@@ -147,6 +147,101 @@ struct WalkSet
         }
     }
 
+    // Copy constructor
+    HOST WalkSet(const WalkSet& other)
+        : num_walks(other.num_walks), max_len(other.max_len),
+          nodes(other.nodes), timestamps(other.timestamps), walk_lens(other.walk_lens),
+          total_len(other.total_len)
+    {
+        #ifdef HAS_CUDA
+        if (GPUUsage == GPUUsageMode::ON_GPU) {
+            nodes_ptr = thrust::raw_pointer_cast(nodes.data());
+            timestamps_ptr = thrust::raw_pointer_cast(timestamps.data());
+            walk_lens_ptr = thrust::raw_pointer_cast(walk_lens.data());
+        }
+        else
+        #endif
+        {
+            nodes_ptr = nodes.data();
+            timestamps_ptr = timestamps.data();
+            walk_lens_ptr = walk_lens.data();
+        }
+    }
+
+    // Move constructor
+    HOST WalkSet(WalkSet&& other) noexcept
+        : num_walks(other.num_walks), max_len(other.max_len),
+          nodes(std::move(other.nodes)), timestamps(std::move(other.timestamps)),
+          walk_lens(std::move(other.walk_lens)),
+          nodes_ptr(other.nodes_ptr), timestamps_ptr(other.timestamps_ptr),
+          walk_lens_ptr(other.walk_lens_ptr),
+          total_len(other.total_len)
+    {
+        // Reset the source object to prevent double-free issues
+        other.num_walks = 0;
+        other.max_len = 0;
+        other.total_len = 0;
+        other.nodes_ptr = nullptr;
+        other.timestamps_ptr = nullptr;
+        other.walk_lens_ptr = nullptr;
+    }
+
+    // Copy assignment operator
+    HOST WalkSet& operator=(const WalkSet& other)
+    {
+        if (this != &other) {
+            num_walks = other.num_walks;
+            max_len = other.max_len;
+            total_len = other.total_len;
+
+            nodes = other.nodes;
+            timestamps = other.timestamps;
+            walk_lens = other.walk_lens;
+
+            #ifdef HAS_CUDA
+            if (GPUUsage == GPUUsageMode::ON_GPU) {
+                nodes_ptr = thrust::raw_pointer_cast(nodes.data());
+                timestamps_ptr = thrust::raw_pointer_cast(timestamps.data());
+                walk_lens_ptr = thrust::raw_pointer_cast(walk_lens.data());
+            }
+            else
+            #endif
+            {
+                nodes_ptr = nodes.data();
+                timestamps_ptr = timestamps.data();
+                walk_lens_ptr = walk_lens.data();
+            }
+        }
+        return *this;
+    }
+
+    // Move assignment operator
+    HOST WalkSet& operator=(WalkSet&& other) noexcept
+    {
+        if (this != &other) {
+            num_walks = other.num_walks;
+            max_len = other.max_len;
+            total_len = other.total_len;
+
+            nodes = std::move(other.nodes);
+            timestamps = std::move(other.timestamps);
+            walk_lens = std::move(other.walk_lens);
+
+            nodes_ptr = other.nodes_ptr;
+            timestamps_ptr = other.timestamps_ptr;
+            walk_lens_ptr = other.walk_lens_ptr;
+
+            // Reset the source object
+            other.num_walks = 0;
+            other.max_len = 0;
+            other.total_len = 0;
+            other.nodes_ptr = nullptr;
+            other.timestamps_ptr = nullptr;
+            other.walk_lens_ptr = nullptr;
+        }
+        return *this;
+    }
+
     HOST DEVICE void add_hop(int walk_number, int node, int64_t timestamp)
     {
         const size_t offset = walk_number * max_len + walk_lens_ptr[walk_number];
