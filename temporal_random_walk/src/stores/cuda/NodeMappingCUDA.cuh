@@ -25,6 +25,8 @@ public:
 
     DEVICE int to_dense_device(int sparse_id) const override;
 
+    HOST typename INodeMapping<GPUUsage>::IntVector get_active_node_ids() const override;
+
     HOST NodeMappingCUDA* to_device_ptr();
 
     #endif

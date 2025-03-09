@@ -43,7 +43,7 @@ HOST size_t INodeMapping<GPUUsage>::active_size() const {
 
 template<GPUUsageMode GPUUsage>
 HOST typename INodeMapping<GPUUsage>::IntVector INodeMapping<GPUUsage>::get_active_node_ids() const {
-    typename INodeMapping<GPUUsage>::IntVector active_ids;
+    IntVector active_ids;
     active_ids.reserve(this->dense_to_sparse.size());
     for (int sparse_id : this->dense_to_sparse) {
         if (!this->is_deleted[sparse_id]) {

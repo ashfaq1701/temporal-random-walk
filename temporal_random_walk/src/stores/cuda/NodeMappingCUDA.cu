@@ -6,6 +6,9 @@
 
 #include <thrust/extrema.h>
 #include <thrust/count.h>
+#include <thrust/device_vector.h>
+#include <thrust/iterator/counting_iterator.h>
+#include <thrust/copy.h>
 
 HOST DEVICE int to_dense(const int* sparse_to_dense, const int sparse_id, const int size) {
     return (sparse_id < size) ? sparse_to_dense[sparse_id] : -1;
@@ -144,6 +147,34 @@ HOST NodeMappingCUDA<GPUUsage>* NodeMappingCUDA<GPUUsage>::to_device_ptr() {
 
     return device_node_mapping;
 }
+
+template <GPUUsageMode GPUUsage>
+HOST typename INodeMapping<GPUUsage>::IntVector NodeMappingCUDA<GPUUsage>::get_active_node_ids() const {
+    typename INodeMapping<GPUUsage>::IntVector active_ids;
+
+    const bool* is_deleted_ptr = thrust::raw_pointer_cast(this->is_deleted.data());
+
+    size_t num_active = thrust::count_if(
+        this->dense_to_sparse.begin(),
+        this->dense_to_sparse.end(),
+        [is_deleted_ptr] __device__(const int sparse_id) {
+            return !is_deleted_ptr[sparse_id];
+        });
+
+    active_ids.resize(num_active);
+
+    thrust::copy_if(
+        this->dense_to_sparse.begin(),
+        this->dense_to_sparse.end(),
+        active_ids.begin(),
+        [is_deleted_ptr] __device__(int sparse_id) {
+            return !is_deleted_ptr[sparse_id];
+        });
+
+    return active_ids;
+}
+
+
 
 template class NodeMappingCUDA<GPUUsageMode::ON_GPU>;
 #endif

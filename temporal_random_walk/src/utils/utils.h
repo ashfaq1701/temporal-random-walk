@@ -10,6 +10,25 @@ template<GPUUsageMode GPUUsage>
 typename SelectVectorType<int, GPUUsage>::type repeat_elements(
     const typename SelectVectorType<int, GPUUsage>::type& arr,
     int times) {
+    #ifdef HAS_CUDA
+    const size_t input_size = arr.size();
+    const size_t output_size = input_size * times;
+
+    typename SelectVectorType<int, GPUUsage>::type repeated_items;
+    repeated_items.resize(output_size);
+
+    thrust::transform(
+        thrust::counting_iterator(0),
+        thrust::counting_iterator<int>(output_size),
+        repeated_items.begin(),
+        [=] __device__ (const int idx) {
+            int original_idx = idx / times;
+            return thrust::raw_pointer_cast(arr.data())[original_idx];
+        }
+    );
+
+    return repeated_items;
+    #else
     typename SelectVectorType<int, GPUUsage>::type repeated_items;
     repeated_items.reserve(arr.size() * times);
 
@@ -20,6 +39,7 @@ typename SelectVectorType<int, GPUUsage>::type repeat_elements(
     }
 
     return repeated_items;
+    #endif
 }
 
 template <typename T, GPUUsageMode GPUUsage>
