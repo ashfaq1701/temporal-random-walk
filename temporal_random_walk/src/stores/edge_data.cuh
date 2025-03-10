@@ -46,7 +46,7 @@ namespace edge_data {
 
     HOST bool add_edges(int* sources, int* targets, int64_t* timestamps, size_t size);
 
-    HOST std::vector<Edge> get_edges(const EdgeData* edge_data);
+    HOST DataBlock<Edge> get_edges(const EdgeData* edge_data);
 
     HOST SizeRange get_timestamp_group_range(const EdgeData* edge_data);
 
@@ -67,7 +67,7 @@ namespace edge_data {
     HOST void update_temporal_weights_cuda(const EdgeData* edge_data);
 
     /**
-     * Device implementations
+     * Device functions
      */
     DEVICE size_t get_timestamp_group_count_device(const EdgeData* edge_data);
 

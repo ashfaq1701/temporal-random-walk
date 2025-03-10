@@ -5,11 +5,12 @@
 #include "macros.cuh"
 
 template <typename T>
-HOST T* allocate_memory(int size, bool use_gpu) {
+HOST void allocate_memory(T** data_ptr, int size, bool use_gpu) {
+
 }
 
 template <typename T>
-HOST T* resize_memory(T* memory, size_t size, size_t new_size, bool use_gpu) {
+HOST void resize_memory(T** data_ptr, size_t size, size_t new_size, bool use_gpu) {
 
 }
 

@@ -72,6 +72,10 @@ namespace node_edge_index {
 
     HOST void allocate_node_timestamp_indices(NodeEdgeIndex* node_edge_index, bool is_directed);
 
+    /**
+     * Std implementations
+     */
+
     HOST void populate_dense_ids_std(
         NodeEdgeIndex* node_edge_index,
         EdgeData* edge_data,
@@ -80,23 +84,7 @@ namespace node_edge_index {
         int* dense_targets
     );
 
-    HOST void populate_dense_ids_cuda(
-        NodeEdgeIndex* node_edge_index,
-        EdgeData* edge_data,
-        NodeMapping* node_mapping,
-        int* dense_sources,
-        int* dense_targets
-    );
-
     HOST void compute_node_edge_offsets_std(
-        NodeEdgeIndex* node_edge_index,
-        EdgeData* edge_data,
-        int* dense_sources,
-        int* dense_targets,
-        bool is_directed
-    );
-
-    HOST void compute_node_edge_offsets_cuda(
         NodeEdgeIndex* node_edge_index,
         EdgeData* edge_data,
         int* dense_sources,
@@ -113,6 +101,40 @@ namespace node_edge_index {
         bool is_directed
     );
 
+    HOST void compute_node_timestamp_offsets_std(
+        NodeEdgeIndex* node_edge_index,
+        EdgeData* edge_data,
+        size_t num_nodes,
+        bool is_directed
+    );
+
+    HOST void compute_node_timestamp_indices_std(
+        NodeEdgeIndex* node_edge_index,
+        EdgeData* edge_data,
+        size_t num_nodes,
+        bool is_directed
+    );
+
+    /**
+     * Cuda implementations
+     */
+
+    HOST void populate_dense_ids_cuda(
+        NodeEdgeIndex* node_edge_index,
+        EdgeData* edge_data,
+        NodeMapping* node_mapping,
+        int* dense_sources,
+        int* dense_targets
+    );
+
+    HOST void compute_node_edge_offsets_cuda(
+        NodeEdgeIndex* node_edge_index,
+        EdgeData* edge_data,
+        int* dense_sources,
+        int* dense_targets,
+        bool is_directed
+    );
+
     HOST void compute_node_edge_indices_cuda(
         NodeEdgeIndex* node_edge_index,
         EdgeData* edge_data,
@@ -122,21 +144,7 @@ namespace node_edge_index {
         bool is_directed
     );
 
-    HOST void compute_node_timestamp_offsets_std(
-        NodeEdgeIndex* node_edge_index,
-        EdgeData* edge_data,
-        size_t num_nodes,
-        bool is_directed
-    );
-
     HOST void compute_node_timestamp_offsets_cuda(
-        NodeEdgeIndex* node_edge_index,
-        EdgeData* edge_data,
-        size_t num_nodes,
-        bool is_directed
-    );
-
-    HOST void compute_node_timestamp_indices_std(
         NodeEdgeIndex* node_edge_index,
         EdgeData* edge_data,
         size_t num_nodes,
