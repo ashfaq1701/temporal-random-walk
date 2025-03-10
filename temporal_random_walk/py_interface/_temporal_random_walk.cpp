@@ -5,7 +5,7 @@
 #include "temporal_random_walk_proxy.h"
 #include "random_picker_proxies.h"
 #include <stdexcept>
-#include "../src/data/enums.h"
+#include "../src/stores/enums.h"
 #include "../src/core/TemporalRandomWalk.cuh"
 
 

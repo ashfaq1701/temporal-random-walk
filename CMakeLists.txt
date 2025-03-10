@@ -33,38 +33,11 @@ if(HAS_CUDA)
 endif()
 
 set(SRC_FILES
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/cuda_common/setup.cu
-
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/random/IndexBasedRandomPicker.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/random/WeightBasedRandomPicker.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/random/ExponentialIndexRandomPicker.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/random/LinearRandomPicker.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/random/UniformRandomPicker.cu
-
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/interfaces/IEdgeData.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/interfaces/INodeEdgeIndex.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/interfaces/INodeMapping.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/interfaces/ITemporalGraph.cu
-
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/cpu/EdgeDataCPU.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/cpu/NodeEdgeIndexCPU.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/cpu/NodeMappingCPU.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/cpu/TemporalGraphCPU.cu
-
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/cuda/EdgeDataCUDA.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/cuda/NodeEdgeIndexCUDA.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/cuda/NodeMappingCUDA.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/cuda/TemporalGraphCUDA.cu
-
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/proxies/EdgeData.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/proxies/NodeEdgeIndex.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/proxies/NodeMapping.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/proxies/TemporalGraph.cu
-
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/core/ITemporalRandomWalk.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/core/TemporalRandomWalkCPU.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/core/TemporalRandomWalkCUDA.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/core/TemporalRandomWalk.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/edge_data.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/node_edge_index.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/node_mapping.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/temporal_graph.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/random/pickers.cu
 )
 
 if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
