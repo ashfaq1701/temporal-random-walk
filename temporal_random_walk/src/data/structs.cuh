@@ -276,25 +276,25 @@ struct WalkSet
             cudaMemcpy(&h_walk_set, d_walk_set, sizeof(WalkSet<GPUUsage>), cudaMemcpyDeviceToHost);
 
             // Ensure host vectors are properly sized
-            h_walk_set.nodes_cpu.resize(h_walk_set.total_len);
-            h_walk_set.timestamps_cpu.resize(h_walk_set.total_len);
-            h_walk_set.walk_lens_cpu.resize(h_walk_set.num_walks);
+            nodes_cpu.resize(h_walk_set.total_len);
+            timestamps_cpu.resize(h_walk_set.total_len);
+            walk_lens_cpu.resize(h_walk_set.num_walks);
 
             // Copy data from device memory to CPU vectors
             cudaMemcpy(
-                h_walk_set.nodes_cpu.data(),
+                nodes_cpu.data(),
                 h_walk_set.nodes_ptr,
                 sizeof(int) * h_walk_set.total_len,
                 cudaMemcpyDeviceToHost);
 
             cudaMemcpy(
-                h_walk_set.timestamps_cpu.data(),
+                timestamps_cpu.data(),
                 h_walk_set.timestamps_ptr,
                 sizeof(int64_t) * h_walk_set.total_len,
                 cudaMemcpyDeviceToHost);
 
             cudaMemcpy(
-                h_walk_set.walk_lens_cpu.data(),
+                walk_lens_cpu.data(),
                 h_walk_set.walk_lens_ptr,
                 sizeof(size_t) * h_walk_set.num_walks,
                 cudaMemcpyDeviceToHost);

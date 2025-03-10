@@ -37,7 +37,6 @@ __global__ void generate_random_walks_kernel(
     const bool is_directed,
     const WalkDirection walk_direction,
     const int num_walks) {
-
     const int walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (walk_idx >= num_walks) return;
 
@@ -150,6 +149,8 @@ HOST WalkSet<GPUUsage> TemporalRandomWalkCUDA<GPUUsage>::get_random_walks_and_ti
     WalkSet<GPUUsage> walk_set(repeated_node_ids.size(), max_walk_len);
     WalkSet<GPUUsage>* d_walk_set = walk_set.to_device_ptr();
 
+    cudaDeviceSynchronize();
+
     generate_random_walks_kernel<<<grid_dim, block_dim>>>(
         d_walk_set,
         graph,
@@ -163,7 +164,19 @@ HOST WalkSet<GPUUsage> TemporalRandomWalkCUDA<GPUUsage>::get_random_walks_and_ti
         repeated_node_ids.size()
     );
 
-    cudaDeviceSynchronize();
+    // Check for launch errors
+    cudaError_t launchError = cudaGetLastError();
+    if (launchError != cudaSuccess) {
+        std::cerr << "Kernel launch error: " << cudaGetErrorString(launchError) << std::endl;
+        // Handle error
+    }
+
+    // Synchronize and check for runtime errors
+    cudaError_t syncError = cudaDeviceSynchronize();
+    if (syncError != cudaSuccess) {
+        std::cerr << "Kernel execution error: " << cudaGetErrorString(syncError) << std::endl;
+        // Handle error
+    }
 
     walk_set.copy_from_device(d_walk_set);
 
