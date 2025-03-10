@@ -12,15 +12,32 @@
 struct TemporalGraph {
     bool is_directed;
     bool use_gpu;
+    int64_t max_time_capacity;
+    bool enable_weight_computation;
+    double timescale_bound;
 
-    EdgeData* edge_data;
-    NodeEdgeIndex* node_edge_index;
-    NodeMapping* node_mapping;
+    EdgeData *edge_data;
+    NodeEdgeIndex *node_edge_index;
+    NodeMapping *node_mapping;
 
-    explicit TemporalGraph(const bool is_directed, const bool use_gpu): is_directed(is_directed), use_gpu(use_gpu) {
+    explicit TemporalGraph(
+        const bool is_directed,
+        const bool use_gpu,
+        const int64_t max_time_capacity,
+        const bool enable_weight_computation,
+        const double timescale_bound):
+        is_directed(is_directed), use_gpu(use_gpu), max_time_capacity(max_time_capacity),
+        enable_weight_computation(enable_weight_computation), timescale_bound(timescale_bound) {
+
         edge_data = new EdgeData(use_gpu);
         node_edge_index = new NodeEdgeIndex(use_gpu);
         node_mapping = new NodeMapping(use_gpu);
+    }
+
+    ~TemporalGraph() {
+        delete edge_data;
+        delete node_edge_index;
+        delete node_mapping;
     }
 };
 
@@ -84,15 +101,31 @@ namespace temporal_graph {
 
     HOST Edge get_edge_at_host(TemporalGraph* graph, RandomPickerType picker_type, int64_t timestamp, bool forward);
 
-    HOST Edge get_node_edge_at_host(TemporalGraph* graph, int node_id, RandomPickerType picker_type, int64_t timestamp, bool forward);
+    HOST Edge get_node_edge_at_host(
+        TemporalGraph* graph,
+        int node_id,
+        RandomPickerType picker_type,
+        int64_t timestamp,
+        bool forward);
 
     /**
      * Device functions
      */
 
-    DEVICE Edge get_edge_at_device(TemporalGraph* graph, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state);
+    DEVICE Edge get_edge_at_device(
+        TemporalGraph* graph,
+        RandomPickerType picker_type,
+        int64_t timestamp,
+        bool forward,
+        curandState* rand_state);
 
-    DEVICE Edge get_node_edge_at_device(TemporalGraph* graph, int node_id, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state);
+    DEVICE Edge get_node_edge_at_device(
+        TemporalGraph* graph,
+        int node_id,
+        RandomPickerType picker_type,
+        int64_t timestamp,
+        bool forward,
+        curandState* rand_state);
 
 }
 

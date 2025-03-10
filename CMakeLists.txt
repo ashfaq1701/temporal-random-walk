@@ -38,6 +38,8 @@ set(SRC_FILES
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/node_mapping.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/temporal_graph.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/random/pickers.cu
+
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/core/temporal_random_walk.cu
 )
 
 if(HAS_CUDA AND CMAKE_CUDA_COMPILER)

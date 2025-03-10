@@ -45,6 +45,34 @@ struct NodeEdgeIndex {
     size_t inbound_backward_cumulative_weights_exponential_size = 0;
 
     explicit NodeEdgeIndex(const bool use_gpu): use_gpu(use_gpu) {}
+
+    ~NodeEdgeIndex() {
+        if (use_gpu) {
+            if (outbound_offsets) cudaFree(outbound_offsets);
+            if (inbound_offsets) cudaFree(inbound_offsets);
+            if (outbound_indices) cudaFree(outbound_indices);
+            if (inbound_indices) cudaFree(inbound_indices);
+            if (outbound_timestamp_group_offsets) cudaFree(outbound_timestamp_group_offsets);
+            if (inbound_timestamp_group_offsets) cudaFree(inbound_timestamp_group_offsets);
+            if (outbound_timestamp_group_indices) cudaFree(outbound_timestamp_group_indices);
+            if (inbound_timestamp_group_indices) cudaFree(inbound_timestamp_group_indices);
+            if (outbound_forward_cumulative_weights_exponential) cudaFree(outbound_forward_cumulative_weights_exponential);
+            if (inbound_forward_cumulative_weights_exponential) cudaFree(inbound_forward_cumulative_weights_exponential);
+            if (inbound_backward_cumulative_weights_exponential) cudaFree(inbound_backward_cumulative_weights_exponential);
+        } else {
+            delete[] outbound_offsets;
+            delete[] inbound_offsets;
+            delete[] outbound_indices;
+            delete[] inbound_indices;
+            delete[] outbound_timestamp_group_offsets;
+            delete[] inbound_timestamp_group_offsets;
+            delete[] outbound_timestamp_group_indices;
+            delete[] inbound_timestamp_group_indices;
+            delete[] outbound_forward_cumulative_weights_exponential;
+            delete[] inbound_forward_cumulative_weights_exponential;
+            delete[] inbound_backward_cumulative_weights_exponential;
+        }
+    }
 };
 
 namespace node_edge_index {

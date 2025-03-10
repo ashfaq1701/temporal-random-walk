@@ -29,51 +29,72 @@ struct EdgeData {
     double* backward_cumulative_weights_exponential = nullptr;
     size_t backward_cumulative_weights_exponential_size = 0;
 
-    explicit EdgeData(const bool use_gpu): use_gpu(use_gpu) {}
+    explicit EdgeData(const bool use_gpu): use_gpu(use_gpu) {
+    }
+
+    ~EdgeData() {
+        if (use_gpu) {
+            if (sources) cudaFree(sources);
+            if (targets) cudaFree(targets);
+            if (timestamps) cudaFree(timestamps);
+            if (timestamp_group_offsets) cudaFree(timestamp_group_offsets);
+            if (unique_timestamps) cudaFree(unique_timestamps);
+            if (forward_cumulative_weights_exponential) cudaFree(forward_cumulative_weights_exponential);
+            if (backward_cumulative_weights_exponential) cudaFree(backward_cumulative_weights_exponential);
+        } else {
+            delete[] sources;
+            delete[] targets;
+            delete[] timestamps;
+            delete[] timestamp_group_offsets;
+            delete[] unique_timestamps;
+            delete[] forward_cumulative_weights_exponential;
+            delete[] backward_cumulative_weights_exponential;
+        }
+    }
 };
 
 namespace edge_data {
     /**
      * Common Functions
      */
-    HOST void reserve(EdgeData* edge_data, size_t size);
+    HOST void reserve(EdgeData *edge_data, size_t size);
 
-    HOST void clear (EdgeData* edge_data);
+    HOST void clear(EdgeData *edge_data);
 
-    HOST size_t size(const EdgeData* edge_data);
+    HOST size_t size(const EdgeData *edge_data);
 
-    HOST bool empty(const EdgeData* edge_data);
+    HOST bool empty(const EdgeData *edge_data);
 
-    HOST bool add_edges(int* sources, int* targets, int64_t* timestamps, size_t size);
+    HOST bool add_edges(int *sources, int *targets, int64_t *timestamps, size_t size);
 
-    HOST DataBlock<Edge> get_edges(const EdgeData* edge_data);
+    HOST DataBlock<Edge> get_edges(const EdgeData *edge_data);
 
-    HOST SizeRange get_timestamp_group_range(const EdgeData* edge_data);
+    HOST SizeRange get_timestamp_group_range(const EdgeData *edge_data);
 
-    HOST size_t get_timestamp_group_count(const EdgeData* edge_data);
+    HOST size_t get_timestamp_group_count(const EdgeData *edge_data);
 
     /**
      * Std implementations
      */
-    HOST void update_timestamp_groups_std(const EdgeData* edge_data);
+    HOST void update_timestamp_groups_std(const EdgeData *edge_data);
 
-    HOST void update_temporal_weights_std(const EdgeData* edge_data);
+    HOST void update_temporal_weights_std(const EdgeData *edge_data);
 
     /**
      * CUDA implementations
      */
-    HOST void update_temporal_weights_cuda(const EdgeData* edge_data);
+    HOST void update_temporal_weights_cuda(const EdgeData *edge_data);
 
-    HOST void update_temporal_weights_cuda(const EdgeData* edge_data);
+    HOST void update_temporal_weights_cuda(const EdgeData *edge_data);
 
     /**
      * Device functions
      */
-    DEVICE size_t get_timestamp_group_count_device(const EdgeData* edge_data);
+    DEVICE size_t get_timestamp_group_count_device(const EdgeData *edge_data);
 
-    DEVICE size_t find_group_after_timestamp_device(const EdgeData* edge_data, int64_t timestamp);
+    DEVICE size_t find_group_after_timestamp_device(const EdgeData *edge_data, int64_t timestamp);
 
-    DEVICE size_t find_group_before_timestamp_device(const EdgeData* edge_data, int64_t timestamp);
+    DEVICE size_t find_group_before_timestamp_device(const EdgeData *edge_data, int64_t timestamp);
 }
 
 #endif // EDGE_DATA_H
