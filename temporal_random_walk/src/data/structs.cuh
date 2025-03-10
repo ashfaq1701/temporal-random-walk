@@ -266,28 +266,38 @@ struct WalkSet
     }
 
     // Method to copy data from a device WalkSet to this host WalkSet
-    HOST void copy_from_device(WalkSet<GPUUsage>* d_walk_set) {
+    HOST void copy_from_device(const WalkSet* d_walk_set) {
         #ifdef HAS_CUDA
         if constexpr (GPUUsage == GPUUsageMode::ON_GPU) {
-            // Get device pointers
-            int* d_nodes_ptr = nullptr;
-            int64_t* d_timestamps_ptr = nullptr;
-            size_t* d_walk_lens_ptr = nullptr;
+            // Allocate a host-side WalkSet
+            WalkSet<GPUUsage> h_walk_set;
 
-            // Copy pointer values from device WalkSet to local variables
-            cudaMemcpy(&d_nodes_ptr, &(d_walk_set->nodes_ptr), sizeof(int*), cudaMemcpyDeviceToHost);
-            cudaMemcpy(&d_timestamps_ptr, &(d_walk_set->timestamps_ptr), sizeof(int64_t*), cudaMemcpyDeviceToHost);
-            cudaMemcpy(&d_walk_lens_ptr, &(d_walk_set->walk_lens_ptr), sizeof(size_t*), cudaMemcpyDeviceToHost);
+            // Copy the entire struct from device to host
+            cudaMemcpy(&h_walk_set, d_walk_set, sizeof(WalkSet<GPUUsage>), cudaMemcpyDeviceToHost);
 
-            // Make sure CPU vectors are properly sized
-            nodes_cpu.resize(total_len);
-            timestamps_cpu.resize(total_len);
-            walk_lens_cpu.resize(num_walks);
+            // Ensure host vectors are properly sized
+            h_walk_set.nodes_cpu.resize(h_walk_set.total_len);
+            h_walk_set.timestamps_cpu.resize(h_walk_set.total_len);
+            h_walk_set.walk_lens_cpu.resize(h_walk_set.num_walks);
 
-            // Copy data from device memory directly to CPU vectors
-            cudaMemcpy(nodes_cpu.data(), d_nodes_ptr, sizeof(int) * total_len, cudaMemcpyDeviceToHost);
-            cudaMemcpy(timestamps_cpu.data(), d_timestamps_ptr, sizeof(int64_t) * total_len, cudaMemcpyDeviceToHost);
-            cudaMemcpy(walk_lens_cpu.data(), d_walk_lens_ptr, sizeof(size_t) * num_walks, cudaMemcpyDeviceToHost);
+            // Copy data from device memory to CPU vectors
+            cudaMemcpy(
+                h_walk_set.nodes_cpu.data(),
+                h_walk_set.nodes_ptr,
+                sizeof(int) * h_walk_set.total_len,
+                cudaMemcpyDeviceToHost);
+
+            cudaMemcpy(
+                h_walk_set.timestamps_cpu.data(),
+                h_walk_set.timestamps_ptr,
+                sizeof(int64_t) * h_walk_set.total_len,
+                cudaMemcpyDeviceToHost);
+
+            cudaMemcpy(
+                h_walk_set.walk_lens_cpu.data(),
+                h_walk_set.walk_lens_ptr,
+                sizeof(size_t) * h_walk_set.num_walks,
+                cudaMemcpyDeviceToHost);
         }
         #endif
     }

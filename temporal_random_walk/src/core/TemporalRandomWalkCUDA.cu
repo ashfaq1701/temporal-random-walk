@@ -137,13 +137,18 @@ HOST WalkSet<GPUUsage> TemporalRandomWalkCUDA<GPUUsage>::get_random_walks_and_ti
 
     auto repeated_node_ids = repeat_elements<GPUUsage>(this->get_node_ids(), num_walks_per_node);
     auto [grid_dim, block_dim] = get_optimal_launch_params(repeated_node_ids.size(), this->cuda_device_prop);
-    shuffle_vector_device<int>(thrust::raw_pointer_cast(repeated_node_ids.data()), repeated_node_ids.size(), grid_dim, block_dim);
+
+    curandState* rand_states = get_cuda_rand_states(grid_dim, block_dim);
+    shuffle_vector_device<int>(
+        thrust::raw_pointer_cast(repeated_node_ids.data()),
+        repeated_node_ids.size(),
+        grid_dim,
+        block_dim,
+        rand_states);
 
     typename ITemporalRandomWalk<GPUUsage>::TemporalGraphType* graph = this->temporal_graph->to_device_ptr();
     WalkSet<GPUUsage> walk_set(repeated_node_ids.size(), max_walk_len);
     WalkSet<GPUUsage>* d_walk_set = walk_set.to_device_ptr();
-
-    curandState* rand_states = get_cuda_rand_states(grid_dim, block_dim);
 
     generate_random_walks_kernel<<<grid_dim, block_dim>>>(
         d_walk_set,

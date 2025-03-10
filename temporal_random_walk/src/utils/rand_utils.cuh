@@ -65,22 +65,25 @@ __global__ void shuffle_kernel(T* vec, const int size, curandState* states) {
     const int idx = threadIdx.x + blockIdx.x * blockDim.x;
     if (idx >= size) return;
 
+    curandState local_state = states[idx];
+
     // Fisher-Yates shuffle (Parallelized)
     for (int i = size - 1; i > 0; --i) {
-        int j = curand(&states[idx]) % (i + 1);
+        int j = curand(&local_state) % (i + 1);
         if (idx == i || idx == j) {
             T temp = vec[i];
             vec[i] = vec[j];
             vec[j] = temp;
         }
     }
+
+    states[idx] = local_state;
 }
 
 template <typename T>
-void shuffle_vector_device(T* data, size_t size, size_t grid_dim, size_t block_dim) {
-    curandState* rand_states = get_cuda_rand_states(grid_dim, block_dim);
+void shuffle_vector_device(T* data, size_t size, size_t grid_dim, size_t block_dim, curandState* rand_states) {
     shuffle_kernel<<<grid_dim, block_dim>>>(data, size, rand_states);
-    cudaFree(rand_states);
+    cudaDeviceSynchronize();
 }
 
 #endif
