@@ -149,16 +149,15 @@ namespace node_edge_index {
      */
 
     HOST void populate_dense_ids_cuda(
-        NodeEdgeIndex* node_edge_index,
-        EdgeData* edge_data,
-        NodeMapping* node_mapping,
+        const EdgeData* edge_data,
+        const NodeMapping* node_mapping,
         int* dense_sources,
         int* dense_targets
     );
 
     HOST void compute_node_edge_offsets_cuda(
         NodeEdgeIndex* node_edge_index,
-        EdgeData* edge_data,
+        const EdgeData* edge_data,
         int* dense_sources,
         int* dense_targets,
         bool is_directed
@@ -169,20 +168,20 @@ namespace node_edge_index {
         EdgeData* edge_data,
         int* dense_sources,
         int* dense_targets,
-        size_t* outbound_edge_indices_buffer,
+        EdgeWithEndpointType* outbound_edge_indices_buffer,
         bool is_directed
     );
 
     HOST void compute_node_timestamp_offsets_cuda(
         NodeEdgeIndex* node_edge_index,
-        EdgeData* edge_data,
+        const EdgeData* edge_data,
         size_t num_nodes,
         bool is_directed
     );
 
     HOST void compute_node_timestamp_indices_cuda(
         NodeEdgeIndex* node_edge_index,
-        EdgeData* edge_data,
+        const EdgeData* edge_data,
         size_t num_nodes,
         bool is_directed
     );

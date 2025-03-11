@@ -1,5 +1,11 @@
 #include "node_edge_index.cuh"
 
+#include <common/cuda_config.cuh>
+#include <thrust/device_ptr.h>
+#include <thrust/iterator/counting_iterator.h>
+#include <thrust/sequence.h>
+#include <thrust/sort.h>
+
 #include "../common/memory.cuh"
 
 HOST void node_edge_index::clear(NodeEdgeIndex* node_edge_index) {
@@ -278,8 +284,8 @@ HOST void node_edge_index::populate_dense_ids_std(
     // Iterate through all edges
     for (size_t i = 0; i < edge_data->timestamps_size; i++) {
         // Convert sparse IDs to dense IDs using node mapping
-        int sparse_src = edge_data->sources[i];
-        int sparse_tgt = edge_data->targets[i];
+        const int sparse_src = edge_data->sources[i];
+        const int sparse_tgt = edge_data->targets[i];
 
         // Use the to_dense function from the node_mapping namespace
         dense_sources[i] = node_mapping::to_dense(node_mapping, sparse_src);
@@ -296,8 +302,8 @@ HOST void node_edge_index::compute_node_edge_offsets_std(
 ) {
     // First pass: count edges per node
     for (size_t i = 0; i < edge_data->timestamps_size; i++) {
-        int src_idx = dense_sources[i];
-        int tgt_idx = dense_targets[i];
+        const int src_idx = dense_sources[i];
+        const int tgt_idx = dense_targets[i];
 
         // Count outbound edges (increment the count at index src_idx + 1)
         node_edge_index->outbound_offsets[src_idx + 1]++;
@@ -333,7 +339,7 @@ HOST void node_edge_index::compute_node_edge_indices_std(
 
     // Fill the buffer with edge information
     for (size_t i = 0; i < edges_size; i++) {
-        size_t outbound_index = is_directed ? i : i * 2;
+        const size_t outbound_index = is_directed ? i : i * 2;
         outbound_edge_indices_buffer[outbound_index] = EdgeWithEndpointType{static_cast<long>(i), true};
 
         if (is_directed) {
@@ -496,4 +502,355 @@ HOST void node_edge_index::compute_node_timestamp_indices_std(
             }
         }
     }
+}
+
+HOST void node_edge_index::populate_dense_ids_cuda(
+    const EdgeData* edge_data,
+    const NodeMapping* node_mapping,
+    int* dense_sources,
+    int* dense_targets
+) {
+    // Create device pointers from raw pointers
+    thrust::device_ptr<int> d_sources(edge_data->sources);
+    thrust::device_ptr<int> d_targets(edge_data->targets);
+    thrust::device_ptr<int> d_dense_sources(dense_sources);
+    thrust::device_ptr<int> d_dense_targets(dense_targets);
+
+    // Get raw pointer to sparse_to_dense mapping
+    int* sparse_to_dense_ptr = node_mapping->sparse_to_dense;
+    size_t sparse_to_dense_size = node_mapping->sparse_to_dense_size;
+
+    // Transform source IDs from sparse to dense
+    thrust::transform(
+        DEVICE_EXECUTION_POLICY,
+        d_sources,
+        d_sources + static_cast<long>(edge_data->sources_size),
+        d_dense_sources,
+        [sparse_to_dense_ptr, sparse_to_dense_size] __device__ (const int id) {
+            return node_mapping::to_dense_from_ptr_device(sparse_to_dense_ptr, id, sparse_to_dense_size);
+        }
+    );
+
+    // Transform target IDs from sparse to dense
+    thrust::transform(
+        DEVICE_EXECUTION_POLICY,
+        d_targets,
+        d_targets + static_cast<long>(edge_data->targets_size),
+        d_dense_targets,
+        [sparse_to_dense_ptr, sparse_to_dense_size] __device__ (const int id) {
+            return node_mapping::to_dense_from_ptr_device(sparse_to_dense_ptr, id, sparse_to_dense_size);
+        }
+    );
+}
+
+HOST void node_edge_index::compute_node_edge_offsets_cuda(
+    NodeEdgeIndex* node_edge_index,
+    const EdgeData* edge_data,
+    int* dense_sources,
+    int* dense_targets,
+    bool is_directed
+) {
+    const size_t num_edges = edge_data->timestamps_size;
+
+    // Get raw pointers to work with
+    size_t* outbound_offsets_ptr = node_edge_index->outbound_offsets;
+    size_t* inbound_offsets_ptr = is_directed ? node_edge_index->inbound_offsets : nullptr;
+    int* src_ptr = dense_sources;
+    int* tgt_ptr = dense_targets;
+
+    // Count edges per node using atomics
+    auto counter_device_lambda = [
+        outbound_offsets_ptr, inbound_offsets_ptr,
+        src_ptr, tgt_ptr, is_directed] __device__ (const size_t i) {
+        const int src_idx = src_ptr[i];
+        const int tgt_idx = tgt_ptr[i];
+
+        atomicAdd(reinterpret_cast<unsigned int *>(&outbound_offsets_ptr[src_idx + 1]), 1);
+        if (is_directed) {
+            atomicAdd(reinterpret_cast<unsigned int *>(&inbound_offsets_ptr[tgt_idx + 1]), 1);
+        } else {
+            atomicAdd(reinterpret_cast<unsigned int *>(&outbound_offsets_ptr[tgt_idx + 1]), 1);
+        }
+    };
+
+    // Process all edges in parallel
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(num_edges),
+        counter_device_lambda);
+
+    // Calculate prefix sums for outbound edge offsets
+    thrust::device_ptr<size_t> d_outbound_offsets(outbound_offsets_ptr);
+    thrust::inclusive_scan(
+        DEVICE_EXECUTION_POLICY,
+        d_outbound_offsets + 1,
+        d_outbound_offsets + static_cast<long>(node_edge_index->outbound_offsets_size),
+        d_outbound_offsets + 1
+    );
+
+    // Calculate prefix sums for inbound edge offsets (if directed)
+    if (is_directed) {
+        thrust::device_ptr<size_t> d_inbound_offsets(inbound_offsets_ptr);
+        thrust::inclusive_scan(
+            DEVICE_EXECUTION_POLICY,
+            d_inbound_offsets + 1,
+            d_inbound_offsets + static_cast<long>(node_edge_index->inbound_offsets_size),
+            d_inbound_offsets + 1
+        );
+    }
+}
+
+HOST void compute_node_edge_indices_cuda(
+    NodeEdgeIndex* node_edge_index,
+    const EdgeData* edge_data,
+    const int* dense_sources,
+    const int* dense_targets,
+    EdgeWithEndpointType* outbound_edge_indices_buffer,
+    bool is_directed) {
+
+    const size_t edges_size = edge_data->timestamps_size;
+    const size_t buffer_size = is_directed ? edges_size : edges_size * 2;
+
+    // Initialize outbound_edge_indices_buffer with edge IDs
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(edges_size),
+        [outbound_edge_indices_buffer, is_directed] __device__ (const size_t i) {
+            size_t outbound_index = is_directed ? i : i * 2;
+            outbound_edge_indices_buffer[outbound_index] = EdgeWithEndpointType{static_cast<long>(i), true};
+
+            if (!is_directed) {
+                outbound_edge_indices_buffer[outbound_index + 1] = EdgeWithEndpointType{static_cast<long>(i), false};
+            }
+        }
+    );
+
+    // Initialize inbound_indices for directed graphs
+    if (is_directed) {
+        thrust::device_ptr<size_t> d_inbound_indices(node_edge_index->inbound_indices);
+        thrust::sequence(
+            DEVICE_EXECUTION_POLICY,
+            d_inbound_indices,
+            d_inbound_indices + static_cast<long>(edges_size)
+        );
+    }
+
+    // Wrap buffer with device pointer for sorting
+    thrust::device_ptr<EdgeWithEndpointType> d_buffer(outbound_edge_indices_buffer);
+
+    // Sort outbound_edge_indices_buffer by node ID
+    thrust::stable_sort(
+        DEVICE_EXECUTION_POLICY,
+        d_buffer,
+        d_buffer + static_cast<long>(buffer_size),
+        [dense_sources, dense_targets] __device__ (
+            const EdgeWithEndpointType& a, const EdgeWithEndpointType& b) {
+            const int node_a = a.is_source ? dense_sources[a.edge_id] : dense_targets[a.edge_id];
+            const int node_b = b.is_source ? dense_sources[b.edge_id] : dense_targets[b.edge_id];
+            return node_a < node_b;
+        }
+    );
+
+    // Sort inbound_indices for directed graphs
+    if (is_directed) {
+        thrust::device_ptr<size_t> d_inbound_indices(node_edge_index->inbound_indices);
+        thrust::stable_sort(
+            DEVICE_EXECUTION_POLICY,
+            d_inbound_indices,
+            d_inbound_indices + static_cast<long>(edges_size),
+            [dense_targets] __device__ (size_t a, size_t b) {
+                return dense_targets[a] < dense_targets[b];
+            }
+        );
+    }
+
+    // Extract edge_id from buffer to outbound_indices
+    thrust::device_ptr<size_t> d_outbound_indices(node_edge_index->outbound_indices);
+    thrust::transform(
+        DEVICE_EXECUTION_POLICY,
+        d_buffer,
+        d_buffer + static_cast<long>(buffer_size),
+        d_outbound_indices,
+        [] __device__ (const EdgeWithEndpointType& edge_with_type) {
+            return edge_with_type.edge_id;
+        }
+    );
+}
+
+HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
+    NodeEdgeIndex* node_edge_index,
+    const EdgeData* edge_data,
+    const size_t num_nodes,
+    const bool is_directed
+) {
+    // Allocate device memory for temporary arrays to count groups per node
+    size_t* d_outbound_group_count = nullptr;
+    size_t* d_inbound_group_count = nullptr;
+
+    cudaMalloc(&d_outbound_group_count, num_nodes * sizeof(size_t));
+    cudaMemset(d_outbound_group_count, 0, num_nodes * sizeof(size_t));
+
+    if (is_directed) {
+        cudaMalloc(&d_inbound_group_count, num_nodes * sizeof(size_t));
+        cudaMemset(d_inbound_group_count, 0, num_nodes * sizeof(size_t));
+    }
+
+    // Get raw pointers for data access in kernel
+    int64_t* timestamps_ptr = edge_data->timestamps;
+    size_t* outbound_offsets_ptr = node_edge_index->outbound_offsets;
+    size_t* inbound_offsets_ptr = is_directed ? node_edge_index->inbound_offsets : nullptr;
+    size_t* outbound_indices_ptr = node_edge_index->outbound_indices;
+    size_t* inbound_indices_ptr = is_directed ? node_edge_index->inbound_indices : nullptr;
+
+    size_t* outbound_group_count_ptr = d_outbound_group_count;
+    size_t* inbound_group_count_ptr = d_inbound_group_count;
+
+    // Fill timestamp groups counts
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(num_nodes),
+        [outbound_offsets_ptr, inbound_offsets_ptr,
+         outbound_indices_ptr, inbound_indices_ptr,
+         outbound_group_count_ptr, inbound_group_count_ptr,
+         timestamps_ptr, is_directed] __device__ (const size_t node) {
+            // Outbound groups
+            size_t start = outbound_offsets_ptr[node];
+            size_t end = outbound_offsets_ptr[node + 1];
+
+            if (start < end) {
+                outbound_group_count_ptr[node] = 1; // First group always exists
+
+                for (size_t i = start + 1; i < end; ++i) {
+                    if (timestamps_ptr[outbound_indices_ptr[i]] !=
+                        timestamps_ptr[outbound_indices_ptr[i - 1]]) {
+                        atomicAdd(reinterpret_cast<unsigned int*>(&outbound_group_count_ptr[node]), 1);
+                    }
+                }
+            }
+
+            // Inbound groups for directed graphs
+            if (is_directed) {
+                start = inbound_offsets_ptr[node];
+                end = inbound_offsets_ptr[node + 1];
+
+                if (start < end) {
+                    inbound_group_count_ptr[node] = 1; // First group always exists
+
+                    for (size_t i = start + 1; i < end; ++i) {
+                        if (timestamps_ptr[inbound_indices_ptr[i]] !=
+                            timestamps_ptr[inbound_indices_ptr[i - 1]]) {
+                            atomicAdd(reinterpret_cast<unsigned int*>(&inbound_group_count_ptr[node]), 1);
+                        }
+                    }
+                }
+            }
+        }
+    );
+
+    // Create device pointers for prefix scan
+    thrust::device_ptr<size_t> d_outbound_group_count_thrust(d_outbound_group_count);
+    thrust::device_ptr<size_t> d_outbound_timestamp_group_offsets(node_edge_index->outbound_timestamp_group_offsets);
+
+    // First element should be 0
+    cudaMemset(node_edge_index->outbound_timestamp_group_offsets, 0, sizeof(size_t));
+
+    // Calculate prefix sum for outbound group offsets
+    thrust::inclusive_scan(
+        DEVICE_EXECUTION_POLICY,
+        d_outbound_group_count_thrust,
+        d_outbound_group_count_thrust + static_cast<long>(num_nodes),
+        d_outbound_timestamp_group_offsets + 1
+    );
+
+    // Inbound processing for directed graphs
+    if (is_directed) {
+        thrust::device_ptr<size_t> d_inbound_group_count_thrust(d_inbound_group_count);
+        thrust::device_ptr<size_t> d_inbound_timestamp_group_offsets(node_edge_index->inbound_timestamp_group_offsets);
+
+        // First element should be 0
+        cudaMemset(node_edge_index->inbound_timestamp_group_offsets, 0, sizeof(size_t));
+
+        // Calculate prefix sum for inbound group offsets
+        thrust::inclusive_scan(
+            DEVICE_EXECUTION_POLICY,
+            d_inbound_group_count_thrust,
+            d_inbound_group_count_thrust + static_cast<long>(num_nodes),
+            d_inbound_timestamp_group_offsets + 1
+        );
+    }
+
+    // Free temporary memory
+    cudaFree(d_outbound_group_count);
+    if (is_directed) {
+        cudaFree(d_inbound_group_count);
+    }
+}
+
+HOST void node_edge_index::compute_node_timestamp_indices_cuda(
+    NodeEdgeIndex* node_edge_index,
+    const EdgeData* edge_data,
+    const size_t num_nodes,
+    const bool is_directed
+) {
+    // Get raw pointers for data access in kernel
+    int64_t* timestamps_ptr = edge_data->timestamps;
+    size_t* outbound_offsets_ptr = node_edge_index->outbound_offsets;
+    size_t* inbound_offsets_ptr = is_directed ? node_edge_index->inbound_offsets : nullptr;
+    size_t* outbound_indices_ptr = node_edge_index->outbound_indices;
+    size_t* inbound_indices_ptr = is_directed ? node_edge_index->inbound_indices : nullptr;
+    size_t* outbound_timestamp_group_indices_ptr = node_edge_index->outbound_timestamp_group_indices;
+    size_t* inbound_timestamp_group_indices_ptr = is_directed ? node_edge_index->inbound_timestamp_group_indices : nullptr;
+    size_t* outbound_timestamp_group_offsets_ptr = node_edge_index->outbound_timestamp_group_offsets;
+    size_t* inbound_timestamp_group_offsets_ptr = is_directed ? node_edge_index->inbound_timestamp_group_offsets : nullptr;
+
+    // Fill timestamp group indices
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(num_nodes),
+        [outbound_offsets_ptr, inbound_offsets_ptr,
+         outbound_indices_ptr, inbound_indices_ptr,
+         outbound_timestamp_group_offsets_ptr, inbound_timestamp_group_offsets_ptr,
+         outbound_timestamp_group_indices_ptr, inbound_timestamp_group_indices_ptr,
+         timestamps_ptr, is_directed] __device__ (const size_t node) {
+            // Outbound timestamp groups
+            size_t start = outbound_offsets_ptr[node];
+            size_t end = outbound_offsets_ptr[node + 1];
+            size_t group_pos = outbound_timestamp_group_offsets_ptr[node];
+
+            if (start < end) {
+                // First group always starts at the first edge
+                outbound_timestamp_group_indices_ptr[group_pos++] = start;
+
+                for (size_t i = start + 1; i < end; ++i) {
+                    if (timestamps_ptr[outbound_indices_ptr[i]] !=
+                        timestamps_ptr[outbound_indices_ptr[i-1]]) {
+                        outbound_timestamp_group_indices_ptr[group_pos++] = i;
+                    }
+                }
+            }
+
+            // Inbound timestamp groups for directed graphs
+            if (is_directed) {
+                start = inbound_offsets_ptr[node];
+                end = inbound_offsets_ptr[node + 1];
+                group_pos = inbound_timestamp_group_offsets_ptr[node];
+
+                if (start < end) {
+                    // First group always starts at the first edge
+                    inbound_timestamp_group_indices_ptr[group_pos++] = start;
+
+                    for (size_t i = start + 1; i < end; ++i) {
+                        if (timestamps_ptr[inbound_indices_ptr[i]] !=
+                            timestamps_ptr[inbound_indices_ptr[i-1]]) {
+                            inbound_timestamp_group_indices_ptr[group_pos++] = i;
+                        }
+                    }
+                }
+            }
+        }
+    );
 }

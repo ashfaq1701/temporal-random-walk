@@ -71,7 +71,7 @@ namespace node_mapping {
      */
     DEVICE int to_dense_device(NodeMapping *node_mapping, int sparse_id);
 
-    DEVICE int to_dense_from_ptr_device(int *sparse_to_dense, int sparse_id, int size);
+    DEVICE int to_dense_from_ptr_device(int *sparse_to_dense, int sparse_id, size_t size);
 
     DEVICE void mark_node_deleted_from_ptr(bool *is_deleted, int sparse_id, int size);
 
