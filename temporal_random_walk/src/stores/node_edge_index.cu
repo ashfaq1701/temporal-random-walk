@@ -920,8 +920,8 @@ HOST void node_edge_index::rebuild(NodeEdgeIndex* node_edge_index, EdgeData* edg
 
 HOST void node_edge_index::compute_temporal_weights_std(
     NodeEdgeIndex* node_edge_index,
-    EdgeData* edge_data,
-    double timescale_bound
+    const EdgeData* edge_data,
+    const double timescale_bound
 ) {
     const size_t num_nodes = node_edge_index->outbound_offsets_size - 1;
 
@@ -1121,10 +1121,6 @@ HOST void node_edge_index::compute_temporal_weights_cuda(
         size_t* outbound_group_indices_ptr = node_edge_index->outbound_timestamp_group_indices;
         size_t* outbound_offsets_ptr = outbound_offsets.data;
 
-        // Wrap pointers for thrust algorithms
-        thrust::device_ptr<double> d_forward_weights_ptr(d_forward_weights);
-        thrust::device_ptr<double> d_backward_weights_ptr(d_backward_weights);
-
         // Calculate weights in parallel for each node
         thrust::for_each(
             thrust::device,
@@ -1132,7 +1128,7 @@ HOST void node_edge_index::compute_temporal_weights_cuda(
             thrust::make_counting_iterator<size_t>(num_nodes),
             [timestamps_ptr, outbound_indices_ptr, outbound_group_indices_ptr,
              outbound_offsets_ptr, d_forward_weights, d_backward_weights, timescale_bound]
-             __device__ (size_t node) {
+             __device__ (const size_t node) {
                 const size_t out_start = outbound_offsets_ptr[node];
                 const size_t out_end = outbound_offsets_ptr[node + 1];
 
@@ -1224,9 +1220,6 @@ HOST void node_edge_index::compute_temporal_weights_cuda(
         size_t* inbound_group_indices_ptr = node_edge_index->inbound_timestamp_group_indices;
         size_t* inbound_offsets_ptr = inbound_offsets.data;
 
-        // Wrap pointer for thrust algorithms
-        thrust::device_ptr<double> d_backward_weights_ptr(d_backward_weights);
-
         // Calculate weights in parallel for each node
         thrust::for_each(
             thrust::device,
@@ -1234,7 +1227,7 @@ HOST void node_edge_index::compute_temporal_weights_cuda(
             thrust::make_counting_iterator<size_t>(num_nodes),
             [timestamps_ptr, inbound_indices_ptr, inbound_group_indices_ptr,
              inbound_offsets_ptr, d_backward_weights, timescale_bound]
-             __device__ (size_t node) {
+             __device__ (const size_t node) {
                 const size_t in_start = inbound_offsets_ptr[node];
                 const size_t in_end = inbound_offsets_ptr[node + 1];
 
