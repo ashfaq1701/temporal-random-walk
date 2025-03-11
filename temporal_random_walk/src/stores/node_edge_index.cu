@@ -1123,7 +1123,7 @@ HOST void node_edge_index::compute_temporal_weights_cuda(
 
         // Calculate weights in parallel for each node
         thrust::for_each(
-            thrust::device,
+            DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(num_nodes),
             [timestamps_ptr, outbound_indices_ptr, outbound_group_indices_ptr,
@@ -1222,7 +1222,7 @@ HOST void node_edge_index::compute_temporal_weights_cuda(
 
         // Calculate weights in parallel for each node
         thrust::for_each(
-            thrust::device,
+            DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(num_nodes),
             [timestamps_ptr, inbound_indices_ptr, inbound_group_indices_ptr,

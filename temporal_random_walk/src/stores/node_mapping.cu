@@ -1,7 +1,9 @@
 #include "node_mapping.cuh"
 
 #include "../common/memory.cuh"
-
+#include <common/cuda_config.cuh>
+#include <thrust/device_ptr.h>
+#include <thrust/extrema.h>
 
 HOST void node_mapping::update_std(
     NodeMapping *node_mapping,
@@ -14,8 +16,8 @@ HOST void node_mapping::update_std(
     for (size_t i = start_idx; i < end_idx; i++) {
         max_node_id = std::max({
             max_node_id,
-            static_cast<int>(edge_data->sources[i]),
-            static_cast<int>(edge_data->targets[i])
+            edge_data->sources[i],
+            edge_data->targets[i]
         });
     }
 
@@ -110,4 +112,182 @@ HOST void node_mapping::update_std(
     node_mapping->dense_to_sparse_size = dense_index;
 }
 
+HOST void node_mapping::update_cuda(NodeMapping *node_mapping, EdgeData *edge_data, size_t start_idx, size_t end_idx) {
+    // Find maximum node ID
+    thrust::device_ptr<int> d_sources(edge_data->sources + start_idx);
+    thrust::device_ptr<int> d_targets(edge_data->targets + start_idx);
 
+    auto max_source = thrust::max_element(
+        DEVICE_EXECUTION_POLICY,
+        d_sources,
+        d_sources + static_cast<long>(end_idx - start_idx)
+    );
+
+    auto max_target = thrust::max_element(
+        DEVICE_EXECUTION_POLICY,
+        d_targets,
+        d_targets + static_cast<long>(end_idx - start_idx)
+    );
+
+    int max_source_value = 0;
+    int max_target_value = 0;
+
+    if (max_source != d_sources + static_cast<long>(end_idx - start_idx)) {
+        cudaMemcpy(&max_source_value, edge_data->sources + start_idx + (max_source - d_sources),
+                  sizeof(int), cudaMemcpyDeviceToHost);
+    }
+
+    if (max_target != d_targets + static_cast<long>(end_idx - start_idx)) {
+        cudaMemcpy(&max_target_value, edge_data->targets + start_idx + (max_target - d_targets),
+                  sizeof(int), cudaMemcpyDeviceToHost);
+    }
+
+    int max_node_id = std::max(max_source_value, max_target_value);
+
+    if (max_node_id < 0) {
+        return;
+    }
+
+    // Extend arrays if needed
+    if (max_node_id >= node_mapping->sparse_to_dense_size) {
+        size_t new_size = max_node_id + 1;
+
+        // Allocate new arrays
+        int* new_sparse_to_dense = nullptr;
+        bool* new_is_deleted = nullptr;
+
+        cudaMalloc(&new_sparse_to_dense, new_size * sizeof(int));
+        cudaMalloc(&new_is_deleted, new_size * sizeof(bool));
+
+        // Copy existing data
+        if (node_mapping->sparse_to_dense_size > 0) {
+            cudaMemcpy(new_sparse_to_dense, node_mapping->sparse_to_dense,
+                      node_mapping->sparse_to_dense_size * sizeof(int),
+                      cudaMemcpyDeviceToDevice);
+
+            cudaMemcpy(new_is_deleted, node_mapping->is_deleted,
+                      node_mapping->is_deleted_size * sizeof(bool),
+                      cudaMemcpyDeviceToDevice);
+        }
+
+        // Initialize new elements
+        cudaMemset(new_sparse_to_dense + node_mapping->sparse_to_dense_size,
+                  0xFF, (new_size - node_mapping->sparse_to_dense_size) * sizeof(int)); // -1 in 2's complement
+
+        cudaMemset(new_is_deleted + node_mapping->is_deleted_size,
+                  0x01, (new_size - node_mapping->is_deleted_size) * sizeof(bool)); // true
+
+        // Free old arrays
+        if (node_mapping->sparse_to_dense) cudaFree(node_mapping->sparse_to_dense);
+        if (node_mapping->is_deleted) cudaFree(node_mapping->is_deleted);
+
+        // Update pointers and sizes
+        node_mapping->sparse_to_dense = new_sparse_to_dense;
+        node_mapping->sparse_to_dense_size = new_size;
+        node_mapping->is_deleted = new_is_deleted;
+        node_mapping->is_deleted_size = new_size;
+    }
+
+    // Allocate flags array for new nodes
+    int* d_new_node_flags = nullptr;
+    cudaMalloc(&d_new_node_flags, (max_node_id + 1) * sizeof(int));
+    cudaMemset(d_new_node_flags, 0, (max_node_id + 1) * sizeof(int));
+
+    // Mark nodes as not deleted and identify new nodes
+    int* sparse_to_dense_ptr = node_mapping->sparse_to_dense;
+    bool* is_deleted_ptr = node_mapping->is_deleted;
+    int* sources_ptr = edge_data->sources;
+    int* targets_ptr = edge_data->targets;
+
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        thrust::make_counting_iterator<size_t>(start_idx),
+        thrust::make_counting_iterator<size_t>(end_idx),
+        [sparse_to_dense_ptr, is_deleted_ptr, sources_ptr, targets_ptr, d_new_node_flags]
+        __device__ (const size_t idx) {
+            const int source = sources_ptr[idx];
+            const int target = targets_ptr[idx];
+
+            if (source >= 0) {
+                is_deleted_ptr[source] = false;
+                if (sparse_to_dense_ptr[source] == -1) {
+                    d_new_node_flags[source] = 1;
+                }
+            }
+
+            if (target >= 0) {
+                is_deleted_ptr[target] = false;
+                if (sparse_to_dense_ptr[target] == -1) {
+                    d_new_node_flags[target] = 1;
+                }
+            }
+        }
+    );
+
+    // Calculate positions for new nodes
+    int* d_new_node_positions = nullptr;
+    cudaMalloc(&d_new_node_positions, (max_node_id + 1) * sizeof(int));
+
+    thrust::device_ptr<int> d_flags(d_new_node_flags);
+    thrust::device_ptr<int> d_positions(d_new_node_positions);
+
+    // Get total count of new nodes using reduce
+    int new_nodes_count = thrust::reduce(
+        DEVICE_EXECUTION_POLICY,
+        d_flags,
+        d_flags + (max_node_id + 1)
+    );
+
+    // Calculate prefix sum for positions
+    thrust::exclusive_scan(
+        DEVICE_EXECUTION_POLICY,
+        d_flags,
+        d_flags + (max_node_id + 1),
+        d_positions
+    );
+
+    // Resize dense_to_sparse array
+    size_t old_size = node_mapping->dense_to_sparse_size;
+    size_t new_size = old_size + new_nodes_count;
+
+    if (new_nodes_count > 0) {
+        int* new_dense_to_sparse = nullptr;
+        cudaMalloc(&new_dense_to_sparse, new_size * sizeof(int));
+
+        // Copy existing data
+        if (old_size > 0) {
+            cudaMemcpy(new_dense_to_sparse,
+                      node_mapping->dense_to_sparse,
+                      old_size * sizeof(int),
+                      cudaMemcpyDeviceToDevice);
+        }
+
+        // Free old array
+        if (node_mapping->dense_to_sparse) cudaFree(node_mapping->dense_to_sparse);
+
+        // Update pointer and size
+        node_mapping->dense_to_sparse = new_dense_to_sparse;
+        node_mapping->dense_to_sparse_size = new_size;
+    }
+
+    // Assign dense indices in parallel
+    int* dense_to_sparse_ptr = node_mapping->dense_to_sparse;
+
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(max_node_id + 1),
+        [sparse_to_dense_ptr, dense_to_sparse_ptr, d_new_node_flags, d_new_node_positions, old_size]
+        __device__ (const size_t idx) {
+            if (d_new_node_flags[idx]) {
+                const int new_dense_idx = static_cast<int>(old_size) + d_new_node_positions[idx];
+                sparse_to_dense_ptr[idx] = new_dense_idx;
+                dense_to_sparse_ptr[new_dense_idx] = static_cast<int>(idx);
+            }
+        }
+    );
+
+    // Free temporary device memory
+    cudaFree(d_new_node_flags);
+    cudaFree(d_new_node_positions);
+}
