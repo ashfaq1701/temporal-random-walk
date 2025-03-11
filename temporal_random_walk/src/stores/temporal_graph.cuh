@@ -29,8 +29,8 @@ struct TemporalGraph {
         is_directed(is_directed), use_gpu(use_gpu), max_time_capacity(max_time_capacity),
         enable_weight_computation(enable_weight_computation), timescale_bound(timescale_bound) {
 
-        edge_data = new EdgeData(use_gpu);
-        node_edge_index = new NodeEdgeIndex(use_gpu);
+        edge_data = new EdgeData(use_gpu, timescale_bound);
+        node_edge_index = new NodeEdgeIndex(use_gpu, timescale_bound);
         node_mapping = new NodeMapping(use_gpu);
     }
 

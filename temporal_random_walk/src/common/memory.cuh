@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <iostream>
+#include <cstring>
 
 #include "macros.cuh"
 
@@ -81,6 +82,37 @@ HOST void fill_memory(T* memory, size_t size, T value, bool use_gpu) {
         cudaFree(d_value);
     } else {
         std::fill(memory, memory + size, value);
+    }
+}
+
+template <typename T>
+HOST void append_memory(T** data_ptr, size_t& size, const T* new_data, const size_t new_size, const bool use_gpu) {
+    if (!new_data || new_size == 0) return;  // No data to append
+
+    const size_t total_size = size + new_size;
+    T* new_ptr = nullptr;
+
+    if (use_gpu) {
+        // Allocate new GPU memory
+        cudaMalloc(&new_ptr, total_size * sizeof(T));
+        if (size > 0) {
+            cudaMemcpy(new_ptr, *data_ptr, size * sizeof(T), cudaMemcpyDeviceToDevice); // Copy old data
+        }
+        cudaMemcpy(new_ptr + size, new_data, new_size * sizeof(T), cudaMemcpyDeviceToDevice); // Append new data
+        cudaFree(*data_ptr); // Free old memory
+    } else {
+        // CPU allocation
+        new_ptr = static_cast<T *>(realloc(*data_ptr, total_size * sizeof(T)));
+        if (new_ptr) {
+            std::memcpy(new_ptr + size, new_data, new_size * sizeof(T)); // Append new data
+        }
+    }
+
+    if (new_ptr) {
+        *data_ptr = new_ptr;
+        size = total_size; // Update the size
+    } else {
+        std::cerr << "Memory append failed!" << std::endl;
     }
 }
 

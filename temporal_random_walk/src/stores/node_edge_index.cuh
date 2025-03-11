@@ -11,6 +11,8 @@
 struct NodeEdgeIndex {
     bool use_gpu;
 
+    double timescale_bound;
+
     size_t* outbound_offsets = nullptr;
     size_t outbound_offsets_size = 0;
 
@@ -44,7 +46,7 @@ struct NodeEdgeIndex {
     double* inbound_backward_cumulative_weights_exponential = nullptr;
     size_t inbound_backward_cumulative_weights_exponential_size = 0;
 
-    explicit NodeEdgeIndex(const bool use_gpu): use_gpu(use_gpu) {}
+    explicit NodeEdgeIndex(const bool use_gpu, const double timescale_bound): use_gpu(use_gpu), timescale_bound(timescale_bound) {}
 
     ~NodeEdgeIndex() {
         if (use_gpu) {
@@ -82,13 +84,13 @@ namespace node_edge_index {
      */
     HOST void clear(NodeEdgeIndex* node_edge_index);
 
-    HOST SizeRange get_edge_range(NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed);
+    HOST SizeRange get_edge_range(const NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed);
 
-    HOST SizeRange get_timestamp_group_range(NodeEdgeIndex* node_edge_index, int dense_node_id, size_t group_idx, bool forward, bool is_directed);
+    HOST SizeRange get_timestamp_group_range(const NodeEdgeIndex* node_edge_index, int dense_node_id, size_t group_idx, bool forward, bool is_directed);
 
-    HOST size_t get_timestamp_group_count(NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed);
+    HOST size_t get_timestamp_group_count(const NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed);
 
-    HOST DataBlock<size_t> get_timestamp_offset_vector(NodeEdgeIndex* node_edge_index, bool forward, bool is_directed);
+    HOST DataBlock<size_t> get_timestamp_offset_vector(const NodeEdgeIndex* node_edge_index, bool forward, bool is_directed);
 
     /**
      * Rebuild related functions
@@ -105,7 +107,6 @@ namespace node_edge_index {
      */
 
     HOST void populate_dense_ids_std(
-        NodeEdgeIndex* node_edge_index,
         EdgeData* edge_data,
         NodeMapping* node_mapping,
         int* dense_sources,
@@ -114,31 +115,31 @@ namespace node_edge_index {
 
     HOST void compute_node_edge_offsets_std(
         NodeEdgeIndex* node_edge_index,
-        EdgeData* edge_data,
-        int* dense_sources,
-        int* dense_targets,
+        const EdgeData* edge_data,
+        const int* dense_sources,
+        const int* dense_targets,
         bool is_directed
     );
 
     HOST void compute_node_edge_indices_std(
         NodeEdgeIndex* node_edge_index,
-        EdgeData* edge_data,
-        int* dense_sources,
-        int* dense_targets,
-        size_t* outbound_edge_indices_buffer,
+        const EdgeData* edge_data,
+        const int* dense_sources,
+        const int* dense_targets,
+        EdgeWithEndpointType* outbound_edge_indices_buffer,
         bool is_directed
     );
 
     HOST void compute_node_timestamp_offsets_std(
         NodeEdgeIndex* node_edge_index,
-        EdgeData* edge_data,
+        const EdgeData* edge_data,
         size_t num_nodes,
         bool is_directed
     );
 
     HOST void compute_node_timestamp_indices_std(
         NodeEdgeIndex* node_edge_index,
-        EdgeData* edge_data,
+        const EdgeData* edge_data,
         size_t num_nodes,
         bool is_directed
     );
