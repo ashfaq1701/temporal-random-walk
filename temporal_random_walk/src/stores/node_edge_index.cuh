@@ -90,7 +90,7 @@ namespace node_edge_index {
 
     HOST size_t get_timestamp_group_count(const NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed);
 
-    HOST DataBlock<size_t> get_timestamp_offset_vector(const NodeEdgeIndex* node_edge_index, bool forward, bool is_directed);
+    HOST MemoryView<size_t> get_timestamp_offset_vector(const NodeEdgeIndex* node_edge_index, bool forward, bool is_directed);
 
     /**
      * Rebuild related functions

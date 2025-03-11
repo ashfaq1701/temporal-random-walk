@@ -5,6 +5,86 @@
 #include <thrust/device_ptr.h>
 #include <thrust/extrema.h>
 
+HOST int node_mapping::to_dense(const NodeMapping *node_mapping, const int sparse_id) {
+    if (sparse_id < 0 || sparse_id >= node_mapping->sparse_to_dense_size) {
+        return -1;
+    }
+    return node_mapping->sparse_to_dense[sparse_id];
+}
+
+HOST int node_mapping::to_sparse(const NodeMapping *node_mapping, const int dense_id) {
+    if (dense_id < 0 || dense_id >= node_mapping->dense_to_sparse_size) {
+        return -1;
+    }
+    return node_mapping->dense_to_sparse[dense_id];
+}
+
+HOST size_t node_mapping::size(const NodeMapping *node_mapping) {
+    return node_mapping->dense_to_sparse_size;
+}
+
+HOST size_t node_mapping::active_size(const NodeMapping *node_mapping) {
+    size_t count = 0;
+    for (size_t i = 0; i < node_mapping->is_deleted_size; i++) {
+        if (!node_mapping->is_deleted[i]) {
+            count++;
+        }
+    }
+    return count;
+}
+
+HOST DataBlock<int> node_mapping::get_active_node_ids(const NodeMapping *node_mapping) {
+    const size_t active_count = active_size(node_mapping);
+    DataBlock<int> result(active_count, false);
+
+    size_t index = 0;
+    for (size_t i = 0; i < node_mapping->dense_to_sparse_size; i++) {
+        int sparse_id = node_mapping->dense_to_sparse[i];
+        if (sparse_id >= 0 && sparse_id < node_mapping->is_deleted_size && !node_mapping->is_deleted[sparse_id]) {
+            result.data[index++] = sparse_id;
+        }
+    }
+
+    return result;
+}
+
+HOST void node_mapping::clear(NodeMapping *node_mapping) {
+    clear_memory(&node_mapping->sparse_to_dense, node_mapping->use_gpu);
+    node_mapping->sparse_to_dense_size = 0;
+
+    clear_memory(&node_mapping->dense_to_sparse, node_mapping->use_gpu);
+    node_mapping->dense_to_sparse_size = 0;
+
+    clear_memory(&node_mapping->is_deleted, node_mapping->use_gpu);
+    node_mapping->is_deleted_size = 0;
+}
+
+HOST void node_mapping::reserve(NodeMapping *node_mapping, size_t size) {
+    if (size > node_mapping->sparse_to_dense_size) {
+        resize_memory(&node_mapping->sparse_to_dense, node_mapping->sparse_to_dense_size, size, node_mapping->use_gpu);
+        node_mapping->sparse_to_dense_size = size;
+    }
+
+    if (size > node_mapping->dense_to_sparse_size) {
+        resize_memory(&node_mapping->dense_to_sparse, node_mapping->dense_to_sparse_size, size, node_mapping->use_gpu);
+        node_mapping->dense_to_sparse_size = size;
+    }
+
+    if (size > node_mapping->is_deleted_size) {
+        resize_memory(&node_mapping->is_deleted, node_mapping->is_deleted_size, size, node_mapping->use_gpu);
+        node_mapping->is_deleted_size = size;
+    }
+}
+
+HOST void node_mapping::mark_node_deleted(const NodeMapping *node_mapping, const int sparse_id) {
+    if (sparse_id >= 0 && sparse_id < node_mapping->is_deleted_size) {
+        node_mapping->is_deleted[sparse_id] = true;
+    }
+}
+
+HOST MemoryView<int> node_mapping::get_all_sparse_ids(const NodeMapping *node_mapping) {
+    return MemoryView{node_mapping->dense_to_sparse, node_mapping->dense_to_sparse_size};
+}
 HOST void node_mapping::update_std(
     NodeMapping *node_mapping,
     const EdgeData *edge_data,
@@ -112,7 +192,7 @@ HOST void node_mapping::update_std(
     node_mapping->dense_to_sparse_size = dense_index;
 }
 
-HOST void node_mapping::update_cuda(NodeMapping *node_mapping, EdgeData *edge_data, size_t start_idx, size_t end_idx) {
+HOST void node_mapping::update_cuda(NodeMapping *node_mapping, const EdgeData *edge_data, const size_t start_idx, const size_t end_idx) {
     // Find maximum node ID
     thrust::device_ptr<int> d_sources(edge_data->sources + start_idx);
     thrust::device_ptr<int> d_targets(edge_data->targets + start_idx);
@@ -290,4 +370,27 @@ HOST void node_mapping::update_cuda(NodeMapping *node_mapping, EdgeData *edge_da
     // Free temporary device memory
     cudaFree(d_new_node_flags);
     cudaFree(d_new_node_positions);
+}
+
+DEVICE int node_mapping::to_dense_device(const NodeMapping *node_mapping, const int sparse_id) {
+    if (sparse_id < 0 || sparse_id >= node_mapping->sparse_to_dense_size) {
+        return -1;
+    }
+    return node_mapping->sparse_to_dense[sparse_id];
+}
+
+DEVICE int node_mapping::to_dense_from_ptr_device(const int *sparse_to_dense, const int sparse_id, const size_t size) {
+    return (sparse_id >= 0 && sparse_id < size) ? sparse_to_dense[sparse_id] : -1;
+}
+
+DEVICE void node_mapping::mark_node_deleted_from_ptr(bool *is_deleted, const int sparse_id, const int size) {
+    if (sparse_id >= 0 && sparse_id < size) {
+        is_deleted[sparse_id] = true;
+    }
+}
+
+DEVICE bool node_mapping::has_node(const NodeMapping *node_mapping, const int sparse_id) {
+    return sparse_id >= 0 &&
+           sparse_id < node_mapping->sparse_to_dense_size &&
+           node_mapping->sparse_to_dense[sparse_id] != -1;
 }

@@ -128,4 +128,24 @@ HOST void clear_memory(T** data_ptr, const bool use_gpu) {
     }
 }
 
+template <typename T>
+HOST void copy_memory(T* dst, const T* src, const size_t size, const bool dst_gpu, const bool src_gpu) {
+    if (!dst || !src || size == 0) {
+        return;  // Nothing to copy
+    }
+
+    if (dst_gpu && src_gpu) {
+        cudaMemcpy(dst, src, size * sizeof(T), cudaMemcpyDeviceToDevice);
+    } else if (dst_gpu && !src_gpu) {
+        // Host to device
+        cudaMemcpy(dst, src, size * sizeof(T), cudaMemcpyHostToDevice);
+    } else if (!dst_gpu && src_gpu) {
+        // Device to host
+        cudaMemcpy(dst, src, size * sizeof(T), cudaMemcpyDeviceToHost);
+    } else {
+        // Host to host
+        std::memcpy(dst, src, size * sizeof(T), size * sizeof(T));
+    }
+}
+
 #endif // MEMORY_H

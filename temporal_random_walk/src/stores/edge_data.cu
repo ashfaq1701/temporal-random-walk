@@ -54,14 +54,13 @@ HOST void edge_data::add_edges(EdgeData *edge_data, const int *sources, const in
 }
 
 HOST DataBlock<Edge> edge_data::get_edges(const EdgeData *edge_data) {
-    Edge* accumulated_edges;
-    allocate_memory(&accumulated_edges, edge_data->timestamps_size, edge_data->use_gpu);
+    DataBlock<Edge> result(edge_data->timestamps_size, edge_data->use_gpu);
 
     for (size_t i = 0; i < edge_data->timestamps_size; i++) {
-        accumulated_edges[i] = Edge{ edge_data->sources[i], edge_data->targets[i], edge_data->timestamps[i] };
+        result.data[i] = Edge{ edge_data->sources[i], edge_data->targets[i], edge_data->timestamps[i] };
     }
 
-    return DataBlock{accumulated_edges, edge_data->timestamps_size, edge_data->use_gpu};
+    return result;
 }
 
 HOST DEVICE SizeRange edge_data::get_timestamp_group_range(const EdgeData *edge_data, size_t group_idx) {

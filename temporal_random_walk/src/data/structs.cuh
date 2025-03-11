@@ -48,6 +48,33 @@ struct DataBlock {
     T* data;
     size_t size;
     bool use_gpu;
+
+    // Constructor allocates memory internally
+    DataBlock(const size_t size, const bool use_gpu) : size(size), use_gpu(use_gpu) {
+        if (size == 0) {
+            data = nullptr;
+        } else if (use_gpu) {
+            cudaMalloc(&data, size * sizeof(T));
+        } else {
+            data = new T[size];  // CPU allocation
+        }
+    }
+
+    ~DataBlock() {
+        if (data) {
+            if (use_gpu) {
+                cudaFree(data);
+            } else {
+                delete[] data;
+            }
+        }
+    }
+};
+
+template <typename T>
+struct MemoryView {
+    T* data;
+    size_t size;
 };
 
 struct EdgeWithEndpointType {

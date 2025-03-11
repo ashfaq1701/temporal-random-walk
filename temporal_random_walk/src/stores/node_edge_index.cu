@@ -148,7 +148,7 @@ HOST SizeRange node_edge_index::get_timestamp_group_range(const NodeEdgeIndex* n
 
 HOST size_t node_edge_index::get_timestamp_group_count(const NodeEdgeIndex* node_edge_index, const int dense_node_id, const bool forward, const bool is_directed) {
     // Get the appropriate timestamp offset vector
-    DataBlock<size_t> offsets_block = get_timestamp_offset_vector(node_edge_index, forward, is_directed);
+    MemoryView<size_t> offsets_block = get_timestamp_offset_vector(node_edge_index, forward, is_directed);
     size_t* offsets = offsets_block.data;
     size_t offsets_size = offsets_block.size;
 
@@ -170,18 +170,16 @@ HOST size_t node_edge_index::get_timestamp_group_count(const NodeEdgeIndex* node
     return end - start;
 }
 
-HOST DataBlock<size_t> node_edge_index::get_timestamp_offset_vector(const NodeEdgeIndex* node_edge_index, const bool forward, const bool is_directed) {
+HOST MemoryView<size_t> node_edge_index::get_timestamp_offset_vector(const NodeEdgeIndex* node_edge_index, const bool forward, const bool is_directed) {
     if (is_directed && !forward) {
-        return DataBlock<size_t>{
+        return MemoryView<size_t>{
             node_edge_index->inbound_timestamp_group_offsets,
-            node_edge_index->inbound_timestamp_group_offsets_size,
-            node_edge_index->use_gpu
+            node_edge_index->inbound_timestamp_group_offsets_size
         };
     } else {
-        return DataBlock<size_t>{
+        return MemoryView<size_t>{
             node_edge_index->outbound_timestamp_group_offsets,
-            node_edge_index->outbound_timestamp_group_offsets_size,
-            node_edge_index->use_gpu
+            node_edge_index->outbound_timestamp_group_offsets_size
         };
     }
 }
@@ -960,7 +958,7 @@ HOST void node_edge_index::compute_temporal_weights_std(
     // Process each node
     for (size_t node = 0; node < num_nodes; node++) {
         // Get outbound timestamp group range
-        DataBlock<size_t> outbound_offsets = get_timestamp_offset_vector(node_edge_index, true, false);
+        MemoryView<size_t> outbound_offsets = get_timestamp_offset_vector(node_edge_index, true, false);
         const size_t out_start = outbound_offsets.data[node];
         const size_t out_end = outbound_offsets.data[node + 1];
 
@@ -1021,7 +1019,7 @@ HOST void node_edge_index::compute_temporal_weights_std(
 
         // Process inbound weights for directed graphs
         if (node_edge_index->inbound_offsets_size > 0) {
-            DataBlock<size_t> inbound_offsets = get_timestamp_offset_vector(node_edge_index, false, true);
+            MemoryView<size_t> inbound_offsets = get_timestamp_offset_vector(node_edge_index, false, true);
             const size_t in_start = inbound_offsets.data[node];
             const size_t in_end = inbound_offsets.data[node + 1];
 
@@ -1107,7 +1105,7 @@ HOST void node_edge_index::compute_temporal_weights_cuda(
     // Process outbound weights
     {
         // Get outbound timestamp group offsets
-        DataBlock<size_t> outbound_offsets = get_timestamp_offset_vector(node_edge_index, true, false);
+        MemoryView<size_t> outbound_offsets = get_timestamp_offset_vector(node_edge_index, true, false);
 
         // Allocate temporary device memory for weights
         double* d_forward_weights = nullptr;
@@ -1207,7 +1205,7 @@ HOST void node_edge_index::compute_temporal_weights_cuda(
     // Process inbound weights if directed
     if (node_edge_index->inbound_offsets_size > 0) {
         // Get inbound timestamp group offsets
-        DataBlock<size_t> inbound_offsets = get_timestamp_offset_vector(node_edge_index, false, true);
+        MemoryView<size_t> inbound_offsets = get_timestamp_offset_vector(node_edge_index, false, true);
         const size_t inbound_groups_size = node_edge_index->inbound_timestamp_group_indices_size;
 
         // Allocate temporary device memory for weights
