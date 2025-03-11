@@ -6,7 +6,7 @@
 
 #include "../utils/random.cuh"
 
-HOST int random_pickers::pick_random_linear_host(int start, int end, bool prioritize_end) {
+HOST int random_pickers::pick_random_linear_host(const int start, const int end, const bool prioritize_end) {
     if (start >= end) {
         throw std::invalid_argument("Start must be less than end.");
     }
@@ -82,7 +82,7 @@ HOST int random_pickers::pick_random_uniform_host(int start, int end) {
     return generate_random_int_host(start, end - 1);
 }
 
-HOST int random_pickers::pick_random_exponential_weights_host(double* weights, size_t weights_size, size_t group_start, size_t group_end) {
+HOST int random_pickers::pick_random_exponential_weights_host(double* weights, const size_t weights_size, const size_t group_start, const size_t group_end) {
     if (group_start >= group_end || group_end > weights_size) {
         return -1;
     }
@@ -106,7 +106,7 @@ HOST int random_pickers::pick_random_exponential_weights_host(double* weights, s
             random_val) - weights);
 }
 
-DEVICE int random_pickers::pick_random_linear_device(int start, int end, bool prioritize_end, curandState* rand_state) {
+DEVICE int random_pickers::pick_random_linear_device(const int start, const int end, const bool prioritize_end, curandState* rand_state) {
     if (start >= end) {
         return -1;
     }
@@ -141,7 +141,7 @@ DEVICE int random_pickers::pick_random_linear_device(int start, int end, bool pr
     }
 }
 
-DEVICE int random_pickers::pick_random_exponential_index_device(int start, int end, bool prioritize_end, curandState* rand_state) {
+DEVICE int random_pickers::pick_random_exponential_index_device(const int start, const int end, const bool prioritize_end, curandState* rand_state) {
     if (start >= end) {
         return -1;
     }
@@ -174,7 +174,7 @@ DEVICE int random_pickers::pick_random_exponential_index_device(int start, int e
     }
 }
 
-DEVICE int random_pickers::pick_random_uniform_device(int start, int end, curandState* rand_state) {
+DEVICE int random_pickers::pick_random_uniform_device(const int start, const int end, curandState* rand_state) {
     if (start >= end) {
         return -1;
     }
@@ -182,7 +182,7 @@ DEVICE int random_pickers::pick_random_uniform_device(int start, int end, curand
     return generate_random_int_device(start, end - 1, rand_state);
 }
 
-DEVICE int random_pickers::pick_random_exponential_weights_device(double* weights, size_t weights_size, size_t group_start, size_t group_end, curandState* rand_state) {
+DEVICE int random_pickers::pick_random_exponential_weights_device(double* weights, const size_t weights_size, const size_t group_start, const size_t group_end, curandState* rand_state) {
     if (group_start >= group_end || group_end > weights_size) {
         return -1;
     }
@@ -204,4 +204,51 @@ DEVICE int random_pickers::pick_random_exponential_weights_device(double* weight
             weights + group_start,
             weights + group_end,
             random_val) - weights);
+}
+
+HOST DEVICE bool random_pickers::is_index_based_picker(const RandomPickerType picker_type) {
+    return picker_type == RandomPickerType::Linear || picker_type == RandomPickerType::Uniform ||
+        picker_type == RandomPickerType::ExponentialIndex;
+}
+
+HOST int random_pickers::pick_using_index_based_picker_host(const RandomPickerType random_picker, const int start, const int end, const bool prioritize_end) {
+    switch (random_picker) {
+        case RandomPickerType::Linear:
+            return pick_random_linear_host(start, end, prioritize_end);
+        case RandomPickerType::ExponentialIndex:
+            return pick_random_exponential_index_host(start, end, prioritize_end);
+        case RandomPickerType::Uniform:
+            return pick_random_uniform_host(start, end);
+        default:
+            return -1;
+    }
+}
+
+DEVICE int random_pickers::pick_using_index_based_picker_device(const RandomPickerType random_picker, const int start, const int end, const bool prioritize_end, curandState* rand_state) {
+    switch (random_picker) {
+        case RandomPickerType::Linear:
+            return pick_random_linear_device(start, end, prioritize_end, rand_state);
+        case RandomPickerType::ExponentialIndex:
+            return pick_random_exponential_index_device(start, end, prioritize_end, rand_state);
+        case RandomPickerType::Uniform:
+            return pick_random_uniform_device(start, end, rand_state);
+        default:
+            return -1;
+    }
+}
+
+HOST int random_pickers::pick_using_weight_based_picker_host(const RandomPickerType random_picker, double* weights, const size_t weights_size, const size_t group_start, const size_t group_end) {
+    if (random_picker != RandomPickerType::ExponentialWeight) {
+        return -1;
+    }
+
+    return pick_random_exponential_weights_host(weights, weights_size, group_start, group_end);
+}
+
+DEVICE int random_pickers::pick_using_weight_based_picker_device(const RandomPickerType random_picker, double* weights, const size_t weights_size, const size_t group_start, const size_t group_end, curandState* rand_state) {
+    if (random_picker != RandomPickerType::ExponentialWeight) {
+        return -1;
+    }
+
+    return pick_random_exponential_weights_device(weights, weights_size, group_start, group_end, rand_state);
 }

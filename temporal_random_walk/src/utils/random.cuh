@@ -71,4 +71,6 @@ HOST void shuffle_vector_device(T* data, size_t size) {
     thrust::shuffle(DEVICE_EXECUTION_POLICY, d_data, d_data + size, random_engine);
 }
 
+
+
 #endif // UTILS_RANDOM_H
