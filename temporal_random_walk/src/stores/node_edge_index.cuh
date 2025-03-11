@@ -188,7 +188,9 @@ namespace node_edge_index {
 
     HOST void rebuild(NodeEdgeIndex* node_edge_index, EdgeData* edge_data, NodeMapping* node_mapping, bool is_directed);
 
-    HOST void compute_temporal_weights(NodeEdgeIndex* node_edge_index, EdgeData* edge_data, double timescale_bound);
+    HOST void compute_temporal_weights_std(NodeEdgeIndex* node_edge_index, EdgeData* edge_data, double timescale_bound);
+
+    HOST void compute_temporal_weights_cuda(NodeEdgeIndex* node_edge_index, const EdgeData* edge_data, double timescale_bound);
 
 
 }

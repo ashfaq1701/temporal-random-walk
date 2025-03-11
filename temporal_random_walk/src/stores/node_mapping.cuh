@@ -59,7 +59,7 @@ namespace node_mapping {
     /**
      * Std Implementations
      */
-    HOST void update_std(NodeMapping *node_mapping, EdgeData *edge_data, size_t start_idx, size_t end_idx);
+    HOST void update_std(NodeMapping *node_mapping, const EdgeData *edge_data, size_t start_idx, size_t end_idx);
 
     /**
      * CUDA implementations
