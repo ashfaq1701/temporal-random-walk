@@ -526,7 +526,7 @@ HOST void node_edge_index::populate_dense_ids_cuda(
         d_sources,
         d_sources + static_cast<long>(edge_data->sources_size),
         d_dense_sources,
-        [sparse_to_dense_ptr, sparse_to_dense_size] __device__ (const int id) {
+        [sparse_to_dense_ptr, sparse_to_dense_size] DEVICE (const int id) {
             return node_mapping::to_dense_from_ptr_device(sparse_to_dense_ptr, id, sparse_to_dense_size);
         }
     );
@@ -537,7 +537,7 @@ HOST void node_edge_index::populate_dense_ids_cuda(
         d_targets,
         d_targets + static_cast<long>(edge_data->targets_size),
         d_dense_targets,
-        [sparse_to_dense_ptr, sparse_to_dense_size] __device__ (const int id) {
+        [sparse_to_dense_ptr, sparse_to_dense_size] DEVICE (const int id) {
             return node_mapping::to_dense_from_ptr_device(sparse_to_dense_ptr, id, sparse_to_dense_size);
         }
     );
@@ -561,7 +561,7 @@ HOST void node_edge_index::compute_node_edge_offsets_cuda(
     // Count edges per node using atomics
     auto counter_device_lambda = [
         outbound_offsets_ptr, inbound_offsets_ptr,
-        src_ptr, tgt_ptr, is_directed] __device__ (const size_t i) {
+        src_ptr, tgt_ptr, is_directed] DEVICE (const size_t i) {
         const int src_idx = src_ptr[i];
         const int tgt_idx = tgt_ptr[i];
 
@@ -617,7 +617,7 @@ HOST void compute_node_edge_indices_cuda(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
         thrust::make_counting_iterator<size_t>(edges_size),
-        [outbound_edge_indices_buffer, is_directed] __device__ (const size_t i) {
+        [outbound_edge_indices_buffer, is_directed] DEVICE (const size_t i) {
             size_t outbound_index = is_directed ? i : i * 2;
             outbound_edge_indices_buffer[outbound_index] = EdgeWithEndpointType{static_cast<long>(i), true};
 
@@ -645,7 +645,7 @@ HOST void compute_node_edge_indices_cuda(
         DEVICE_EXECUTION_POLICY,
         d_buffer,
         d_buffer + static_cast<long>(buffer_size),
-        [dense_sources, dense_targets] __device__ (
+        [dense_sources, dense_targets] DEVICE (
             const EdgeWithEndpointType& a, const EdgeWithEndpointType& b) {
             const int node_a = a.is_source ? dense_sources[a.edge_id] : dense_targets[a.edge_id];
             const int node_b = b.is_source ? dense_sources[b.edge_id] : dense_targets[b.edge_id];
@@ -660,7 +660,7 @@ HOST void compute_node_edge_indices_cuda(
             DEVICE_EXECUTION_POLICY,
             d_inbound_indices,
             d_inbound_indices + static_cast<long>(edges_size),
-            [dense_targets] __device__ (size_t a, size_t b) {
+            [dense_targets] DEVICE (size_t a, size_t b) {
                 return dense_targets[a] < dense_targets[b];
             }
         );
@@ -673,7 +673,7 @@ HOST void compute_node_edge_indices_cuda(
         d_buffer,
         d_buffer + static_cast<long>(buffer_size),
         d_outbound_indices,
-        [] __device__ (const EdgeWithEndpointType& edge_with_type) {
+        [] DEVICE (const EdgeWithEndpointType& edge_with_type) {
             return edge_with_type.edge_id;
         }
     );
@@ -715,7 +715,7 @@ HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
         [outbound_offsets_ptr, inbound_offsets_ptr,
          outbound_indices_ptr, inbound_indices_ptr,
          outbound_group_count_ptr, inbound_group_count_ptr,
-         timestamps_ptr, is_directed] __device__ (const size_t node) {
+         timestamps_ptr, is_directed] DEVICE (const size_t node) {
             // Outbound groups
             size_t start = outbound_offsets_ptr[node];
             size_t end = outbound_offsets_ptr[node + 1];
@@ -815,7 +815,7 @@ HOST void node_edge_index::compute_node_timestamp_indices_cuda(
          outbound_indices_ptr, inbound_indices_ptr,
          outbound_timestamp_group_offsets_ptr, inbound_timestamp_group_offsets_ptr,
          outbound_timestamp_group_indices_ptr, inbound_timestamp_group_indices_ptr,
-         timestamps_ptr, is_directed] __device__ (const size_t node) {
+         timestamps_ptr, is_directed] DEVICE (const size_t node) {
             // Outbound timestamp groups
             size_t start = outbound_offsets_ptr[node];
             size_t end = outbound_offsets_ptr[node + 1];
@@ -1128,7 +1128,7 @@ HOST void node_edge_index::compute_temporal_weights_cuda(
             thrust::make_counting_iterator<size_t>(num_nodes),
             [timestamps_ptr, outbound_indices_ptr, outbound_group_indices_ptr,
              outbound_offsets_ptr, d_forward_weights, d_backward_weights, timescale_bound]
-             __device__ (const size_t node) {
+             DEVICE (const size_t node) {
                 const size_t out_start = outbound_offsets_ptr[node];
                 const size_t out_end = outbound_offsets_ptr[node + 1];
 
@@ -1227,7 +1227,7 @@ HOST void node_edge_index::compute_temporal_weights_cuda(
             thrust::make_counting_iterator<size_t>(num_nodes),
             [timestamps_ptr, inbound_indices_ptr, inbound_group_indices_ptr,
              inbound_offsets_ptr, d_backward_weights, timescale_bound]
-             __device__ (const size_t node) {
+             DEVICE (const size_t node) {
                 const size_t in_start = inbound_offsets_ptr[node];
                 const size_t in_end = inbound_offsets_ptr[node + 1];
 

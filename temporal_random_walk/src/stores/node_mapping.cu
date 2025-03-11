@@ -204,7 +204,7 @@ HOST void node_mapping::update_cuda(NodeMapping *node_mapping, EdgeData *edge_da
         thrust::make_counting_iterator<size_t>(start_idx),
         thrust::make_counting_iterator<size_t>(end_idx),
         [sparse_to_dense_ptr, is_deleted_ptr, sources_ptr, targets_ptr, d_new_node_flags]
-        __device__ (const size_t idx) {
+        DEVICE (const size_t idx) {
             const int source = sources_ptr[idx];
             const int target = targets_ptr[idx];
 
@@ -278,7 +278,7 @@ HOST void node_mapping::update_cuda(NodeMapping *node_mapping, EdgeData *edge_da
         thrust::make_counting_iterator<size_t>(0),
         thrust::make_counting_iterator<size_t>(max_node_id + 1),
         [sparse_to_dense_ptr, dense_to_sparse_ptr, d_new_node_flags, d_new_node_positions, old_size]
-        __device__ (const size_t idx) {
+        DEVICE (const size_t idx) {
             if (d_new_node_flags[idx]) {
                 const int new_dense_idx = static_cast<int>(old_size) + d_new_node_positions[idx];
                 sparse_to_dense_ptr[idx] = new_dense_idx;

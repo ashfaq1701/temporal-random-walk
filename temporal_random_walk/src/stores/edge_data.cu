@@ -225,12 +225,12 @@ HOST void edge_data::update_timestamp_groups_cuda(EdgeData *edge_data) {
 
     // Compute flags: 1 where timestamp changes, 0 otherwise
     thrust::transform(
-        thrust::device,
+        DEVICE_EXECUTION_POLICY,
         d_timestamps + 1,
         d_timestamps + static_cast<long>(n),
         d_timestamps,
         d_flags_ptr + 1,
-        [] __host__ __device__ (const int64_t curr, const int64_t prev) { return curr != prev ? 1 : 0; });
+        [] HOST DEVICE (const int64_t curr, const int64_t prev) { return curr != prev ? 1 : 0; });
 
     // First element is always a group start
     thrust::fill_n(d_flags_ptr, 1, 1);
@@ -259,24 +259,24 @@ HOST void edge_data::update_timestamp_groups_cuda(EdgeData *edge_data) {
 
     // Find positions of group boundaries
     thrust::copy_if(
-        thrust::device,
+        DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
         thrust::make_counting_iterator<size_t>(n),
         d_flags_ptr,
         d_group_offsets,
-        [] __host__ __device__ (const int flag) { return flag == 1; });
+        [] HOST DEVICE (const int flag) { return flag == 1; });
 
     // Add final offset
     thrust::fill_n(d_group_offsets + static_cast<long>(num_groups), 1, n);
 
     // Get unique timestamps at group boundaries
     thrust::copy_if(
-        thrust::device,
+        DEVICE_EXECUTION_POLICY,
         d_timestamps,
         d_timestamps + static_cast<long>(n),
         d_flags_ptr,
         d_unique_timestamps,
-        [] __host__ __device__ (const int flag) { return flag == 1; });
+        [] HOST DEVICE (const int flag) { return flag == 1; });
 
     // Free temporary memory
     cudaFree(d_flags);
@@ -330,7 +330,7 @@ HOST void edge_data::update_temporal_weights_cuda(EdgeData *edge_data) {
 
     // Calculate weights
     thrust::transform(
-        thrust::device,
+        DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
         thrust::make_counting_iterator<size_t>(num_groups),
         thrust::make_zip_iterator(thrust::make_tuple(
@@ -338,7 +338,7 @@ HOST void edge_data::update_temporal_weights_cuda(EdgeData *edge_data) {
             d_backward_weights_ptr
         )),
         [d_offsets, d_timestamps, max_timestamp, min_timestamp, timescale_bound=edge_data->timescale_bound, time_scale]
-        __host__ __device__ (const size_t group) {
+        HOST DEVICE (const size_t group) {
             const size_t start = d_offsets[static_cast<long>(group)];
             const int64_t group_timestamp = d_timestamps[static_cast<long>(start)];
 
@@ -356,32 +356,32 @@ HOST void edge_data::update_temporal_weights_cuda(EdgeData *edge_data) {
 
     // Calculate sums
     double forward_sum = thrust::reduce(
-        thrust::device,
+        DEVICE_EXECUTION_POLICY,
         d_forward_weights_ptr,
         d_forward_weights_ptr + static_cast<long>(num_groups)
     );
 
     double backward_sum = thrust::reduce(
-        thrust::device,
+        DEVICE_EXECUTION_POLICY,
         d_backward_weights_ptr,
         d_backward_weights_ptr + static_cast<long>(num_groups)
     );
 
     // Normalize weights
     thrust::transform(
-        thrust::device,
+        DEVICE_EXECUTION_POLICY,
         d_forward_weights_ptr,
         d_forward_weights_ptr + static_cast<long>(num_groups),
         d_forward_weights_ptr,
-        [=] __host__ __device__ (const double w) { return w / forward_sum; }
+        [=] HOST DEVICE (const double w) { return w / forward_sum; }
     );
 
     thrust::transform(
-        thrust::device,
+        DEVICE_EXECUTION_POLICY,
         d_backward_weights_ptr,
         d_backward_weights_ptr + static_cast<long>(num_groups),
         d_backward_weights_ptr,
-        [=] __host__ __device__ (const double w) { return w / backward_sum; }
+        [=] HOST DEVICE (const double w) { return w / backward_sum; }
     );
 
     // Wrap result pointers
@@ -390,14 +390,14 @@ HOST void edge_data::update_temporal_weights_cuda(EdgeData *edge_data) {
 
     // Compute cumulative sums
     thrust::inclusive_scan(
-        thrust::device,
+        DEVICE_EXECUTION_POLICY,
         d_forward_weights_ptr,
         d_forward_weights_ptr + static_cast<long>(num_groups),
         d_forward_cumulative
     );
 
     thrust::inclusive_scan(
-        thrust::device,
+        DEVICE_EXECUTION_POLICY,
         d_backward_weights_ptr,
         d_backward_weights_ptr + static_cast<long>(num_groups),
         d_backward_cumulative
