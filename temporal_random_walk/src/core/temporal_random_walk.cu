@@ -1,4 +1,5 @@
 #include "temporal_random_walk.cuh"
+#include "../utils/utils.cuh"
 
 HOST void temporal_random_walk::add_multiple_edges(const TemporalRandomWalk* temporal_random_walk, const Edge* edge_infos, const size_t num_edges) {
     if (temporal_random_walk->use_gpu) {
@@ -35,4 +36,44 @@ HOST void temporal_random_walk::clear(TemporalRandomWalk* temporal_random_walk) 
        temporal_random_walk->max_time_capacity,
        temporal_random_walk->enable_weight_computation,
        temporal_random_walk->timescale_bound);
+}
+
+HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
+    TemporalRandomWalk* temporal_random_walk,
+    int max_walk_len,
+    const RandomPickerType* walk_bias,
+    int num_walks_per_node,
+    const RandomPickerType* initial_edge_bias,
+    WalkDirection walk_direction) {
+
+}
+
+HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
+    TemporalRandomWalk* temporal_random_walk,
+    int max_walk_len,
+    const RandomPickerType* walk_bias,
+    int num_walks_total,
+    const RandomPickerType* initial_edge_bias,
+    WalkDirection walk_direction) {
+
+}
+
+HOST WalkSet get_random_walks_and_times_for_all_nodes_cuda(
+    TemporalRandomWalk* temporal_random_walk,
+    int max_walk_len,
+    const RandomPickerType* walk_bias,
+    int num_walks_per_node,
+    const RandomPickerType* initial_edge_bias,
+    WalkDirection walk_direction) {
+
+}
+
+HOST WalkSet get_random_walks_and_times_cuda(
+    TemporalRandomWalk* temporal_random_walk,
+    int max_walk_len,
+    const RandomPickerType* walk_bias,
+    int num_walks_total,
+    const RandomPickerType* initial_edge_bias,
+    WalkDirection walk_direction) {
+
 }
