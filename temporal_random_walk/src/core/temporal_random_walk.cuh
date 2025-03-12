@@ -44,17 +44,17 @@ namespace temporal_random_walk {
     /**
      * Common functions
      */
-    HOST void add_multiple_edges(const Edge* edge_infos, size_t num_edges);
+    HOST void add_multiple_edges(const TemporalRandomWalk* temporal_random_walk, const Edge* edge_infos, size_t num_edges);
 
-    HOST size_t get_node_count(TemporalRandomWalk* temporal_random_walk);
+    HOST size_t get_node_count(const TemporalRandomWalk* temporal_random_walk);
 
-    HOST size_t get_edge_count(TemporalRandomWalk* temporal_random_walk);
+    HOST size_t get_edge_count(const TemporalRandomWalk* temporal_random_walk);
 
-    HOST DataBlock<int> get_node_ids(TemporalRandomWalk* temporal_random_walk);
+    HOST DataBlock<int> get_node_ids(const TemporalRandomWalk* temporal_random_walk);
 
-    HOST DataBlock<Edge> get_edges(TemporalRandomWalk* temporal_random_walk);
+    HOST DataBlock<Edge> get_edges(const TemporalRandomWalk* temporal_random_walk);
 
-    HOST bool get_is_directed(TemporalRandomWalk* temporal_random_walk);
+    HOST bool get_is_directed(const TemporalRandomWalk* temporal_random_walk);
 
     HOST void clear(TemporalRandomWalk* temporal_random_walk);
 
