@@ -20,6 +20,8 @@ struct TemporalGraph {
     NodeEdgeIndex *node_edge_index;
     NodeMapping *node_mapping;
 
+    int64_t latest_timestamp;
+
     explicit TemporalGraph(
         const bool is_directed,
         const bool use_gpu,
@@ -27,10 +29,11 @@ struct TemporalGraph {
         const bool enable_weight_computation,
         const double timescale_bound):
         is_directed(is_directed), use_gpu(use_gpu), max_time_capacity(max_time_capacity),
-        enable_weight_computation(enable_weight_computation), timescale_bound(timescale_bound) {
+        enable_weight_computation(enable_weight_computation), timescale_bound(timescale_bound),
+        latest_timestamp(0) {
 
-        edge_data = new EdgeData(use_gpu, timescale_bound);
-        node_edge_index = new NodeEdgeIndex(use_gpu, timescale_bound);
+        edge_data = new EdgeData(use_gpu);
+        node_edge_index = new NodeEdgeIndex(use_gpu);
         node_mapping = new NodeMapping(use_gpu);
     }
 
@@ -47,31 +50,31 @@ namespace temporal_graph {
      * Common functions
      */
 
-    HOST void update_temporal_weights(TemporalGraph* graph);
+    HOST void update_temporal_weights(const TemporalGraph* graph);
 
-    HOST size_t get_total_edges(TemporalGraph* graph);
+    HOST size_t get_total_edges(const TemporalGraph* graph);
 
-    HOST size_t get_node_count(TemporalGraph* graph);
+    HOST size_t get_node_count(const TemporalGraph* graph);
 
-    HOST int64_t get_latest_timestamp(TemporalGraph* graph);
+    HOST int64_t get_latest_timestamp(const TemporalGraph* graph);
 
-    HOST DataBlock<int> get_node_ids(TemporalGraph* graph);
+    HOST DataBlock<int> get_node_ids(const TemporalGraph* graph);
 
-    HOST DataBlock<Edge> get_edges(TemporalGraph* graph);
+    HOST DataBlock<Edge> get_edges(const TemporalGraph* graph);
 
     /**
      * Std implementations
      */
 
-    HOST void add_multiple_edges_std(TemporalGraph* graph, Edge* new_edges, size_t num_new_edges);
+    HOST void add_multiple_edges_std(TemporalGraph* graph, const Edge* new_edges, size_t num_new_edges);
 
     HOST void sort_and_merge_edges_std(TemporalGraph* graph, size_t start_idx);
 
     HOST void delete_old_edges_std(TemporalGraph* graph);
 
-    HOST size_t count_timestamps_less_than_std(TemporalGraph* graph, int64_t timestamp);
+    HOST size_t count_timestamps_less_than_std(const TemporalGraph* graph, int64_t timestamp);
 
-    HOST size_t count_timestamps_greater_than_std(TemporalGraph* graph, int64_t timestamp);
+    HOST size_t count_timestamps_greater_than_std(const TemporalGraph* graph, int64_t timestamp);
 
     HOST size_t count_node_timestamps_less_than_std(TemporalGraph* graph, int node_id, int64_t timestamp);
 
@@ -87,13 +90,13 @@ namespace temporal_graph {
 
     HOST void delete_old_edges_cuda(TemporalGraph* graph);
 
-    HOST size_t count_timestamps_less_than_cuda(TemporalGraph* graph, int64_t timestamp);
+    HOST size_t count_timestamps_less_than_cuda(const TemporalGraph* graph, int64_t timestamp);
 
-    HOST size_t count_timestamps_greater_than_cuda(TemporalGraph* graph, int64_t timestamp);
+    HOST size_t count_timestamps_greater_than_cuda(const TemporalGraph* graph, int64_t timestamp);
 
-    HOST size_t count_node_timestamps_less_than_cuda(TemporalGraph* graph, int node_id, int64_t timestamp);
+    HOST size_t count_node_timestamps_less_than_cuda(const TemporalGraph* graph, int node_id, int64_t timestamp);
 
-    HOST size_t count_node_timestamps_greater_than_cuda(TemporalGraph* graph, int node_id, int64_t timestamp);
+    HOST size_t count_node_timestamps_greater_than_cuda(const TemporalGraph* graph, int node_id, int64_t timestamp);
 
     /**
      * Host functions

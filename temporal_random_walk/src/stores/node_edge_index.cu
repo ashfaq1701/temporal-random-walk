@@ -916,7 +916,7 @@ HOST void node_edge_index::rebuild(NodeEdgeIndex* node_edge_index, EdgeData* edg
     clear_memory(&dense_targets, node_edge_index->use_gpu);
 }
 
-HOST void node_edge_index::compute_temporal_weights_std(
+HOST void node_edge_index::update_temporal_weights_std(
     NodeEdgeIndex* node_edge_index,
     const EdgeData* edge_data,
     const double timescale_bound
@@ -1067,7 +1067,7 @@ HOST void node_edge_index::compute_temporal_weights_std(
     }
 }
 
-HOST void node_edge_index::compute_temporal_weights_cuda(
+HOST void node_edge_index::update_temporal_weights_cuda(
     NodeEdgeIndex* node_edge_index,
     const EdgeData* edge_data,
     double timescale_bound

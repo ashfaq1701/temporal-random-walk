@@ -11,8 +11,6 @@
 struct NodeEdgeIndex {
     bool use_gpu;
 
-    double timescale_bound;
-
     size_t* outbound_offsets = nullptr;
     size_t outbound_offsets_size = 0;
 
@@ -46,7 +44,7 @@ struct NodeEdgeIndex {
     double* inbound_backward_cumulative_weights_exponential = nullptr;
     size_t inbound_backward_cumulative_weights_exponential_size = 0;
 
-    explicit NodeEdgeIndex(const bool use_gpu, const double timescale_bound): use_gpu(use_gpu), timescale_bound(timescale_bound) {}
+    explicit NodeEdgeIndex(const bool use_gpu): use_gpu(use_gpu) {}
 
     ~NodeEdgeIndex() {
         if (use_gpu) {
@@ -188,9 +186,9 @@ namespace node_edge_index {
 
     HOST void rebuild(NodeEdgeIndex* node_edge_index, EdgeData* edge_data, NodeMapping* node_mapping, bool is_directed);
 
-    HOST void compute_temporal_weights_std(NodeEdgeIndex* node_edge_index, const EdgeData* edge_data, double timescale_bound);
+    HOST void update_temporal_weights_std(NodeEdgeIndex* node_edge_index, const EdgeData* edge_data, double timescale_bound);
 
-    HOST void compute_temporal_weights_cuda(NodeEdgeIndex* node_edge_index, const EdgeData* edge_data, double timescale_bound);
+    HOST void update_temporal_weights_cuda(NodeEdgeIndex* node_edge_index, const EdgeData* edge_data, double timescale_bound);
 
 
 }

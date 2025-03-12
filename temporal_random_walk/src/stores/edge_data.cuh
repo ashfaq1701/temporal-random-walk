@@ -8,8 +8,6 @@
 struct EdgeData {
     bool use_gpu;
 
-    double timescale_bound;
-
     int* sources = nullptr;
     size_t sources_size = 0;
 
@@ -31,7 +29,7 @@ struct EdgeData {
     double* backward_cumulative_weights_exponential = nullptr;
     size_t backward_cumulative_weights_exponential_size = 0;
 
-    explicit EdgeData(const bool use_gpu, const bool timescale_bound): use_gpu(use_gpu), timescale_bound(timescale_bound) {}
+    explicit EdgeData(const bool use_gpu): use_gpu(use_gpu) {}
 
     ~EdgeData() {
         if (use_gpu) {
@@ -64,6 +62,8 @@ namespace edge_data {
 
     HOST size_t size(const EdgeData *edge_data);
 
+    HOST void set_size(EdgeData* edge_data, size_t size);
+
     HOST bool empty(const EdgeData *edge_data);
 
     HOST void add_edges(EdgeData *edge_data, const int *sources, const int *targets, const int64_t *timestamps, size_t size);
@@ -83,14 +83,14 @@ namespace edge_data {
      */
     HOST void update_timestamp_groups_std(EdgeData *edge_data);
 
-    HOST void update_temporal_weights_std(EdgeData *edge_data);
+    HOST void update_temporal_weights_std(EdgeData *edge_data, double timescale_bound);
 
     /**
      * CUDA implementations
      */
     HOST void update_timestamp_groups_cuda(EdgeData *edge_data);
 
-    HOST void update_temporal_weights_cuda(EdgeData *edge_data);
+    HOST void update_temporal_weights_cuda(EdgeData *edge_data, double timescale_bound);
 
     /**
      * Device functions

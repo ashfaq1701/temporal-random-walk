@@ -39,8 +39,14 @@ HOST void edge_data::clear(EdgeData *edge_data) {
     edge_data->backward_cumulative_weights_exponential_size = 0;
 }
 
-HOST size_t edge_data::size(const EdgeData *edge_data) {
+HOST size_t edge_data::size(const EdgeData* edge_data) {
     return edge_data->timestamps_size;
+}
+
+HOST void edge_data::set_size(EdgeData* edge_data, size_t size) {
+    edge_data->sources_size = size;
+    edge_data->targets_size = size;
+    edge_data->timestamps_size = size;
 }
 
 HOST bool edge_data::empty(const EdgeData *edge_data) {
@@ -138,12 +144,12 @@ HOST void edge_data::update_timestamp_groups_std(EdgeData *edge_data) {
         edge_data->use_gpu);
 }
 
-HOST void edge_data::update_temporal_weights_std(EdgeData *edge_data) {
+HOST void edge_data::update_temporal_weights_std(EdgeData *edge_data, const double timescale_bound) {
     const int64_t min_timestamp = edge_data->timestamps[0];
     const int64_t max_timestamp = edge_data->timestamps[edge_data->timestamps_size - 1];
     const auto time_diff = static_cast<double>(max_timestamp - min_timestamp);
-    const double time_scale = (edge_data->timescale_bound > 0 && time_diff > 0) ?
-        edge_data->timescale_bound / time_diff : 1.0;
+    const double time_scale = (timescale_bound > 0 && time_diff > 0) ?
+        timescale_bound / time_diff : 1.0;
 
     const size_t num_groups = get_timestamp_group_count(edge_data);
 
@@ -171,9 +177,9 @@ HOST void edge_data::update_temporal_weights_std(EdgeData *edge_data) {
         const auto time_diff_forward = static_cast<double>(max_timestamp - group_timestamp);
         const auto time_diff_backward = static_cast<double>(group_timestamp - min_timestamp);
 
-        const double forward_scaled = edge_data->timescale_bound > 0 ?
+        const double forward_scaled = timescale_bound > 0 ?
             time_diff_forward * time_scale : time_diff_forward;
-        const double backward_scaled = edge_data->timescale_bound > 0 ?
+        const double backward_scaled = timescale_bound > 0 ?
             time_diff_backward * time_scale : time_diff_backward;
 
         const double forward_weight = exp(forward_scaled);
@@ -281,7 +287,7 @@ HOST void edge_data::update_timestamp_groups_cuda(EdgeData *edge_data) {
     cudaFree(d_flags);
 }
 
-HOST void edge_data::update_temporal_weights_cuda(EdgeData *edge_data) {
+HOST void edge_data::update_temporal_weights_cuda(EdgeData *edge_data, double timescale_bound) {
     if (edge_data->timestamps_size == 0) {
         clear_memory(&edge_data->forward_cumulative_weights_exponential, edge_data->use_gpu);
         edge_data->forward_cumulative_weights_exponential_size = 0;
@@ -295,8 +301,8 @@ HOST void edge_data::update_temporal_weights_cuda(EdgeData *edge_data) {
     const int64_t max_timestamp = edge_data->timestamps[edge_data->timestamps_size - 1];
 
     const auto time_diff = static_cast<double>(max_timestamp - min_timestamp);
-    const double time_scale = (edge_data->timescale_bound > 0 && time_diff > 0) ?
-        edge_data->timescale_bound / time_diff : 1.0;
+    const double time_scale = (timescale_bound > 0 && time_diff > 0) ?
+        timescale_bound / time_diff : 1.0;
 
     const size_t num_groups = get_timestamp_group_count(edge_data);
 
@@ -336,7 +342,7 @@ HOST void edge_data::update_temporal_weights_cuda(EdgeData *edge_data) {
             d_forward_weights_ptr,
             d_backward_weights_ptr
         )),
-        [d_offsets, d_timestamps, max_timestamp, min_timestamp, timescale_bound=edge_data->timescale_bound, time_scale]
+        [d_offsets, d_timestamps, max_timestamp, min_timestamp, timescale_bound, time_scale]
         HOST DEVICE (const size_t group) {
             const size_t start = d_offsets[static_cast<long>(group)];
             const int64_t group_timestamp = d_timestamps[static_cast<long>(start)];
