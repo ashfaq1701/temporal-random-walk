@@ -38,8 +38,8 @@ struct NodeEdgeIndex {
     double* outbound_forward_cumulative_weights_exponential = nullptr;
     size_t outbound_forward_cumulative_weights_exponential_size = 0;
 
-    double* inbound_forward_cumulative_weights_exponential = nullptr;
-    size_t inbound_forward_cumulative_weights_exponential_size = 0;
+    double* outbound_backward_cumulative_weights_exponential = nullptr;
+    size_t outbound_backward_cumulative_weights_exponential_size = 0;
 
     double* inbound_backward_cumulative_weights_exponential = nullptr;
     size_t inbound_backward_cumulative_weights_exponential_size = 0;
@@ -57,7 +57,7 @@ struct NodeEdgeIndex {
             if (outbound_timestamp_group_indices) cudaFree(outbound_timestamp_group_indices);
             if (inbound_timestamp_group_indices) cudaFree(inbound_timestamp_group_indices);
             if (outbound_forward_cumulative_weights_exponential) cudaFree(outbound_forward_cumulative_weights_exponential);
-            if (inbound_forward_cumulative_weights_exponential) cudaFree(inbound_forward_cumulative_weights_exponential);
+            if (outbound_backward_cumulative_weights_exponential) cudaFree(outbound_backward_cumulative_weights_exponential);
             if (inbound_backward_cumulative_weights_exponential) cudaFree(inbound_backward_cumulative_weights_exponential);
         } else {
             delete[] outbound_offsets;
@@ -69,7 +69,7 @@ struct NodeEdgeIndex {
             delete[] outbound_timestamp_group_indices;
             delete[] inbound_timestamp_group_indices;
             delete[] outbound_forward_cumulative_weights_exponential;
-            delete[] inbound_forward_cumulative_weights_exponential;
+            delete[] outbound_backward_cumulative_weights_exponential;
             delete[] inbound_backward_cumulative_weights_exponential;
         }
     }

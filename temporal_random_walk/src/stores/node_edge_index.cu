@@ -39,8 +39,8 @@ HOST void node_edge_index::clear(NodeEdgeIndex* node_edge_index) {
     clear_memory(&node_edge_index->outbound_forward_cumulative_weights_exponential, node_edge_index->use_gpu);
     node_edge_index->outbound_forward_cumulative_weights_exponential_size = 0;
 
-    clear_memory(&node_edge_index->inbound_forward_cumulative_weights_exponential, node_edge_index->use_gpu);
-    node_edge_index->inbound_forward_cumulative_weights_exponential_size = 0;
+    clear_memory(&node_edge_index->outbound_backward_cumulative_weights_exponential, node_edge_index->use_gpu);
+    node_edge_index->outbound_backward_cumulative_weights_exponential_size = 0;
 
     clear_memory(&node_edge_index->inbound_backward_cumulative_weights_exponential, node_edge_index->use_gpu);
     node_edge_index->inbound_backward_cumulative_weights_exponential_size = 0;
@@ -866,21 +866,21 @@ HOST void node_edge_index::rebuild(NodeEdgeIndex* node_edge_index, EdgeData* edg
 
     // Step 1: Populate dense IDs
     if (node_edge_index->use_gpu) {
-        node_edge_index::populate_dense_ids_cuda(edge_data, node_mapping, dense_sources, dense_targets);
+        populate_dense_ids_cuda(edge_data, node_mapping, dense_sources, dense_targets);
     } else {
-        node_edge_index::populate_dense_ids_std(edge_data, node_mapping, dense_sources, dense_targets);
+        populate_dense_ids_std(edge_data, node_mapping, dense_sources, dense_targets);
     }
 
     // Step 2: Allocate and compute node edge offsets
-    node_edge_index::allocate_node_edge_offsets(node_edge_index, num_nodes, is_directed);
+    allocate_node_edge_offsets(node_edge_index, num_nodes, is_directed);
     if (node_edge_index->use_gpu) {
-        node_edge_index::compute_node_edge_offsets_cuda(node_edge_index, edge_data, dense_sources, dense_targets, is_directed);
+        compute_node_edge_offsets_cuda(node_edge_index, edge_data, dense_sources, dense_targets, is_directed);
     } else {
-        node_edge_index::compute_node_edge_offsets_std(node_edge_index, edge_data, dense_sources, dense_targets, is_directed);
+        compute_node_edge_offsets_std(node_edge_index, edge_data, dense_sources, dense_targets, is_directed);
     }
 
     // Step 3: Allocate and compute node edge indices
-    node_edge_index::allocate_node_edge_indices(node_edge_index, is_directed);
+    allocate_node_edge_indices(node_edge_index, is_directed);
 
     // Create buffer for outbound edge indices
     size_t outbound_edge_indices_len = is_directed ? num_edges : num_edges * 2;
@@ -924,7 +924,7 @@ HOST void node_edge_index::update_temporal_weights_std(
     const size_t num_nodes = node_edge_index->outbound_offsets_size - 1;
 
     // Resize temporal weights arrays
-    size_t outbound_groups_size = node_edge_index->outbound_timestamp_group_indices_size;
+    const size_t outbound_groups_size = node_edge_index->outbound_timestamp_group_indices_size;
 
     // Allocate or resize outbound weights arrays
     resize_memory(
@@ -936,16 +936,16 @@ HOST void node_edge_index::update_temporal_weights_std(
     node_edge_index->outbound_forward_cumulative_weights_exponential_size = outbound_groups_size;
 
     resize_memory(
-        &node_edge_index->inbound_forward_cumulative_weights_exponential,
-        node_edge_index->inbound_forward_cumulative_weights_exponential_size,
+        &node_edge_index->outbound_backward_cumulative_weights_exponential,
+        node_edge_index->outbound_backward_cumulative_weights_exponential_size,
         outbound_groups_size,
         node_edge_index->use_gpu
     );
-    node_edge_index->inbound_forward_cumulative_weights_exponential_size = outbound_groups_size;
+    node_edge_index->outbound_backward_cumulative_weights_exponential_size = outbound_groups_size;
 
     // Allocate inbound weights for directed graphs
     if (node_edge_index->inbound_offsets_size > 0) {
-        size_t inbound_groups_size = node_edge_index->inbound_timestamp_group_indices_size;
+        const size_t inbound_groups_size = node_edge_index->inbound_timestamp_group_indices_size;
         resize_memory(
             &node_edge_index->inbound_backward_cumulative_weights_exponential,
             node_edge_index->inbound_backward_cumulative_weights_exponential_size,
@@ -957,22 +957,16 @@ HOST void node_edge_index::update_temporal_weights_std(
 
     // Process each node
     for (size_t node = 0; node < num_nodes; node++) {
-        // Get outbound timestamp group range
+        // Outbound weights
         MemoryView<size_t> outbound_offsets = get_timestamp_offset_vector(node_edge_index, true, false);
         const size_t out_start = outbound_offsets.data[node];
         const size_t out_end = outbound_offsets.data[node + 1];
 
         if (out_start < out_end) {
-            // Get node's timestamp range from first and last group
             const size_t first_group_start = node_edge_index->outbound_timestamp_group_indices[out_start];
             const size_t last_group_start = node_edge_index->outbound_timestamp_group_indices[out_end - 1];
-
-            const size_t first_edge_id = node_edge_index->outbound_indices[first_group_start];
-            const size_t last_edge_id = node_edge_index->outbound_indices[last_group_start];
-
-            const int64_t min_ts = edge_data->timestamps[first_edge_id];
-            const int64_t max_ts = edge_data->timestamps[last_edge_id];
-
+            const int64_t min_ts = edge_data->timestamps[node_edge_index->outbound_indices[first_group_start]];
+            const int64_t max_ts = edge_data->timestamps[node_edge_index->outbound_indices[last_group_start]];
             const auto time_diff = static_cast<double>(max_ts - min_ts);
             const double time_scale = (timescale_bound > 0 && time_diff > 0) ?
                 timescale_bound / time_diff : 1.0;
@@ -983,8 +977,7 @@ HOST void node_edge_index::update_temporal_weights_std(
             // Calculate weights and sums
             for (size_t pos = out_start; pos < out_end; ++pos) {
                 const size_t edge_start = node_edge_index->outbound_timestamp_group_indices[pos];
-                const size_t edge_id = node_edge_index->outbound_indices[edge_start];
-                const int64_t group_ts = edge_data->timestamps[edge_id];
+                const int64_t group_ts = edge_data->timestamps[node_edge_index->outbound_indices[edge_start]];
 
                 const auto time_diff_forward = static_cast<double>(max_ts - group_ts);
                 const auto time_diff_backward = static_cast<double>(group_ts - min_ts);
@@ -999,7 +992,7 @@ HOST void node_edge_index::update_temporal_weights_std(
                 forward_sum += forward_weight;
 
                 const double backward_weight = exp(backward_scaled);
-                node_edge_index->inbound_forward_cumulative_weights_exponential[pos] = backward_weight;
+                node_edge_index->outbound_backward_cumulative_weights_exponential[pos] = backward_weight;
                 backward_sum += backward_weight;
             }
 
@@ -1007,33 +1000,27 @@ HOST void node_edge_index::update_temporal_weights_std(
             double forward_cumsum = 0.0, backward_cumsum = 0.0;
             for (size_t pos = out_start; pos < out_end; ++pos) {
                 node_edge_index->outbound_forward_cumulative_weights_exponential[pos] /= forward_sum;
-                node_edge_index->inbound_forward_cumulative_weights_exponential[pos] /= backward_sum;
+                node_edge_index->outbound_backward_cumulative_weights_exponential[pos] /= backward_sum;
 
                 forward_cumsum += node_edge_index->outbound_forward_cumulative_weights_exponential[pos];
-                backward_cumsum += node_edge_index->inbound_forward_cumulative_weights_exponential[pos];
+                backward_cumsum += node_edge_index->outbound_backward_cumulative_weights_exponential[pos];
 
                 node_edge_index->outbound_forward_cumulative_weights_exponential[pos] = forward_cumsum;
-                node_edge_index->inbound_forward_cumulative_weights_exponential[pos] = backward_cumsum;
+                node_edge_index->outbound_backward_cumulative_weights_exponential[pos] = backward_cumsum;
             }
         }
 
-        // Process inbound weights for directed graphs
+        // Inbound weights
         if (node_edge_index->inbound_offsets_size > 0) {
             MemoryView<size_t> inbound_offsets = get_timestamp_offset_vector(node_edge_index, false, true);
             const size_t in_start = inbound_offsets.data[node];
             const size_t in_end = inbound_offsets.data[node + 1];
 
             if (in_start < in_end) {
-                // Get node's timestamp range
                 const size_t first_group_start = node_edge_index->inbound_timestamp_group_indices[in_start];
                 const size_t last_group_start = node_edge_index->inbound_timestamp_group_indices[in_end - 1];
-
-                const size_t first_edge_id = node_edge_index->inbound_indices[first_group_start];
-                const size_t last_edge_id = node_edge_index->inbound_indices[last_group_start];
-
-                const int64_t min_ts = edge_data->timestamps[first_edge_id];
-                const int64_t max_ts = edge_data->timestamps[last_edge_id];
-
+                const int64_t min_ts = edge_data->timestamps[node_edge_index->inbound_indices[first_group_start]];
+                const int64_t max_ts = edge_data->timestamps[node_edge_index->inbound_indices[last_group_start]];
                 const auto time_diff = static_cast<double>(max_ts - min_ts);
                 const double time_scale = (timescale_bound > 0 && time_diff > 0) ?
                     timescale_bound / time_diff : 1.0;
@@ -1043,8 +1030,7 @@ HOST void node_edge_index::update_temporal_weights_std(
                 // Calculate weights and sum
                 for (size_t pos = in_start; pos < in_end; ++pos) {
                     const size_t edge_start = node_edge_index->inbound_timestamp_group_indices[pos];
-                    const size_t edge_id = node_edge_index->inbound_indices[edge_start];
-                    const int64_t group_ts = edge_data->timestamps[edge_id];
+                    const int64_t group_ts = edge_data->timestamps[node_edge_index->inbound_indices[edge_start]];
 
                     const auto time_diff_backward = static_cast<double>(group_ts - min_ts);
                     const double backward_scaled = timescale_bound > 0 ?
@@ -1085,11 +1071,12 @@ HOST void node_edge_index::update_temporal_weights_cuda(
     node_edge_index->outbound_forward_cumulative_weights_exponential_size = outbound_groups_size;
 
     resize_memory(
-        &node_edge_index->inbound_forward_cumulative_weights_exponential,
-        node_edge_index->inbound_forward_cumulative_weights_exponential_size,
+        &node_edge_index->outbound_backward_cumulative_weights_exponential,
+        node_edge_index->outbound_backward_cumulative_weights_exponential_size,
         outbound_groups_size,
-        node_edge_index->use_gpu);
-    node_edge_index->inbound_forward_cumulative_weights_exponential_size = outbound_groups_size;
+        node_edge_index->use_gpu
+    );
+    node_edge_index->outbound_backward_cumulative_weights_exponential_size = outbound_groups_size;
 
     // Resize inbound weights array if directed graph
     if (node_edge_index->inbound_offsets_size > 0) {
@@ -1191,7 +1178,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
         );
 
         cudaMemcpy(
-            node_edge_index->inbound_forward_cumulative_weights_exponential,
+            node_edge_index->outbound_backward_cumulative_weights_exponential,
             d_backward_weights,
             outbound_groups_size * sizeof(double),
             cudaMemcpyDeviceToDevice
