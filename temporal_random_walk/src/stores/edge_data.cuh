@@ -98,6 +98,8 @@ namespace edge_data {
     DEVICE size_t find_group_after_timestamp_device(const EdgeData *edge_data, int64_t timestamp);
 
     DEVICE size_t find_group_before_timestamp_device(const EdgeData *edge_data, int64_t timestamp);
+
+    HOST EdgeData* to_device_ptr(const EdgeData* edge_data);
 }
 
 #endif // EDGE_DATA_H

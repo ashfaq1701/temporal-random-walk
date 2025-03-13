@@ -1367,3 +1367,33 @@ DEVICE Edge temporal_graph::get_node_edge_at_device(
         graph->edge_data->timestamps[edge_idx]
     };
 }
+
+HOST TemporalGraph* temporal_graph::to_device_ptr(const TemporalGraph* graph) {
+    // Create a new TemporalGraph object on the device
+    TemporalGraph* device_graph;
+    cudaMalloc(&device_graph, sizeof(TemporalGraph));
+
+    // Create a temporary copy to modify
+    TemporalGraph temp_graph = *graph;
+
+    // Copy substructures to device
+    if (graph->edge_data) {
+        temp_graph.edge_data = edge_data::to_device_ptr(graph->edge_data);
+    }
+
+    if (graph->node_edge_index) {
+        temp_graph.node_edge_index = node_edge_index::to_device_ptr(graph->node_edge_index);
+    }
+
+    if (graph->node_mapping) {
+        temp_graph.node_mapping = node_mapping::to_device_ptr(graph->node_mapping);
+    }
+
+    // Make sure use_gpu is set to true
+    temp_graph.use_gpu = true;
+
+    // Copy the updated struct to device
+    cudaMemcpy(device_graph, &temp_graph, sizeof(TemporalGraph), cudaMemcpyHostToDevice);
+
+    return device_graph;
+}

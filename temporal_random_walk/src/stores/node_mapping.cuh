@@ -76,6 +76,8 @@ namespace node_mapping {
     DEVICE void mark_node_deleted_from_ptr(bool *is_deleted, int sparse_id, int size);
 
     DEVICE bool has_node(const NodeMapping *node_mapping, int sparse_id);
+
+    HOST NodeMapping* to_device_ptr(const NodeMapping* node_mapping);
 }
 
 #endif // NODE_MAPPING_H

@@ -190,7 +190,7 @@ namespace node_edge_index {
 
     HOST void update_temporal_weights_cuda(NodeEdgeIndex* node_edge_index, const EdgeData* edge_data, double timescale_bound);
 
-
+    HOST NodeEdgeIndex* to_device_ptr(const NodeEdgeIndex* node_edge_index);
 }
 
 #endif // NODE_EDGE_INDEX_H

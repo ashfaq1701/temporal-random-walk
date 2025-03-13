@@ -394,3 +394,47 @@ DEVICE bool node_mapping::has_node(const NodeMapping *node_mapping, const int sp
            sparse_id < node_mapping->sparse_to_dense_size &&
            node_mapping->sparse_to_dense[sparse_id] != -1;
 }
+
+HOST NodeMapping* node_mapping::to_device_ptr(const NodeMapping* node_mapping) {
+    // Create a new NodeMapping object on the device
+    NodeMapping* device_node_mapping;
+    cudaMalloc(&device_node_mapping, sizeof(NodeMapping));
+
+    // If already using GPU, just copy the struct with its pointers
+    if (node_mapping->use_gpu) {
+        cudaMemcpy(device_node_mapping, node_mapping, sizeof(NodeMapping), cudaMemcpyHostToDevice);
+    } else {
+        // Create a temporary copy to modify for device pointers
+        NodeMapping temp_node_mapping = *node_mapping;
+
+        // Copy each array to device if it exists
+        if (node_mapping->sparse_to_dense) {
+            int* d_sparse_to_dense;
+            cudaMalloc(&d_sparse_to_dense, node_mapping->sparse_to_dense_size * sizeof(int));
+            cudaMemcpy(d_sparse_to_dense, node_mapping->sparse_to_dense, node_mapping->sparse_to_dense_size * sizeof(int), cudaMemcpyHostToDevice);
+            temp_node_mapping.sparse_to_dense = d_sparse_to_dense;
+        }
+
+        if (node_mapping->dense_to_sparse) {
+            int* d_dense_to_sparse;
+            cudaMalloc(&d_dense_to_sparse, node_mapping->dense_to_sparse_size * sizeof(int));
+            cudaMemcpy(d_dense_to_sparse, node_mapping->dense_to_sparse, node_mapping->dense_to_sparse_size * sizeof(int), cudaMemcpyHostToDevice);
+            temp_node_mapping.dense_to_sparse = d_dense_to_sparse;
+        }
+
+        if (node_mapping->is_deleted) {
+            bool* d_is_deleted;
+            cudaMalloc(&d_is_deleted, node_mapping->is_deleted_size * sizeof(bool));
+            cudaMemcpy(d_is_deleted, node_mapping->is_deleted, node_mapping->is_deleted_size * sizeof(bool), cudaMemcpyHostToDevice);
+            temp_node_mapping.is_deleted = d_is_deleted;
+        }
+
+        // Make sure use_gpu is set to true
+        temp_node_mapping.use_gpu = true;
+
+        // Copy the updated struct to device
+        cudaMemcpy(device_node_mapping, &temp_node_mapping, sizeof(NodeMapping), cudaMemcpyHostToDevice);
+    }
+
+    return device_node_mapping;
+}

@@ -130,6 +130,8 @@ namespace temporal_graph {
         bool forward,
         curandState* rand_state);
 
+    HOST TemporalGraph* to_device_ptr(const TemporalGraph* graph);
+
 }
 
 #endif // TEMPORAL_GRAPH_H

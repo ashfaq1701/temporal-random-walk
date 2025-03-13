@@ -1266,3 +1266,110 @@ HOST void node_edge_index::update_temporal_weights_cuda(
         cudaFree(d_backward_weights);
     }
 }
+
+HOST NodeEdgeIndex* node_edge_index::to_device_ptr(const NodeEdgeIndex* node_edge_index) {
+    // Create a new NodeEdgeIndex object on the device
+    NodeEdgeIndex* device_node_edge_index;
+    cudaMalloc(&device_node_edge_index, sizeof(NodeEdgeIndex));
+
+    // If already using GPU, just copy the struct with its pointers
+    if (node_edge_index->use_gpu) {
+        cudaMemcpy(device_node_edge_index, node_edge_index, sizeof(NodeEdgeIndex), cudaMemcpyHostToDevice);
+    } else {
+        // Create a temporary copy to modify for device pointers
+        NodeEdgeIndex temp_node_edge_index = *node_edge_index;
+
+        // Copy each array to device if it exists
+        if (node_edge_index->outbound_offsets) {
+            size_t* d_outbound_offsets;
+            cudaMalloc(&d_outbound_offsets, node_edge_index->outbound_offsets_size * sizeof(size_t));
+            cudaMemcpy(d_outbound_offsets, node_edge_index->outbound_offsets, node_edge_index->outbound_offsets_size * sizeof(size_t), cudaMemcpyHostToDevice);
+            temp_node_edge_index.outbound_offsets = d_outbound_offsets;
+        }
+
+        if (node_edge_index->inbound_offsets) {
+            size_t* d_inbound_offsets;
+            cudaMalloc(&d_inbound_offsets, node_edge_index->inbound_offsets_size * sizeof(size_t));
+            cudaMemcpy(d_inbound_offsets, node_edge_index->inbound_offsets, node_edge_index->inbound_offsets_size * sizeof(size_t), cudaMemcpyHostToDevice);
+            temp_node_edge_index.inbound_offsets = d_inbound_offsets;
+        }
+
+        if (node_edge_index->outbound_indices) {
+            size_t* d_outbound_indices;
+            cudaMalloc(&d_outbound_indices, node_edge_index->outbound_indices_size * sizeof(size_t));
+            cudaMemcpy(d_outbound_indices, node_edge_index->outbound_indices, node_edge_index->outbound_indices_size * sizeof(size_t), cudaMemcpyHostToDevice);
+            temp_node_edge_index.outbound_indices = d_outbound_indices;
+        }
+
+        if (node_edge_index->inbound_indices) {
+            size_t* d_inbound_indices;
+            cudaMalloc(&d_inbound_indices, node_edge_index->inbound_indices_size * sizeof(size_t));
+            cudaMemcpy(d_inbound_indices, node_edge_index->inbound_indices, node_edge_index->inbound_indices_size * sizeof(size_t), cudaMemcpyHostToDevice);
+            temp_node_edge_index.inbound_indices = d_inbound_indices;
+        }
+
+        if (node_edge_index->outbound_timestamp_group_offsets) {
+            size_t* d_outbound_timestamp_group_offsets;
+            cudaMalloc(&d_outbound_timestamp_group_offsets, node_edge_index->outbound_timestamp_group_offsets_size * sizeof(size_t));
+            cudaMemcpy(d_outbound_timestamp_group_offsets, node_edge_index->outbound_timestamp_group_offsets,
+                      node_edge_index->outbound_timestamp_group_offsets_size * sizeof(size_t), cudaMemcpyHostToDevice);
+            temp_node_edge_index.outbound_timestamp_group_offsets = d_outbound_timestamp_group_offsets;
+        }
+
+        if (node_edge_index->inbound_timestamp_group_offsets) {
+            size_t* d_inbound_timestamp_group_offsets;
+            cudaMalloc(&d_inbound_timestamp_group_offsets, node_edge_index->inbound_timestamp_group_offsets_size * sizeof(size_t));
+            cudaMemcpy(d_inbound_timestamp_group_offsets, node_edge_index->inbound_timestamp_group_offsets,
+                      node_edge_index->inbound_timestamp_group_offsets_size * sizeof(size_t), cudaMemcpyHostToDevice);
+            temp_node_edge_index.inbound_timestamp_group_offsets = d_inbound_timestamp_group_offsets;
+        }
+
+        if (node_edge_index->outbound_timestamp_group_indices) {
+            size_t* d_outbound_timestamp_group_indices;
+            cudaMalloc(&d_outbound_timestamp_group_indices, node_edge_index->outbound_timestamp_group_indices_size * sizeof(size_t));
+            cudaMemcpy(d_outbound_timestamp_group_indices, node_edge_index->outbound_timestamp_group_indices,
+                      node_edge_index->outbound_timestamp_group_indices_size * sizeof(size_t), cudaMemcpyHostToDevice);
+            temp_node_edge_index.outbound_timestamp_group_indices = d_outbound_timestamp_group_indices;
+        }
+
+        if (node_edge_index->inbound_timestamp_group_indices) {
+            size_t* d_inbound_timestamp_group_indices;
+            cudaMalloc(&d_inbound_timestamp_group_indices, node_edge_index->inbound_timestamp_group_indices_size * sizeof(size_t));
+            cudaMemcpy(d_inbound_timestamp_group_indices, node_edge_index->inbound_timestamp_group_indices,
+                      node_edge_index->inbound_timestamp_group_indices_size * sizeof(size_t), cudaMemcpyHostToDevice);
+            temp_node_edge_index.inbound_timestamp_group_indices = d_inbound_timestamp_group_indices;
+        }
+
+        if (node_edge_index->outbound_forward_cumulative_weights_exponential) {
+            double* d_outbound_forward_weights;
+            cudaMalloc(&d_outbound_forward_weights, node_edge_index->outbound_forward_cumulative_weights_exponential_size * sizeof(double));
+            cudaMemcpy(d_outbound_forward_weights, node_edge_index->outbound_forward_cumulative_weights_exponential,
+                      node_edge_index->outbound_forward_cumulative_weights_exponential_size * sizeof(double), cudaMemcpyHostToDevice);
+            temp_node_edge_index.outbound_forward_cumulative_weights_exponential = d_outbound_forward_weights;
+        }
+
+        if (node_edge_index->outbound_backward_cumulative_weights_exponential) {
+            double* d_outbound_backward_weights;
+            cudaMalloc(&d_outbound_backward_weights, node_edge_index->outbound_backward_cumulative_weights_exponential_size * sizeof(double));
+            cudaMemcpy(d_outbound_backward_weights, node_edge_index->outbound_backward_cumulative_weights_exponential,
+                      node_edge_index->outbound_backward_cumulative_weights_exponential_size * sizeof(double), cudaMemcpyHostToDevice);
+            temp_node_edge_index.outbound_backward_cumulative_weights_exponential = d_outbound_backward_weights;
+        }
+
+        if (node_edge_index->inbound_backward_cumulative_weights_exponential) {
+            double* d_inbound_backward_weights;
+            cudaMalloc(&d_inbound_backward_weights, node_edge_index->inbound_backward_cumulative_weights_exponential_size * sizeof(double));
+            cudaMemcpy(d_inbound_backward_weights, node_edge_index->inbound_backward_cumulative_weights_exponential,
+                      node_edge_index->inbound_backward_cumulative_weights_exponential_size * sizeof(double), cudaMemcpyHostToDevice);
+            temp_node_edge_index.inbound_backward_cumulative_weights_exponential = d_inbound_backward_weights;
+        }
+
+        // Make sure use_gpu is set to true
+        temp_node_edge_index.use_gpu = true;
+
+        // Copy the updated struct to device
+        cudaMemcpy(device_node_edge_index, &temp_node_edge_index, sizeof(NodeEdgeIndex), cudaMemcpyHostToDevice);
+    }
+
+    return device_node_edge_index;
+}

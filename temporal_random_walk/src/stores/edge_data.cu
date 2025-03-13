@@ -413,7 +413,7 @@ HOST void edge_data::update_temporal_weights_cuda(EdgeData *edge_data, double ti
     cudaFree(d_backward_weights);
 }
 
-DEVICE size_t find_group_after_timestamp_device(const EdgeData *edge_data, int64_t timestamp) {
+DEVICE size_t edge_data::find_group_after_timestamp_device(const EdgeData *edge_data, int64_t timestamp) {
     if (edge_data->unique_timestamps_size == 0) return 0;
 
     const int64_t* begin = edge_data->unique_timestamps;
@@ -423,7 +423,7 @@ DEVICE size_t find_group_after_timestamp_device(const EdgeData *edge_data, int64
     return it - begin;
 }
 
-DEVICE size_t find_group_before_timestamp_device(const EdgeData *edge_data, int64_t timestamp) {
+DEVICE size_t edge_data::find_group_before_timestamp_device(const EdgeData *edge_data, int64_t timestamp) {
     if (edge_data->unique_timestamps_size == 0) return 0;
 
     const int64_t* begin = edge_data->unique_timestamps;
@@ -431,4 +431,80 @@ DEVICE size_t find_group_before_timestamp_device(const EdgeData *edge_data, int6
 
     auto it = cuda::std::lower_bound(begin, end, timestamp);
     return (it - begin) - 1;
+}
+
+HOST EdgeData* edge_data::to_device_ptr(const EdgeData* edge_data) {
+    // Create a new EdgeData object on the device
+    EdgeData* device_edge_data;
+    cudaMalloc(&device_edge_data, sizeof(EdgeData));
+
+    // If already using GPU, just copy the struct with its pointers
+    if (edge_data->use_gpu) {
+        cudaMemcpy(device_edge_data, edge_data, sizeof(EdgeData), cudaMemcpyHostToDevice);
+    } else {
+        // Create a temporary copy to modify for device pointers
+        EdgeData temp_edge_data = *edge_data;
+
+        // Copy each array to device if it exists
+        if (edge_data->sources) {
+            int* d_sources;
+            cudaMalloc(&d_sources, edge_data->sources_size * sizeof(int));
+            cudaMemcpy(d_sources, edge_data->sources, edge_data->sources_size * sizeof(int), cudaMemcpyHostToDevice);
+            temp_edge_data.sources = d_sources;
+        }
+
+        if (edge_data->targets) {
+            int* d_targets;
+            cudaMalloc(&d_targets, edge_data->targets_size * sizeof(int));
+            cudaMemcpy(d_targets, edge_data->targets, edge_data->targets_size * sizeof(int), cudaMemcpyHostToDevice);
+            temp_edge_data.targets = d_targets;
+        }
+
+        if (edge_data->timestamps) {
+            int64_t* d_timestamps;
+            cudaMalloc(&d_timestamps, edge_data->timestamps_size * sizeof(int64_t));
+            cudaMemcpy(d_timestamps, edge_data->timestamps, edge_data->timestamps_size * sizeof(int64_t), cudaMemcpyHostToDevice);
+            temp_edge_data.timestamps = d_timestamps;
+        }
+
+        if (edge_data->timestamp_group_offsets) {
+            size_t* d_timestamp_group_offsets;
+            cudaMalloc(&d_timestamp_group_offsets, edge_data->timestamp_group_offsets_size * sizeof(size_t));
+            cudaMemcpy(d_timestamp_group_offsets, edge_data->timestamp_group_offsets,
+                       edge_data->timestamp_group_offsets_size * sizeof(size_t), cudaMemcpyHostToDevice);
+            temp_edge_data.timestamp_group_offsets = d_timestamp_group_offsets;
+        }
+
+        if (edge_data->unique_timestamps) {
+            int64_t* d_unique_timestamps;
+            cudaMalloc(&d_unique_timestamps, edge_data->unique_timestamps_size * sizeof(int64_t));
+            cudaMemcpy(d_unique_timestamps, edge_data->unique_timestamps,
+                       edge_data->unique_timestamps_size * sizeof(int64_t), cudaMemcpyHostToDevice);
+            temp_edge_data.unique_timestamps = d_unique_timestamps;
+        }
+
+        if (edge_data->forward_cumulative_weights_exponential) {
+            double* d_forward_weights;
+            cudaMalloc(&d_forward_weights, edge_data->forward_cumulative_weights_exponential_size * sizeof(double));
+            cudaMemcpy(d_forward_weights, edge_data->forward_cumulative_weights_exponential,
+                       edge_data->forward_cumulative_weights_exponential_size * sizeof(double), cudaMemcpyHostToDevice);
+            temp_edge_data.forward_cumulative_weights_exponential = d_forward_weights;
+        }
+
+        if (edge_data->backward_cumulative_weights_exponential) {
+            double* d_backward_weights;
+            cudaMalloc(&d_backward_weights, edge_data->backward_cumulative_weights_exponential_size * sizeof(double));
+            cudaMemcpy(d_backward_weights, edge_data->backward_cumulative_weights_exponential,
+                       edge_data->backward_cumulative_weights_exponential_size * sizeof(double), cudaMemcpyHostToDevice);
+            temp_edge_data.backward_cumulative_weights_exponential = d_backward_weights;
+        }
+
+        // Make sure use_gpu is set to true
+        temp_edge_data.use_gpu = true;
+
+        // Copy the updated struct to device
+        cudaMemcpy(device_edge_data, &temp_edge_data, sizeof(EdgeData), cudaMemcpyHostToDevice);
+    }
+
+    return device_edge_data;
 }
