@@ -1,199 +1,219 @@
 #ifndef RANDOM_PICKER_PROXIES_H
 #define RANDOM_PICKER_PROXIES_H
 
-#include "../src/data/structs.cuh"
-#include "../src/data/enums.h"
-#include "../src/cuda_common/types.cuh"
-#include "../src/random/ExponentialIndexRandomPicker.cuh"
-#include "../src/random/LinearRandomPicker.cuh"
-#include "../src/random/UniformRandomPicker.cuh"
-#include "../src/random/WeightBasedRandomPicker.cuh"
+#include "../src/random/pickers.cuh"
+#include "../src/common/setup.cuh"
+
+__global__ inline void pick_exponential_random_number_cuda_kernel(
+    int* result,
+    const int start,
+    const int end,
+    const bool prioritize_end,
+    curandState* rand_states) {
+    // Each thread picks a random number
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Only the first thread computes the result
+    if (idx == 0) {
+        *result = random_pickers::pick_random_exponential_index_device(start, end, prioritize_end, &rand_states[idx]);
+    }
+}
 
 class ExponentialIndexRandomPickerProxy
 {
-private:
-    GPUUsageMode gpu_usage;
-    #ifdef HAS_CUDA
-    std::unique_ptr<ExponentialIndexRandomPicker<GPUUsageMode::ON_CPU>> cpu_impl;
-    std::unique_ptr<ExponentialIndexRandomPicker<GPUUsageMode::ON_GPU>> gpu_impl;
-    #else
-    std::unique_ptr<ExponentialIndexRandomPicker<GPUUsageMode::ON_CPU>> cpu_impl;
-    #endif
-
+    bool use_gpu;
 
 public:
-    explicit ExponentialIndexRandomPickerProxy(GPUUsageMode gpu_usage): gpu_usage(gpu_usage)
-    {
-        #ifndef HAS_CUDA
-        if (gpu_usage != GPUUsageMode::ON_CPU) {
-            throw std::runtime_error("GPU support is not available, only \"ON_CPU\" version is available.");
-        }
-        #endif
+    explicit ExponentialIndexRandomPickerProxy(const bool use_gpu) : use_gpu(use_gpu) {}
 
-        #ifdef HAS_CUDA
-        switch(gpu_usage) {
-        case GPUUsageMode::ON_GPU:
-            gpu_impl = std::make_unique<ExponentialIndexRandomPicker<GPUUsageMode::ON_GPU>>();
-            break;
-        default:  // ON_CPU
-            cpu_impl = std::make_unique<ExponentialIndexRandomPicker<GPUUsageMode::ON_CPU>>();
-        }
-        #else
-        cpu_impl = std::make_unique<ExponentialIndexRandomPicker<GPUUsageMode::ON_CPU>>();
-        #endif
-    }
+    int pick_random(const int start, const int end, const bool prioritize_end) const {
+        if (use_gpu) {
+            // Initialize CUDA random states (1 thread is enough since we only need 1 random number)
+            curandState* rand_states = get_cuda_rand_states(1, 1);
 
-    int pick_random(int start, int end, bool prioritize_end)
-    {
-        #ifdef HAS_CUDA
-        switch(gpu_usage) {
-        case GPUUsageMode::ON_GPU:
-            return gpu_impl->pick_random(start, end, prioritize_end);
-        default:  // ON_CPU
-            return cpu_impl->pick_random(start, end, prioritize_end);
+            // Allocate device memory for the result
+            int* d_result;
+            cudaMalloc(&d_result, sizeof(int));
+
+            // Launch kernel with a single thread
+            pick_exponential_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, prioritize_end, rand_states);
+
+            // Copy result back to host
+            int h_result;
+            cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost);
+
+            // Clean up
+            cudaFree(d_result);
+            cudaFree(rand_states);
+
+            return h_result;
+        } else {
+            return random_pickers::pick_random_exponential_index_host(start, end, prioritize_end);
         }
-        #else
-        return cpu_impl->pick_random(start, end, prioritize_end);
-        #endif
     }
 };
 
+
+__global__ inline void pick_linear_random_number_cuda_kernel(
+    int* result,
+    const int start,
+    const int end,
+    const bool prioritize_end,
+    curandState* rand_states) {
+    // Each thread picks a random number
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Only the first thread computes the result
+    if (idx == 0) {
+        *result = random_pickers::pick_random_linear_device(start, end, prioritize_end, &rand_states[idx]);
+    }
+}
 
 class LinearRandomPickerProxy
 {
-private:
-    GPUUsageMode gpu_usage;
-    #ifdef HAS_CUDA
-    std::unique_ptr<LinearRandomPicker<GPUUsageMode::ON_CPU>> cpu_impl;
-    std::unique_ptr<LinearRandomPicker<GPUUsageMode::ON_GPU>> gpu_impl;
-    #else
-    std::unique_ptr<LinearRandomPicker<GPUUsageMode::ON_CPU>> cpu_impl;
-    #endif
-
+    bool use_gpu;
 
 public:
-    explicit LinearRandomPickerProxy(GPUUsageMode gpu_usage): gpu_usage(gpu_usage)
-    {
-        #ifndef HAS_CUDA
-        if (gpu_usage != GPUUsageMode::ON_CPU) {
-            throw std::runtime_error("GPU support is not available, only \"ON_CPU\" version is available.");
-        }
-        #endif
+    explicit LinearRandomPickerProxy(const bool use_gpu) : use_gpu(use_gpu) {}
 
-        #ifdef HAS_CUDA
-        switch(gpu_usage) {
-        case GPUUsageMode::ON_GPU:
-            gpu_impl = std::make_unique<LinearRandomPicker<GPUUsageMode::ON_GPU>>();
-            break;
-        default:  // ON_CPU
-            cpu_impl = std::make_unique<LinearRandomPicker<GPUUsageMode::ON_CPU>>();
-        }
-        #else
-        cpu_impl = std::make_unique<LinearRandomPicker<GPUUsageMode::ON_CPU>>();
-        #endif
-    }
+    int pick_random(const int start, const int end, const bool prioritize_end) const {
+        if (use_gpu) {
+            // Initialize CUDA random states (1 thread is enough since we only need 1 random number)
+            curandState* rand_states = get_cuda_rand_states(1, 1);
 
-    int pick_random(int start, int end, bool prioritize_end)
-    {
-        #ifdef HAS_CUDA
-        switch(gpu_usage) {
-        case GPUUsageMode::ON_GPU:
-            return gpu_impl->pick_random(start, end, prioritize_end);
-        default:  // ON_CPU
-            return cpu_impl->pick_random(start, end, prioritize_end);
+            // Allocate device memory for the result
+            int* d_result;
+            cudaMalloc(&d_result, sizeof(int));
+
+            // Launch kernel with a single thread
+            pick_linear_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, prioritize_end, rand_states);
+
+            // Copy result back to host
+            int h_result;
+            cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost);
+
+            // Clean up
+            cudaFree(d_result);
+            cudaFree(rand_states);
+
+            return h_result;
+        } else {
+            return random_pickers::pick_random_linear_host(start, end, prioritize_end);
         }
-        #else
-        return cpu_impl->pick_random(start, end, prioritize_end);
-        #endif
     }
 };
 
+
+__global__ inline void pick_uniform_random_number_cuda_kernel(
+    int* result,
+    const int start,
+    const int end,
+    curandState* rand_states) {
+    // Each thread picks a random number
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Only the first thread computes the result
+    if (idx == 0) {
+        *result = random_pickers::pick_random_uniform_device(start, end, &rand_states[idx]);
+    }
+}
 
 class UniformRandomPickerProxy
 {
-private:
-    GPUUsageMode gpu_usage;
-    #ifdef HAS_CUDA
-    std::unique_ptr<UniformRandomPicker<GPUUsageMode::ON_CPU>> cpu_impl;
-    std::unique_ptr<UniformRandomPicker<GPUUsageMode::ON_GPU>> gpu_impl;
-    #else
-    std::unique_ptr<UniformRandomPicker<GPUUsageMode::ON_CPU>> cpu_impl;
-    #endif
-
+    bool use_gpu;
 
 public:
-    explicit UniformRandomPickerProxy(GPUUsageMode gpu_usage): gpu_usage(gpu_usage)
-    {
-        #ifndef HAS_CUDA
-        if (gpu_usage != GPUUsageMode::ON_CPU) {
-            throw std::runtime_error("GPU support is not available, only \"ON_CPU\" version is available.");
-        }
-        #endif
+    explicit UniformRandomPickerProxy(const bool use_gpu) : use_gpu(use_gpu) {}
 
-        #ifdef HAS_CUDA
-        switch(gpu_usage) {
-        case GPUUsageMode::ON_GPU:
-            gpu_impl = std::make_unique<UniformRandomPicker<GPUUsageMode::ON_GPU>>();
-            break;
-        default:  // ON_CPU
-            cpu_impl = std::make_unique<UniformRandomPicker<GPUUsageMode::ON_CPU>>();
-        }
-        #else
-        cpu_impl = std::make_unique<UniformRandomPicker<GPUUsageMode::ON_CPU>>();
-        #endif
-    }
+    int pick_random(const int start, const int end, const bool /* prioritize_end */) const {
+        if (use_gpu) {
+            // Initialize CUDA random states (1 thread is enough since we only need 1 random number)
+            curandState* rand_states = get_cuda_rand_states(1, 1);
 
-    int pick_random(int start, int end, bool prioritize_end)
-    {
-        #ifdef HAS_CUDA
-        switch(gpu_usage) {
-        case GPUUsageMode::ON_GPU:
-            return gpu_impl->pick_random(start, end, prioritize_end);
-        default:  // ON_CPU
-            return cpu_impl->pick_random(start, end, prioritize_end);
+            // Allocate device memory for the result
+            int* d_result;
+            cudaMalloc(&d_result, sizeof(int));
+
+            // Launch kernel with a single thread
+            pick_uniform_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, rand_states);
+
+            // Copy result back to host
+            int h_result;
+            cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost);
+
+            // Clean up
+            cudaFree(d_result);
+            cudaFree(rand_states);
+
+            return h_result;
+        } else {
+            return random_pickers::pick_random_uniform_host(start, end);
         }
-        #else
-        return cpu_impl->pick_random(start, end, prioritize_end);
-        #endif
     }
 };
 
+__global__ inline void pick_weighted_random_number_cuda_kernel(
+    int* result,
+    double* weights,
+    const size_t weights_size,
+    const size_t group_start,
+    const size_t group_end,
+    curandState* rand_states) {
+    // Each thread picks a random number
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Only the first thread computes the result
+    if (idx == 0) {
+        *result = random_pickers::pick_random_exponential_weights_device(weights, weights_size, group_start, group_end, &rand_states[idx]);
+    }
+}
+
 class WeightBasedRandomPickerProxy {
 private:
-    GPUUsageMode gpu_usage;
-    #ifdef HAS_CUDA
-    std::unique_ptr<WeightBasedRandomPicker<GPUUsageMode::ON_CPU>> cpu_impl;
-    std::unique_ptr<WeightBasedRandomPicker<GPUUsageMode::ON_GPU>> gpu_impl;
-    #else
-    std::unique_ptr<WeightBasedRandomPicker<GPUUsageMode::ON_CPU>> cpu_impl;
-    #endif
+    bool use_gpu;
 
 public:
-    explicit WeightBasedRandomPickerProxy(GPUUsageMode gpu_usage): gpu_usage(gpu_usage)
-    {
-        #ifndef HAS_CUDA
-        if (gpu_usage != GPUUsageMode::ON_CPU) {
-            throw std::runtime_error("GPU support is not available, only \"ON_CPU\" version is available.");
-        }
-        #endif
+    explicit WeightBasedRandomPickerProxy(const bool use_gpu) : use_gpu(use_gpu) {}
 
-        #ifdef HAS_CUDA
-        switch(gpu_usage) {
-        case GPUUsageMode::ON_GPU:
-            gpu_impl = std::make_unique<WeightBasedRandomPicker<GPUUsageMode::ON_GPU>>();
-            break;
-        default:  // ON_CPU
-            cpu_impl = std::make_unique<WeightBasedRandomPicker<GPUUsageMode::ON_CPU>>();
+    int pick_random(const double* weights, const size_t weights_size, const size_t group_start, const size_t group_end) const {
+        if (use_gpu) {
+            // Initialize CUDA random states
+            curandState* rand_states = get_cuda_rand_states(1, 1);
+
+            // Allocate device memory for weights
+            double* d_weights;
+            cudaMalloc(&d_weights, weights_size * sizeof(double));
+
+            // Copy weights to device
+            cudaMemcpy(d_weights, weights, weights_size * sizeof(double), cudaMemcpyHostToDevice);
+
+            // Allocate device memory for the result
+            int* d_result;
+            cudaMalloc(&d_result, sizeof(int));
+
+            // Launch kernel with a single thread
+            pick_weighted_random_number_cuda_kernel<<<1, 1>>>(d_result, d_weights, weights_size, group_start, group_end, rand_states);
+
+            // Copy result back to host
+            int h_result;
+            cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost);
+
+            // Clean up
+            cudaFree(d_result);
+            cudaFree(d_weights);
+            cudaFree(rand_states);
+
+            return h_result;
+        } else {
+            return random_pickers::pick_random_exponential_weights_host(
+                const_cast<double*>(weights), weights_size, group_start, group_end);
         }
-        #else
-        cpu_impl = std::make_unique<WeightBasedRandomPicker<GPUUsageMode::ON_CPU>>();
-        #endif
     }
 
-    int pick_random(const std::vector<double>& cumulative_weights, int group_start, int group_end) {
-        SelectVectorType<double, GPUUsageMode::ON_CPU>::type cumulative_weights_vector;
-        cumulative_weights_vector.assign(cumulative_weights.data(), cumulative_weights.data() + cumulative_weights.size());
-        return cpu_impl->pick_random(cumulative_weights_vector, group_start, group_end);
+    // Overload for vector input
+    int pick_random(const std::vector<double>& cumulative_weights, const int group_start, const int group_end) const {
+        return pick_random(cumulative_weights.data(), cumulative_weights.size(),
+                         static_cast<size_t>(group_start), static_cast<size_t>(group_end));
     }
 };
 
