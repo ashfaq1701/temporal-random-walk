@@ -2,8 +2,8 @@
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 #include <optional>
-#include "../src/proxies/temporal_random_walk_proxy.h"
-#include "../src/proxies/random_picker_proxies.h"
+#include "../src/proxies/temporal_random_walk_proxy.cuh"
+#include "../src/proxies/random_picker_proxies.cuh"
 #include <stdexcept>
 #include "../src/stores/enums.h"
 #include "../src/core/TemporalRandomWalk.cuh"

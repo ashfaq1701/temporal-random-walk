@@ -1,0 +1,4 @@
+#ifndef NODE_MAPPING_PROXY_H
+#define NODE_MAPPING_PROXY_H
+
+#endif // NODE_MAPPING_PROXY_H
