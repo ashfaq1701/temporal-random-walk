@@ -5,7 +5,6 @@
 #include <curand_kernel.h>
 #include "../common/macros.cuh"
 #include "../data/enums.cuh"
-#include "../data/structs.cuh"
 
 namespace random_pickers {
 

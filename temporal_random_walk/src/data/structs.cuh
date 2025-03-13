@@ -88,7 +88,7 @@ struct DataBlock {
     bool use_gpu;
 
     // Constructor allocates memory internally
-    DataBlock(const size_t size, const bool use_gpu) : size(size), use_gpu(use_gpu) {
+    HOST DataBlock(const size_t size, const bool use_gpu) : size(size), use_gpu(use_gpu) {
         if (size == 0) {
             data = nullptr;
         } else if (use_gpu) {
@@ -98,7 +98,7 @@ struct DataBlock {
         }
     }
 
-    ~DataBlock() {
+    HOST ~DataBlock() {
         if (data) {
             if (use_gpu) {
                 cudaFree(data);

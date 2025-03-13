@@ -85,7 +85,7 @@ HOST inline DataBlock<int> divide_number(const int n, const int i, const bool us
     return parts;
 }
 
-inline HOST DEVICE int pick_other_number(const int first, const int second, const int picked_number) {
+HOST DEVICE inline int pick_other_number(const int first, const int second, const int picked_number) {
     return (picked_number == first) ? second : first;
 }
 

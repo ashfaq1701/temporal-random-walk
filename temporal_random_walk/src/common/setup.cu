@@ -16,7 +16,7 @@ HOST inline curandState* get_cuda_rand_states(size_t grid_dim, size_t block_dim)
     return rand_states;
 }
 
-inline std::pair<size_t, size_t> get_optimal_launch_params(const size_t data_size, const cudaDeviceProp* device_prop) {
+HOST inline std::pair<size_t, size_t> get_optimal_launch_params(const size_t data_size, const cudaDeviceProp* device_prop) {
     size_t block_dim = 256;
     size_t grid_dim = (data_size + block_dim - 1) / block_dim;
     const size_t min_grid_size = 2 * device_prop->multiProcessorCount;
