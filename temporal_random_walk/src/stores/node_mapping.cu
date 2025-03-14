@@ -6,21 +6,21 @@
 #include <thrust/count.h>
 #include <thrust/extrema.h>
 
-HOST int node_mapping::to_dense(const NodeMapping *node_mapping, const int sparse_id) {
+HOST DEVICE int node_mapping::to_dense(const NodeMapping *node_mapping, const int sparse_id) {
     if (sparse_id < 0 || sparse_id >= node_mapping->sparse_to_dense_size) {
         return -1;
     }
     return node_mapping->sparse_to_dense[sparse_id];
 }
 
-HOST int node_mapping::to_sparse(const NodeMapping *node_mapping, const int dense_id) {
+HOST DEVICE int node_mapping::to_sparse(const NodeMapping *node_mapping, const int dense_id) {
     if (dense_id < 0 || dense_id >= node_mapping->dense_to_sparse_size) {
         return -1;
     }
     return node_mapping->dense_to_sparse[dense_id];
 }
 
-HOST size_t node_mapping::size(const NodeMapping *node_mapping) {
+HOST DEVICE size_t node_mapping::size(const NodeMapping *node_mapping) {
     return node_mapping->dense_to_sparse_size;
 }
 
@@ -404,13 +404,6 @@ HOST void node_mapping::update_cuda(NodeMapping *node_mapping, const EdgeData *e
     cudaFree(d_new_node_positions);
 }
 
-DEVICE int node_mapping::to_dense_device(const NodeMapping *node_mapping, const int sparse_id) {
-    if (sparse_id < 0 || sparse_id >= node_mapping->sparse_to_dense_size) {
-        return -1;
-    }
-    return node_mapping->sparse_to_dense[sparse_id];
-}
-
 DEVICE int node_mapping::to_dense_from_ptr_device(const int *sparse_to_dense, const int sparse_id, const size_t size) {
     return (sparse_id >= 0 && sparse_id < size) ? sparse_to_dense[sparse_id] : -1;
 }
@@ -421,7 +414,7 @@ DEVICE void node_mapping::mark_node_deleted_from_ptr(bool *is_deleted, const int
     }
 }
 
-DEVICE bool node_mapping::has_node(const NodeMapping *node_mapping, const int sparse_id) {
+HOST DEVICE bool node_mapping::has_node(const NodeMapping *node_mapping, const int sparse_id) {
     return sparse_id >= 0 &&
            sparse_id < node_mapping->sparse_to_dense_size &&
            node_mapping->sparse_to_dense[sparse_id] != -1;

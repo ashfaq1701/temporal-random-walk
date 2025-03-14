@@ -3,6 +3,10 @@
 
 #include "../stores/edge_data.cuh"
 
+__global__ void empty_kernel(bool* result, const EdgeData* edge_data);
+
+__global__ void size_kernel(size_t* result, const EdgeData* edge_data);
+
 __global__ void find_group_after_timestamp_kernel(size_t* result, const EdgeData* edge_data, int64_t timestamp);
 
 __global__ void find_group_before_timestamp_kernel(size_t* result, const EdgeData* edge_data, int64_t timestamp);
@@ -22,7 +26,7 @@ class EdgeDataProxy {
 
     void reserve(size_t size) const;
 
-    void clear();
+    void clear() const;
 
     [[nodiscard]] size_t size() const;
 
@@ -45,8 +49,6 @@ class EdgeDataProxy {
     [[nodiscard]] size_t find_group_after_timestamp(int64_t timestamp) const;
 
     [[nodiscard]] size_t find_group_before_timestamp(int64_t timestamp) const;
-
-    [[nodiscard]] EdgeData* get_edge_data() const;
 };
 
 #endif // EDGE_DATA_PROXY_H

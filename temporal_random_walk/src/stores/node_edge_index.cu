@@ -127,19 +127,13 @@ HOST DEVICE size_t node_edge_index::get_timestamp_group_count(const NodeEdgeInde
     }
 
     // Get start and end offsets for the node
-    size_t start = 0, end = 0;
-    if (node_edge_index->use_gpu) {
-        cudaMemcpy(&start, offsets + dense_node_id, sizeof(size_t), cudaMemcpyDeviceToHost);
-        cudaMemcpy(&end, offsets + (dense_node_id + 1), sizeof(size_t), cudaMemcpyDeviceToHost);
-    } else {
-        start = offsets[dense_node_id];
-        end = offsets[dense_node_id + 1];
-    }
+    const size_t start = offsets[dense_node_id];
+    const size_t end = offsets[dense_node_id + 1];
 
     return end - start;
 }
 
-HOST MemoryView<size_t> node_edge_index::get_timestamp_offset_vector(const NodeEdgeIndex* node_edge_index, const bool forward, const bool is_directed) {
+HOST DEVICE MemoryView<size_t> node_edge_index::get_timestamp_offset_vector(const NodeEdgeIndex* node_edge_index, const bool forward, const bool is_directed) {
     if (is_directed && !forward) {
         return MemoryView<size_t>{
             node_edge_index->inbound_timestamp_group_offsets,

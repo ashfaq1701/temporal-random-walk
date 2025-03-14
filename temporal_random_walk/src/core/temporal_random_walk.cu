@@ -153,7 +153,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
     }
 
     const auto repeated_node_ids = repeat_elements(
-        get_node_ids(temporal_random_walk),
+        temporal_graph::get_node_ids(temporal_random_walk->temporal_graph),
         num_walks_per_node,
         temporal_random_walk->use_gpu);
     shuffle_vector_host<int>(repeated_node_ids.data, repeated_node_ids.size);

@@ -59,11 +59,32 @@ HOST DEVICE void edge_data::add_edges(EdgeData *edge_data, const int *sources, c
     append_memory(&edge_data->timestamps, edge_data->timestamps_size, timestamps, size, edge_data->use_gpu);
 }
 
-HOST DEVICE DataBlock<Edge> edge_data::get_edges(const EdgeData *edge_data) {
+HOST DataBlock<Edge> edge_data::get_edges(const EdgeData *edge_data) {
     DataBlock<Edge> result(edge_data->timestamps_size, edge_data->use_gpu);
 
-    for (size_t i = 0; i < edge_data->timestamps_size; i++) {
-        result.data[i] = Edge{ edge_data->sources[i], edge_data->targets[i], edge_data->timestamps[i] };
+    if (edge_data->use_gpu) {
+        thrust::device_ptr<int> d_sources(edge_data->sources);
+        thrust::device_ptr<int> d_targets(edge_data->targets);
+        thrust::device_ptr<int64_t> d_timestamps(edge_data->timestamps);
+        thrust::device_ptr<Edge> d_result(result.data);
+
+        thrust::transform(
+            thrust::device,
+            thrust::make_counting_iterator<size_t>(0),
+            thrust::make_counting_iterator<size_t>(edge_data->timestamps_size),
+            d_result,
+            [d_sources, d_targets, d_timestamps] __device__ (const size_t i) {
+                return Edge{
+                    d_sources[i],
+                    d_targets[i],
+                    d_timestamps[i]
+                };
+            }
+        );
+    } else {
+        for (size_t i = 0; i < edge_data->timestamps_size; i++) {
+            result.data[i] = Edge{ edge_data->sources[i], edge_data->targets[i], edge_data->timestamps[i] };
+        }
     }
 
     return result;

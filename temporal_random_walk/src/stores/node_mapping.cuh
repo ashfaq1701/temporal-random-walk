@@ -38,11 +38,11 @@ namespace node_mapping {
     /**
      * Common Methods
      */
-    HOST int to_dense(const NodeMapping *node_mapping, int sparse_id);
+    HOST DEVICE int to_dense(const NodeMapping *node_mapping, int sparse_id);
 
-    HOST int to_sparse(const NodeMapping *node_mapping, int dense_id);
+    HOST DEVICE int to_sparse(const NodeMapping *node_mapping, int dense_id);
 
-    HOST size_t size(const NodeMapping *node_mapping);
+    HOST DEVICE size_t size(const NodeMapping *node_mapping);
 
     HOST size_t active_size(const NodeMapping *node_mapping);
 
@@ -69,13 +69,12 @@ namespace node_mapping {
     /**
      * Device functions
      */
-    DEVICE int to_dense_device(const NodeMapping *node_mapping, int sparse_id);
 
     DEVICE int to_dense_from_ptr_device(const int *sparse_to_dense, int sparse_id, size_t size);
 
     DEVICE void mark_node_deleted_from_ptr(bool *is_deleted, int sparse_id, int size);
 
-    DEVICE bool has_node(const NodeMapping *node_mapping, int sparse_id);
+    HOST DEVICE bool has_node(const NodeMapping *node_mapping, int sparse_id);
 
     HOST NodeMapping* to_device_ptr(const NodeMapping* node_mapping);
 }

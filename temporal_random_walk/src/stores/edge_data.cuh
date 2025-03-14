@@ -64,11 +64,11 @@ namespace edge_data {
 
     HOST void set_size(EdgeData* edge_data, size_t size);
 
-    HOST bool empty(const EdgeData *edge_data);
+    HOST DEVICE bool empty(const EdgeData *edge_data);
 
     HOST DEVICE void add_edges(EdgeData *edge_data, const int *sources, const int *targets, const int64_t *timestamps, size_t size);
 
-    HOST DEVICE DataBlock<Edge> get_edges(const EdgeData *edge_data);
+    HOST DataBlock<Edge> get_edges(const EdgeData *edge_data);
 
     HOST DEVICE SizeRange get_timestamp_group_range(const EdgeData *edge_data, size_t group_idx);
 
