@@ -66,7 +66,7 @@ namespace edge_data {
 
     HOST DEVICE bool empty(const EdgeData *edge_data);
 
-    HOST DEVICE void add_edges(EdgeData *edge_data, const int *sources, const int *targets, const int64_t *timestamps, size_t size);
+    HOST void add_edges(EdgeData *edge_data, const int *sources, const int *targets, const int64_t *timestamps, size_t size);
 
     HOST DataBlock<Edge> get_edges(const EdgeData *edge_data);
 

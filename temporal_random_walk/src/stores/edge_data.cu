@@ -53,7 +53,7 @@ HOST bool edge_data::empty(const EdgeData *edge_data) {
     return edge_data->timestamps_size == 0;
 }
 
-HOST DEVICE void edge_data::add_edges(EdgeData *edge_data, const int *sources, const int *targets, const int64_t *timestamps, const size_t size) {
+HOST void edge_data::add_edges(EdgeData *edge_data, const int *sources, const int *targets, const int64_t *timestamps, const size_t size) {
     append_memory(&edge_data->sources, edge_data->sources_size, sources, size, edge_data->use_gpu);
     append_memory(&edge_data->targets, edge_data->targets_size, targets, size, edge_data->use_gpu);
     append_memory(&edge_data->timestamps, edge_data->timestamps_size, timestamps, size, edge_data->use_gpu);
@@ -75,9 +75,9 @@ HOST DataBlock<Edge> edge_data::get_edges(const EdgeData *edge_data) {
             d_result,
             [d_sources, d_targets, d_timestamps] __device__ (const size_t i) {
                 return Edge{
-                    d_sources[i],
-                    d_targets[i],
-                    d_timestamps[i]
+                    d_sources[static_cast<long>(i)],
+                    d_targets[static_cast<long>(i)],
+                    d_timestamps[static_cast<long>(i)]
                 };
             }
         );
@@ -90,7 +90,7 @@ HOST DataBlock<Edge> edge_data::get_edges(const EdgeData *edge_data) {
     return result;
 }
 
-HOST DEVICE SizeRange edge_data::get_timestamp_group_range(const EdgeData *edge_data, size_t group_idx) {
+HOST SizeRange edge_data::get_timestamp_group_range(const EdgeData *edge_data, size_t group_idx) {
     if (group_idx >= edge_data->unique_timestamps_size) {
         return SizeRange{0, 0};
     }
@@ -102,7 +102,7 @@ HOST DEVICE size_t edge_data::get_timestamp_group_count(const EdgeData *edge_dat
     return edge_data->unique_timestamps_size;
 }
 
-HOST size_t find_group_after_timestamp(const EdgeData *edge_data, int64_t timestamp) {
+HOST size_t edge_data::find_group_after_timestamp(const EdgeData *edge_data, int64_t timestamp) {
     if (edge_data->unique_timestamps_size == 0) return 0;
 
     // Get raw pointer to data and use std::upper_bound directly
@@ -113,7 +113,7 @@ HOST size_t find_group_after_timestamp(const EdgeData *edge_data, int64_t timest
     return it - begin;
 }
 
-HOST size_t find_group_before_timestamp(const EdgeData *edge_data, int64_t timestamp) {
+HOST size_t edge_data::find_group_before_timestamp(const EdgeData *edge_data, int64_t timestamp) {
     if (edge_data->unique_timestamps_size == 0) return 0;
 
     // Get raw pointer to data and use std::lower_bound directly

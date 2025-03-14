@@ -3,7 +3,7 @@
 #include "../src/random/pickers.cuh"
 #include "../src/common/setup.cuh"
 
-__global__ inline void pick_exponential_random_number_cuda_kernel(
+__global__ void pick_exponential_random_number_cuda_kernel(
     int* result,
     const int start,
     const int end,
@@ -47,7 +47,7 @@ int ExponentialIndexRandomPickerProxy::pick_random(const int start, const int en
 }
 
 
-__global__ inline void pick_linear_random_number_cuda_kernel(
+__global__ void pick_linear_random_number_cuda_kernel(
     int* result,
     const int start,
     const int end,
@@ -91,7 +91,7 @@ int LinearRandomPickerProxy::pick_random(const int start, const int end, const b
 }
 
 
-__global__ inline void pick_uniform_random_number_cuda_kernel(
+__global__ void pick_uniform_random_number_cuda_kernel(
     int* result,
     const int start,
     const int end,
@@ -133,7 +133,7 @@ int UniformRandomPickerProxy::pick_random(const int start, const int end, const 
     }
 }
 
-__global__ inline void pick_weighted_random_number_cuda_kernel(
+__global__ void pick_weighted_random_number_cuda_kernel(
     int* result,
     double* weights,
     const size_t weights_size,

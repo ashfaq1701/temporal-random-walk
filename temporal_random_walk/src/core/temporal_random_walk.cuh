@@ -70,7 +70,7 @@ namespace temporal_random_walk {
      * Std implementations
      */
 
-    HOST void temporal_random_walk::generate_random_walk_and_time_std(
+    HOST void generate_random_walk_and_time_std(
         const TemporalRandomWalk* temporal_random_walk,
         int walk_idx,
         WalkSet* walk_set,
@@ -120,7 +120,7 @@ namespace temporal_random_walk {
         const RandomPickerType* initial_edge_bias=nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time);
 
-    HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
+    HOST WalkSet get_random_walks_and_times_cuda(
         const TemporalRandomWalk* temporal_random_walk,
         int max_walk_len,
         const RandomPickerType* walk_bias,

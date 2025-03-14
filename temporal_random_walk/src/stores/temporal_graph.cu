@@ -664,7 +664,7 @@ HOST void temporal_graph::delete_old_edges_cuda(TemporalGraph* graph) {
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
         thrust::make_counting_iterator<size_t>(graph->node_mapping->sparse_to_dense_size),
-        [has_edges, is_deleted_ptr, is_deleted_size] HOST DEVICE (const size_t i) {
+        [has_edges, is_deleted_ptr, is_deleted_size] DEVICE (const size_t i) {
             if (!has_edges[i]) {
                 node_mapping::mark_node_deleted_from_ptr(is_deleted_ptr, static_cast<int>(i), static_cast<int>(is_deleted_size));
             }
@@ -704,7 +704,7 @@ HOST size_t temporal_graph::count_timestamps_greater_than_cuda(const TemporalGra
 
 HOST size_t temporal_graph::count_node_timestamps_less_than_cuda(const TemporalGraph* graph, const int node_id, const int64_t timestamp) {
     // Used for backward walks
-    const int dense_idx = node_mapping::to_dense_device(graph->node_mapping, node_id);
+    const int dense_idx = node_mapping::to_dense(graph->node_mapping, node_id);
     if (dense_idx < 0) return 0;
 
     size_t* timestamp_group_offsets;
@@ -745,7 +745,7 @@ HOST size_t temporal_graph::count_node_timestamps_less_than_cuda(const TemporalG
 
 HOST size_t temporal_graph::count_node_timestamps_greater_than_cuda(const TemporalGraph* graph, const int node_id, const int64_t timestamp) {
     // Used for forward walks
-    const int dense_idx = node_mapping::to_dense_device(graph->node_mapping, node_id);
+    const int dense_idx = node_mapping::to_dense(graph->node_mapping, node_id);
     if (dense_idx < 0) return 0;
 
     const size_t* timestamp_group_offsets = graph->node_edge_index->outbound_timestamp_group_offsets;

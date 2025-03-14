@@ -9,16 +9,13 @@ __global__ void size_kernel(size_t* result, const NodeMapping* node_mapping) {
 
 __global__ void to_dense_kernel(int* result, const NodeMapping* node_mapping, const int sparse_id) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = node_mapping::to_dense_from_ptr_device(
-            node_mapping->sparse_to_dense,
-            static_cast<int>(node_mapping->sparse_to_dense_size),
-            sparse_id);
+        *result = node_mapping::to_dense_device(node_mapping, sparse_id);
     }
 }
 
 __global__ void to_sparse_kernel(int* result, const NodeMapping* node_mapping, const int dense_id) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = node_mapping::to_sparse(node_mapping, dense_id);
+        *result = node_mapping::to_sparse_device(node_mapping, dense_id);
     }
 }
 

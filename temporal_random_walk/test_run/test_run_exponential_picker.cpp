@@ -1,12 +1,14 @@
 #include <iostream>
-#include "../src/random/ExponentialIndexRandomPicker.cuh"
+#include <proxies/RandomPickerProxies.cuh>
+
+#include "../src/proxies/NodeEdgeIndexProxy.cuh"
 
 constexpr int TOTAL_TIMESTEPS = 100000000;
-constexpr GPUUsageMode GPU_USAGE_MODE = GPUUsageMode::ON_CPU;
+constexpr bool USE_GPU = false;
 
 int main()
 {
-    ExponentialIndexRandomPicker<GPU_USAGE_MODE> random_picker;
+    ExponentialIndexRandomPickerProxy random_picker(USE_GPU);
 
     std::cout << "Prioritizing end: " << std::endl;
     std::cout << "---------------------------------------" << std::endl;

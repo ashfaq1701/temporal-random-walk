@@ -1,10 +1,10 @@
 #include <vector>
 
-#include "../src/core/TemporalRandomWalk.cuh"
+#include "../src/proxies/TemporalRandomWalkProxy.cuh"
 #include "test_utils.h"
 #include "../test/test_utils.h"
 
-constexpr GPUUsageMode GPU_USAGE_MODE = GPUUsageMode::ON_GPU;
+constexpr bool USE_GPU = false;
 
 int main(int argc, char* argv[]) {
     std::string file_path = "../../data/sample_data.csv";
@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) {
     std::cout << edge_infos.size() << std::endl;
 
     auto start = std::chrono::high_resolution_clock::now();
-    TemporalRandomWalk<GPU_USAGE_MODE> temporal_random_walk(false, -1, true, 34);
+    TemporalRandomWalkProxy temporal_random_walk(false, USE_GPU, -1, true, 34);
     temporal_random_walk.add_multiple_edges(edge_infos);
     auto end = std::chrono::high_resolution_clock::now();
 

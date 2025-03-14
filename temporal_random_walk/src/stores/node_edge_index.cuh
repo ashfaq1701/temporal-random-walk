@@ -163,9 +163,9 @@ namespace node_edge_index {
 
     HOST void compute_node_edge_indices_cuda(
         NodeEdgeIndex* node_edge_index,
-        EdgeData* edge_data,
-        int* dense_sources,
-        int* dense_targets,
+        const EdgeData* edge_data,
+        const int* dense_sources,
+        const int* dense_targets,
         EdgeWithEndpointType* outbound_edge_indices_buffer,
         bool is_directed
     );

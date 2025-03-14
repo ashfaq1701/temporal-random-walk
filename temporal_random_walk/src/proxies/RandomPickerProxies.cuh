@@ -3,7 +3,7 @@
 
 #include "../src/common/setup.cuh"
 
-__global__ inline void pick_exponential_random_number_cuda_kernel(
+__global__ void pick_exponential_random_number_cuda_kernel(
     int* result,
     int start,
     int end,
@@ -20,7 +20,7 @@ public:
     int pick_random(int start, int end, bool prioritize_end) const;
 };
 
-__global__ inline void pick_linear_random_number_cuda_kernel(
+__global__ void pick_linear_random_number_cuda_kernel(
     int* result,
     int start,
     int end,
@@ -38,7 +38,7 @@ public:
     int pick_random(int start, int end, bool prioritize_end) const;
 };
 
-__global__ inline void pick_uniform_random_number_cuda_kernel(
+__global__ void pick_uniform_random_number_cuda_kernel(
     int* result,
     int start,
     int end,
@@ -53,7 +53,7 @@ public:
     int pick_random(int start, int end, bool /* prioritize_end */) const;
 };
 
-__global__ inline void pick_weighted_random_number_cuda_kernel(
+__global__ void pick_weighted_random_number_cuda_kernel(
     int* result,
     double* weights,
     size_t weights_size,

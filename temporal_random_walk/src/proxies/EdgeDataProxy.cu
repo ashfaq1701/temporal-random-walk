@@ -107,33 +107,8 @@ void EdgeDataProxy::add_edges(const std::vector<int>& sources, const std::vector
     }
 
     const size_t size = sources.size();
-
-    if (edge_data->use_gpu) {
-        // Allocate GPU memory for the data
-        int* d_sources = nullptr;
-        int* d_targets = nullptr;
-        int64_t* d_timestamps = nullptr;
-
-        cudaMalloc(&d_sources, size * sizeof(int));
-        cudaMalloc(&d_targets, size * sizeof(int));
-        cudaMalloc(&d_timestamps, size * sizeof(int64_t));
-
-        // Copy data to GPU
-        cudaMemcpy(d_sources, sources.data(), size * sizeof(int), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_targets, targets.data(), size * sizeof(int), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_timestamps, timestamps.data(), size * sizeof(int64_t), cudaMemcpyHostToDevice);
-
-        // Call add_edges
-        edge_data::add_edges(edge_data, d_sources, d_targets, d_timestamps, size);
-
-        // Free GPU memory
-        cudaFree(d_sources);
-        cudaFree(d_targets);
-        cudaFree(d_timestamps);
-    } else {
-        // Direct call for CPU implementation
-        edge_data::add_edges(edge_data, sources.data(), targets.data(), timestamps.data(), size);
-    }
+    // Direct call for CPU implementation
+    edge_data::add_edges(edge_data, sources.data(), targets.data(), timestamps.data(), size);
 }
 
 void EdgeDataProxy::push_back(const int source, const int target, const int64_t timestamp) const {

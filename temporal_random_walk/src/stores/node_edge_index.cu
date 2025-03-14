@@ -562,7 +562,7 @@ HOST void node_edge_index::compute_node_edge_offsets_cuda(
     }
 }
 
-HOST void compute_node_edge_indices_cuda(
+HOST void node_edge_index::compute_node_edge_indices_cuda(
     NodeEdgeIndex* node_edge_index,
     const EdgeData* edge_data,
     const int* dense_sources,
@@ -851,7 +851,7 @@ HOST void node_edge_index::rebuild(NodeEdgeIndex* node_edge_index, EdgeData* edg
     allocate_memory(&outbound_edge_indices_buffer, outbound_edge_indices_len, node_edge_index->use_gpu);
 
     if (node_edge_index->use_gpu) {
-        node_edge_index::compute_node_edge_indices_cuda(node_edge_index, edge_data, dense_sources, dense_targets, outbound_edge_indices_buffer, is_directed);
+        compute_node_edge_indices_cuda(node_edge_index, edge_data, dense_sources, dense_targets, outbound_edge_indices_buffer, is_directed);
     } else {
         compute_node_edge_indices_std(node_edge_index, edge_data, dense_sources, dense_targets, outbound_edge_indices_buffer, is_directed);
     }

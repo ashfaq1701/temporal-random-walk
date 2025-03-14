@@ -18,8 +18,7 @@ struct NodeMapping {
     bool *is_deleted = nullptr;
     size_t is_deleted_size = 0;
 
-    explicit NodeMapping(const bool use_gpu): use_gpu(use_gpu) {
-    }
+    explicit NodeMapping(const bool use_gpu): use_gpu(use_gpu) {}
 
     ~NodeMapping() {
         if (use_gpu) {
@@ -38,9 +37,9 @@ namespace node_mapping {
     /**
      * Common Methods
      */
-    HOST DEVICE int to_dense(const NodeMapping *node_mapping, int sparse_id);
+    HOST int to_dense(const NodeMapping *node_mapping, int sparse_id);
 
-    HOST DEVICE int to_sparse(const NodeMapping *node_mapping, int dense_id);
+    HOST int to_sparse(const NodeMapping *node_mapping, int dense_id);
 
     HOST DEVICE size_t size(const NodeMapping *node_mapping);
 
@@ -69,6 +68,10 @@ namespace node_mapping {
     /**
      * Device functions
      */
+
+    DEVICE int to_dense_device(const NodeMapping *node_mapping, int sparse_id);
+
+    DEVICE int to_sparse_device(const NodeMapping *node_mapping, int dense_id);
 
     DEVICE int to_dense_from_ptr_device(const int *sparse_to_dense, int sparse_id, size_t size);
 

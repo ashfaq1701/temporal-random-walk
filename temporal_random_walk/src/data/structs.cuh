@@ -305,7 +305,7 @@ struct DividedVector {
     }
 
     // Get begin iterator for a specific group
-    HOST DEVICE IndexValuePair<int, T>* group_begin(size_t group_idx) {
+    HOST IndexValuePair<int, T>* group_begin(size_t group_idx) {
         if (group_idx >= num_groups) {
             return nullptr;
         }
@@ -321,7 +321,7 @@ struct DividedVector {
     }
 
     // Get end iterator for a specific group
-    HOST DEVICE IndexValuePair<int, T>* group_end(size_t group_idx) {
+    HOST IndexValuePair<int, T>* group_end(size_t group_idx) {
         if (group_idx >= num_groups) {
             return nullptr;
         }
@@ -337,7 +337,7 @@ struct DividedVector {
     }
 
     // Get size of a specific group
-    HOST DEVICE [[nodiscard]] size_t group_size(size_t group_idx) const {
+    HOST [[nodiscard]] size_t group_size(size_t group_idx) const {
         if (group_idx >= num_groups) {
             return 0;
         }
@@ -359,24 +359,24 @@ struct DividedVector {
         DividedVector& divided_vector;
         size_t group_idx;
 
-        HOST DEVICE GroupIterator(DividedVector& dv, size_t idx)
+        HOST GroupIterator(DividedVector& dv, size_t idx)
             : divided_vector(dv), group_idx(idx) {}
 
-        HOST DEVICE IndexValuePair<int, T>* begin() const {
+        HOST IndexValuePair<int, T>* begin() const {
             return divided_vector.group_begin(group_idx);
         }
 
-        HOST DEVICE IndexValuePair<int, T>* end() const {
+        HOST IndexValuePair<int, T>* end() const {
             return divided_vector.group_end(group_idx);
         }
 
-        HOST DEVICE [[nodiscard]] size_t size() const {
+        HOST [[nodiscard]] size_t size() const {
             return divided_vector.group_size(group_idx);
         }
     };
 
     // Get an iterator for a specific group
-    HOST DEVICE GroupIterator get_group(size_t group_idx) {
+    HOST GroupIterator get_group(size_t group_idx) {
         return GroupIterator(*this, group_idx);
     }
 };

@@ -1,9 +1,9 @@
 #include <vector>
 
-#include "../src/core/TemporalRandomWalk.cuh"
+#include "../src/proxies/TemporalRandomWalkProxy.cuh"
 #include "test_utils.h"
 
-constexpr GPUUsageMode GPU_USAGE_MODE = GPUUsageMode::ON_CPU;
+constexpr bool USE_GPU = false;
 
 int main() {
     const std::vector<std::tuple<int, int, int64_t>> edges {
@@ -24,7 +24,7 @@ int main() {
         {5, 4, 32}
     };
 
-    TemporalRandomWalk<GPU_USAGE_MODE> temporal_random_walk(true);
+    TemporalRandomWalkProxy temporal_random_walk(true, USE_GPU);
     temporal_random_walk.add_multiple_edges(edges);
 
     constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;
