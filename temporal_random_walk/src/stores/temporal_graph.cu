@@ -25,7 +25,7 @@ HOST void temporal_graph::update_temporal_weights(const TemporalGraph* graph) {
     }
 }
 
-HOST size_t temporal_graph::get_total_edges(const TemporalGraph* graph) {
+HOST DEVICE size_t temporal_graph::get_total_edges(const TemporalGraph* graph) {
     return edge_data::size(graph->edge_data);
 }
 

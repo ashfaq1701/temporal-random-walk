@@ -52,7 +52,7 @@ namespace temporal_graph {
 
     HOST void update_temporal_weights(const TemporalGraph* graph);
 
-    HOST size_t get_total_edges(const TemporalGraph* graph);
+    HOST DEVICE size_t get_total_edges(const TemporalGraph* graph);
 
     HOST size_t get_node_count(const TemporalGraph* graph);
 

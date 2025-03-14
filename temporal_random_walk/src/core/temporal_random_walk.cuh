@@ -13,7 +13,7 @@ struct TemporalRandomWalk {
     bool enable_weight_computation;
     double timescale_bound;
     size_t n_threads;
-    ThreadPool thread_pool;
+    ThreadPool* thread_pool;
 
     cudaDeviceProp* cuda_device_prop;
     TemporalGraph* temporal_graph;
@@ -24,7 +24,7 @@ struct TemporalRandomWalk {
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
         const double timescale_bound,
-        const size_t n_threads): thread_pool(n_threads) {
+        const size_t n_threads): thread_pool(new ThreadPool(n_threads)) {
 
         this->is_directed = is_directed;
         this->use_gpu = use_gpu;
@@ -54,7 +54,7 @@ namespace temporal_random_walk {
 
     HOST size_t get_node_count(const TemporalRandomWalk* temporal_random_walk);
 
-    HOST size_t get_edge_count(const TemporalRandomWalk* temporal_random_walk);
+    HOST DEVICE size_t get_edge_count(const TemporalRandomWalk* temporal_random_walk);
 
     HOST DataBlock<int> get_node_ids(const TemporalRandomWalk* temporal_random_walk);
 
@@ -113,20 +113,22 @@ namespace temporal_random_walk {
         int num_walks);
 
     HOST WalkSet get_random_walks_and_times_for_all_nodes_cuda(
-        TemporalRandomWalk* temporal_random_walk,
+        const TemporalRandomWalk* temporal_random_walk,
         int max_walk_len,
-        RandomPickerType* walk_bias,
+        const RandomPickerType* walk_bias,
         int num_walks_per_node,
-        RandomPickerType* initial_edge_bias=nullptr,
+        const RandomPickerType* initial_edge_bias=nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time);
 
-    HOST WalkSet get_random_walks_and_times_cuda(
-        TemporalRandomWalk* temporal_random_walk,
+    HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
+        const TemporalRandomWalk* temporal_random_walk,
         int max_walk_len,
-        RandomPickerType* walk_bias,
+        const RandomPickerType* walk_bias,
         int num_walks_total,
-        RandomPickerType* initial_edge_bias=nullptr,
+        const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time);
+
+    HOST TemporalRandomWalk* to_device_ptr(const TemporalRandomWalk* graph);
 
 }
 #endif // TEMPORAL_RANDOM_WALK_H

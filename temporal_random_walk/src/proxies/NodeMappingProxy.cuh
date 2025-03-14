@@ -3,13 +3,12 @@
 
 #include "../stores/node_mapping.cuh"
 
-__global__ void to_dense_kernel(int* result, const NodeMapping* node_mapping, int sparse_id);
-
-__global__ void to_sparse_kernel(int* result, const NodeMapping* node_mapping, int dense_id);
-
+// Kernel declarations for device operations
 __global__ void size_kernel(size_t* result, const NodeMapping* node_mapping);
-
+__global__ void to_dense_kernel(int* result, const NodeMapping* node_mapping, int sparse_id);
+__global__ void to_sparse_kernel(int* result, const NodeMapping* node_mapping, int dense_id);
 __global__ void has_node_kernel(bool* result, const NodeMapping* node_mapping, int sparse_id);
+__global__ void mark_node_deleted_kernel(const NodeMapping* node_mapping, int sparse_id);
 
 class NodeMappingProxy {
     NodeMapping* node_mapping;
@@ -43,8 +42,6 @@ public:
     [[nodiscard]] std::vector<int> get_all_sparse_ids() const;
 
     void update(const EdgeData* edge_data, size_t start_idx, size_t end_idx) const;
-
-    [[nodiscard]] NodeMapping* get_node_mapping() const;
 };
 
 #endif // NODE_MAPPING_PROXY_H

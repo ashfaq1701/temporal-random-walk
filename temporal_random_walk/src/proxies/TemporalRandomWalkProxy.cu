@@ -1,5 +1,11 @@
 #include "TemporalRandomWalkProxy.cuh"
 
+__global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalk* temporal_random_walk) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        *result = temporal_random_walk::get_edge_count(temporal_random_walk);
+    }
+}
+
 TemporalRandomWalkProxy::TemporalRandomWalkProxy(
         const bool is_directed,
         const bool use_gpu,
@@ -71,7 +77,7 @@ std::vector<std::vector<int>> TemporalRandomWalkProxy::get_random_walks_for_all_
         RandomPickerType* walk_bias,
         const int num_walks_per_node,
         RandomPickerType* initial_edge_bias,
-        const WalkDirection walk_direction) {
+        const WalkDirection walk_direction) const {
 
     auto walks_with_times = get_random_walks_and_times_for_all_nodes(
         max_walk_len, walk_bias, num_walks_per_node, initial_edge_bias, walk_direction);
@@ -153,7 +159,25 @@ size_t TemporalRandomWalkProxy::get_node_count() const {
 }
 
 size_t TemporalRandomWalkProxy::get_edge_count() const {
-    return temporal_random_walk::get_edge_count(temporal_random_walk);
+    if (use_gpu) {
+        // Call via CUDA kernel for GPU implementation
+        size_t* d_result;
+        cudaMalloc(&d_result, sizeof(size_t));
+
+        TemporalRandomWalk* d_temporal_random_walk = temporal_random_walk::to_device_ptr(temporal_random_walk);
+        get_edge_count_kernel<<<1, 1>>>(d_result, temporal_random_walk);
+
+        size_t host_result;
+        cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost);
+
+        cudaFree(d_result);
+        cudaFree(d_temporal_random_walk);
+
+        return host_result;
+    } else {
+        // Direct call for CPU implementation
+        return temporal_random_walk::get_edge_count(temporal_random_walk);
+    }
 }
 
 std::vector<int> TemporalRandomWalkProxy::get_node_ids() const {

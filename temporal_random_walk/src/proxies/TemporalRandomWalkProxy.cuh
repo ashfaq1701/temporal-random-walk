@@ -6,6 +6,8 @@
 #include "../data/structs.cuh"
 #include "../data/enums.cuh"
 
+__global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalk* temporal_random_walk);
+
 class TemporalRandomWalkProxy {
     bool use_gpu;
     TemporalRandomWalk* temporal_random_walk;
@@ -35,7 +37,7 @@ public:
         RandomPickerType* walk_bias,
         int num_walks_per_node,
         RandomPickerType* initial_edge_bias=nullptr,
-        WalkDirection walk_direction=WalkDirection::Forward_In_Time);
+        WalkDirection walk_direction=WalkDirection::Forward_In_Time) const;
 
     std::vector<std::vector<NodeWithTime>> get_random_walks_and_times(
         int max_walk_len,

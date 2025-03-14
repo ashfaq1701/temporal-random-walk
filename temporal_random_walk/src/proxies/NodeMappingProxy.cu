@@ -1,20 +1,24 @@
 #include "NodeMappingProxy.cuh"
 
-__global__ void to_dense_kernel(int* result, const NodeMapping* node_mapping, int sparse_id) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = node_mapping::to_dense(node_mapping, sparse_id);
-    }
-}
-
-__global__ void to_sparse_kernel(int* result, const NodeMapping* node_mapping, int dense_id) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = node_mapping::to_sparse(node_mapping, dense_id);
-    }
-}
-
+// Kernel implementations
 __global__ void size_kernel(size_t* result, const NodeMapping* node_mapping) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = node_mapping->dense_to_sparse_size;
+        *result = node_mapping::size(node_mapping);
+    }
+}
+
+__global__ void to_dense_kernel(int* result, const NodeMapping* node_mapping, const int sparse_id) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        *result = node_mapping::to_dense_from_ptr_device(
+            node_mapping->sparse_to_dense,
+            static_cast<int>(node_mapping->sparse_to_dense_size),
+            sparse_id);
+    }
+}
+
+__global__ void to_sparse_kernel(int* result, const NodeMapping* node_mapping, const int dense_id) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        *result = node_mapping::to_sparse(node_mapping, dense_id);
     }
 }
 
@@ -24,7 +28,16 @@ __global__ void has_node_kernel(bool* result, const NodeMapping* node_mapping, i
     }
 }
 
-NodeMappingProxy::NodeMappingProxy(bool use_gpu) : owns_node_mapping(true) {
+__global__ void mark_node_deleted_kernel(const NodeMapping* node_mapping, int sparse_id) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        node_mapping::mark_node_deleted_from_ptr(
+            node_mapping->is_deleted,
+            sparse_id,
+            static_cast<int>(node_mapping->is_deleted_size));
+    }
+}
+
+NodeMappingProxy::NodeMappingProxy(const bool use_gpu) : owns_node_mapping(true) {
     node_mapping = new NodeMapping(use_gpu);
 }
 
@@ -37,7 +50,7 @@ NodeMappingProxy::~NodeMappingProxy() {
     }
 }
 
-int NodeMappingProxy::to_dense(int sparse_id) const {
+int NodeMappingProxy::to_dense(const int sparse_id) const {
     if (node_mapping->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         int* d_result;
@@ -104,11 +117,12 @@ size_t NodeMappingProxy::size() const {
 }
 
 size_t NodeMappingProxy::active_size() const {
+    // This function is HOST only, so no need for a kernel
     return node_mapping::active_size(node_mapping);
 }
 
 std::vector<int> NodeMappingProxy::get_active_node_ids() const {
-    // Call the namespace function
+    // Call the namespace function to get DataBlock
     DataBlock<int> ids_block = node_mapping::get_active_node_ids(node_mapping);
     std::vector<int> result;
 
@@ -137,15 +151,25 @@ std::vector<int> NodeMappingProxy::get_active_node_ids() const {
 }
 
 void NodeMappingProxy::clear() const {
+    // This function is HOST only
     node_mapping::clear(node_mapping);
 }
 
 void NodeMappingProxy::reserve(size_t size) const {
+    // This function is HOST only
     node_mapping::reserve(node_mapping, size);
 }
 
 void NodeMappingProxy::mark_node_deleted(int sparse_id) const {
-    node_mapping::mark_node_deleted(node_mapping, sparse_id);
+    if (node_mapping->use_gpu) {
+        // For GPU, use mark_node_deleted_from_ptr via kernel
+        NodeMapping* d_node_mapping = node_mapping::to_device_ptr(node_mapping);
+        mark_node_deleted_kernel<<<1, 1>>>(d_node_mapping, sparse_id);
+        cudaFree(d_node_mapping);
+    } else {
+        // For CPU, use regular mark_node_deleted
+        node_mapping::mark_node_deleted(node_mapping, sparse_id);
+    }
 }
 
 bool NodeMappingProxy::has_node(int sparse_id) const {
@@ -165,12 +189,13 @@ bool NodeMappingProxy::has_node(int sparse_id) const {
 
         return host_result;
     } else {
-        // CPU implementation - check via namespace function
+        // Direct call for CPU implementation
         return node_mapping::has_node(node_mapping, sparse_id);
     }
 }
 
 std::vector<int> NodeMappingProxy::get_all_sparse_ids() const {
+    // This function is HOST only
     MemoryView<int> sparse_ids = node_mapping::get_all_sparse_ids(node_mapping);
     std::vector<int> result;
 
@@ -190,13 +215,10 @@ std::vector<int> NodeMappingProxy::get_all_sparse_ids() const {
 }
 
 void NodeMappingProxy::update(const EdgeData* edge_data, size_t start_idx, size_t end_idx) const {
+    // Choose between std and cuda implementations based on mode
     if (node_mapping->use_gpu) {
         node_mapping::update_cuda(node_mapping, edge_data, start_idx, end_idx);
     } else {
         node_mapping::update_std(node_mapping, edge_data, start_idx, end_idx);
     }
-}
-
-NodeMapping* NodeMappingProxy::get_node_mapping() const {
-    return node_mapping;
 }
