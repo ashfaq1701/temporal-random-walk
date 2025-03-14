@@ -83,7 +83,7 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
         return;
     }
 
-    int current_node = -1;
+    int current_node;
     int64_t current_timestamp = should_walk_forward ? INT64_MIN : INT64_MAX;
 
     // Extract start edge components
@@ -143,9 +143,9 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
 HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
     TemporalRandomWalk* temporal_random_walk,
     int max_walk_len,
-    RandomPickerType* walk_bias,
+    const RandomPickerType* walk_bias,
     const int num_walks_per_node,
-    RandomPickerType* initial_edge_bias,
+    const RandomPickerType* initial_edge_bias,
     WalkDirection walk_direction) {
 
     if (!initial_edge_bias) {
@@ -211,9 +211,9 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
 HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
     TemporalRandomWalk* temporal_random_walk,
     int max_walk_len,
-    RandomPickerType* walk_bias,
+    const RandomPickerType* walk_bias,
     const int num_walks_total,
-    RandomPickerType* initial_edge_bias,
+    const RandomPickerType* initial_edge_bias,
     WalkDirection walk_direction) {
 
     if (!initial_edge_bias) {
@@ -314,7 +314,7 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
         return;
     }
 
-    int current_node = -1;
+    int current_node;
     int64_t current_timestamp = should_walk_forward ? INT64_MIN : INT64_MAX;
     int start_src = start_edge.u;
     int start_dst = start_edge.i;

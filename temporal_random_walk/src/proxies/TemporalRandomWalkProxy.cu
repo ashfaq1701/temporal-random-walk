@@ -34,9 +34,9 @@ void TemporalRandomWalkProxy::add_multiple_edges(const std::vector<std::tuple<in
 
 std::vector<std::vector<NodeWithTime>> TemporalRandomWalkProxy::get_random_walks_and_times_for_all_nodes(
         const int max_walk_len,
-        RandomPickerType* walk_bias,
+        const RandomPickerType* walk_bias,
         const int num_walks_per_node,
-        RandomPickerType* initial_edge_bias,
+        const RandomPickerType* initial_edge_bias,
         const WalkDirection walk_direction) const {
 
     WalkSet walk_set;
@@ -74,9 +74,9 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalkProxy::get_random_walks
 
 std::vector<std::vector<int>> TemporalRandomWalkProxy::get_random_walks_for_all_nodes(
         const int max_walk_len,
-        RandomPickerType* walk_bias,
+        const RandomPickerType* walk_bias,
         const int num_walks_per_node,
-        RandomPickerType* initial_edge_bias,
+        const RandomPickerType* initial_edge_bias,
         const WalkDirection walk_direction) const {
 
     auto walks_with_times = get_random_walks_and_times_for_all_nodes(
@@ -95,9 +95,9 @@ std::vector<std::vector<int>> TemporalRandomWalkProxy::get_random_walks_for_all_
 
 std::vector<std::vector<NodeWithTime>> TemporalRandomWalkProxy::get_random_walks_and_times(
         const int max_walk_len,
-        RandomPickerType* walk_bias,
+        const RandomPickerType* walk_bias,
         const int num_walks_total,
-        RandomPickerType* initial_edge_bias,
+        const RandomPickerType* initial_edge_bias,
         const WalkDirection walk_direction) const {
 
     WalkSet walk_set;
@@ -135,9 +135,9 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalkProxy::get_random_walks
 
 std::vector<std::vector<int>> TemporalRandomWalkProxy::get_random_walks(
         const int max_walk_len,
-        RandomPickerType* walk_bias,
+        const RandomPickerType* walk_bias,
         const int num_walks_total,
-        RandomPickerType* initial_edge_bias,
+        const RandomPickerType* initial_edge_bias,
         const WalkDirection walk_direction) const {
 
     auto walks_with_times = get_random_walks_and_times_for_all_nodes(

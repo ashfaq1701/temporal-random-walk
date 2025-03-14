@@ -27,30 +27,30 @@ public:
 
     std::vector<std::vector<NodeWithTime>> get_random_walks_and_times_for_all_nodes(
         int max_walk_len,
-        RandomPickerType* walk_bias,
+        const RandomPickerType* walk_bias,
         int num_walks_per_node,
-        RandomPickerType* initial_edge_bias=nullptr,
+        const RandomPickerType* initial_edge_bias=nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time) const;
 
     std::vector<std::vector<int>> get_random_walks_for_all_nodes(
         int max_walk_len,
-        RandomPickerType* walk_bias,
+        const RandomPickerType* walk_bias,
         int num_walks_per_node,
-        RandomPickerType* initial_edge_bias=nullptr,
+        const RandomPickerType* initial_edge_bias=nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time) const;
 
     std::vector<std::vector<NodeWithTime>> get_random_walks_and_times(
         int max_walk_len,
-        RandomPickerType* walk_bias,
+        const RandomPickerType* walk_bias,
         int num_walks_total,
-        RandomPickerType* initial_edge_bias=nullptr,
+        const RandomPickerType* initial_edge_bias=nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time) const;
 
     std::vector<std::vector<int>> get_random_walks(
         int max_walk_len,
-        RandomPickerType* walk_bias,
+        const RandomPickerType* walk_bias,
         int num_walks_total,
-        RandomPickerType* initial_edge_bias=nullptr,
+        const RandomPickerType* initial_edge_bias=nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time) const;
 
     [[nodiscard]] size_t get_node_count() const;

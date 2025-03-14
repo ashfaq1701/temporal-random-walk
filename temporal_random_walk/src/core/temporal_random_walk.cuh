@@ -83,17 +83,17 @@ namespace temporal_random_walk {
     HOST WalkSet get_random_walks_and_times_for_all_nodes_std(
         TemporalRandomWalk* temporal_random_walk,
         int max_walk_len,
-        RandomPickerType* walk_bias,
+        const RandomPickerType* walk_bias,
         int num_walks_per_node,
-        RandomPickerType* initial_edge_bias=nullptr,
+        const RandomPickerType* initial_edge_bias=nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time);
 
     HOST WalkSet get_random_walks_and_times_std(
         TemporalRandomWalk* temporal_random_walk,
         int max_walk_len,
-        RandomPickerType* walk_bias,
+        const RandomPickerType* walk_bias,
         int num_walks_total,
-        RandomPickerType* initial_edge_bias=nullptr,
+        const RandomPickerType* initial_edge_bias=nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time);
 
     /**
