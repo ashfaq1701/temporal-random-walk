@@ -39,7 +39,7 @@ HOST void edge_data::clear(EdgeData *edge_data) {
     edge_data->backward_cumulative_weights_exponential_size = 0;
 }
 
-HOST size_t edge_data::size(const EdgeData* edge_data) {
+HOST DEVICE size_t edge_data::size(const EdgeData* edge_data) {
     return edge_data->timestamps_size;
 }
 
@@ -53,13 +53,13 @@ HOST bool edge_data::empty(const EdgeData *edge_data) {
     return edge_data->timestamps_size == 0;
 }
 
-HOST void edge_data::add_edges(EdgeData *edge_data, const int *sources, const int *targets, const int64_t *timestamps, const size_t size) {
+HOST DEVICE void edge_data::add_edges(EdgeData *edge_data, const int *sources, const int *targets, const int64_t *timestamps, const size_t size) {
     append_memory(&edge_data->sources, edge_data->sources_size, sources, size, edge_data->use_gpu);
     append_memory(&edge_data->targets, edge_data->targets_size, targets, size, edge_data->use_gpu);
     append_memory(&edge_data->timestamps, edge_data->timestamps_size, timestamps, size, edge_data->use_gpu);
 }
 
-HOST DataBlock<Edge> edge_data::get_edges(const EdgeData *edge_data) {
+HOST DEVICE DataBlock<Edge> edge_data::get_edges(const EdgeData *edge_data) {
     DataBlock<Edge> result(edge_data->timestamps_size, edge_data->use_gpu);
 
     for (size_t i = 0; i < edge_data->timestamps_size; i++) {
@@ -297,8 +297,9 @@ HOST void edge_data::update_temporal_weights_cuda(EdgeData *edge_data, double ti
         return;
     }
 
-    const int64_t min_timestamp = edge_data->timestamps[0];
-    const int64_t max_timestamp = edge_data->timestamps[edge_data->timestamps_size - 1];
+    int64_t min_timestamp, max_timestamp;
+    cudaMemcpy(&min_timestamp, edge_data->timestamps, sizeof(int64_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&max_timestamp, edge_data->timestamps + (edge_data->timestamps_size - 1), sizeof(int64_t), cudaMemcpyDeviceToHost);
 
     const auto time_diff = static_cast<double>(max_timestamp - min_timestamp);
     const double time_scale = (timescale_bound > 0 && time_diff > 0) ?

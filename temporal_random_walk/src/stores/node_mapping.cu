@@ -3,6 +3,7 @@
 #include "../common/memory.cuh"
 #include <common/cuda_config.cuh>
 #include <thrust/device_ptr.h>
+#include <thrust/count.h>
 #include <thrust/extrema.h>
 
 HOST int node_mapping::to_dense(const NodeMapping *node_mapping, const int sparse_id) {
@@ -24,29 +25,57 @@ HOST size_t node_mapping::size(const NodeMapping *node_mapping) {
 }
 
 HOST size_t node_mapping::active_size(const NodeMapping *node_mapping) {
-    size_t count = 0;
-    for (size_t i = 0; i < node_mapping->is_deleted_size; i++) {
-        if (!node_mapping->is_deleted[i]) {
-            count++;
+    if (!node_mapping->use_gpu) {
+        size_t count = 0;
+        for (size_t i = 0; i < node_mapping->is_deleted_size; i++) {
+            if (!node_mapping->is_deleted[i]) {
+                count++;
+            }
         }
+        return count;
+    } else {
+        return thrust::count(
+            DEVICE_EXECUTION_POLICY,
+            thrust::device_pointer_cast(node_mapping->is_deleted),
+            thrust::device_pointer_cast(node_mapping->is_deleted) + static_cast<long>(node_mapping->is_deleted_size),
+            false // Count elements where is_deleted == false
+        );
     }
-    return count;
 }
 
 HOST DataBlock<int> node_mapping::get_active_node_ids(const NodeMapping *node_mapping) {
     const size_t active_count = active_size(node_mapping);
-    DataBlock<int> result(active_count, false);
+    DataBlock<int> result(active_count, node_mapping->use_gpu);
 
-    size_t index = 0;
-    for (size_t i = 0; i < node_mapping->dense_to_sparse_size; i++) {
-        int sparse_id = node_mapping->dense_to_sparse[i];
-        if (sparse_id >= 0 && sparse_id < node_mapping->is_deleted_size && !node_mapping->is_deleted[sparse_id]) {
-            result.data[index++] = sparse_id;
+    if (!node_mapping->use_gpu) {
+        size_t index = 0;
+        for (size_t i = 0; i < node_mapping->dense_to_sparse_size; i++) {
+            int sparse_id = node_mapping->dense_to_sparse[i];
+            if (sparse_id >= 0 && sparse_id < node_mapping->is_deleted_size && !node_mapping->is_deleted[sparse_id]) {
+                result.data[index++] = sparse_id;
+            }
         }
+    } else {
+        // GPU version using thrust::device_ptr
+        thrust::device_ptr<int> d_dense_to_sparse(node_mapping->dense_to_sparse);
+        thrust::device_ptr<bool> d_is_deleted(node_mapping->is_deleted);
+        thrust::device_ptr<int> d_result(result.data);  // Assuming result.d_data is a device pointer
+
+        // Use Thrust's copy_if to filter active nodes
+        thrust::copy_if(
+            DEVICE_EXECUTION_POLICY,
+            d_dense_to_sparse,
+            d_dense_to_sparse + static_cast<long>(node_mapping->dense_to_sparse_size),
+            d_result,
+            [d_is_deleted] __device__ (const int sparse_id) {
+                return (sparse_id >= 0) && !d_is_deleted[sparse_id];
+            }
+        );
     }
 
     return result;
 }
+
 
 HOST void node_mapping::clear(NodeMapping *node_mapping) {
     clear_memory(&node_mapping->sparse_to_dense, node_mapping->use_gpu);
@@ -77,10 +106,13 @@ HOST void node_mapping::reserve(NodeMapping *node_mapping, size_t size) {
 }
 
 HOST void node_mapping::mark_node_deleted(const NodeMapping *node_mapping, const int sparse_id) {
-    if (sparse_id >= 0 && sparse_id < node_mapping->is_deleted_size) {
-        node_mapping->is_deleted[sparse_id] = true;
+    if (sparse_id < 0 || sparse_id >= node_mapping->is_deleted_size) {
+        return;
     }
+
+    node_mapping->is_deleted[sparse_id] = true;
 }
+
 
 HOST MemoryView<int> node_mapping::get_all_sparse_ids(const NodeMapping *node_mapping) {
     return MemoryView{node_mapping->dense_to_sparse, node_mapping->dense_to_sparse_size};

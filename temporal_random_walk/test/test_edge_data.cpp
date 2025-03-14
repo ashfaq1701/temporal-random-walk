@@ -1,6 +1,5 @@
-#include <stores/cuda/EdgeDataCUDA.cuh>
 #include <gtest/gtest.h>
-#include "../src/stores/proxies/EdgeData.cuh"
+#include "../src/proxies/EdgeDataProxy.cuh"
 
 template<typename T>
 class EdgeDataTest : public ::testing::Test {

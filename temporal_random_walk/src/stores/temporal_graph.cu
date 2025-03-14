@@ -723,8 +723,8 @@ HOST size_t temporal_graph::count_node_timestamps_less_than_cuda(const TemporalG
 
     // Copy offsets from device to host
     size_t group_start, group_end;
-    cudaMemcpy(&group_start, &timestamp_group_offsets[dense_idx], sizeof(size_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&group_end, &timestamp_group_offsets[dense_idx + 1], sizeof(size_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&group_start, timestamp_group_offsets + dense_idx, sizeof(size_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&group_end, timestamp_group_offsets + dense_idx + 1, sizeof(size_t), cudaMemcpyDeviceToHost);
     if (group_start == group_end) return 0;
 
     int64_t* timestamps_ptr = graph->edge_data->timestamps;
@@ -754,8 +754,8 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_cuda(const Tempor
 
     // Copy offsets from device to host
     size_t group_start, group_end;
-    cudaMemcpy(&group_start, &timestamp_group_offsets[dense_idx], sizeof(size_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&group_end, &timestamp_group_offsets[dense_idx + 1], sizeof(size_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&group_start, timestamp_group_offsets + dense_idx, sizeof(size_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&group_end, timestamp_group_offsets + (dense_idx + 1), sizeof(size_t), cudaMemcpyDeviceToHost);
     if (group_start == group_end) return 0;
 
     int64_t* timestamps_ptr = graph->edge_data->timestamps;

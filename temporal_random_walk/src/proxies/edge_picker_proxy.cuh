@@ -1,4 +1,0 @@
-#ifndef EDGE_PICKER_PROXY_H
-#define EDGE_PICKER_PROXY_H
-
-#endif // EDGE_PICKER_PROXY_H

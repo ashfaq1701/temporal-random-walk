@@ -82,11 +82,11 @@ namespace node_edge_index {
      */
     HOST void clear(NodeEdgeIndex* node_edge_index);
 
-    HOST SizeRange get_edge_range(const NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed);
+    HOST DEVICE SizeRange get_edge_range(const NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed);
 
-    HOST SizeRange get_timestamp_group_range(const NodeEdgeIndex* node_edge_index, int dense_node_id, size_t group_idx, bool forward, bool is_directed);
+    HOST DEVICE SizeRange get_timestamp_group_range(const NodeEdgeIndex* node_edge_index, int dense_node_id, size_t group_idx, bool forward, bool is_directed);
 
-    HOST size_t get_timestamp_group_count(const NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed);
+    HOST DEVICE size_t get_timestamp_group_count(const NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed);
 
     HOST MemoryView<size_t> get_timestamp_offset_vector(const NodeEdgeIndex* node_edge_index, bool forward, bool is_directed);
 

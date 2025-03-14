@@ -144,7 +144,7 @@ HOST void copy_memory(T* dst, const T* src, const size_t size, const bool dst_gp
         cudaMemcpy(dst, src, size * sizeof(T), cudaMemcpyDeviceToHost);
     } else {
         // Host to host
-        std::memcpy(dst, src, size * sizeof(T), size * sizeof(T));
+        std::memcpy(dst, src, size * sizeof(T));
     }
 }
 

@@ -42,6 +42,13 @@ set(SRC_FILES
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/random/pickers.cu
 
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/core/temporal_random_walk.cu
+
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/EdgeDataProxy.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/NodeMappingProxy.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/NodeEdgeIndexProxy.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/TemporalGraphProxy.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/RandomPickerProxies.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/TemporalRandomWalkProxy.cu
 )
 
 if(HAS_CUDA AND CMAKE_CUDA_COMPILER)

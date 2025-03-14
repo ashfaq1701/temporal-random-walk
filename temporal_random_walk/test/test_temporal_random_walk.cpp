@@ -2,8 +2,7 @@
 #include <cmath>
 
 #include "test_utils.h"
-#include "../py_interface/temporal_random_walk_proxy.h"
-#include "../src/core/TemporalRandomWalk.cuh"
+#include "../src/proxies/TemporalRandomWalkProxy.cuh"
 
 constexpr int TEST_NODE_ID = 42;
 constexpr int MAX_WALK_LEN = 20;

@@ -46,7 +46,7 @@ HOST void node_edge_index::clear(NodeEdgeIndex* node_edge_index) {
     node_edge_index->inbound_backward_cumulative_weights_exponential_size = 0;
 }
 
-HOST SizeRange node_edge_index::get_edge_range(const NodeEdgeIndex* node_edge_index, const int dense_node_id, const bool forward, const bool is_directed) {
+HOST DEVICE SizeRange node_edge_index::get_edge_range(const NodeEdgeIndex* node_edge_index, const int dense_node_id, const bool forward, const bool is_directed) {
     if (is_directed) {
         const size_t* offsets = forward ? node_edge_index->outbound_offsets : node_edge_index->inbound_offsets;
         size_t offsets_size = forward ? node_edge_index->outbound_offsets_size : node_edge_index->inbound_offsets_size;
@@ -55,14 +55,8 @@ HOST SizeRange node_edge_index::get_edge_range(const NodeEdgeIndex* node_edge_in
             return SizeRange{0, 0};
         }
 
-        size_t start = 0, end = 0;
-        if (node_edge_index->use_gpu) {
-            cudaMemcpy(&start, &offsets[dense_node_id], sizeof(size_t), cudaMemcpyDeviceToHost);
-            cudaMemcpy(&end, &offsets[dense_node_id + 1], sizeof(size_t), cudaMemcpyDeviceToHost);
-        } else {
-            start = offsets[dense_node_id];
-            end = offsets[dense_node_id + 1];
-        }
+        const size_t start = offsets[dense_node_id];
+        const size_t end = offsets[dense_node_id + 1];
 
         return SizeRange{start, end};
     } else {
@@ -70,24 +64,18 @@ HOST SizeRange node_edge_index::get_edge_range(const NodeEdgeIndex* node_edge_in
             return SizeRange{0, 0};
         }
 
-        size_t start = 0, end = 0;
-        if (node_edge_index->use_gpu) {
-            cudaMemcpy(&start, &node_edge_index->outbound_offsets[dense_node_id], sizeof(size_t), cudaMemcpyDeviceToHost);
-            cudaMemcpy(&end, &node_edge_index->outbound_offsets[dense_node_id + 1], sizeof(size_t), cudaMemcpyDeviceToHost);
-        } else {
-            start = node_edge_index->outbound_offsets[dense_node_id];
-            end = node_edge_index->outbound_offsets[dense_node_id + 1];
-        }
+        const size_t start = node_edge_index->outbound_offsets[dense_node_id];
+        const size_t end = node_edge_index->outbound_offsets[dense_node_id + 1];
 
         return SizeRange{start, end};
     }
 }
 
-HOST SizeRange node_edge_index::get_timestamp_group_range(const NodeEdgeIndex* node_edge_index, const int dense_node_id, const size_t group_idx, const bool forward, const bool is_directed) {
-    size_t* group_offsets = nullptr;
+HOST DEVICE SizeRange node_edge_index::get_timestamp_group_range(const NodeEdgeIndex* node_edge_index, const int dense_node_id, const size_t group_idx, const bool forward, const bool is_directed) {
+    const size_t* group_offsets = nullptr;
     size_t group_offsets_size = 0;
-    size_t* group_indices = nullptr;
-    size_t* edge_offsets = nullptr;
+    const size_t* group_indices = nullptr;
+    const size_t* edge_offsets = nullptr;
 
     if (is_directed && !forward) {
         group_offsets = node_edge_index->inbound_timestamp_group_offsets;
@@ -105,51 +93,32 @@ HOST SizeRange node_edge_index::get_timestamp_group_range(const NodeEdgeIndex* n
         return SizeRange{0, 0};
     }
 
-    size_t node_group_start = 0, node_group_end = 0;
-    if (node_edge_index->use_gpu) {
-        cudaMemcpy(&node_group_start, &group_offsets[dense_node_id], sizeof(size_t), cudaMemcpyDeviceToHost);
-        cudaMemcpy(&node_group_end, &group_offsets[dense_node_id + 1], sizeof(size_t), cudaMemcpyDeviceToHost);
-    } else {
-        node_group_start = group_offsets[dense_node_id];
-        node_group_end = group_offsets[dense_node_id + 1];
-    }
+    const size_t node_group_start = group_offsets[dense_node_id];
+    const size_t node_group_end = group_offsets[dense_node_id + 1];
 
-    size_t num_groups = node_group_end - node_group_start;
+    const size_t num_groups = node_group_end - node_group_start;
     if (group_idx >= num_groups) {
         return SizeRange{0, 0};
     }
 
-    size_t group_start_idx = node_group_start + group_idx;
-    size_t group_start = 0;
-    if (node_edge_index->use_gpu) {
-        cudaMemcpy(&group_start, &group_indices[group_start_idx], sizeof(size_t), cudaMemcpyDeviceToHost);
-    } else {
-        group_start = group_indices[group_start_idx];
-    }
+    const size_t group_start_idx = node_group_start + group_idx;
+    const size_t group_start = group_indices[group_start_idx];
 
     // Group end is either next group's start or node's edge range end
     size_t group_end = 0;
     if (group_idx == num_groups - 1) {
-        if (node_edge_index->use_gpu) {
-            cudaMemcpy(&group_end, &edge_offsets[dense_node_id + 1], sizeof(size_t), cudaMemcpyDeviceToHost);
-        } else {
-            group_end = edge_offsets[dense_node_id + 1];
-        }
+        group_end = edge_offsets[dense_node_id + 1];
     } else {
-        if (node_edge_index->use_gpu) {
-            cudaMemcpy(&group_end, &group_indices[group_start_idx + 1], sizeof(size_t), cudaMemcpyDeviceToHost);
-        } else {
-            group_end = group_indices[group_start_idx + 1];
-        }
+        group_end = group_indices[group_start_idx + 1];
     }
 
     return SizeRange{group_start, group_end};
 }
 
-HOST size_t node_edge_index::get_timestamp_group_count(const NodeEdgeIndex* node_edge_index, const int dense_node_id, const bool forward, const bool is_directed) {
+HOST DEVICE size_t node_edge_index::get_timestamp_group_count(const NodeEdgeIndex* node_edge_index, const int dense_node_id, const bool forward, const bool is_directed) {
     // Get the appropriate timestamp offset vector
     MemoryView<size_t> offsets_block = get_timestamp_offset_vector(node_edge_index, forward, is_directed);
-    size_t* offsets = offsets_block.data;
+    const size_t* offsets = offsets_block.data;
     size_t offsets_size = offsets_block.size;
 
     // Check if the node ID is valid
@@ -160,8 +129,8 @@ HOST size_t node_edge_index::get_timestamp_group_count(const NodeEdgeIndex* node
     // Get start and end offsets for the node
     size_t start = 0, end = 0;
     if (node_edge_index->use_gpu) {
-        cudaMemcpy(&start, &offsets[dense_node_id], sizeof(size_t), cudaMemcpyDeviceToHost);
-        cudaMemcpy(&end, &offsets[dense_node_id + 1], sizeof(size_t), cudaMemcpyDeviceToHost);
+        cudaMemcpy(&start, offsets + dense_node_id, sizeof(size_t), cudaMemcpyDeviceToHost);
+        cudaMemcpy(&end, offsets + (dense_node_id + 1), sizeof(size_t), cudaMemcpyDeviceToHost);
     } else {
         start = offsets[dense_node_id];
         end = offsets[dense_node_id + 1];
@@ -210,7 +179,7 @@ HOST void node_edge_index::allocate_node_edge_indices(NodeEdgeIndex* node_edge_i
     if (node_edge_index->use_gpu) {
         // For GPU memory, we need to copy the value back to host
         cudaMemcpy(&num_outbound_edges,
-                  &node_edge_index->outbound_offsets[node_edge_index->outbound_offsets_size - 1],
+                  node_edge_index->outbound_offsets + (node_edge_index->outbound_offsets_size - 1),
                   sizeof(size_t),
                   cudaMemcpyDeviceToHost);
     } else {
@@ -227,7 +196,7 @@ HOST void node_edge_index::allocate_node_edge_indices(NodeEdgeIndex* node_edge_i
         size_t num_inbound_edges = 0;
         if (node_edge_index->use_gpu) {
             cudaMemcpy(&num_inbound_edges,
-                      &node_edge_index->inbound_offsets[node_edge_index->inbound_offsets_size - 1],
+                      node_edge_index->inbound_offsets + (node_edge_index->inbound_offsets_size - 1),
                       sizeof(size_t),
                       cudaMemcpyDeviceToHost);
         } else {
@@ -244,7 +213,7 @@ HOST void node_edge_index::allocate_node_timestamp_indices(NodeEdgeIndex* node_e
     if (node_edge_index->use_gpu) {
         // For GPU memory, we need to copy the value back to host
         cudaMemcpy(&num_outbound_groups,
-                  &node_edge_index->outbound_timestamp_group_offsets[node_edge_index->outbound_timestamp_group_offsets_size - 1],
+                  node_edge_index->outbound_timestamp_group_offsets + (node_edge_index->outbound_timestamp_group_offsets_size - 1),
                   sizeof(size_t),
                   cudaMemcpyDeviceToHost);
     } else {
@@ -261,7 +230,7 @@ HOST void node_edge_index::allocate_node_timestamp_indices(NodeEdgeIndex* node_e
         size_t num_inbound_groups = 0;
         if (node_edge_index->use_gpu) {
             cudaMemcpy(&num_inbound_groups,
-                      &node_edge_index->inbound_timestamp_group_offsets[node_edge_index->inbound_timestamp_group_offsets_size - 1],
+                      node_edge_index->inbound_timestamp_group_offsets + (node_edge_index->inbound_timestamp_group_offsets_size - 1),
                       sizeof(size_t),
                       cudaMemcpyDeviceToHost);
         } else {
@@ -890,7 +859,7 @@ HOST void node_edge_index::rebuild(NodeEdgeIndex* node_edge_index, EdgeData* edg
     if (node_edge_index->use_gpu) {
         node_edge_index::compute_node_edge_indices_cuda(node_edge_index, edge_data, dense_sources, dense_targets, outbound_edge_indices_buffer, is_directed);
     } else {
-        node_edge_index::compute_node_edge_indices_std(node_edge_index, edge_data, dense_sources, dense_targets, outbound_edge_indices_buffer, is_directed);
+        compute_node_edge_indices_std(node_edge_index, edge_data, dense_sources, dense_targets, outbound_edge_indices_buffer, is_directed);
     }
 
     // Clean up edge indices buffer
@@ -898,17 +867,17 @@ HOST void node_edge_index::rebuild(NodeEdgeIndex* node_edge_index, EdgeData* edg
 
     // Step 4: Compute node timestamp offsets
     if (node_edge_index->use_gpu) {
-        node_edge_index::compute_node_timestamp_offsets_cuda(node_edge_index, edge_data, num_nodes, is_directed);
+        compute_node_timestamp_offsets_cuda(node_edge_index, edge_data, num_nodes, is_directed);
     } else {
-        node_edge_index::compute_node_timestamp_offsets_std(node_edge_index, edge_data, num_nodes, is_directed);
+        compute_node_timestamp_offsets_std(node_edge_index, edge_data, num_nodes, is_directed);
     }
 
     // Step 5: Allocate and compute node timestamp indices
-    node_edge_index::allocate_node_timestamp_indices(node_edge_index, is_directed);
+    allocate_node_timestamp_indices(node_edge_index, is_directed);
     if (node_edge_index->use_gpu) {
-        node_edge_index::compute_node_timestamp_indices_cuda(node_edge_index, edge_data, num_nodes, is_directed);
+        compute_node_timestamp_indices_cuda(node_edge_index, edge_data, num_nodes, is_directed);
     } else {
-        node_edge_index::compute_node_timestamp_indices_std(node_edge_index, edge_data, num_nodes, is_directed);
+        compute_node_timestamp_indices_std(node_edge_index, edge_data, num_nodes, is_directed);
     }
 
     // Clean up dense ID buffers
