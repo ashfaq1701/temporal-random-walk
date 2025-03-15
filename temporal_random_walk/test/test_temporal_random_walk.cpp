@@ -112,7 +112,7 @@ TYPED_TEST_SUITE(TimescaleBoundedTemporalRandomWalkTest, GPU_USAGE_TYPES);
 
 // Test the constructor of TemporalRandomWalk to ensure it initializes correctly.
 TYPED_TEST(EmptyTemporalRandomWalkTest, ConstructorTest) {
-    EXPECT_NO_THROW(this->temporal_random_walk = std::make_unique<TemporalRandomWalkProxy>(true));
+    EXPECT_NO_THROW(this->temporal_random_walk = std::make_unique<TemporalRandomWalkProxy>(true, TypeParam::value));
     EXPECT_EQ(this->temporal_random_walk->get_node_count(), 0); // Assuming initial node count is 0
 }
 

@@ -20,11 +20,11 @@ __global__ void get_node_edge_at_kernel(Edge* result, TemporalGraph* graph, int 
 }
 
 TemporalGraphProxy::TemporalGraphProxy(
-    bool is_directed,
-    bool use_gpu,
-    int64_t max_time_capacity,
-    bool enable_weight_computation,
-    double timescale_bound)
+    const bool is_directed,
+    const bool use_gpu,
+    const int64_t max_time_capacity,
+    const bool enable_weight_computation,
+    const double timescale_bound)
     : owns_graph(true) {
 
     graph = new TemporalGraph(is_directed, use_gpu, max_time_capacity, enable_weight_computation, timescale_bound);
