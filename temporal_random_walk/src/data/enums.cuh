@@ -5,7 +5,11 @@ enum RandomPickerType {
     Uniform,
     Linear,
     ExponentialIndex,
-    ExponentialWeight
+    ExponentialWeight,
+
+    // ONLY FOR TESTS
+    TEST_FIRST,
+    TEST_LAST
 };
 
 enum WalkDirection {

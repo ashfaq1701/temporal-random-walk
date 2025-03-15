@@ -1,14 +1,14 @@
 #include <gtest/gtest.h>
-#include <stores/proxies/NodeEdgeIndex.cuh>
-#include <stores/proxies/NodeMapping.cuh>
 
-#include "../src/stores/proxies/TemporalGraph.cuh"
-#include "../src/stores/cuda/TemporalGraphCUDA.cuh"
-#include "../src/random/WeightBasedRandomPicker.cuh"
+#include "../src/proxies/EdgeDataProxy.cuh"
+#include "../src/proxies/NodeEdgeIndexProxy.cuh"
+#include "../src/proxies/NodeMappingProxy.cuh"
+
+#include "../src/proxies/TemporalGraphProxy.cuh"
+#include "../src/proxies/RandomPickerProxies.cuh"
 
 template<typename T>
 class TemporalGraphWeightTest : public ::testing::Test {
-    using DoubleVector = typename SelectVectorType<double, T::value>::type;
 
 protected:
     void SetUp() override {
@@ -24,7 +24,7 @@ protected:
     }
 
     // Helper to verify cumulative weights are properly normalized
-    static void verify_cumulative_weights(const DoubleVector& weights) {
+    static void verify_cumulative_weights(const std::vector<double>& weights) {
         ASSERT_FALSE(weights.empty());
         for (size_t i = 0; i < weights.size(); i++) {
             EXPECT_GE(weights[i], 0.0);
@@ -36,7 +36,7 @@ protected:
     }
 
     // Helper to get individual weights from cumulative weights
-    static std::vector<double> get_individual_weights(const DoubleVector& cumulative) {
+    static std::vector<double> get_individual_weights(const std::vector<double>& cumulative) {
         std::vector<double> weights;
         weights.push_back(cumulative[0]);
         for (size_t i = 1; i < cumulative.size(); i++) {
@@ -50,32 +50,34 @@ protected:
 
 #ifdef HAS_CUDA
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_CPU>,
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_GPU>
+    std::integral_constant<bool, false>,  // CPU mode
+    std::integral_constant<bool, true>    // GPU mode
 >;
 #else
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_CPU>
+    std::integral_constant<bool, false>   // CPU mode only
 >;
 #endif
 
 TYPED_TEST_SUITE(TemporalGraphWeightTest, GPU_USAGE_TYPES);
 
 TYPED_TEST(TemporalGraphWeightTest, EdgeWeightComputation) {
-    TemporalGraph<TypeParam::value> graph(/*directed=*/false, /*window=*/-1, /*enable_weight_computation=*/true, -1);
+    TemporalGraphProxy graph(/*is_directed=*/false, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, -1);
     graph.add_multiple_edges(this->test_edges);
 
+    EdgeDataProxy edge_data_proxy(graph.graph->edge_data);
+
     // Should have 4 timestamp groups (10,20,30,40)
-    ASSERT_EQ(graph.temporal_graph->edges->forward_cumulative_weights_exponential.size(), 4);
-    ASSERT_EQ(graph.temporal_graph->edges->backward_cumulative_weights_exponential.size(), 4);
+    ASSERT_EQ(edge_data_proxy.forward_cumulative_weights_exponential().size(), 4);
+    ASSERT_EQ(edge_data_proxy.backward_cumulative_weights_exponential().size(), 4);
 
     // Verify cumulative properties
-    this->verify_cumulative_weights(graph.temporal_graph->edges->forward_cumulative_weights_exponential);
-    this->verify_cumulative_weights(graph.temporal_graph->edges->backward_cumulative_weights_exponential);
+    this->verify_cumulative_weights(edge_data_proxy.forward_cumulative_weights_exponential());
+    this->verify_cumulative_weights(edge_data_proxy.backward_cumulative_weights_exponential());
 
     // Get individual weights
-    auto forward_weights = this->get_individual_weights(graph.temporal_graph->edges->forward_cumulative_weights_exponential);
-    auto backward_weights = this->get_individual_weights(graph.temporal_graph->edges->backward_cumulative_weights_exponential);
+    auto forward_weights = this->get_individual_weights(edge_data_proxy.forward_cumulative_weights_exponential());
+    auto backward_weights = this->get_individual_weights(edge_data_proxy.backward_cumulative_weights_exponential());
 
     // Forward weights should give higher probability to earlier timestamps
     for (size_t i = 0; i < forward_weights.size() - 1; i++) {
@@ -91,11 +93,11 @@ TYPED_TEST(TemporalGraphWeightTest, EdgeWeightComputation) {
 }
 
 TYPED_TEST(TemporalGraphWeightTest, NodeWeightComputation) {
-    TemporalGraph<TypeParam::value> graph(/*directed=*/true, /*window=*/-1, /*enable_weight_computation=*/true);
+    TemporalGraphProxy graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true);
     graph.add_multiple_edges(this->test_edges);
 
-    const auto& node_index = NodeEdgeIndex<TypeParam::value>(graph.temporal_graph->node_index);
-    const auto& node_mapping = NodeMapping<TypeParam::value>(graph.temporal_graph->node_mapping);
+    const auto& node_index = NodeEdgeIndexProxy(graph.graph->node_edge_index);
+    const auto& node_mapping = NodeMappingProxy(graph.graph->node_mapping);
 
     // Check weights for node 2 which has both in/out edges
     constexpr int node_id = 2;
@@ -129,15 +131,13 @@ TYPED_TEST(TemporalGraphWeightTest, NodeWeightComputation) {
 }
 
 TYPED_TEST(TemporalGraphWeightTest, WeightBasedSampling) {
-    TemporalGraph<TypeParam::value> graph(/*directed=*/true, /*window=*/-1, /*enable_weight_computation=*/true, -1);
+    TemporalGraphProxy graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, -1);
     graph.add_multiple_edges(this->test_edges);
-
-    WeightBasedRandomPicker<TypeParam::value> picker;
 
     // Test forward sampling after timestamp 20
     std::map<int64_t, int> forward_samples;
     for (int i = 0; i < 100; i++) {
-        auto [src, tgt, ts] = graph.get_edge_at(&picker, 20, true);
+        auto [src, tgt, ts] = graph.get_edge_at(RandomPickerType::ExponentialWeight, 20, true);
         EXPECT_GT(ts, 20) << "Forward sampled timestamp should be > 20";
         forward_samples[ts]++;
     }
@@ -147,7 +147,7 @@ TYPED_TEST(TemporalGraphWeightTest, WeightBasedSampling) {
     // Test backward sampling before timestamp 30
     std::map<int64_t, int> backward_samples;
     for (int i = 0; i < 100; i++) {
-        auto [src, tgt, ts] = graph.get_edge_at(&picker, 30, false);
+        auto [src, tgt, ts] = graph.get_edge_at(RandomPickerType::ExponentialWeight, 30, false);
         EXPECT_LT(ts, 30) << "Backward sampled timestamp should be < 30";
         backward_samples[ts]++;
     }
@@ -156,7 +156,7 @@ TYPED_TEST(TemporalGraphWeightTest, WeightBasedSampling) {
 
     backward_samples.clear();
     for (int i = 0; i < 100; i++) {
-        auto [src, tgt, ts] = graph.get_edge_at(&picker, 50, false);
+        auto [src, tgt, ts] = graph.get_edge_at(RandomPickerType::ExponentialWeight, 50, false);
         backward_samples[ts]++;
     }
     EXPECT_GT(backward_samples[40], backward_samples[30])
@@ -166,40 +166,42 @@ TYPED_TEST(TemporalGraphWeightTest, WeightBasedSampling) {
 TYPED_TEST(TemporalGraphWeightTest, EdgeCases) {
     // Empty graph test
     {
-        const TemporalGraph<TypeParam::value> empty_graph(false, -1, true);
-        EXPECT_TRUE(empty_graph.temporal_graph->edges->forward_cumulative_weights_exponential.empty());
-        EXPECT_TRUE(empty_graph.temporal_graph->edges->backward_cumulative_weights_exponential.empty());
+        const TemporalGraphProxy empty_graph(false, TypeParam::value, -1, true);
+
+        EXPECT_TRUE(empty_graph.graph->edge_data->forward_cumulative_weights_exponential_size, 0);
+        EXPECT_TRUE(empty_graph.graph->edge_data->backward_cumulative_weights_exponential_size, 0);
     }
 
     // Single edge graph test
     {
-        TemporalGraph<TypeParam::value> single_edge_graph(false, -1, true);
+        TemporalGraphProxy single_edge_graph(false, TypeParam::value, -1, true);
         single_edge_graph.add_multiple_edges({Edge{1, 2, 10}});
 
-        EXPECT_EQ(single_edge_graph.temporal_graph->edges->forward_cumulative_weights_exponential.size(), 1);
-        EXPECT_EQ(single_edge_graph.temporal_graph->edges->backward_cumulative_weights_exponential.size(), 1);
-        EXPECT_NEAR(single_edge_graph.temporal_graph->edges->forward_cumulative_weights_exponential[0], 1.0, 1e-6);
-        EXPECT_NEAR(single_edge_graph.temporal_graph->edges->backward_cumulative_weights_exponential[0], 1.0, 1e-6);
+        EXPECT_EQ(single_edge_graph.graph->edge_data->forward_cumulative_weights_exponential_size, 1);
+        EXPECT_EQ(single_edge_graph.graph->edge_data->backward_cumulative_weights_exponential_size, 1);
+
+        EdgeDataProxy edge_data_proxy = EdgeDataProxy(single_edge_graph.graph->edge_data);
+        EXPECT_NEAR(edge_data_proxy.forward_cumulative_weights_exponential()[0], 1.0, 1e-6);
+        EXPECT_NEAR(edge_data_proxy.backward_cumulative_weights_exponential()[0], 1.0, 1e-6);
     }
 }
 
 TYPED_TEST(TemporalGraphWeightTest, TimescaleBoundZero) {
-    TemporalGraph<TypeParam::value> graph(/*directed=*/true, /*window=*/-1, /*enable_weight_computation=*/true, 0);
+    TemporalGraphProxy graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, 0);
     graph.add_multiple_edges(this->test_edges);
 
     // Should behave like -1 (unscaled)
-    this->verify_cumulative_weights(graph.temporal_graph->edges->forward_cumulative_weights_exponential);
-    this->verify_cumulative_weights(graph.temporal_graph->edges->backward_cumulative_weights_exponential);
+    EdgeDataProxy edge_data_proxy = EdgeDataProxy(graph.graph->edge_data);
+    this->verify_cumulative_weights(edge_data_proxy.forward_cumulative_weights_exponential());
+    this->verify_cumulative_weights(edge_data_proxy.backward_cumulative_weights_exponential());
 }
 
 TYPED_TEST(TemporalGraphWeightTest, TimescaleBoundSampling) {
-    TemporalGraph<TypeParam::value> scaled_graph(/*directed=*/true, /*window=*/-1, /*enable_weight_computation=*/true, 10.0);
-    TemporalGraph<TypeParam::value> unscaled_graph(/*directed=*/true, /*window=*/-1, /*enable_weight_computation=*/true, -1);
+    TemporalGraphProxy scaled_graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, 10.0);
+    TemporalGraphProxy unscaled_graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, -1);
 
     scaled_graph.add_multiple_edges(this->test_edges);
     unscaled_graph.add_multiple_edges(this->test_edges);
-
-    WeightBasedRandomPicker<TypeParam::value> picker;
 
     // Sample edges and verify temporal bias is preserved
     std::map<int64_t, int> scaled_samples, unscaled_samples;
@@ -207,8 +209,8 @@ TYPED_TEST(TemporalGraphWeightTest, TimescaleBoundSampling) {
 
     // Forward sampling
     for (int i = 0; i < num_samples; i++) {
-        auto [u1, i1, ts1] = scaled_graph.get_edge_at(&picker, 20, true);
-        auto [u2, i2, ts2] = unscaled_graph.get_edge_at(&picker, 20, true);
+        auto [u1, i1, ts1] = scaled_graph.get_edge_at(RandomPickerType::ExponentialWeight, 20, true);
+        auto [u2, i2, ts2] = unscaled_graph.get_edge_at(RandomPickerType::ExponentialWeight, 20, true);
         scaled_samples[ts1]++;
         unscaled_samples[ts2]++;
     }
@@ -221,7 +223,7 @@ TYPED_TEST(TemporalGraphWeightTest, TimescaleBoundSampling) {
 }
 
 TYPED_TEST(TemporalGraphWeightTest, WeightScalingPrecision) {
-    TemporalGraph<TypeParam::value> graph(/*directed=*/true, /*window=*/-1, /*enable_weight_computation=*/true, 2.0);
+    TemporalGraphProxy graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, 2.0);
 
     // Use exact timestamps for precise validation
     graph.add_multiple_edges({
@@ -231,7 +233,8 @@ TYPED_TEST(TemporalGraphWeightTest, WeightScalingPrecision) {
     });
 
     // Get individual weights using helper
-    const auto weights = this->get_individual_weights(graph.temporal_graph->edges->forward_cumulative_weights_exponential);
+    EdgeDataProxy edge_data_proxy = EdgeDataProxy(graph.graph->edge_data);
+    const auto weights = this->get_individual_weights(edge_data_proxy.forward_cumulative_weights_exponential());
     ASSERT_EQ(weights.size(), 3);
 
     // Time range is 200, scale = 2.0/200 = 0.01
@@ -246,7 +249,7 @@ TYPED_TEST(TemporalGraphWeightTest, WeightScalingPrecision) {
             << "Weight ratio incorrect at index " << i;
     }
 
-    auto node_mapping = NodeMapping<TypeParam::value>(graph.temporal_graph->node_mapping);
+    auto node_mapping = NodeMappingProxy(graph.graph->node_mapping);
 
     // Check node weights
     constexpr int node_id = 1;
@@ -254,12 +257,13 @@ TYPED_TEST(TemporalGraphWeightTest, WeightScalingPrecision) {
     ASSERT_GE(dense_idx, 0);
 
     // Get node's group range
-    const auto host_offsets = graph.temporal_graph->node_index->outbound_timestamp_group_offsets;
+    auto node_edge_index = NodeEdgeIndexProxy(graph.graph->node_edge_index);
+    const auto host_offsets = node_edge_index.outbound_timestamp_group_offsets();
     const size_t start = host_offsets[dense_idx];
 
     // Get node's weights
     const auto node_individual_weights = this->get_individual_weights(
-        graph.temporal_graph->node_index->outbound_forward_cumulative_weights_exponential);
+        node_edge_index.outbound_forward_cumulative_weights_exponential());
 
     // Check for segment from start to end
     for (size_t i = 0; i < weights.size(); i++) {
@@ -270,17 +274,16 @@ TYPED_TEST(TemporalGraphWeightTest, WeightScalingPrecision) {
 
 TYPED_TEST(TemporalGraphWeightTest, DifferentTimescaleBounds) {
     const std::vector<double> bounds = {2.0, 5.0, 10.};
-    WeightBasedRandomPicker<TypeParam::value> picker;
 
     for (double bound : bounds) {
         constexpr int num_samples = 10000;
 
-        TemporalGraph<TypeParam::value> graph(/*directed=*/true, /*window=*/-1, /*enable_weight_computation=*/true, bound);
+        TemporalGraphProxy graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, bound);
         graph.add_multiple_edges(this->test_edges);
 
         std::map<int64_t, int> samples;
         for (int i = 0; i < num_samples; i++) {
-            auto [u1, i1, ts] = graph.get_edge_at(&picker, -1, true);
+            auto [u1, i1, ts] = graph.get_edge_at(RandomPickerType::ExponentialWeight, -1, true);
             samples[ts]++;
         }
 
@@ -307,12 +310,14 @@ TYPED_TEST(TemporalGraphWeightTest, SingleTimestampWithBounds) {
 
     // Test with different bounds
     for (double bound : {-1.0, 0.0, 10.0, 50.0}) {
-        TemporalGraph<TypeParam::value> graph(/*directed=*/true, /*window=*/-1, /*enable_weight_computation=*/true, bound);
+        TemporalGraphProxy graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, bound);
         graph.add_multiple_edges(single_ts_edges);
 
-        ASSERT_EQ(graph.temporal_graph->edges->forward_cumulative_weights_exponential.size(), 1);
-        ASSERT_EQ(graph.temporal_graph->edges->backward_cumulative_weights_exponential.size(), 1);
-        EXPECT_NEAR(graph.temporal_graph->edges->forward_cumulative_weights_exponential[0], 1.0, 1e-6);
-        EXPECT_NEAR(graph.temporal_graph->edges->backward_cumulative_weights_exponential[0], 1.0, 1e-6);
+        auto edge_data_proxy = EdgeDataProxy(graph.graph->edge_data);
+
+        ASSERT_EQ(edge_data_proxy.forward_cumulative_weights_exponential().size(), 1);
+        ASSERT_EQ(edge_data_proxy.backward_cumulative_weights_exponential().size(), 1);
+        EXPECT_NEAR(edge_data_proxy.forward_cumulative_weights_exponential()[0], 1.0, 1e-6);
+        EXPECT_NEAR(edge_data_proxy.backward_cumulative_weights_exponential()[0], 1.0, 1e-6);
     }
 }

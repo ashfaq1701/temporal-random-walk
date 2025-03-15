@@ -11,10 +11,55 @@ __global__ void has_node_kernel(bool* result, const NodeMapping* node_mapping, i
 __global__ void mark_node_deleted_kernel(const NodeMapping* node_mapping, int sparse_id);
 
 class NodeMappingProxy {
+
+public:
+
     NodeMapping* node_mapping;
     bool owns_node_mapping;
 
-public:
+    std::vector<int> sparse_to_dense() const {
+        if (node_mapping->use_gpu) {
+            std::vector<int> result(node_mapping->sparse_to_dense_size);
+            cudaMemcpy(result.data(), node_mapping->sparse_to_dense,
+                      node_mapping->sparse_to_dense_size * sizeof(int),
+                      cudaMemcpyDeviceToHost);
+            return result;
+        } else {
+            return std::vector<int>(node_mapping->sparse_to_dense,
+                                   node_mapping->sparse_to_dense +
+                                   node_mapping->sparse_to_dense_size);
+        }
+    }
+
+    std::vector<int> dense_to_sparse() const {
+        if (node_mapping->use_gpu) {
+            std::vector<int> result(node_mapping->dense_to_sparse_size);
+            cudaMemcpy(result.data(), node_mapping->dense_to_sparse,
+                      node_mapping->dense_to_sparse_size * sizeof(int),
+                      cudaMemcpyDeviceToHost);
+            return result;
+        } else {
+            return std::vector<int>(node_mapping->dense_to_sparse,
+                                   node_mapping->dense_to_sparse +
+                                   node_mapping->dense_to_sparse_size);
+        }
+    }
+
+    std::vector<bool> is_deleted() const {
+        if (node_mapping->use_gpu) {
+            std::vector<char> temp_buffer(node_mapping->is_deleted_size);
+
+            cudaMemcpy(temp_buffer.data(), node_mapping->is_deleted,
+                       node_mapping->is_deleted_size * sizeof(bool),
+                       cudaMemcpyDeviceToHost);
+
+            return std::vector<bool>(temp_buffer.begin(), temp_buffer.end());
+        } else {
+            return std::vector<bool>(node_mapping->is_deleted,
+                        node_mapping->is_deleted + node_mapping->is_deleted_size);
+        }
+    }
+
     explicit NodeMappingProxy(bool use_gpu = false);
 
     explicit NodeMappingProxy(NodeMapping* existing_node_mapping);

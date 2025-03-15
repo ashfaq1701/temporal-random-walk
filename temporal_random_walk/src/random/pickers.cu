@@ -208,7 +208,9 @@ DEVICE int random_pickers::pick_random_exponential_weights_device(double* weight
 
 HOST DEVICE bool random_pickers::is_index_based_picker(const RandomPickerType picker_type) {
     return picker_type == RandomPickerType::Linear || picker_type == RandomPickerType::Uniform ||
-        picker_type == RandomPickerType::ExponentialIndex;
+        picker_type == RandomPickerType::ExponentialIndex ||
+            // ONLY FOR TESTS
+            picker_type == RandomPickerType::TEST_FIRST || picker_type == RandomPickerType::TEST_LAST;
 }
 
 HOST int random_pickers::pick_using_index_based_picker_host(const RandomPickerType random_picker, const int start, const int end, const bool prioritize_end) {
@@ -219,6 +221,11 @@ HOST int random_pickers::pick_using_index_based_picker_host(const RandomPickerTy
             return pick_random_exponential_index_host(start, end, prioritize_end);
         case RandomPickerType::Uniform:
             return pick_random_uniform_host(start, end);
+        // ONLY FOR TEST
+        case RandomPickerType::TEST_FIRST:
+            return start;
+        case RandomPickerType::TEST_LAST:
+            return end - 1;
         default:
             return -1;
     }
@@ -232,6 +239,11 @@ DEVICE int random_pickers::pick_using_index_based_picker_device(const RandomPick
             return pick_random_exponential_index_device(start, end, prioritize_end, rand_state);
         case RandomPickerType::Uniform:
             return pick_random_uniform_device(start, end, rand_state);
+        // ONLY FOR TEST
+        case RandomPickerType::TEST_FIRST:
+            return start;
+        case RandomPickerType::TEST_LAST:
+            return end - 1;
         default:
             return -1;
     }

@@ -10,11 +10,10 @@ __global__ void get_edge_at_kernel(Edge* result, const TemporalGraph* graph, Ran
 __global__ void get_node_edge_at_kernel(Edge* result, TemporalGraph* graph, int node_id, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state);
 
 class TemporalGraphProxy {
-private:
+public:
     TemporalGraph* graph;
     bool owns_graph;
 
-public:
     explicit TemporalGraphProxy(
         bool is_directed,
         bool use_gpu = false,

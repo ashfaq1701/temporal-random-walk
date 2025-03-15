@@ -1,17 +1,12 @@
 #include <gtest/gtest.h>
 #include "../src/proxies/EdgeDataProxy.cuh"
 #include <cmath>
-#include <stores/cuda/EdgeDataCUDA.cuh>
 
 template<typename T>
 class EdgeDataWeightTest : public ::testing::Test {
 
-    using DoubleVector = typename SelectVectorType<double, T::value>::type;
-
 protected:
-    using EdgeDataType = EdgeData<T::value>;
-
-    static void verify_cumulative_weights(const DoubleVector& weights) {
+    static void verify_cumulative_weights(const std::vector<double> &weights) {
         ASSERT_FALSE(weights.empty());
         for (size_t i = 0; i < weights.size(); i++) {
             EXPECT_GE(weights[i], 0.0);
@@ -22,7 +17,7 @@ protected:
         EXPECT_NEAR(weights.back(), 1.0, 1e-6);
     }
 
-    static void add_test_edges(EdgeData<T::value>& edges) {
+    static void add_test_edges(const EdgeDataProxy& edges) {
         edges.push_back(1, 2, 10);
         edges.push_back(1, 3, 10);
         edges.push_back(2, 3, 20);
@@ -32,7 +27,7 @@ protected:
         edges.update_timestamp_groups();
     }
 
-    static std::vector<double> get_individual_weights(const DoubleVector& cumulative) {
+    static std::vector<double> get_individual_weights(const std::vector<double>& cumulative) {
         std::vector<double> weights;
         weights.reserve(cumulative.size());
         weights.push_back(cumulative[0]);
@@ -45,36 +40,34 @@ protected:
 
 #ifdef HAS_CUDA
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_CPU>,
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_GPU>
+    std::integral_constant<bool, false>,  // CPU mode
+    std::integral_constant<bool, true>    // GPU mode
 >;
 #else
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_CPU>
+    std::integral_constant<bool, false>   // CPU mode only
 >;
 #endif
 
 TYPED_TEST_SUITE(EdgeDataWeightTest, GPU_USAGE_TYPES);
 
 TYPED_TEST(EdgeDataWeightTest, SingleTimestampGroup) {
-    using EdgeDataType = typename TestFixture::EdgeDataType;
-    EdgeDataType edges;
-   edges.push_back(1, 2, 10);
-   edges.push_back(2, 3, 10);
-   edges.update_timestamp_groups();
-   edges.update_temporal_weights(-1);
+    const EdgeDataProxy edges(TypeParam::value);
+    edges.push_back(1, 2, 10);
+    edges.push_back(2, 3, 10);
+    edges.update_timestamp_groups();
+    edges.update_temporal_weights(-1);
 
-   ASSERT_EQ(edges.forward_cumulative_weights_exponential().size(), 1);
-   ASSERT_EQ(edges.backward_cumulative_weights_exponential().size(), 1);
+    ASSERT_EQ(edges.forward_cumulative_weights_exponential().size(), 1);
+    ASSERT_EQ(edges.backward_cumulative_weights_exponential().size(), 1);
 
-   // Single group should have normalized weight of 1.0
-   EXPECT_NEAR(edges.forward_cumulative_weights_exponential()[0], 1.0, 1e-6);
-   EXPECT_NEAR(edges.backward_cumulative_weights_exponential()[0], 1.0, 1e-6);
+    // Single group should have normalized weight of 1.0
+    EXPECT_NEAR(edges.forward_cumulative_weights_exponential()[0], 1.0, 1e-6);
+    EXPECT_NEAR(edges.backward_cumulative_weights_exponential()[0], 1.0, 1e-6);
 }
 
 TYPED_TEST(EdgeDataWeightTest, WeightNormalization) {
-    using EdgeDataType = typename TestFixture::EdgeDataType;
-    EdgeDataType edges;
+    EdgeDataProxy edges(TypeParam::value);
     this->add_test_edges(edges);
     edges.update_temporal_weights(-1);
 
@@ -87,8 +80,7 @@ TYPED_TEST(EdgeDataWeightTest, WeightNormalization) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, ForwardWeightBias) {
-    using EdgeDataType = typename TestFixture::EdgeDataType;
-    EdgeDataType edges;
+    EdgeDataProxy edges(TypeParam::value);
 
     this->add_test_edges(edges);
     edges.update_temporal_weights(-1);
@@ -104,8 +96,7 @@ TYPED_TEST(EdgeDataWeightTest, ForwardWeightBias) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, BackwardWeightBias) {
-    using EdgeDataType = typename TestFixture::EdgeDataType;
-    EdgeDataType edges;
+    EdgeDataProxy edges(TypeParam::value);
     this->add_test_edges(edges);
     edges.update_temporal_weights(-1);
 
@@ -120,8 +111,7 @@ TYPED_TEST(EdgeDataWeightTest, BackwardWeightBias) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, WeightExponentialDecay) {
-    using EdgeDataType = typename TestFixture::EdgeDataType;
-    EdgeDataType edges;
+    const EdgeDataProxy edges(TypeParam::value);
 
     edges.push_back(1, 2, 10);
     edges.push_back(2, 3, 20);
@@ -154,32 +144,30 @@ TYPED_TEST(EdgeDataWeightTest, WeightExponentialDecay) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, UpdateWeights) {
-    using EdgeDataType = typename TestFixture::EdgeDataType;
-    EdgeDataType edges;
-   this->add_test_edges(edges);
-   edges.update_temporal_weights(-1);
+    EdgeDataProxy edges(TypeParam::value);
+    this->add_test_edges(edges);
+    edges.update_temporal_weights(-1);
 
-   // Store original weights
-   const auto original_forward = edges.forward_cumulative_weights_exponential();
-   const auto original_backward = edges.backward_cumulative_weights_exponential();
+    // Store original weights
+    const auto original_forward = edges.forward_cumulative_weights_exponential();
+    const auto original_backward = edges.backward_cumulative_weights_exponential();
 
-   // Add new edge with different timestamp
-   edges.push_back(1, 4, 50);
-   edges.update_timestamp_groups();
-   edges.update_temporal_weights(-1);
+    // Add new edge with different timestamp
+    edges.push_back(1, 4, 50);
+    edges.update_timestamp_groups();
+    edges.update_temporal_weights(-1);
 
-   // Weights should be different after update
-   EXPECT_NE(original_forward.size(), edges.forward_cumulative_weights_exponential().size());
-   EXPECT_NE(original_backward.size(), edges.backward_cumulative_weights_exponential().size());
+    // Weights should be different after update
+    EXPECT_NE(original_forward.size(), edges.forward_cumulative_weights_exponential().size());
+    EXPECT_NE(original_backward.size(), edges.backward_cumulative_weights_exponential().size());
 
-   // But should still maintain normalization
-   this->verify_cumulative_weights(edges.forward_cumulative_weights_exponential());
-   this->verify_cumulative_weights(edges.backward_cumulative_weights_exponential());
+    // But should still maintain normalization
+    this->verify_cumulative_weights(edges.forward_cumulative_weights_exponential());
+    this->verify_cumulative_weights(edges.backward_cumulative_weights_exponential());
 }
 
 TYPED_TEST(EdgeDataWeightTest, TimescaleBoundZero) {
-    using EdgeDataType = typename TestFixture::EdgeDataType;
-    EdgeDataType edges;
+    EdgeDataProxy edges(TypeParam::value);
     this->add_test_edges(edges);
     edges.update_temporal_weights(0);  // Should behave like -1
 
@@ -188,8 +176,7 @@ TYPED_TEST(EdgeDataWeightTest, TimescaleBoundZero) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, TimescaleBoundPositive) {
-    using EdgeDataType = typename TestFixture::EdgeDataType;
-    EdgeDataType edges;
+    EdgeDataProxy edges(TypeParam::value);
     this->add_test_edges(edges);
     constexpr double timescale_bound = 30.0;
     edges.update_temporal_weights(timescale_bound);
@@ -221,8 +208,7 @@ TYPED_TEST(EdgeDataWeightTest, TimescaleBoundPositive) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, ScalingComparison) {
-    using EdgeDataType = typename TestFixture::EdgeDataType;
-    EdgeDataType edges;
+    EdgeDataProxy edges(TypeParam::value);
     this->add_test_edges(edges);
 
     // Test relative weight proportions are preserved
@@ -247,8 +233,7 @@ TYPED_TEST(EdgeDataWeightTest, ScalingComparison) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, ScaledWeightBounds) {
-    using EdgeDataType = typename TestFixture::EdgeDataType;
-    EdgeDataType edges;
+    const EdgeDataProxy edges(TypeParam::value);
     edges.push_back(1, 2, 100);
     edges.push_back(2, 3, 300);
     edges.push_back(3, 4, 700);
@@ -284,8 +269,7 @@ TYPED_TEST(EdgeDataWeightTest, ScaledWeightBounds) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, DifferentTimescaleBounds) {
-    using EdgeDataType = typename TestFixture::EdgeDataType;
-    EdgeDataType edges;
+    EdgeDataProxy edges(TypeParam::value);
     this->add_test_edges(edges);
 
     std::vector<double> bounds = {5.0, 10.0, 20.0};
@@ -312,8 +296,7 @@ TYPED_TEST(EdgeDataWeightTest, DifferentTimescaleBounds) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, SingleTimestampWithBounds) {
-    using EdgeDataType = typename TestFixture::EdgeDataType;
-    EdgeDataType edges;
+    const EdgeDataProxy edges(TypeParam::value);
     // All edges have same timestamp
     edges.push_back(1, 2, 100);
     edges.push_back(2, 3, 100);
@@ -331,8 +314,7 @@ TYPED_TEST(EdgeDataWeightTest, SingleTimestampWithBounds) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, WeightMonotonicity) {
-    using EdgeDataType = typename TestFixture::EdgeDataType;
-    EdgeDataType edges;
+    EdgeDataProxy edges(TypeParam::value);
     this->add_test_edges(edges);
 
     const double timescale_bound = 20.0;
@@ -370,8 +352,7 @@ TYPED_TEST(EdgeDataWeightTest, WeightMonotonicity) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, TimescaleScalingPrecision) {
-    using EdgeDataType = typename TestFixture::EdgeDataType;
-    EdgeDataType edges;
+    const EdgeDataProxy edges(TypeParam::value);
     // Use precise timestamps for exact validation
     edges.push_back(1, 2, 100);
     edges.push_back(2, 3, 300);

@@ -1,12 +1,15 @@
 #include <gtest/gtest.h>
-#include "../src/stores/proxies/NodeMapping.cuh"
-#include "../src/stores/proxies/EdgeData.cuh"
+
+#include "../src/proxies/NodeMappingProxy.cuh"
+#include "../src/proxies/EdgeDataProxy.cuh"
 
 template<typename T>
 class NodeMappingTest : public ::testing::Test {
 protected:
-    NodeMapping<T::value> mapping;
-    EdgeData<T::value> edges;
+    NodeMappingProxy mapping;
+    EdgeDataProxy edges;
+
+    NodeMappingTest(): mapping(T::value), edges(T::value) {}
 
     // Helper to verify bidirectional mapping
     void verify_mapping(int sparse_id, int expected_dense_idx) const {
@@ -19,12 +22,12 @@ protected:
 
 #ifdef HAS_CUDA
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_CPU>,
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_GPU>
+    std::integral_constant<bool, false>,  // CPU mode
+    std::integral_constant<bool, true>    // GPU mode
 >;
 #else
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_CPU>
+    std::integral_constant<bool, false>   // CPU mode only
 >;
 #endif
 

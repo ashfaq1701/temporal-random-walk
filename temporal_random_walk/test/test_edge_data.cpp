@@ -4,8 +4,9 @@
 template<typename T>
 class EdgeDataTest : public ::testing::Test {
 protected:
-    using EdgeDataType = EdgeData<T::value>;
-    EdgeDataType edges;
+    EdgeDataProxy edges;
+
+    EdgeDataTest() : edges(T::value) {}
 
    void verify_edge(const size_t index, const int expected_src, const int expected_tgt, const int64_t expected_ts) const {
        ASSERT_LT(index, this->edges.size());
@@ -17,12 +18,12 @@ protected:
 
 #ifdef HAS_CUDA
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_CPU>,
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_GPU>
+    std::integral_constant<bool, false>,  // CPU mode
+    std::integral_constant<bool, true>    // GPU mode
 >;
 #else
-using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_CPU>
+using GPU_USAGE_TYPES = ::testing::Types
+    std::integral_constant<bool, false>   // CPU mode only
 >;
 #endif
 

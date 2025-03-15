@@ -12,10 +12,180 @@ __global__ void get_timestamp_group_range_kernel(SizeRange* result, const NodeEd
 __global__ void get_timestamp_group_count_kernel(size_t* result, const NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed);
 
 class NodeEdgeIndexProxy {
+public:
+
     NodeEdgeIndex* node_edge_index;
     bool owns_node_edge_index;
 
-public:
+    std::vector<size_t> outbound_offsets() const {
+        if (node_edge_index->use_gpu) {
+            std::vector<size_t> result(node_edge_index->outbound_offsets_size);
+            cudaMemcpy(result.data(), node_edge_index->outbound_offsets,
+                      node_edge_index->outbound_offsets_size * sizeof(size_t),
+                      cudaMemcpyDeviceToHost);
+            return result;
+        } else {
+            return std::vector<size_t>(node_edge_index->outbound_offsets,
+                                     node_edge_index->outbound_offsets +
+                                     node_edge_index->outbound_offsets_size);
+        }
+    }
+
+    std::vector<size_t> inbound_offsets() const {
+        if (node_edge_index->use_gpu) {
+            std::vector<size_t> result(node_edge_index->inbound_offsets_size);
+            cudaMemcpy(result.data(), node_edge_index->inbound_offsets,
+                      node_edge_index->inbound_offsets_size * sizeof(size_t),
+                      cudaMemcpyDeviceToHost);
+            return result;
+        } else {
+            return std::vector<size_t>(node_edge_index->inbound_offsets,
+                                     node_edge_index->inbound_offsets +
+                                     node_edge_index->inbound_offsets_size);
+        }
+    }
+
+    std::vector<size_t> outbound_indices() const {
+        if (node_edge_index->use_gpu) {
+            std::vector<size_t> result(node_edge_index->outbound_indices_size);
+            cudaMemcpy(result.data(), node_edge_index->outbound_indices,
+                      node_edge_index->outbound_indices_size * sizeof(size_t),
+                      cudaMemcpyDeviceToHost);
+            return result;
+        } else {
+            return std::vector<size_t>(node_edge_index->outbound_indices,
+                                     node_edge_index->outbound_indices +
+                                     node_edge_index->outbound_indices_size);
+        }
+    }
+
+    std::vector<size_t> inbound_indices() const {
+        if (node_edge_index->use_gpu) {
+            std::vector<size_t> result(node_edge_index->inbound_indices_size);
+            cudaMemcpy(result.data(), node_edge_index->inbound_indices,
+                      node_edge_index->inbound_indices_size * sizeof(size_t),
+                      cudaMemcpyDeviceToHost);
+            return result;
+        } else {
+            return std::vector<size_t>(node_edge_index->inbound_indices,
+                                     node_edge_index->inbound_indices +
+                                     node_edge_index->inbound_indices_size);
+        }
+    }
+
+    std::vector<size_t> outbound_timestamp_group_offsets() const {
+        if (node_edge_index->use_gpu) {
+            std::vector<size_t> result(node_edge_index->outbound_timestamp_group_offsets_size);
+            cudaMemcpy(result.data(), node_edge_index->outbound_timestamp_group_offsets,
+                      node_edge_index->outbound_timestamp_group_offsets_size * sizeof(size_t),
+                      cudaMemcpyDeviceToHost);
+            return result;
+        } else {
+            return std::vector<size_t>(node_edge_index->outbound_timestamp_group_offsets,
+                                     node_edge_index->outbound_timestamp_group_offsets +
+                                     node_edge_index->outbound_timestamp_group_offsets_size);
+        }
+    }
+
+    std::vector<size_t> inbound_timestamp_group_offsets() const {
+        if (node_edge_index->use_gpu) {
+            std::vector<size_t> result(node_edge_index->inbound_timestamp_group_offsets_size);
+            cudaMemcpy(result.data(), node_edge_index->inbound_timestamp_group_offsets,
+                      node_edge_index->inbound_timestamp_group_offsets_size * sizeof(size_t),
+                      cudaMemcpyDeviceToHost);
+            return result;
+        } else {
+            return std::vector<size_t>(node_edge_index->inbound_timestamp_group_offsets,
+                                     node_edge_index->inbound_timestamp_group_offsets +
+                                     node_edge_index->inbound_timestamp_group_offsets_size);
+        }
+    }
+
+    std::vector<size_t> outbound_timestamp_group_indices() const {
+        if (node_edge_index->use_gpu) {
+            std::vector<size_t> result(node_edge_index->outbound_timestamp_group_indices_size);
+            cudaMemcpy(result.data(), node_edge_index->outbound_timestamp_group_indices,
+                      node_edge_index->outbound_timestamp_group_indices_size * sizeof(size_t),
+                      cudaMemcpyDeviceToHost);
+            return result;
+        } else {
+            return std::vector<size_t>(node_edge_index->outbound_timestamp_group_indices,
+                                     node_edge_index->outbound_timestamp_group_indices +
+                                     node_edge_index->outbound_timestamp_group_indices_size);
+        }
+    }
+
+    std::vector<size_t> inbound_timestamp_group_indices() const {
+        if (node_edge_index->use_gpu) {
+            std::vector<size_t> result(node_edge_index->inbound_timestamp_group_indices_size);
+            cudaMemcpy(result.data(), node_edge_index->inbound_timestamp_group_indices,
+                      node_edge_index->inbound_timestamp_group_indices_size * sizeof(size_t),
+                      cudaMemcpyDeviceToHost);
+            return result;
+        } else {
+            return std::vector<size_t>(node_edge_index->inbound_timestamp_group_indices,
+                                     node_edge_index->inbound_timestamp_group_indices +
+                                     node_edge_index->inbound_timestamp_group_indices_size);
+        }
+    }
+
+    std::vector<double> outbound_forward_cumulative_weights_exponential() const {
+        if (!node_edge_index->outbound_forward_cumulative_weights_exponential) {
+            return std::vector<double>();
+        }
+
+        if (node_edge_index->use_gpu) {
+            std::vector<double> result(node_edge_index->outbound_forward_cumulative_weights_exponential_size);
+            cudaMemcpy(result.data(), node_edge_index->outbound_forward_cumulative_weights_exponential,
+                      node_edge_index->outbound_forward_cumulative_weights_exponential_size * sizeof(double),
+                      cudaMemcpyDeviceToHost);
+            return result;
+        } else {
+            return std::vector<double>(
+                node_edge_index->outbound_forward_cumulative_weights_exponential,
+                node_edge_index->outbound_forward_cumulative_weights_exponential +
+                node_edge_index->outbound_forward_cumulative_weights_exponential_size);
+        }
+    }
+
+    std::vector<double> outbound_backward_cumulative_weights_exponential() const {
+        if (!node_edge_index->outbound_backward_cumulative_weights_exponential) {
+            return std::vector<double>();
+        }
+
+        if (node_edge_index->use_gpu) {
+            std::vector<double> result(node_edge_index->outbound_backward_cumulative_weights_exponential_size);
+            cudaMemcpy(result.data(), node_edge_index->outbound_backward_cumulative_weights_exponential,
+                      node_edge_index->outbound_backward_cumulative_weights_exponential_size * sizeof(double),
+                      cudaMemcpyDeviceToHost);
+            return result;
+        } else {
+            return std::vector<double>(
+                node_edge_index->outbound_backward_cumulative_weights_exponential,
+                node_edge_index->outbound_backward_cumulative_weights_exponential +
+                node_edge_index->outbound_backward_cumulative_weights_exponential_size);
+        }
+    }
+
+    std::vector<double> inbound_backward_cumulative_weights_exponential() const {
+        if (!node_edge_index->inbound_backward_cumulative_weights_exponential) {
+            return std::vector<double>();
+        }
+
+        if (node_edge_index->use_gpu) {
+            std::vector<double> result(node_edge_index->inbound_backward_cumulative_weights_exponential_size);
+            cudaMemcpy(result.data(), node_edge_index->inbound_backward_cumulative_weights_exponential,
+                      node_edge_index->inbound_backward_cumulative_weights_exponential_size * sizeof(double),
+                      cudaMemcpyDeviceToHost);
+            return result;
+        } else {
+            return std::vector<double>(
+                node_edge_index->inbound_backward_cumulative_weights_exponential,
+                node_edge_index->inbound_backward_cumulative_weights_exponential +
+                node_edge_index->inbound_backward_cumulative_weights_exponential_size);
+        }
+    }
+
     explicit NodeEdgeIndexProxy(bool use_gpu = false);
 
     explicit NodeEdgeIndexProxy(NodeEdgeIndex* existing_node_edge_index);

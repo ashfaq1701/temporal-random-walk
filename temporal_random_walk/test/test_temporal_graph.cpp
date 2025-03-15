@@ -1,80 +1,14 @@
-#include "../src/stores/cuda/TemporalGraphCUDA.cuh"
 #include <gtest/gtest.h>
-#include "../src/stores/proxies/TemporalGraph.cuh"
-#include "../src/random/IndexBasedRandomPicker.cuh"
-
-// Test-specific picker that always selects first element
-template<GPUUsageMode GPUUsage>
-class FirstIndexPicker : public IndexBasedRandomPicker<GPUUsage> {
-public:
-    [[nodiscard]] int pick_random(int start, int end, bool prioritize_end) override {
-        return start;
-    }
-
-    [[nodiscard]] HOST int pick_random_host(int start, int end, bool prioritize_end) override {
-        return start;
-    }
-
-    #ifdef HAS_CUDA
-    [[nodiscard]] DEVICE int pick_random_device(int start, int end, bool prioritize_end, curandState* rand_state) override {
-        return start;
-    }
-
-    RandomPicker<GPUUsage>* to_device_ptr() override {
-        // Allocate device memory for the picker
-        FirstIndexPicker<GPUUsage>* device_picker;
-        cudaMalloc(&device_picker, sizeof(FirstIndexPicker<GPUUsage>));
-
-        // Copy the object to device
-        cudaMemcpy(device_picker, this, sizeof(FirstIndexPicker<GPUUsage>), cudaMemcpyHostToDevice);
-
-        return device_picker;
-    }
-    #endif
-};
-
-// Test-specific picker that always selects last element
-template<GPUUsageMode GPUUsage>
-class LastIndexPicker : public IndexBasedRandomPicker<GPUUsage> {
-public:
-    [[nodiscard]] int pick_random(int start, int end, bool prioritize_end) override {
-        return end - 1;
-    }
-
-    [[nodiscard]] HOST int pick_random_host(int start, int end, bool prioritize_end) override {
-        return end - 1;
-    }
-
-    #ifdef HAS_CUDA
-    [[nodiscard]] DEVICE int pick_random_device(int start, int end, bool prioritize_end, curandState* rand_state) override {
-        return end - 1;
-    }
-
-    RandomPicker<GPUUsage>* to_device_ptr() override {
-        // Allocate device memory for the picker
-        LastIndexPicker<GPUUsage>* device_picker;
-        cudaMalloc(&device_picker, sizeof(LastIndexPicker<GPUUsage>));
-
-        // Copy the object to device
-        cudaMemcpy(device_picker, this, sizeof(LastIndexPicker<GPUUsage>), cudaMemcpyHostToDevice);
-
-        return device_picker;
-    }
-    #endif
-};
+#include "../src/proxies/TemporalGraphProxy.cuh"
 
 template<typename T>
 class TemporalGraphTest : public ::testing::Test {
 protected:
-    std::unique_ptr<TemporalGraph<T::value>> graph;
-    std::unique_ptr<FirstIndexPicker<T::value>> first_picker;
-    std::unique_ptr<LastIndexPicker<T::value>> last_picker;
+    std::unique_ptr<TemporalGraphProxy> graph;
 
     void SetUp() override {
         // Create directed graph by default
-        graph = std::make_unique<TemporalGraph<T::value>>(true);
-        first_picker = std::make_unique<FirstIndexPicker<T::value>>();
-        last_picker = std::make_unique<LastIndexPicker<T::value>>();
+        graph = std::make_unique<TemporalGraphProxy>(true, T::value);
     }
 
     // Helper to create edge tuples
@@ -86,12 +20,12 @@ protected:
 
 #ifdef HAS_CUDA
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_CPU>,
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_GPU>
+    std::integral_constant<bool, false>,  // CPU mode
+    std::integral_constant<bool, true>    // GPU mode
 >;
 #else
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_CPU>
+    std::integral_constant<bool, false>   // CPU mode only
 >;
 #endif
 
@@ -174,7 +108,7 @@ TYPED_TEST(TemporalGraphTest, MaintainSortedOrderTest) {
 // Test time window functionality
 TYPED_TEST(TemporalGraphTest, TimeWindowTest) {
     // Create graph with 100 time unit window
-    this->graph = std::make_unique<TemporalGraph<TypeParam::value>>(true, 100);
+    this->graph = std::make_unique<TemporalGraphProxy>(true, TypeParam::value, 100);
 
     // Add edges spanning the time window
     std::vector<Edge> edges = {
@@ -221,7 +155,7 @@ TYPED_TEST(TemporalGraphTest, EdgeAdditionEdgeCasesTest) {
 
 // Test deletion of nodes when all their edges are removed
 TYPED_TEST(TemporalGraphTest, NodeDeletionTest) {
-    this->graph = std::make_unique<TemporalGraph<TypeParam::value>>(true, 100);  // 100 time unit window
+    this->graph = std::make_unique<TemporalGraphProxy>(true, TypeParam::value, 100);  // 100 time unit window
 
     // Add initial edges
     std::vector<Edge> edges1 = {
@@ -246,7 +180,7 @@ TYPED_TEST(TemporalGraphTest, NodeDeletionTest) {
 
 // Test undirected graph behavior
 TYPED_TEST(TemporalGraphTest, UndirectedGraphEdgeAdditionTest) {
-    this->graph = std::make_unique<TemporalGraph<TypeParam::value>>(false);  // Undirected
+    this->graph = std::make_unique<TemporalGraphProxy>(false, TypeParam::value);  // Undirected
 
     std::vector<Edge> edges = {
         Edge {2, 1, 100},  // Should be stored as (1,2,100)
@@ -294,7 +228,7 @@ TYPED_TEST(TemporalGraphTest, CountTimestampsTest) {
    EXPECT_EQ(this->graph->count_timestamps_greater_than(500), 0);  // After last timestamp
 
    // Test empty graph
-   this->graph = std::make_unique<TemporalGraph<TypeParam::value>>(true);
+   this->graph = std::make_unique<TemporalGraphProxy>(true, TypeParam::value);
    EXPECT_EQ(this->graph->count_timestamps_less_than(100), 0);
    EXPECT_EQ(this->graph->count_timestamps_greater_than(100), 0);
 }
@@ -346,7 +280,7 @@ TYPED_TEST(TemporalGraphTest, CountNodeTimestampsDirectedTest) {
 
 TYPED_TEST(TemporalGraphTest, CountNodeTimestampsUndirectedTest) {
    // Create undirected graph
-   this->graph = std::make_unique<TemporalGraph<TypeParam::value>>(false);
+   this->graph = std::make_unique<TemporalGraphProxy>(false, TypeParam::value);
 
    // Add edges - note that order will be normalized (smaller ID becomes source)
    std::vector<Edge> edges = {
@@ -416,38 +350,38 @@ TYPED_TEST(TemporalGraphTest, GetEdgeAtTest) {
     // Test forward direction (looking for timestamps > given)
 
     // Test with timestamp = -1 (no constraint)
-    auto [src1, tgt1, ts1] = this->graph->get_edge_at(this->first_picker.get(), -1, true);
+    auto [src1, tgt1, ts1] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, -1, true);
     EXPECT_EQ(ts1, 100);  // Should select from first group
 
-    auto [src2, tgt2, ts2] = this->graph->get_edge_at(this->last_picker.get(), -1, true);
+    auto [src2, tgt2, ts2] = this->graph->get_edge_at(RandomPickerType::TEST_LAST, -1, true);
     EXPECT_EQ(ts2, 400);  // Should select from last group
 
     // Test with timestamp constraints
-    auto [src3, tgt3, ts3] = this->graph->get_edge_at(this->first_picker.get(), 100, true);
+    auto [src3, tgt3, ts3] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 100, true);
     EXPECT_EQ(ts3, 200);  // Should select first group after 100
 
-    auto [src4, tgt4, ts4] = this->graph->get_edge_at(this->first_picker.get(), 300, true);
+    auto [src4, tgt4, ts4] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 300, true);
     EXPECT_EQ(ts4, 400);  // Should select first group after 300
 
     // Test backward direction (looking for timestamps < given)
-    auto [src5, tgt5, ts5] = this->graph->get_edge_at(this->first_picker.get(), 400, false);
+    auto [src5, tgt5, ts5] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 400, false);
     EXPECT_EQ(ts5, 100);  // Should select first group before 400
 
-    auto [src6, tgt6, ts6] = this->graph->get_edge_at(this->last_picker.get(), 250, false);
+    auto [src6, tgt6, ts6] = this->graph->get_edge_at(RandomPickerType::TEST_LAST, 250, false);
     EXPECT_EQ(ts6, 200);  // Should select latest group before 250
 
     // Test edge cases
     // No groups after timestamp
-    auto [src7, tgt7, ts7] = this->graph->get_edge_at(this->first_picker.get(), 500, true);
+    auto [src7, tgt7, ts7] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 500, true);
     EXPECT_EQ(ts7, -1);  // Should return -1 when no valid groups
 
     // No groups before timestamp
-    auto [src8, tgt8, ts8] = this->graph->get_edge_at(this->first_picker.get(), 50, false);
+    auto [src8, tgt8, ts8] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 50, false);
     EXPECT_EQ(ts8, -1);
 
     // Test with empty graph
-    this->graph = std::make_unique<TemporalGraph<TypeParam::value>>(true);
-    auto [src9, tgt9, ts9] = this->graph->get_edge_at(this->first_picker.get(), 100, true);
+    this->graph = std::make_unique<TemporalGraphProxy>(true, TypeParam::value);
+    auto [src9, tgt9, ts9] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 100, true);
     EXPECT_EQ(ts9, -1);
 }
 
@@ -464,14 +398,14 @@ TYPED_TEST(TemporalGraphTest, GetEdgeAtDuplicateTimestampsTest) {
     this->graph->add_multiple_edges(edges);
 
     // Test forward selection
-    auto [src1, tgt1, ts1] = this->graph->get_edge_at(this->first_picker.get(), 50, true);
+    auto [src1, tgt1, ts1] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 50, true);
     EXPECT_EQ(ts1, 100);
     EXPECT_TRUE((src1 == 10 && tgt1 == 20) ||
                 (src1 == 30 && tgt1 == 40) ||
                 (src1 == 50 && tgt1 == 60));  // Should be one of the t=100 edges
 
     // Test backward selection
-    auto [src2, tgt2, ts2] = this->graph->get_edge_at(this->first_picker.get(), 250, false);
+    auto [src2, tgt2, ts2] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 250, false);
     EXPECT_EQ(ts2, 100);
     EXPECT_TRUE((src2 == 10 && tgt2 == 20) ||
                 (src2 == 30 && tgt2 == 40) ||
@@ -488,17 +422,17 @@ TYPED_TEST(TemporalGraphTest, GetEdgeAtBoundaryConditionsTest) {
     this->graph->add_multiple_edges(edges);
 
     // Forward direction
-    auto [src1, tgt1, ts1] = this->graph->get_edge_at(this->first_picker.get(), 100, true);
+    auto [src1, tgt1, ts1] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 100, true);
     EXPECT_EQ(ts1, 200);  // Should get next timestamp
 
-    auto [src2, tgt2, ts2] = this->graph->get_edge_at(this->first_picker.get(), 300, true);
+    auto [src2, tgt2, ts2] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 300, true);
     EXPECT_EQ(ts2, -1);   // No timestamps after 300
 
     // Backward direction
-    auto [src3, tgt3, ts3] = this->graph->get_edge_at(this->first_picker.get(), 200, false);
+    auto [src3, tgt3, ts3] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 200, false);
     EXPECT_EQ(ts3, 100);  // Should get previous timestamp
 
-    auto [src4, tgt4, ts4] = this->graph->get_edge_at(this->first_picker.get(), 100, false);
+    auto [src4, tgt4, ts4] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 100, false);
     EXPECT_EQ(ts4, -1);   // No timestamps before 100
 }
 
@@ -516,7 +450,7 @@ TYPED_TEST(TemporalGraphTest, GetEdgeAtRandomSelectionTest) {
     constexpr int NUM_TRIES = 50;
 
     for (int i = 0; i < NUM_TRIES; i++) {
-        auto [src, tgt, ts] = this->graph->get_edge_at(this->first_picker.get(), 50, true);
+        auto [src, tgt, ts] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 50, true);
         EXPECT_EQ(ts, 100);
         seen_edges.insert({src, tgt});
     }

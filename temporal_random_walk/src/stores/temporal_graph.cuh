@@ -102,7 +102,11 @@ namespace temporal_graph {
      * Host functions
      */
 
-    HOST Edge get_edge_at_host(const TemporalGraph* graph, RandomPickerType picker_type, int64_t timestamp, bool forward);
+    HOST Edge get_edge_at_host(
+        const TemporalGraph* graph,
+        RandomPickerType picker_type,
+        int64_t timestamp,
+        bool forward);
 
     HOST Edge get_node_edge_at_host(
         TemporalGraph* graph,

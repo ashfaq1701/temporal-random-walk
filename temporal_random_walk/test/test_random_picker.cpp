@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
-#include "../src/random/ExponentialIndexRandomPicker.cuh"
-#include "../src/random/WeightBasedRandomPicker.cuh"
-#include "../src/random/LinearRandomPicker.cuh"
+#include "../src/proxies/RandomPickerProxies.cuh"
 
 constexpr int RANDOM_START = 0;
 constexpr int RANDOM_END = 10000;
@@ -11,8 +9,10 @@ template<typename T>
 class RandomPickerTest : public ::testing::Test {
 protected:
 
-    LinearRandomPicker<T::value> linear_picker;
-    ExponentialIndexRandomPicker<T::value> exp_picker;
+    LinearRandomPickerProxy linear_picker;
+    ExponentialIndexRandomPickerProxy exp_picker;
+
+    RandomPickerTest(): linear_picker(T::value), exp_picker(T::value) {}
 
     double compute_average_picks(const bool use_exponential, const bool prioritize_end) {
         double sum = 0;
@@ -28,12 +28,12 @@ protected:
 
 #ifdef HAS_CUDA
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_CPU>,
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_GPU>
+    std::integral_constant<bool, false>,  // CPU mode
+    std::integral_constant<bool, true>    // GPU mode
 >;
 #else
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<GPUUsageMode, GPUUsageMode::ON_CPU>
+    std::integral_constant<bool, false>   // CPU mode only
 >;
 #endif
 
