@@ -60,7 +60,7 @@ public:
         }
     }
 
-    explicit NodeMappingProxy(bool use_gpu = false);
+    explicit NodeMappingProxy(bool use_gpu);
 
     explicit NodeMappingProxy(NodeMapping* existing_node_mapping);
 

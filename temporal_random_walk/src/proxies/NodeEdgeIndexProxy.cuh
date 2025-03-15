@@ -186,7 +186,7 @@ public:
         }
     }
 
-    explicit NodeEdgeIndexProxy(bool use_gpu = false);
+    explicit NodeEdgeIndexProxy(bool use_gpu);
 
     explicit NodeEdgeIndexProxy(NodeEdgeIndex* existing_node_edge_index);
 

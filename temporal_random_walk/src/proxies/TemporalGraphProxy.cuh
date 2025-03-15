@@ -16,7 +16,7 @@ public:
 
     explicit TemporalGraphProxy(
         bool is_directed,
-        bool use_gpu = false,
+        bool use_gpu,
         int64_t max_time_capacity = -1,
         bool enable_weight_computation = false,
         double timescale_bound = -1);

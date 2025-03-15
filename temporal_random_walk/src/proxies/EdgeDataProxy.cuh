@@ -120,7 +120,7 @@ public:
         }
     }
 
-    explicit EdgeDataProxy(bool use_gpu = false);
+    explicit EdgeDataProxy(bool use_gpu);
 
     explicit EdgeDataProxy(EdgeData* existing_edge_data);
 
