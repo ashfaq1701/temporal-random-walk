@@ -43,6 +43,12 @@ HOST DEVICE size_t edge_data::size(const EdgeData* edge_data) {
     return edge_data->timestamps_size;
 }
 
+HOST void edge_data::resize(EdgeData* edge_data, size_t size) {
+    resize_memory(&edge_data->sources, edge_data->sources_size, size, edge_data->use_gpu);
+    resize_memory(&edge_data->targets, edge_data->targets_size, size, edge_data->use_gpu);
+    resize_memory(&edge_data->timestamps, edge_data->timestamps_size, size, edge_data->use_gpu);
+}
+
 HOST void edge_data::set_size(EdgeData* edge_data, size_t size) {
     edge_data->sources_size = size;
     edge_data->targets_size = size;

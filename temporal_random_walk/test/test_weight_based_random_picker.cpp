@@ -8,7 +8,7 @@ class WeightBasedRandomPickerTest : public ::testing::Test
 {
 protected:
 
-    WeightBasedRandomPickerProxy<T::value> picker;
+    WeightBasedRandomPickerProxy picker;
 
     WeightBasedRandomPickerTest(): picker(T::value) {}
 

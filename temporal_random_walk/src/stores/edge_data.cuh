@@ -62,6 +62,8 @@ namespace edge_data {
 
     HOST DEVICE size_t size(const EdgeData *edge_data);
 
+    HOST void resize(EdgeData* edge_data, size_t size);
+
     HOST void set_size(EdgeData* edge_data, size_t size);
 
     HOST DEVICE bool empty(const EdgeData *edge_data);

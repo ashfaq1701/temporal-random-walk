@@ -168,8 +168,8 @@ TYPED_TEST(TemporalGraphWeightTest, EdgeCases) {
     {
         const TemporalGraphProxy empty_graph(false, TypeParam::value, -1, true);
 
-        EXPECT_TRUE(empty_graph.graph->edge_data->forward_cumulative_weights_exponential_size, 0);
-        EXPECT_TRUE(empty_graph.graph->edge_data->backward_cumulative_weights_exponential_size, 0);
+        EXPECT_EQ(empty_graph.graph->edge_data->forward_cumulative_weights_exponential_size, 0);
+        EXPECT_EQ(empty_graph.graph->edge_data->backward_cumulative_weights_exponential_size, 0);
     }
 
     // Single edge graph test

@@ -132,6 +132,10 @@ public:
 
     [[nodiscard]] size_t size() const;
 
+    void resize(size_t size);
+
+    void set_size(size_t size);
+
     [[nodiscard]] bool empty() const;
 
     void add_edges(const std::vector<int>& sources, const std::vector<int>& targets, const std::vector<int64_t>& timestamps) const;

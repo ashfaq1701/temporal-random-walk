@@ -79,6 +79,14 @@ size_t EdgeDataProxy::size() const {
     }
 }
 
+void EdgeDataProxy::resize(size_t size) {
+    edge_data::resize(edge_data, size);
+}
+
+void EdgeDataProxy::set_size(size_t size) {
+    edge_data::set_size(edge_data, size);
+}
+
 bool EdgeDataProxy::empty() const {
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation

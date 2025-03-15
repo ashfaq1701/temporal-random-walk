@@ -142,7 +142,7 @@ TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, EdgeCasesTest) {
     this->verify_edge(edge, -1, -1, -1);
 
     // Test empty graph
-    this->graph = std::make_unique<TemporalGraph<TypeParam::value>>(true);
+    this->graph = std::make_unique<TemporalGraphProxy>(true);
     edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, -1, true);
     this->verify_edge(edge, -1, -1, -1);
 }
@@ -197,7 +197,7 @@ TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, ExactTimestampTest) {
 // Test exact timestamp matching for undirected graphs
 TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, ExactTimestampUndirectedTest) {
     // Create undirected graph
-    this->graph = std::make_unique<TemporalGraph<TypeParam::value>>(false);
+    this->graph = std::make_unique<TemporalGraphProxy>(false);
 
     auto edges = std::vector<Edge>{
         // Edges connecting to node 10
