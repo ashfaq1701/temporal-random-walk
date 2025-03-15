@@ -192,6 +192,8 @@ public:
 
     ~NodeEdgeIndexProxy();
 
+    NodeEdgeIndexProxy& operator=(const NodeEdgeIndexProxy& other);
+
     void clear() const;
 
     void rebuild(EdgeData* edge_data, NodeMapping* node_mapping, bool is_directed) const;

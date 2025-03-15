@@ -25,6 +25,8 @@ public:
 
     ~TemporalGraphProxy();
 
+    TemporalGraphProxy& operator=(const TemporalGraphProxy& other);
+
     void update_temporal_weights() const;
 
     [[nodiscard]] size_t get_total_edges() const;

@@ -66,6 +66,8 @@ public:
 
     ~NodeMappingProxy();
 
+    NodeMappingProxy& operator=(const NodeMappingProxy& other);
+
     [[nodiscard]] int to_dense(int sparse_id) const;
 
     [[nodiscard]] int to_sparse(int dense_id) const;

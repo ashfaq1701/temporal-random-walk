@@ -49,6 +49,22 @@ EdgeDataProxy::~EdgeDataProxy() {
     }
 }
 
+EdgeDataProxy& EdgeDataProxy::operator=(const EdgeDataProxy& other) {
+    if (this != &other) {
+        if (owns_edge_data && edge_data) {
+            delete edge_data;
+        }
+
+        owns_edge_data = other.owns_edge_data;
+        if (other.owns_edge_data) {
+            edge_data = new EdgeData(other.edge_data->use_gpu);
+        } else {
+            edge_data = other.edge_data;
+        }
+    }
+    return *this;
+}
+
 void EdgeDataProxy::reserve(size_t size) const {
     edge_data::reserve(edge_data, size);
 }

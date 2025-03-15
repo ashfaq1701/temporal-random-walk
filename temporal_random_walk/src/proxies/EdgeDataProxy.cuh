@@ -126,6 +126,8 @@ public:
 
     ~EdgeDataProxy();
 
+    EdgeDataProxy& operator=(const EdgeDataProxy& other);
+
     void reserve(size_t size) const;
 
     void clear() const;

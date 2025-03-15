@@ -47,6 +47,22 @@ NodeMappingProxy::~NodeMappingProxy() {
     }
 }
 
+NodeMappingProxy& NodeMappingProxy::operator=(const NodeMappingProxy& other) {
+    if (this != &other) {
+        if (owns_node_mapping && node_mapping) {
+            delete node_mapping;
+        }
+
+        owns_node_mapping = other.owns_node_mapping;
+        if (other.owns_node_mapping) {
+            node_mapping = new NodeMapping(other.node_mapping->use_gpu);
+        } else {
+            node_mapping = other.node_mapping;
+        }
+    }
+    return *this;
+}
+
 int NodeMappingProxy::to_dense(const int sparse_id) const {
     if (node_mapping->use_gpu) {
         // Call via CUDA kernel for GPU implementation

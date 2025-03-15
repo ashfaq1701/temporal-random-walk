@@ -21,7 +21,7 @@ __global__ void get_timestamp_group_count_kernel(size_t* result, const NodeEdgeI
     }
 }
 
-NodeEdgeIndexProxy::NodeEdgeIndexProxy(bool use_gpu) : owns_node_edge_index(true) {
+NodeEdgeIndexProxy::NodeEdgeIndexProxy(bool use_gpu): owns_node_edge_index(true) {
     node_edge_index = new NodeEdgeIndex(use_gpu);
 }
 
@@ -32,6 +32,22 @@ NodeEdgeIndexProxy::~NodeEdgeIndexProxy() {
     if (owns_node_edge_index && node_edge_index) {
         delete node_edge_index;
     }
+}
+
+NodeEdgeIndexProxy& NodeEdgeIndexProxy::operator=(const NodeEdgeIndexProxy& other) {
+    if (this != &other) {
+        if (owns_node_edge_index && node_edge_index) {
+            delete node_edge_index;
+        }
+
+        owns_node_edge_index = other.owns_node_edge_index;
+        if (other.owns_node_edge_index) {
+            node_edge_index = new NodeEdgeIndex(other.node_edge_index->use_gpu);
+        } else {
+            node_edge_index = other.node_edge_index;
+        }
+    }
+    return *this;
 }
 
 void NodeEdgeIndexProxy::clear() const {

@@ -91,6 +91,8 @@ TYPED_TEST(NodeEdgeIndexWeightTest, EmptyGraph) {
     EdgeDataProxy empty_edges(TypeParam::value);
     NodeMappingProxy empty_mapping(TypeParam::value);
     this->index = NodeEdgeIndexProxy(TypeParam::value);
+    this->index.rebuild(empty_edges.edge_data, empty_mapping.node_mapping, true);
+    this->index.update_temporal_weights(empty_edges.edge_data, -1);
 
     EXPECT_TRUE(this->index.outbound_forward_cumulative_weights_exponential().empty());
     EXPECT_TRUE(this->index.outbound_backward_cumulative_weights_exponential().empty());

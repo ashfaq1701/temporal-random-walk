@@ -39,6 +39,27 @@ TemporalGraphProxy::~TemporalGraphProxy() {
     }
 }
 
+TemporalGraphProxy& TemporalGraphProxy::operator=(const TemporalGraphProxy& other) {
+    if (this != &other) {
+        if (owns_graph && graph) {
+            delete graph;
+        }
+
+        owns_graph = other.owns_graph;
+        if (other.owns_graph) {
+            graph = new TemporalGraph(
+                other.graph->is_directed,
+                other.graph->use_gpu,
+                other.graph->max_time_capacity,
+                other.graph->enable_weight_computation,
+                other.graph->timescale_bound);
+        } else {
+            graph = other.graph;
+        }
+    }
+    return *this;
+}
+
 void TemporalGraphProxy::update_temporal_weights() const {
     temporal_graph::update_temporal_weights(graph);
 }
