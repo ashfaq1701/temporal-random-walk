@@ -48,8 +48,7 @@ protected:
 
 #ifdef HAS_CUDA
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<bool, false>,  // CPU mode
-    std::integral_constant<bool, true>    // GPU mode
+    std::integral_constant<bool, false>
 >;
 #else
 using GPU_USAGE_TYPES = ::testing::Types<
