@@ -13,7 +13,8 @@ constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;
 
 #ifdef HAS_CUDA
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<bool, false>
+    std::integral_constant<bool, false>,
+    std::integral_constant<bool, true>
 >;
 #else
 using GPU_USAGE_TYPES = ::testing::Types<
