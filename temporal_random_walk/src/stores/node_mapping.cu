@@ -1,7 +1,7 @@
 #include "node_mapping.cuh"
 
 #include "../common/memory.cuh"
-#include <common/cuda_config.cuh>
+#include "../common/cuda_config.cuh"
 #include <thrust/device_ptr.h>
 #include <thrust/count.h>
 #include <thrust/extrema.h>
@@ -39,7 +39,25 @@ HOST DEVICE size_t node_mapping::size(const NodeMapping *node_mapping) {
 }
 
 HOST size_t node_mapping::active_size(const NodeMapping *node_mapping) {
-    if (!node_mapping->use_gpu) {
+    if (node_mapping->is_deleted_size == 0) {
+        return 0;
+    }
+
+    if (node_mapping->use_gpu) {
+        cudaGetLastError();
+
+        const auto start_ptr = thrust::device_pointer_cast(node_mapping->is_deleted);
+        const auto end_ptr = start_ptr + static_cast<long>(node_mapping->is_deleted_size);
+
+        const size_t result = thrust::count(
+            DEVICE_EXECUTION_POLICY,
+            start_ptr,
+            end_ptr,
+            false
+        );
+
+        return result;
+    } else {
         size_t count = 0;
         for (size_t i = 0; i < node_mapping->is_deleted_size; i++) {
             if (!node_mapping->is_deleted[i]) {
@@ -47,13 +65,6 @@ HOST size_t node_mapping::active_size(const NodeMapping *node_mapping) {
             }
         }
         return count;
-    } else {
-        return thrust::count(
-            DEVICE_EXECUTION_POLICY,
-            thrust::device_pointer_cast(node_mapping->is_deleted),
-            thrust::device_pointer_cast(node_mapping->is_deleted) + static_cast<long>(node_mapping->is_deleted_size),
-            false // Count elements where is_deleted == false
-        );
     }
 }
 
@@ -282,8 +293,8 @@ HOST void node_mapping::update_cuda(NodeMapping *node_mapping, const EdgeData *e
         int* new_sparse_to_dense = nullptr;
         bool* new_is_deleted = nullptr;
 
-        cudaMalloc(&new_sparse_to_dense, new_size * sizeof(int));
-        cudaMalloc(&new_is_deleted, new_size * sizeof(bool));
+        allocate_memory(&new_sparse_to_dense, new_size, true);
+        allocate_memory(&new_is_deleted, new_size, true);
 
         // Copy existing data
         if (node_mapping->sparse_to_dense_size > 0) {
@@ -297,11 +308,17 @@ HOST void node_mapping::update_cuda(NodeMapping *node_mapping, const EdgeData *e
         }
 
         // Initialize new elements
-        cudaMemset(new_sparse_to_dense + node_mapping->sparse_to_dense_size,
-                  0xFF, (new_size - node_mapping->sparse_to_dense_size) * sizeof(int)); // -1 in 2's complement
+        fill_memory(
+            new_sparse_to_dense + node_mapping->sparse_to_dense_size,
+            new_size - node_mapping->sparse_to_dense_size,
+            -1,
+            true);
 
-        cudaMemset(new_is_deleted + node_mapping->is_deleted_size,
-                  0x01, (new_size - node_mapping->is_deleted_size) * sizeof(bool)); // true
+        fill_memory(
+            new_is_deleted + node_mapping->is_deleted_size,
+            new_size - node_mapping->is_deleted_size,
+            true,
+            true);
 
         // Free old arrays
         if (node_mapping->sparse_to_dense) cudaFree(node_mapping->sparse_to_dense);

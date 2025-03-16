@@ -78,6 +78,7 @@ HOST void fill_memory(T* memory, size_t size, T value, bool use_gpu) {
         int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
 
         fill_kernel<<<blocksPerGrid, threadsPerBlock>>>(memory, size, d_value);
+        cudaDeviceSynchronize();
 
         cudaFree(d_value);
     } else {

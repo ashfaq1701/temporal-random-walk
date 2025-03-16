@@ -437,7 +437,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraph* graph, const 
     const size_t new_edges_count = total_size - start_idx;
 
     // Create index array
-    size_t* indices;
+    size_t* indices = nullptr;
     allocate_memory(&indices, new_edges_count, graph->use_gpu);
 
     // Initialize indices with sequence starting at start_idx
@@ -461,9 +461,9 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraph* graph, const 
     );
 
     // Create temporary arrays for sorted data
-    int* sorted_sources;
-    int* sorted_targets;
-    int64_t* sorted_timestamps;
+    int* sorted_sources = nullptr;
+    int* sorted_targets = nullptr;
+    int64_t* sorted_timestamps = nullptr;
     allocate_memory(&sorted_sources, new_edges_count, graph->use_gpu);
     allocate_memory(&sorted_targets, new_edges_count, graph->use_gpu);
     allocate_memory(&sorted_timestamps, new_edges_count, graph->use_gpu);
