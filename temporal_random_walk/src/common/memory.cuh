@@ -148,4 +148,36 @@ HOST void copy_memory(T* dst, const T* src, const size_t size, const bool dst_gp
     }
 }
 
+template <typename T>
+HOST void remove_first_n_memory(T** data_ptr, size_t& size, size_t n, const bool use_gpu) {
+    if (!data_ptr || !*data_ptr || n == 0 || n >= size) {
+        return;
+    }
+
+    const size_t new_size = size - n;
+    T* new_ptr = nullptr;
+
+    if (use_gpu) {
+        cudaMalloc(&new_ptr, new_size * sizeof(T));
+        if (new_ptr) {
+            cudaMemcpy(new_ptr, *data_ptr + n, new_size * sizeof(T), cudaMemcpyDeviceToDevice);
+            cudaFree(*data_ptr);
+        }
+    } else {
+        new_ptr = static_cast<T *>(malloc(new_size * sizeof(T)));
+        if (new_ptr) {
+            std::memcpy(new_ptr, *data_ptr + n, new_size * sizeof(T));
+            free(*data_ptr);
+        }
+    }
+
+    if (new_ptr) {
+        *data_ptr = new_ptr;
+        size = new_size;  // Update the size
+    } else {
+        std::cerr << "Memory reallocation failed in remove_first_n_memory!" << std::endl;
+    }
+}
+
+
 #endif // MEMORY_H

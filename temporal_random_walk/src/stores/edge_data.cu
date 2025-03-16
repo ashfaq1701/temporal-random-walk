@@ -8,12 +8,12 @@
 #include "../common/cuda_config.cuh"
 
 HOST void edge_data::reserve(EdgeData *edge_data, const size_t size) {
-    allocate_memory(&edge_data->sources, size, edge_data->use_gpu);
-    allocate_memory(&edge_data->targets, size, edge_data->use_gpu);
-    allocate_memory(&edge_data->timestamps, size, edge_data->use_gpu);
+    resize_memory(&edge_data->sources, edge_data->sources_size, size, edge_data->use_gpu);
+    resize_memory(&edge_data->targets, edge_data->targets_size, size, edge_data->use_gpu);
+    resize_memory(&edge_data->timestamps, edge_data->targets_size, size, edge_data->use_gpu);
 
-    allocate_memory(&edge_data->timestamp_group_offsets, size, edge_data->use_gpu);
-    allocate_memory(&edge_data->unique_timestamps, size, edge_data->use_gpu);
+    resize_memory(&edge_data->timestamp_group_offsets, edge_data->timestamp_group_offsets_size,  size, edge_data->use_gpu);
+    resize_memory(&edge_data->unique_timestamps, edge_data->unique_timestamps_size, size, edge_data->use_gpu);
 }
 
 HOST void edge_data::clear(EdgeData *edge_data) {

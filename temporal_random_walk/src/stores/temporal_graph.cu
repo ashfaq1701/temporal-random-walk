@@ -51,9 +51,6 @@ HOST void temporal_graph::add_multiple_edges_std(TemporalGraph* graph, const Edg
     // Get start index for new edges
     const size_t start_idx = edge_data::size(graph->edge_data);
 
-    // Reserve space for new edges
-    edge_data::reserve(graph->edge_data, start_idx + num_new_edges);
-
     // Extract sources, targets, and timestamps from new edges
     auto sources = new int[num_new_edges];
     auto targets = new int[num_new_edges];
@@ -224,15 +221,23 @@ HOST void temporal_graph::delete_old_edges_std(TemporalGraph* graph) {
     bool* has_edges = new bool[graph->node_mapping->sparse_to_dense_size];
 
     if (remaining > 0) {
-        memmove(graph->edge_data->sources,
-                graph->edge_data->sources + delete_count,
-                remaining * sizeof(int));
-        memmove(graph->edge_data->targets,
-                graph->edge_data->targets + delete_count,
-                remaining * sizeof(int));
-        memmove(graph->edge_data->timestamps,
-                graph->edge_data->timestamps + delete_count,
-                remaining * sizeof(int64_t));
+        remove_first_n_memory(
+            &graph->edge_data->sources,
+            graph->edge_data->sources_size,
+            delete_count,
+            graph->use_gpu);
+
+        remove_first_n_memory(
+            &graph->edge_data->targets,
+            graph->edge_data->targets_size,
+            delete_count,
+            graph->use_gpu);
+
+        remove_first_n_memory(
+            &graph->edge_data->timestamps,
+            graph->edge_data->targets_size,
+            delete_count,
+            graph->use_gpu);
 
         // Mark nodes that still have edges
         for (size_t i = 0; i < remaining; i++) {
@@ -346,9 +351,6 @@ HOST void temporal_graph::add_multiple_edges_cuda(TemporalGraph* graph, const Ed
 
     // Get start index for new edges
     const size_t start_idx = edge_data::size(graph->edge_data);
-
-    // Reserve space for new edges
-    edge_data::reserve(graph->edge_data, start_idx + num_new_edges);
 
     // Allocate CUDA memory for sources, targets, and timestamps
     int* d_sources = nullptr;
