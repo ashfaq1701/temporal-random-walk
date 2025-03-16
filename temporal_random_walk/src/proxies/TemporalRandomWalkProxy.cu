@@ -58,18 +58,23 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalkProxy::get_random_walks
             walk_direction);
     }
 
-    std::vector<std::vector<NodeWithTime>> result(walk_set.num_walks);
+    std::vector<std::vector<NodeWithTime>> walks(walk_set.num_walks);
     for (size_t walk_idx = 0; walk_idx < walk_set.num_walks; walk_idx++) {
         const size_t walk_len = walk_set.get_walk_len(static_cast<int>(walk_idx));
-        result[walk_idx].reserve(walk_len);
+
+        walks[walk_idx].reserve(walk_len);
 
         for (size_t hop = 0; hop < walk_len; hop++) {
             NodeWithTime node_time = walk_set.get_walk_hop(static_cast<int>(walk_idx), static_cast<int>(hop));
-            result[walk_idx].push_back(node_time);
+            walks[walk_idx].push_back(node_time);
         }
     }
 
-    return result;
+    std::vector<std::vector<NodeWithTime>> non_empty_walks;
+    std::copy_if(walks.begin(), walks.end(), std::back_inserter(non_empty_walks),
+                 [](const std::vector<NodeWithTime>& v) { return !v.empty(); });
+
+    return non_empty_walks;
 }
 
 std::vector<std::vector<int>> TemporalRandomWalkProxy::get_random_walks_for_all_nodes(
@@ -119,18 +124,23 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalkProxy::get_random_walks
             walk_direction);
     }
 
-    std::vector<std::vector<NodeWithTime>> result(walk_set.num_walks);
+    std::vector<std::vector<NodeWithTime>> walks(walk_set.num_walks);
     for (size_t walk_idx = 0; walk_idx < walk_set.num_walks; walk_idx++) {
         const size_t walk_len = walk_set.get_walk_len(static_cast<int>(walk_idx));
-        result[walk_idx].reserve(walk_len);
+
+        walks[walk_idx].reserve(walk_len);
 
         for (size_t hop = 0; hop < walk_len; hop++) {
             NodeWithTime node_time = walk_set.get_walk_hop(static_cast<int>(walk_idx), static_cast<int>(hop));
-            result[walk_idx].push_back(node_time);
+            walks[walk_idx].push_back(node_time);
         }
     }
 
-    return result;
+    std::vector<std::vector<NodeWithTime>> non_empty_walks;
+    std::copy_if(walks.begin(), walks.end(), std::back_inserter(non_empty_walks),
+                 [](const std::vector<NodeWithTime>& v) { return !v.empty(); });
+
+    return non_empty_walks;
 }
 
 std::vector<std::vector<int>> TemporalRandomWalkProxy::get_random_walks(

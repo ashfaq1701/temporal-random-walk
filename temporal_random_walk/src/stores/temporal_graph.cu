@@ -235,7 +235,7 @@ HOST void temporal_graph::delete_old_edges_std(TemporalGraph* graph) {
 
         remove_first_n_memory(
             &graph->edge_data->timestamps,
-            graph->edge_data->targets_size,
+            graph->edge_data->timestamps_size,
             delete_count,
             graph->use_gpu);
 
@@ -247,7 +247,6 @@ HOST void temporal_graph::delete_old_edges_std(TemporalGraph* graph) {
     }
 
     edge_data::set_size(graph->edge_data, remaining);
-
 
     // Mark nodes with no edges as deleted
     for (size_t i = 0; i < graph->node_mapping->sparse_to_dense_size; i++) {
