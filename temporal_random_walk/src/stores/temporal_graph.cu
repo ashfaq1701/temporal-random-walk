@@ -455,7 +455,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraph* graph, const 
         DEVICE_EXECUTION_POLICY,
         thrust::device_pointer_cast(indices),
         thrust::device_pointer_cast(indices + new_edges_count),
-        [timestamps_ptr] HOST DEVICE (const size_t i, const size_t j) {
+        [timestamps_ptr] DEVICE (const size_t i, const size_t j) {
             return timestamps_ptr[i] < timestamps_ptr[j];
         }
     );
@@ -470,21 +470,21 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraph* graph, const 
 
     // Apply permutation using gather
     thrust::gather(
-        DEVICE_EXECUTION_POLICY,
+        thrust::device,
         thrust::device_pointer_cast(indices),
         thrust::device_pointer_cast(indices + new_edges_count),
         thrust::device_pointer_cast(graph->edge_data->sources),
-        thrust::device_pointer_cast(sorted_sources)
-    );
+        thrust::device_pointer_cast(sorted_sources));
+
     thrust::gather(
-        DEVICE_EXECUTION_POLICY,
+        thrust::device,
         thrust::device_pointer_cast(indices),
         thrust::device_pointer_cast(indices + new_edges_count),
         thrust::device_pointer_cast(graph->edge_data->targets),
         thrust::device_pointer_cast(sorted_targets)
     );
     thrust::gather(
-        DEVICE_EXECUTION_POLICY,
+        thrust::device,
         thrust::device_pointer_cast(indices),
         thrust::device_pointer_cast(indices + new_edges_count),
         thrust::device_pointer_cast(graph->edge_data->timestamps),
@@ -554,7 +554,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraph* graph, const 
             first1, last1,
             first2, last2,
             result,
-            [] HOST DEVICE (const thrust::tuple<int, int, int64_t>& a,
+            [] DEVICE (const thrust::tuple<int, int, int64_t>& a,
                                    const thrust::tuple<int, int, int64_t>& b) {
                 return thrust::get<2>(a) <= thrust::get<2>(b);
             }

@@ -4,7 +4,7 @@
 #include "test_utils.h"
 #include "../test/test_utils.h"
 
-constexpr bool USE_GPU = false;
+constexpr bool USE_GPU = true;
 
 int main(int argc, char* argv[]) {
     std::string file_path = "../../data/sample_data.csv";
