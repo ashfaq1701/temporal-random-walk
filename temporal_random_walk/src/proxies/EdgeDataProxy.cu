@@ -65,10 +65,6 @@ EdgeDataProxy& EdgeDataProxy::operator=(const EdgeDataProxy& other) {
     return *this;
 }
 
-void EdgeDataProxy::reserve(size_t size) const {
-    edge_data::reserve(edge_data, size);
-}
-
 void EdgeDataProxy::clear() const {
     edge_data::clear(edge_data);
 }
@@ -95,11 +91,11 @@ size_t EdgeDataProxy::size() const {
     }
 }
 
-void EdgeDataProxy::resize(size_t size) {
+void EdgeDataProxy::resize(const size_t size) const {
     edge_data::resize(edge_data, size);
 }
 
-void EdgeDataProxy::set_size(size_t size) {
+void EdgeDataProxy::set_size(const size_t size) const {
     edge_data::set_size(edge_data, size);
 }
 

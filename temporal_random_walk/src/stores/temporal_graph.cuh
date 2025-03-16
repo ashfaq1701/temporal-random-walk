@@ -36,12 +36,6 @@ struct TemporalGraph {
         node_edge_index = new NodeEdgeIndex(use_gpu);
         node_mapping = new NodeMapping(use_gpu);
     }
-
-    ~TemporalGraph() {
-        delete edge_data;
-        delete node_edge_index;
-        delete node_mapping;
-    }
 };
 
 namespace temporal_graph {

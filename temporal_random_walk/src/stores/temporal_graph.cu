@@ -17,11 +17,11 @@
 
 HOST void temporal_graph::update_temporal_weights(const TemporalGraph* graph) {
     if (graph->use_gpu) {
-        edge_data::update_temporal_weights_std(graph->edge_data, graph->timescale_bound);
-        node_edge_index::update_temporal_weights_std(graph->node_edge_index, graph->edge_data, graph->timescale_bound);
-    } else {
         edge_data::update_temporal_weights_cuda(graph->edge_data, graph->timescale_bound);
         node_edge_index::update_temporal_weights_cuda(graph->node_edge_index, graph->edge_data, graph->timescale_bound);
+    } else {
+        edge_data::update_temporal_weights_std(graph->edge_data, graph->timescale_bound);
+        node_edge_index::update_temporal_weights_std(graph->node_edge_index, graph->edge_data, graph->timescale_bound);
     }
 }
 
@@ -438,7 +438,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraph* graph, const 
 
     // Create index array
     size_t* indices;
-    allocate_memory(&indices, new_edges_count, true);
+    allocate_memory(&indices, new_edges_count, graph->use_gpu);
 
     // Initialize indices with sequence starting at start_idx
     thrust::sequence(
@@ -464,9 +464,9 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraph* graph, const 
     int* sorted_sources;
     int* sorted_targets;
     int64_t* sorted_timestamps;
-    allocate_memory(&sorted_sources, new_edges_count, true);
-    allocate_memory(&sorted_targets, new_edges_count, true);
-    allocate_memory(&sorted_timestamps, new_edges_count, true);
+    allocate_memory(&sorted_sources, new_edges_count, graph->use_gpu);
+    allocate_memory(&sorted_targets, new_edges_count, graph->use_gpu);
+    allocate_memory(&sorted_timestamps, new_edges_count, graph->use_gpu);
 
     // Apply permutation using gather
     thrust::gather(

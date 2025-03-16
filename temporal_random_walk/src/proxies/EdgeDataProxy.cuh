@@ -128,15 +128,13 @@ public:
 
     EdgeDataProxy& operator=(const EdgeDataProxy& other);
 
-    void reserve(size_t size) const;
+    void resize(size_t size) const;
 
     void clear() const;
 
     [[nodiscard]] size_t size() const;
 
-    void resize(size_t size);
-
-    void set_size(size_t size);
+    void set_size(size_t size) const;
 
     [[nodiscard]] bool empty() const;
 
