@@ -24,7 +24,7 @@ void TemporalRandomWalkProxy::add_multiple_edges(const std::vector<std::tuple<in
     Edge* edge_array = new Edge[edges.size()];
     for (size_t idx = 0; idx < edges.size(); idx++) {
         const auto& [u, i, ts] = edges[idx];
-        edge_array[i] = Edge(u, i, ts);
+        edge_array[idx] = Edge(u, i, ts);
     }
 
     temporal_random_walk::add_multiple_edges(temporal_random_walk, edge_array, edges.size());

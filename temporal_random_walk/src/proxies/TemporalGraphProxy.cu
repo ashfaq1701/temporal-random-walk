@@ -105,17 +105,9 @@ std::vector<int> TemporalGraphProxy::get_node_ids() const {
 
         result.assign(host_ids, host_ids + node_ids.size);
         delete[] host_ids;
-
-        // Free device memory for DataBlock
-        if (node_ids.data) {
-            cudaFree(node_ids.data);
-        }
     } else {
         // For CPU data, can directly copy
         result.assign(node_ids.data, node_ids.data + node_ids.size);
-
-        // Free host memory for DataBlock
-        delete[] node_ids.data;
     }
 
     return result;
@@ -132,17 +124,9 @@ std::vector<Edge> TemporalGraphProxy::get_edges() const {
 
         result.assign(host_edges, host_edges + edges.size);
         delete[] host_edges;
-
-        // Free device memory for DataBlock
-        if (edges.data) {
-            cudaFree(edges.data);
-        }
     } else {
         // For CPU data, can directly copy
         result.assign(edges.data, edges.data + edges.size);
-
-        // Free host memory for DataBlock
-        delete[] edges.data;
     }
 
     return result;

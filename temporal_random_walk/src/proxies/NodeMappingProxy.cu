@@ -147,17 +147,9 @@ std::vector<int> NodeMappingProxy::get_active_node_ids() const {
 
         result.assign(host_ids, host_ids + ids_block.size);
         delete[] host_ids;
-
-        // Free device memory for DataBlock
-        if (ids_block.data) {
-            cudaFree(ids_block.data);
-        }
     } else {
         // For CPU data, can directly copy
         result.assign(ids_block.data, ids_block.data + ids_block.size);
-
-        // Free host memory for DataBlock
-        delete[] ids_block.data;
     }
 
     return result;
