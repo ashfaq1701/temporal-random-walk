@@ -39,8 +39,9 @@ HOST void allocate_memory(T** data_ptr, const size_t size, const bool use_gpu) {
     if (use_gpu) {
         cudaMalloc(data_ptr, size * sizeof(T));
     }
+    else
     #endif
-    else {
+    {
         *data_ptr = static_cast<T *>(malloc(size * sizeof(T)));
     }
 
