@@ -66,6 +66,7 @@ HOST void edge_data::add_edges(EdgeData *edge_data, const int *sources, const in
 HOST DataBlock<Edge> edge_data::get_edges(const EdgeData *edge_data) {
     DataBlock<Edge> result(edge_data->timestamps_size, edge_data->use_gpu);
 
+    #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         thrust::device_ptr<int> d_sources(edge_data->sources);
         thrust::device_ptr<int> d_targets(edge_data->targets);
@@ -85,7 +86,10 @@ HOST DataBlock<Edge> edge_data::get_edges(const EdgeData *edge_data) {
                 };
             }
         );
-    } else {
+    }
+    else
+    #endif
+    {
         for (size_t i = 0; i < edge_data->timestamps_size; i++) {
             result.data[i] = Edge{ edge_data->sources[i], edge_data->targets[i], edge_data->timestamps[i] };
         }
@@ -231,6 +235,8 @@ HOST void edge_data::update_temporal_weights_std(EdgeData *edge_data, const doub
         edge_data->backward_cumulative_weights_exponential[group] = backward_cumsum;
     }
 }
+
+#ifdef HAS_CUDA
 
 HOST void edge_data::update_timestamp_groups_cuda(EdgeData *edge_data) {
     if (edge_data->timestamps_size == 0) {
@@ -534,3 +540,5 @@ HOST EdgeData* edge_data::to_device_ptr(const EdgeData* edge_data) {
 
     return device_edge_data;
 }
+
+#endif

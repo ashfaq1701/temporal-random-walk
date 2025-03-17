@@ -146,10 +146,13 @@ namespace node_edge_index {
         bool is_directed
     );
 
+    HOST void update_temporal_weights_std(NodeEdgeIndex* node_edge_index, const EdgeData* edge_data, double timescale_bound);
+
     /**
      * Cuda implementations
      */
 
+    #ifdef HAS_CUDA
     HOST void populate_dense_ids_cuda(
         const EdgeData* edge_data,
         const NodeMapping* node_mapping,
@@ -188,13 +191,12 @@ namespace node_edge_index {
         bool is_directed
     );
 
-    HOST void rebuild(NodeEdgeIndex* node_edge_index, EdgeData* edge_data, NodeMapping* node_mapping, bool is_directed);
-
-    HOST void update_temporal_weights_std(NodeEdgeIndex* node_edge_index, const EdgeData* edge_data, double timescale_bound);
-
     HOST void update_temporal_weights_cuda(NodeEdgeIndex* node_edge_index, const EdgeData* edge_data, double timescale_bound);
 
     HOST NodeEdgeIndex* to_device_ptr(const NodeEdgeIndex* node_edge_index);
+    #endif
+
+    HOST void rebuild(NodeEdgeIndex* node_edge_index, EdgeData* edge_data, NodeMapping* node_mapping, bool is_directed);
 }
 
 #endif // NODE_EDGE_INDEX_H

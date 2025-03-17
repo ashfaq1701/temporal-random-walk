@@ -59,6 +59,8 @@ namespace node_mapping {
 
     HOST MemoryView<int> get_all_sparse_ids(const NodeMapping *node_mapping);
 
+    HOST DEVICE bool has_node(const NodeMapping *node_mapping, int sparse_id);
+
     /**
      * Std Implementations
      */
@@ -67,6 +69,8 @@ namespace node_mapping {
     /**
      * CUDA implementations
      */
+
+    #ifdef HAS_CUDA
     HOST void update_cuda(NodeMapping *node_mapping, const EdgeData *edge_data, size_t start_idx, size_t end_idx);
 
     /**
@@ -81,9 +85,9 @@ namespace node_mapping {
 
     DEVICE void mark_node_deleted_from_ptr(bool *is_deleted, int sparse_id, int size);
 
-    HOST DEVICE bool has_node(const NodeMapping *node_mapping, int sparse_id);
-
     HOST NodeMapping* to_device_ptr(const NodeMapping* node_mapping);
+
+    #endif
 }
 
 #endif // NODE_MAPPING_H

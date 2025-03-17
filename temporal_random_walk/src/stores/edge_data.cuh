@@ -88,6 +88,8 @@ namespace edge_data {
 
     HOST void update_temporal_weights_std(EdgeData *edge_data, double timescale_bound);
 
+    #ifdef HAS_CUDA
+
     /**
      * CUDA implementations
      */
@@ -103,6 +105,8 @@ namespace edge_data {
     DEVICE size_t find_group_before_timestamp_device(const EdgeData *edge_data, int64_t timestamp);
 
     HOST EdgeData* to_device_ptr(const EdgeData* edge_data);
+
+    #endif
 }
 
 #endif // EDGE_DATA_H
