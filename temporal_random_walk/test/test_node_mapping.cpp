@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
 
-#include "../src/proxies/NodeMappingProxy.cuh"
-#include "../src/proxies/EdgeDataProxy.cuh"
+#include "../src/proxies/NodeMapping.cuh"
+#include "../src/proxies/EdgeData.cuh"
 
 template<typename T>
 class NodeMappingTest : public ::testing::Test {
 protected:
-    NodeMappingProxy mapping;
-    EdgeDataProxy edges;
+    NodeMapping mapping;
+    EdgeData edges;
 
     NodeMappingTest(): mapping(T::value), edges(T::value) {}
 

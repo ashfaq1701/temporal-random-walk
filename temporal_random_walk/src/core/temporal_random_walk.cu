@@ -3,7 +3,7 @@
 #include "../utils/random.cuh"
 #include "../common/setup.cuh"
 
-HOST void temporal_random_walk::add_multiple_edges(const TemporalRandomWalk* temporal_random_walk, const Edge* edge_infos, const size_t num_edges) {
+HOST void temporal_random_walk::add_multiple_edges(const TemporalRandomWalkStore* temporal_random_walk, const Edge* edge_infos, const size_t num_edges) {
     #ifdef HAS_CUDA
     if (temporal_random_walk->use_gpu) {
         temporal_graph::add_multiple_edges_cuda(temporal_random_walk->temporal_graph, edge_infos, num_edges);
@@ -15,28 +15,28 @@ HOST void temporal_random_walk::add_multiple_edges(const TemporalRandomWalk* tem
     }
 }
 
-HOST size_t temporal_random_walk::get_node_count(const TemporalRandomWalk* temporal_random_walk) {
+HOST size_t temporal_random_walk::get_node_count(const TemporalRandomWalkStore* temporal_random_walk) {
     return temporal_graph::get_node_count(temporal_random_walk->temporal_graph);
 }
 
-HOST DEVICE size_t temporal_random_walk::get_edge_count(const TemporalRandomWalk* temporal_random_walk) {
+HOST DEVICE size_t temporal_random_walk::get_edge_count(const TemporalRandomWalkStore* temporal_random_walk) {
     return temporal_graph::get_total_edges(temporal_random_walk->temporal_graph);
 }
 
-HOST DataBlock<int> temporal_random_walk::get_node_ids(const TemporalRandomWalk* temporal_random_walk) {
+HOST DataBlock<int> temporal_random_walk::get_node_ids(const TemporalRandomWalkStore* temporal_random_walk) {
     return temporal_graph::get_node_ids(temporal_random_walk->temporal_graph);
 }
 
-HOST DataBlock<Edge> temporal_random_walk::get_edges(const TemporalRandomWalk* temporal_random_walk) {
+HOST DataBlock<Edge> temporal_random_walk::get_edges(const TemporalRandomWalkStore* temporal_random_walk) {
     return temporal_graph::get_edges(temporal_random_walk->temporal_graph);
 }
 
-HOST bool temporal_random_walk::get_is_directed(const TemporalRandomWalk* temporal_random_walk) {
+HOST bool temporal_random_walk::get_is_directed(const TemporalRandomWalkStore* temporal_random_walk) {
     return temporal_random_walk->is_directed;
 }
 
-HOST void temporal_random_walk::clear(TemporalRandomWalk* temporal_random_walk) {
-   temporal_random_walk->temporal_graph = new TemporalGraph(
+HOST void temporal_random_walk::clear(TemporalRandomWalkStore* temporal_random_walk) {
+   temporal_random_walk->temporal_graph = new TemporalGraphStore(
        temporal_random_walk->is_directed,
        temporal_random_walk->use_gpu,
        temporal_random_walk->max_time_capacity,
@@ -57,7 +57,7 @@ HOST DEVICE bool temporal_random_walk::get_should_walk_forward(const WalkDirecti
 }
 
 HOST void temporal_random_walk::generate_random_walk_and_time_std(
-    const TemporalRandomWalk* temporal_random_walk,
+    const TemporalRandomWalkStore* temporal_random_walk,
     const int walk_idx,
     WalkSet* walk_set,
     const RandomPickerType* edge_picker_type,
@@ -145,7 +145,7 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
 }
 
 HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
-    TemporalRandomWalk* temporal_random_walk,
+    TemporalRandomWalkStore* temporal_random_walk,
     int max_walk_len,
     const RandomPickerType* walk_bias,
     const int num_walks_per_node,
@@ -213,7 +213,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
 }
 
 HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
-    TemporalRandomWalk* temporal_random_walk,
+    TemporalRandomWalkStore* temporal_random_walk,
     int max_walk_len,
     const RandomPickerType* walk_bias,
     const int num_walks_total,
@@ -279,7 +279,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
 
 __global__ void temporal_random_walk::generate_random_walks_kernel(
     WalkSet* walk_set,
-    TemporalGraph* temporal_graph,
+    TemporalGraphStore* temporal_graph,
     const int* start_node_ids,
     const RandomPickerType edge_picker_type,
     const RandomPickerType start_picker_type,
@@ -379,7 +379,7 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
 }
 
 HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
-    const TemporalRandomWalk* temporal_random_walk,
+    const TemporalRandomWalkStore* temporal_random_walk,
     const int max_walk_len,
     const RandomPickerType* walk_bias,
     const int num_walks_per_node,
@@ -415,7 +415,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
     cudaMemcpy(d_walk_set, &walk_set, sizeof(WalkSet), cudaMemcpyHostToDevice);
 
     // Create device pointer for the temporal graph
-    TemporalGraph* d_temporal_graph = temporal_graph::to_device_ptr(temporal_random_walk->temporal_graph);
+    TemporalGraphStore* d_temporal_graph = temporal_graph::to_device_ptr(temporal_random_walk->temporal_graph);
 
     temporal_random_walk::generate_random_walks_kernel<<<grid_dim, block_dim>>>(
         d_walk_set,
@@ -455,7 +455,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
 }
 
 HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
-    const TemporalRandomWalk* temporal_random_walk,
+    const TemporalRandomWalkStore* temporal_random_walk,
     const int max_walk_len,
     const RandomPickerType* walk_bias,
     const int num_walks_total,
@@ -486,7 +486,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     cudaMemcpy(d_walk_set, &walk_set, sizeof(WalkSet), cudaMemcpyHostToDevice);
 
     // Create device pointer for the temporal graph
-    TemporalGraph* d_temporal_graph = temporal_graph::to_device_ptr(temporal_random_walk->temporal_graph);
+    TemporalGraphStore* d_temporal_graph = temporal_graph::to_device_ptr(temporal_random_walk->temporal_graph);
 
     // Launch kernel
     temporal_random_walk::generate_random_walks_kernel<<<grid_dim, block_dim>>>(
@@ -527,13 +527,13 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     return host_walk_set;
 }
 
-HOST TemporalRandomWalk* temporal_random_walk::to_device_ptr(const TemporalRandomWalk* temporal_random_walk) {
+HOST TemporalRandomWalkStore* temporal_random_walk::to_device_ptr(const TemporalRandomWalkStore* temporal_random_walk) {
     // Create a new TemporalRandomWalk object on the device
-    TemporalRandomWalk* device_temporal_random_walk;
-    cudaMalloc(&device_temporal_random_walk, sizeof(TemporalRandomWalk));
+    TemporalRandomWalkStore* device_temporal_random_walk;
+    cudaMalloc(&device_temporal_random_walk, sizeof(TemporalRandomWalkStore));
 
     // Create a temporary copy to modify for device pointers
-    TemporalRandomWalk temp_temporal_random_walk = *temporal_random_walk;
+    TemporalRandomWalkStore temp_temporal_random_walk = *temporal_random_walk;
 
     // Copy TemporalGraph to device
     if (temporal_random_walk->temporal_graph) {
@@ -548,7 +548,7 @@ HOST TemporalRandomWalk* temporal_random_walk::to_device_ptr(const TemporalRando
     temp_temporal_random_walk.use_gpu = true;
 
     // Copy the updated struct to device
-    cudaMemcpy(device_temporal_random_walk, &temp_temporal_random_walk, sizeof(TemporalRandomWalk), cudaMemcpyHostToDevice);
+    cudaMemcpy(device_temporal_random_walk, &temp_temporal_random_walk, sizeof(TemporalRandomWalkStore), cudaMemcpyHostToDevice);
 
     return device_temporal_random_walk;
 }

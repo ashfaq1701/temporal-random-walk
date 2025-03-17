@@ -1,7 +1,5 @@
 #include <iostream>
-#include <proxies/RandomPickerProxies.cuh>
-
-#include "../src/proxies/NodeEdgeIndexProxy.cuh"
+#include <proxies/RandomPicker.cuh>
 
 constexpr int TOTAL_TIMESTEPS = 100000000;
 
@@ -13,7 +11,7 @@ constexpr bool USE_GPU = false;
 
 int main()
 {
-    ExponentialIndexRandomPickerProxy random_picker(USE_GPU);
+    ExponentialIndexRandomPicker random_picker(USE_GPU);
 
     std::cout << "Prioritizing end: " << std::endl;
     std::cout << "---------------------------------------" << std::endl;

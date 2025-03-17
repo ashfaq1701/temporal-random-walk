@@ -9,7 +9,7 @@
 #include "../common/memory.cuh"
 #include "../common/cuda_config.cuh"
 
-HOST void edge_data::resize(EdgeData *edge_data, const size_t size) {
+HOST void edge_data::resize(EdgeDataStore *edge_data, const size_t size) {
     resize_memory(&edge_data->sources, edge_data->sources_size, size, edge_data->use_gpu);
     resize_memory(&edge_data->targets, edge_data->targets_size, size, edge_data->use_gpu);
     resize_memory(&edge_data->timestamps, edge_data->targets_size, size, edge_data->use_gpu);
@@ -20,7 +20,7 @@ HOST void edge_data::resize(EdgeData *edge_data, const size_t size) {
     set_size(edge_data, size);
 }
 
-HOST void edge_data::clear(EdgeData *edge_data) {
+HOST void edge_data::clear(EdgeDataStore *edge_data) {
     clear_memory(&edge_data->sources, edge_data->use_gpu);
     edge_data->sources_size = 0;
 
@@ -43,27 +43,27 @@ HOST void edge_data::clear(EdgeData *edge_data) {
     edge_data->backward_cumulative_weights_exponential_size = 0;
 }
 
-HOST DEVICE size_t edge_data::size(const EdgeData* edge_data) {
+HOST DEVICE size_t edge_data::size(const EdgeDataStore* edge_data) {
     return edge_data->timestamps_size;
 }
 
-HOST void edge_data::set_size(EdgeData* edge_data, size_t size) {
+HOST void edge_data::set_size(EdgeDataStore* edge_data, size_t size) {
     edge_data->sources_size = size;
     edge_data->targets_size = size;
     edge_data->timestamps_size = size;
 }
 
-HOST bool edge_data::empty(const EdgeData *edge_data) {
+HOST bool edge_data::empty(const EdgeDataStore *edge_data) {
     return edge_data->timestamps_size == 0;
 }
 
-HOST void edge_data::add_edges(EdgeData *edge_data, const int *sources, const int *targets, const int64_t *timestamps, const size_t size) {
+HOST void edge_data::add_edges(EdgeDataStore *edge_data, const int *sources, const int *targets, const int64_t *timestamps, const size_t size) {
     append_memory(&edge_data->sources, edge_data->sources_size, sources, size, edge_data->use_gpu);
     append_memory(&edge_data->targets, edge_data->targets_size, targets, size, edge_data->use_gpu);
     append_memory(&edge_data->timestamps, edge_data->timestamps_size, timestamps, size, edge_data->use_gpu);
 }
 
-HOST DataBlock<Edge> edge_data::get_edges(const EdgeData *edge_data) {
+HOST DataBlock<Edge> edge_data::get_edges(const EdgeDataStore *edge_data) {
     DataBlock<Edge> result(edge_data->timestamps_size, edge_data->use_gpu);
 
     #ifdef HAS_CUDA
@@ -98,7 +98,7 @@ HOST DataBlock<Edge> edge_data::get_edges(const EdgeData *edge_data) {
     return result;
 }
 
-HOST SizeRange edge_data::get_timestamp_group_range(const EdgeData *edge_data, size_t group_idx) {
+HOST SizeRange edge_data::get_timestamp_group_range(const EdgeDataStore *edge_data, size_t group_idx) {
     if (group_idx >= edge_data->unique_timestamps_size) {
         return SizeRange{0, 0};
     }
@@ -106,11 +106,11 @@ HOST SizeRange edge_data::get_timestamp_group_range(const EdgeData *edge_data, s
     return SizeRange{edge_data->timestamp_group_offsets[group_idx], edge_data->timestamp_group_offsets[group_idx + 1]};
 }
 
-HOST DEVICE size_t edge_data::get_timestamp_group_count(const EdgeData *edge_data) {
+HOST DEVICE size_t edge_data::get_timestamp_group_count(const EdgeDataStore *edge_data) {
     return edge_data->unique_timestamps_size;
 }
 
-HOST size_t edge_data::find_group_after_timestamp(const EdgeData *edge_data, int64_t timestamp) {
+HOST size_t edge_data::find_group_after_timestamp(const EdgeDataStore *edge_data, int64_t timestamp) {
     if (edge_data->unique_timestamps_size == 0) return 0;
 
     // Get raw pointer to data and use std::upper_bound directly
@@ -121,7 +121,7 @@ HOST size_t edge_data::find_group_after_timestamp(const EdgeData *edge_data, int
     return it - begin;
 }
 
-HOST size_t edge_data::find_group_before_timestamp(const EdgeData *edge_data, int64_t timestamp) {
+HOST size_t edge_data::find_group_before_timestamp(const EdgeDataStore *edge_data, int64_t timestamp) {
     if (edge_data->unique_timestamps_size == 0) return 0;
 
     // Get raw pointer to data and use std::lower_bound directly
@@ -132,7 +132,7 @@ HOST size_t edge_data::find_group_before_timestamp(const EdgeData *edge_data, in
     return (it - begin) - 1;
 }
 
-HOST void edge_data::update_timestamp_groups_std(EdgeData *edge_data) {
+HOST void edge_data::update_timestamp_groups_std(EdgeDataStore *edge_data) {
     if (edge_data->timestamps_size == 0) {
         clear_memory(&edge_data->timestamp_group_offsets, edge_data->use_gpu);
         clear_memory(&edge_data->unique_timestamps, edge_data->use_gpu);
@@ -173,7 +173,7 @@ HOST void edge_data::update_timestamp_groups_std(EdgeData *edge_data) {
         edge_data->use_gpu);
 }
 
-HOST void edge_data::update_temporal_weights_std(EdgeData *edge_data, const double timescale_bound) {
+HOST void edge_data::update_temporal_weights_std(EdgeDataStore *edge_data, const double timescale_bound) {
     const int64_t min_timestamp = edge_data->timestamps[0];
     const int64_t max_timestamp = edge_data->timestamps[edge_data->timestamps_size - 1];
     const auto time_diff = static_cast<double>(max_timestamp - min_timestamp);
@@ -238,7 +238,7 @@ HOST void edge_data::update_temporal_weights_std(EdgeData *edge_data, const doub
 
 #ifdef HAS_CUDA
 
-HOST void edge_data::update_timestamp_groups_cuda(EdgeData *edge_data) {
+HOST void edge_data::update_timestamp_groups_cuda(EdgeDataStore *edge_data) {
     if (edge_data->timestamps_size == 0) {
         // Just clear memory and update sizes
         clear_memory(&edge_data->timestamp_group_offsets, edge_data->use_gpu);
@@ -318,7 +318,7 @@ HOST void edge_data::update_timestamp_groups_cuda(EdgeData *edge_data) {
     cudaFree(d_flags);
 }
 
-HOST void edge_data::update_temporal_weights_cuda(EdgeData *edge_data, double timescale_bound) {
+HOST void edge_data::update_temporal_weights_cuda(EdgeDataStore *edge_data, double timescale_bound) {
     if (edge_data->timestamps_size == 0) {
         clear_memory(&edge_data->forward_cumulative_weights_exponential, edge_data->use_gpu);
         edge_data->forward_cumulative_weights_exponential_size = 0;
@@ -445,7 +445,7 @@ HOST void edge_data::update_temporal_weights_cuda(EdgeData *edge_data, double ti
     cudaFree(d_backward_weights);
 }
 
-DEVICE size_t edge_data::find_group_after_timestamp_device(const EdgeData *edge_data, int64_t timestamp) {
+DEVICE size_t edge_data::find_group_after_timestamp_device(const EdgeDataStore *edge_data, int64_t timestamp) {
     if (edge_data->unique_timestamps_size == 0) return 0;
 
     const int64_t* begin = edge_data->unique_timestamps;
@@ -455,7 +455,7 @@ DEVICE size_t edge_data::find_group_after_timestamp_device(const EdgeData *edge_
     return it - begin;
 }
 
-DEVICE size_t edge_data::find_group_before_timestamp_device(const EdgeData *edge_data, int64_t timestamp) {
+DEVICE size_t edge_data::find_group_before_timestamp_device(const EdgeDataStore *edge_data, int64_t timestamp) {
     if (edge_data->unique_timestamps_size == 0) return 0;
 
     const int64_t* begin = edge_data->unique_timestamps;
@@ -465,17 +465,17 @@ DEVICE size_t edge_data::find_group_before_timestamp_device(const EdgeData *edge
     return (it - begin) - 1;
 }
 
-HOST EdgeData* edge_data::to_device_ptr(const EdgeData* edge_data) {
+HOST EdgeDataStore* edge_data::to_device_ptr(const EdgeDataStore* edge_data) {
     // Create a new EdgeData object on the device
-    EdgeData* device_edge_data;
-    cudaMalloc(&device_edge_data, sizeof(EdgeData));
+    EdgeDataStore* device_edge_data;
+    cudaMalloc(&device_edge_data, sizeof(EdgeDataStore));
 
     // If already using GPU, just copy the struct with its pointers
     if (edge_data->use_gpu) {
-        cudaMemcpy(device_edge_data, edge_data, sizeof(EdgeData), cudaMemcpyHostToDevice);
+        cudaMemcpy(device_edge_data, edge_data, sizeof(EdgeDataStore), cudaMemcpyHostToDevice);
     } else {
         // Create a temporary copy to modify for device pointers
-        EdgeData temp_edge_data = *edge_data;
+        EdgeDataStore temp_edge_data = *edge_data;
 
         // Copy each array to device if it exists
         if (edge_data->sources) {
@@ -535,7 +535,7 @@ HOST EdgeData* edge_data::to_device_ptr(const EdgeData* edge_data) {
         temp_edge_data.use_gpu = true;
 
         // Copy the updated struct to device
-        cudaMemcpy(device_edge_data, &temp_edge_data, sizeof(EdgeData), cudaMemcpyHostToDevice);
+        cudaMemcpy(device_edge_data, &temp_edge_data, sizeof(EdgeDataStore), cudaMemcpyHostToDevice);
     }
 
     return device_edge_data;

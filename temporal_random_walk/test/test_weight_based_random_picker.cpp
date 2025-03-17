@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "../src/proxies/RandomPickerProxies.cuh"
+#include "../src/proxies/RandomPicker.cuh"
 #include "../src/utils/utils.cuh"
 
 template<typename T>
@@ -8,7 +8,7 @@ class WeightBasedRandomPickerTest : public ::testing::Test
 {
 protected:
 
-    WeightBasedRandomPickerProxy picker;
+    WeightBasedRandomPicker picker;
 
     WeightBasedRandomPickerTest(): picker(T::value) {}
 

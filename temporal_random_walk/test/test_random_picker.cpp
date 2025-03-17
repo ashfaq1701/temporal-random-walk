@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "../src/proxies/RandomPickerProxies.cuh"
+#include "../src/proxies/RandomPicker.cuh"
 
 constexpr int RANDOM_START = 0;
 constexpr int RANDOM_END = 10000;
@@ -9,8 +9,8 @@ template<typename T>
 class RandomPickerTest : public ::testing::Test {
 protected:
 
-    LinearRandomPickerProxy linear_picker;
-    ExponentialIndexRandomPickerProxy exp_picker;
+    LinearRandomPicker linear_picker;
+    ExponentialIndexRandomPicker exp_picker;
 
     RandomPickerTest(): linear_picker(T::value), exp_picker(T::value) {}
 

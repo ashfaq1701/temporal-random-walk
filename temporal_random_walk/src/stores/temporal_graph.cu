@@ -17,7 +17,7 @@
 #include "node_edge_index.cuh"
 #include "node_mapping.cuh"
 
-HOST void temporal_graph::update_temporal_weights(const TemporalGraph* graph) {
+HOST void temporal_graph::update_temporal_weights(const TemporalGraphStore* graph) {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         edge_data::update_temporal_weights_cuda(graph->edge_data, graph->timescale_bound);
@@ -31,27 +31,27 @@ HOST void temporal_graph::update_temporal_weights(const TemporalGraph* graph) {
     }
 }
 
-HOST DEVICE size_t temporal_graph::get_total_edges(const TemporalGraph* graph) {
+HOST DEVICE size_t temporal_graph::get_total_edges(const TemporalGraphStore* graph) {
     return edge_data::size(graph->edge_data);
 }
 
-HOST size_t temporal_graph::get_node_count(const TemporalGraph* graph) {
+HOST size_t temporal_graph::get_node_count(const TemporalGraphStore* graph) {
     return node_mapping::active_size(graph->node_mapping);
 }
 
-HOST int64_t temporal_graph::get_latest_timestamp(const TemporalGraph* graph) {
+HOST int64_t temporal_graph::get_latest_timestamp(const TemporalGraphStore* graph) {
     return graph->latest_timestamp;
 }
 
-HOST DataBlock<int> temporal_graph::get_node_ids(const TemporalGraph* graph) {
+HOST DataBlock<int> temporal_graph::get_node_ids(const TemporalGraphStore* graph) {
     return node_mapping::get_active_node_ids(graph->node_mapping);
 }
 
-HOST DataBlock<Edge> temporal_graph::get_edges(const TemporalGraph* graph) {
+HOST DataBlock<Edge> temporal_graph::get_edges(const TemporalGraphStore* graph) {
     return edge_data::get_edges(graph->edge_data);
 }
 
-HOST void temporal_graph::add_multiple_edges_std(TemporalGraph* graph, const Edge* new_edges, const size_t num_new_edges) {
+HOST void temporal_graph::add_multiple_edges_std(TemporalGraphStore* graph, const Edge* new_edges, const size_t num_new_edges) {
     if (num_new_edges == 0) return;
 
     // Get start index for new edges
@@ -108,7 +108,7 @@ HOST void temporal_graph::add_multiple_edges_std(TemporalGraph* graph, const Edg
     delete[] timestamps;
 }
 
-HOST void temporal_graph::sort_and_merge_edges_std(TemporalGraph* graph, size_t start_idx) {
+HOST void temporal_graph::sort_and_merge_edges_std(TemporalGraphStore* graph, size_t start_idx) {
     if (start_idx >= edge_data::size(graph->edge_data)) return;
 
     const size_t total_size = edge_data::size(graph->edge_data);
@@ -210,7 +210,7 @@ HOST void temporal_graph::sort_and_merge_edges_std(TemporalGraph* graph, size_t 
     delete[] sorted_timestamps;
 }
 
-HOST void temporal_graph::delete_old_edges_std(TemporalGraph* graph) {
+HOST void temporal_graph::delete_old_edges_std(TemporalGraphStore* graph) {
     if (graph->max_time_capacity <= 0 || edge_data::empty(graph->edge_data)) return;
 
     const int64_t cutoff_time = graph->latest_timestamp - graph->max_time_capacity;
@@ -269,7 +269,7 @@ HOST void temporal_graph::delete_old_edges_std(TemporalGraph* graph) {
     node_edge_index::rebuild(graph->node_edge_index, graph->edge_data, graph->node_mapping, graph->is_directed);
 }
 
-HOST size_t temporal_graph::count_timestamps_less_than_std(const TemporalGraph* graph, const int64_t timestamp) {
+HOST size_t temporal_graph::count_timestamps_less_than_std(const TemporalGraphStore* graph, const int64_t timestamp) {
     if (edge_data::empty(graph->edge_data)) return 0;
 
     const auto it = std::lower_bound(
@@ -279,7 +279,7 @@ HOST size_t temporal_graph::count_timestamps_less_than_std(const TemporalGraph* 
     return it - graph->edge_data->unique_timestamps;
 }
 
-HOST size_t temporal_graph::count_timestamps_greater_than_std(const TemporalGraph* graph, const int64_t timestamp) {
+HOST size_t temporal_graph::count_timestamps_greater_than_std(const TemporalGraphStore* graph, const int64_t timestamp) {
     if (edge_data::empty(graph->edge_data)) return 0;
 
     const auto it = std::upper_bound(
@@ -289,7 +289,7 @@ HOST size_t temporal_graph::count_timestamps_greater_than_std(const TemporalGrap
     return (graph->edge_data->unique_timestamps + graph->edge_data->unique_timestamps_size) - it;
 }
 
-HOST size_t temporal_graph::count_node_timestamps_less_than_std(TemporalGraph* graph, const int node_id, const int64_t timestamp) {
+HOST size_t temporal_graph::count_node_timestamps_less_than_std(TemporalGraphStore* graph, const int node_id, const int64_t timestamp) {
     // Used for backward walks
     const int dense_idx = node_mapping::to_dense(graph->node_mapping, node_id);
     if (dense_idx < 0) return 0;
@@ -325,7 +325,7 @@ HOST size_t temporal_graph::count_node_timestamps_less_than_std(TemporalGraph* g
     return std::distance(timestamp_group_indices + static_cast<int>(group_start), it);
 }
 
-HOST size_t temporal_graph::count_node_timestamps_greater_than_std(TemporalGraph* graph, const int node_id, const int64_t timestamp) {
+HOST size_t temporal_graph::count_node_timestamps_greater_than_std(TemporalGraphStore* graph, const int node_id, const int64_t timestamp) {
     // Used for forward walks
     int dense_idx = node_mapping::to_dense(graph->node_mapping, node_id);
     if (dense_idx < 0) return 0;
@@ -352,7 +352,7 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_std(TemporalGraph
 }
 
 #ifdef HAS_CUDA
-HOST void temporal_graph::add_multiple_edges_cuda(TemporalGraph* graph, const Edge* new_edges, const size_t num_new_edges) {
+HOST void temporal_graph::add_multiple_edges_cuda(TemporalGraphStore* graph, const Edge* new_edges, const size_t num_new_edges) {
     if (num_new_edges == 0) return;
 
     // Get start index for new edges
@@ -437,7 +437,7 @@ HOST void temporal_graph::add_multiple_edges_cuda(TemporalGraph* graph, const Ed
     cudaFree(d_timestamps);
 }
 
-HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraph* graph, const size_t start_idx) {
+HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, const size_t start_idx) {
     if (start_idx >= edge_data::size(graph->edge_data)) return;
 
     const size_t total_size = graph->edge_data->timestamps_size;
@@ -600,7 +600,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraph* graph, const 
     clear_memory(&sorted_timestamps, true);
 }
 
-HOST void temporal_graph::delete_old_edges_cuda(TemporalGraph* graph) {
+HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore* graph) {
     if (graph->max_time_capacity <= 0 || edge_data::empty(graph->edge_data)) return;
 
     const int64_t cutoff_time = graph->latest_timestamp - graph->max_time_capacity;
@@ -688,7 +688,7 @@ HOST void temporal_graph::delete_old_edges_cuda(TemporalGraph* graph) {
     node_edge_index::rebuild(graph->node_edge_index, graph->edge_data, graph->node_mapping, graph->is_directed);
 }
 
-HOST size_t temporal_graph::count_timestamps_less_than_cuda(const TemporalGraph* graph, const int64_t timestamp) {
+HOST size_t temporal_graph::count_timestamps_less_than_cuda(const TemporalGraphStore* graph, const int64_t timestamp) {
     if (edge_data::empty(graph->edge_data)) return 0;
 
     const auto it = thrust::lower_bound(
@@ -699,7 +699,7 @@ HOST size_t temporal_graph::count_timestamps_less_than_cuda(const TemporalGraph*
     return it - thrust::device_pointer_cast(graph->edge_data->unique_timestamps);
 }
 
-HOST size_t temporal_graph::count_timestamps_greater_than_cuda(const TemporalGraph* graph, const int64_t timestamp) {
+HOST size_t temporal_graph::count_timestamps_greater_than_cuda(const TemporalGraphStore* graph, const int64_t timestamp) {
     if (edge_data::empty(graph->edge_data)) return 0;
 
     const auto it = thrust::upper_bound(
@@ -710,7 +710,7 @@ HOST size_t temporal_graph::count_timestamps_greater_than_cuda(const TemporalGra
     return thrust::device_pointer_cast(graph->edge_data->unique_timestamps + graph->edge_data->unique_timestamps_size) - it;
 }
 
-HOST size_t temporal_graph::count_node_timestamps_less_than_cuda(const TemporalGraph* graph, const int node_id, const int64_t timestamp) {
+HOST size_t temporal_graph::count_node_timestamps_less_than_cuda(const TemporalGraphStore* graph, const int node_id, const int64_t timestamp) {
     // Used for backward walks
     const int dense_idx = node_mapping::to_dense(graph->node_mapping, node_id);
     if (dense_idx < 0) return 0;
@@ -751,7 +751,7 @@ HOST size_t temporal_graph::count_node_timestamps_less_than_cuda(const TemporalG
     return thrust::distance(thrust::device_pointer_cast(timestamp_group_indices) + static_cast<int>(group_start), it);
 }
 
-HOST size_t temporal_graph::count_node_timestamps_greater_than_cuda(const TemporalGraph* graph, const int node_id, const int64_t timestamp) {
+HOST size_t temporal_graph::count_node_timestamps_greater_than_cuda(const TemporalGraphStore* graph, const int node_id, const int64_t timestamp) {
     // Used for forward walks
     const int dense_idx = node_mapping::to_dense(graph->node_mapping, node_id);
     if (dense_idx < 0) return 0;
@@ -784,7 +784,7 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_cuda(const Tempor
 #endif
 
 HOST Edge temporal_graph::get_edge_at_host(
-    const TemporalGraph* graph,
+    const TemporalGraphStore* graph,
     const RandomPickerType picker_type,
     const int64_t timestamp,
     const bool forward) {
@@ -890,7 +890,7 @@ HOST Edge temporal_graph::get_edge_at_host(
 }
 
 HOST Edge temporal_graph::get_node_edge_at_host(
-    TemporalGraph* graph,
+    TemporalGraphStore* graph,
     const int node_id,
     const RandomPickerType picker_type,
     const int64_t timestamp,
@@ -1077,7 +1077,7 @@ HOST Edge temporal_graph::get_node_edge_at_host(
 
 #ifdef HAS_CUDA
 DEVICE Edge temporal_graph::get_edge_at_device(
-    const TemporalGraph* graph,
+    const TemporalGraphStore* graph,
         const RandomPickerType picker_type,
         const int64_t timestamp,
         const bool forward,
@@ -1188,7 +1188,7 @@ DEVICE Edge temporal_graph::get_edge_at_device(
 }
 
 DEVICE Edge temporal_graph::get_node_edge_at_device(
-        TemporalGraph* graph,
+        TemporalGraphStore* graph,
         const int node_id,
         const RandomPickerType picker_type,
         const int64_t timestamp,
@@ -1378,13 +1378,13 @@ DEVICE Edge temporal_graph::get_node_edge_at_device(
     };
 }
 
-HOST TemporalGraph* temporal_graph::to_device_ptr(const TemporalGraph* graph) {
+HOST TemporalGraphStore* temporal_graph::to_device_ptr(const TemporalGraphStore* graph) {
     // Create a new TemporalGraph object on the device
-    TemporalGraph* device_graph;
-    cudaMalloc(&device_graph, sizeof(TemporalGraph));
+    TemporalGraphStore* device_graph;
+    cudaMalloc(&device_graph, sizeof(TemporalGraphStore));
 
     // Create a temporary copy to modify
-    TemporalGraph temp_graph = *graph;
+    TemporalGraphStore temp_graph = *graph;
 
     // Copy substructures to device
     if (graph->edge_data) {
@@ -1403,7 +1403,7 @@ HOST TemporalGraph* temporal_graph::to_device_ptr(const TemporalGraph* graph) {
     temp_graph.use_gpu = true;
 
     // Copy the updated struct to device
-    cudaMemcpy(device_graph, &temp_graph, sizeof(TemporalGraph), cudaMemcpyHostToDevice);
+    cudaMemcpy(device_graph, &temp_graph, sizeof(TemporalGraphStore), cudaMemcpyHostToDevice);
 
     return device_graph;
 }

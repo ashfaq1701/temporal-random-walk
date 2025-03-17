@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "../src/proxies/NodeEdgeIndexProxy.cuh"
-#include "../src/proxies/EdgeDataProxy.cuh"
-#include "../src/proxies/NodeMappingProxy.cuh"
+#include "../src/proxies/NodeEdgeIndex.cuh"
+#include "../src/proxies/EdgeData.cuh"
+#include "../src/proxies/NodeMapping.cuh"
 
 template<typename T>
 class NodeEdgeIndexWeightTest : public ::testing::Test {
@@ -54,7 +54,7 @@ protected:
     }
 
     void setup_test_graph(bool directed = true) {
-        const EdgeDataProxy edges(T::value);  // CPU mode
+        const EdgeData edges(T::value);  // CPU mode
         // Add edges that create multiple timestamp groups per node
         edges.push_back(1, 2, 10);
         edges.push_back(1, 3, 10); // Same timestamp group for node 1
@@ -64,15 +64,15 @@ protected:
         edges.push_back(3, 4, 40);
         edges.update_timestamp_groups();
 
-        const NodeMappingProxy mapping(T::value);  // CPU mode
+        const NodeMapping mapping(T::value);  // CPU mode
         mapping.update(edges.edge_data, 0, edges.size());
 
-        index = NodeEdgeIndexProxy(T::value);  // CPU mode
+        index = NodeEdgeIndex(T::value);  // CPU mode
         index.rebuild(edges.edge_data, mapping.node_mapping, directed);
         index.update_temporal_weights(edges.edge_data, -1);
     }
 
-    NodeEdgeIndexProxy index;
+    NodeEdgeIndex index;
 };
 
 #ifdef HAS_CUDA
@@ -89,9 +89,9 @@ using GPU_USAGE_TYPES = ::testing::Types<
 TYPED_TEST_SUITE(NodeEdgeIndexWeightTest, GPU_USAGE_TYPES);
 
 TYPED_TEST(NodeEdgeIndexWeightTest, EmptyGraph) {
-    EdgeDataProxy empty_edges(TypeParam::value);
-    NodeMappingProxy empty_mapping(TypeParam::value);
-    this->index = NodeEdgeIndexProxy(TypeParam::value);
+    EdgeData empty_edges(TypeParam::value);
+    NodeMapping empty_mapping(TypeParam::value);
+    this->index = NodeEdgeIndex(TypeParam::value);
     this->index.rebuild(empty_edges.edge_data, empty_mapping.node_mapping, true);
     this->index.update_temporal_weights(empty_edges.edge_data, -1);
 
@@ -114,16 +114,16 @@ TYPED_TEST(NodeEdgeIndexWeightTest, DirectedWeightNormalization) {
 
 TYPED_TEST(NodeEdgeIndexWeightTest, WeightBiasPerNode) {
 
-    EdgeDataProxy edges(TypeParam::value);
+    EdgeData edges(TypeParam::value);
     edges.push_back(1, 2, 100);  // Known timestamps for precise verification
     edges.push_back(1, 3, 200);
     edges.push_back(1, 4, 300);
     edges.update_timestamp_groups();
 
-    NodeMappingProxy mapping(TypeParam::value);
+    NodeMapping mapping(TypeParam::value);
     mapping.update(edges.edge_data, 0, edges.size());
 
-    this->index = NodeEdgeIndexProxy(TypeParam::value);
+    this->index = NodeEdgeIndex(TypeParam::value);
     this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
     this->index.update_temporal_weights(edges.edge_data, -1); // No scaling
 
@@ -149,16 +149,16 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightBiasPerNode) {
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, ScaledWeightRatios) {
-    EdgeDataProxy edges(TypeParam::value);
+    EdgeData edges(TypeParam::value);
     edges.push_back(1, 2, 100);
     edges.push_back(1, 3, 300);
     edges.push_back(1, 4, 500);
     edges.update_timestamp_groups();
 
-    NodeMappingProxy mapping(TypeParam::value);
+    NodeMapping mapping(TypeParam::value);
     mapping.update(edges.edge_data, 0, edges.size());
 
-    this->index = NodeEdgeIndexProxy(TypeParam::value);
+    this->index = NodeEdgeIndex(TypeParam::value);
     this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
 
     constexpr double timescale_bound = 2.0;
@@ -211,12 +211,12 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightConsistencyAcrossUpdates) {
    auto original_in_backward = this->index.inbound_backward_cumulative_weights_exponential();
 
    // Rebuild and update weights again
-   EdgeDataProxy edges(TypeParam::value);
+   EdgeData edges(TypeParam::value);
    edges.push_back(1, 2, 10);
    edges.push_back(1, 3, 10);
    edges.update_timestamp_groups();
 
-   NodeMappingProxy mapping(TypeParam::value);
+   NodeMapping mapping(TypeParam::value);
    mapping.update(edges.edge_data, 0, edges.size());
 
    this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
@@ -229,14 +229,14 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightConsistencyAcrossUpdates) {
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, SingleTimestampGroupPerNode) {
-   EdgeDataProxy edges(TypeParam::value);
+   EdgeData edges(TypeParam::value);
    // All edges in same timestamp group
    edges.push_back(1, 2, 10);
    edges.push_back(1, 3, 10);
    edges.push_back(2, 3, 10);
    edges.update_timestamp_groups();
 
-   NodeMappingProxy mapping(TypeParam::value);
+   NodeMapping mapping(TypeParam::value);
    mapping.update(edges.edge_data, 0, edges.size());
 
    this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
@@ -255,13 +255,13 @@ TYPED_TEST(NodeEdgeIndexWeightTest, SingleTimestampGroupPerNode) {
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundZero) {
-    EdgeDataProxy edges(TypeParam::value);
+    EdgeData edges(TypeParam::value);
     edges.push_back(1, 2, 10);
     edges.push_back(1, 3, 20);
     edges.push_back(1, 4, 30);
     edges.update_timestamp_groups();
 
-    NodeMappingProxy mapping(TypeParam::value);
+    NodeMapping mapping(TypeParam::value);
     mapping.update(edges.edge_data, 0, edges.size());
 
     this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
@@ -274,7 +274,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundZero) {
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundWithSingleTimestamp) {
-    EdgeDataProxy edges(TypeParam::value);
+    EdgeData edges(TypeParam::value);
     // All edges for node 1 have same timestamp
     constexpr int node_id = 1;  // Original node ID
     edges.push_back(node_id, 2, 10);
@@ -282,7 +282,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundWithSingleTimestamp) {
     edges.push_back(node_id, 4, 10);
     edges.update_timestamp_groups();
 
-    NodeMappingProxy mapping(TypeParam::value);
+    NodeMapping mapping(TypeParam::value);
     mapping.update(edges.edge_data, 0, edges.size());
 
     // Get the dense index for node_id
@@ -305,13 +305,13 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundWithSingleTimestamp) {
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, WeightOrderPreservation) {
-    EdgeDataProxy edges(TypeParam::value);
+    EdgeData edges(TypeParam::value);
     edges.push_back(1, 2, 10);
     edges.push_back(1, 3, 20);
     edges.push_back(1, 4, 30);
     edges.update_timestamp_groups();
 
-    NodeMappingProxy mapping(TypeParam::value);
+    NodeMapping mapping(TypeParam::value);
     mapping.update(edges.edge_data, 0, edges.size());
     this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
 
@@ -337,7 +337,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightOrderPreservation) {
 
 TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleNormalizationTest) {
 
-    EdgeDataProxy edges(TypeParam::value);  // CPU mode
+    EdgeData edges(TypeParam::value);  // CPU mode
     // Create edges with widely varying time differences
     edges.push_back(1, 2, 100);       // Small gap
     edges.push_back(1, 3, 200);       // 100 units
@@ -345,10 +345,10 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleNormalizationTest) {
     edges.push_back(1, 5, 100000);    // Large gap
     edges.update_timestamp_groups();
 
-    NodeMappingProxy mapping(TypeParam::value);  // CPU mode
+    NodeMapping mapping(TypeParam::value);  // CPU mode
     mapping.update(edges.edge_data, 0, edges.size());
 
-    this->index = NodeEdgeIndexProxy(TypeParam::value);  // CPU mode
+    this->index = NodeEdgeIndex(TypeParam::value);  // CPU mode
     this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
 
     constexpr double timescale_bound = 5.0;

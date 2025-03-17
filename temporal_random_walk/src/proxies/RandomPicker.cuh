@@ -1,5 +1,5 @@
-#ifndef RANDOM_PICKER_PROXIES_H
-#define RANDOM_PICKER_PROXIES_H
+#ifndef RANDOM_PICKER_H
+#define RANDOM_PICKER_H
 
 #include <vector>
 #include "../src/common/setup.cuh"
@@ -15,12 +15,12 @@ __global__ void pick_exponential_random_number_cuda_kernel(
 
 #endif
 
-class ExponentialIndexRandomPickerProxy {
+class ExponentialIndexRandomPicker {
     bool use_gpu;
 
 public:
 
-    explicit ExponentialIndexRandomPickerProxy(bool use_gpu);
+    explicit ExponentialIndexRandomPicker(bool use_gpu);
 
     int pick_random(int start, int end, bool prioritize_end) const;
 };
@@ -36,13 +36,13 @@ __global__ void pick_linear_random_number_cuda_kernel(
 
 #endif
 
-class LinearRandomPickerProxy {
+class LinearRandomPicker {
 
     bool use_gpu;
 
 public:
 
-    explicit LinearRandomPickerProxy(bool use_gpu);
+    explicit LinearRandomPicker(bool use_gpu);
 
     int pick_random(int start, int end, bool prioritize_end) const;
 };
@@ -57,11 +57,11 @@ __global__ void pick_uniform_random_number_cuda_kernel(
 
 #endif
 
-class UniformRandomPickerProxy {
+class UniformRandomPicker {
     bool use_gpu;
 
 public:
-    explicit UniformRandomPickerProxy(bool use_gpu);
+    explicit UniformRandomPicker(bool use_gpu);
 
     int pick_random(int start, int end, bool /* prioritize_end */) const;
 };
@@ -78,15 +78,15 @@ __global__ void pick_weighted_random_number_cuda_kernel(
 
 #endif
 
-class WeightBasedRandomPickerProxy {
+class WeightBasedRandomPicker {
     bool use_gpu;
 
 public:
-    explicit WeightBasedRandomPickerProxy(bool use_gpu);
+    explicit WeightBasedRandomPicker(bool use_gpu);
 
     int pick_random(const double* weights, size_t weights_size, size_t group_start, size_t group_end) const;
 
     int pick_random(const std::vector<double>& cumulative_weights, int group_start, int group_end) const;
 };
 
-#endif // RANDOM_PICKER_PROXIES_H
+#endif // RANDOM_PICKER_H

@@ -1,8 +1,8 @@
-#include "TemporalRandomWalkProxy.cuh"
+#include "TemporalRandomWalk.cuh"
 
 #ifdef HAS_CUDA
 
-__global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalk* temporal_random_walk) {
+__global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalkStore* temporal_random_walk) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = temporal_random_walk::get_edge_count(temporal_random_walk);
     }
@@ -10,21 +10,21 @@ __global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalk* 
 
 #endif
 
-TemporalRandomWalkProxy::TemporalRandomWalkProxy(
+TemporalRandomWalk::TemporalRandomWalk(
         const bool is_directed,
         const bool use_gpu,
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
         const double timescale_bound,
         const size_t n_threads): use_gpu(use_gpu) {
-    temporal_random_walk = new TemporalRandomWalk(is_directed, use_gpu, max_time_capacity, enable_weight_computation, timescale_bound, n_threads);
+    temporal_random_walk = new TemporalRandomWalkStore(is_directed, use_gpu, max_time_capacity, enable_weight_computation, timescale_bound, n_threads);
 }
 
-TemporalRandomWalkProxy::~TemporalRandomWalkProxy() {
+TemporalRandomWalk::~TemporalRandomWalk() {
     delete temporal_random_walk;
 }
 
-void TemporalRandomWalkProxy::add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges) const {
+void TemporalRandomWalk::add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges) const {
     Edge* edge_array = new Edge[edges.size()];
     for (size_t idx = 0; idx < edges.size(); idx++) {
         const auto& [u, i, ts] = edges[idx];
@@ -36,7 +36,7 @@ void TemporalRandomWalkProxy::add_multiple_edges(const std::vector<std::tuple<in
     delete[] edge_array;
 }
 
-std::vector<std::vector<NodeWithTime>> TemporalRandomWalkProxy::get_random_walks_and_times_for_all_nodes(
+std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
         const int max_walk_len,
         const RandomPickerType* walk_bias,
         const int num_walks_per_node,
@@ -86,7 +86,7 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalkProxy::get_random_walks
     return non_empty_walks;
 }
 
-std::vector<std::vector<int>> TemporalRandomWalkProxy::get_random_walks_for_all_nodes(
+std::vector<std::vector<int>> TemporalRandomWalk::get_random_walks_for_all_nodes(
         const int max_walk_len,
         const RandomPickerType* walk_bias,
         const int num_walks_per_node,
@@ -107,7 +107,7 @@ std::vector<std::vector<int>> TemporalRandomWalkProxy::get_random_walks_for_all_
     return result;
 }
 
-std::vector<std::vector<NodeWithTime>> TemporalRandomWalkProxy::get_random_walks_and_times(
+std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_times(
         const int max_walk_len,
         const RandomPickerType* walk_bias,
         const int num_walks_total,
@@ -157,7 +157,7 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalkProxy::get_random_walks
     return non_empty_walks;
 }
 
-std::vector<std::vector<int>> TemporalRandomWalkProxy::get_random_walks(
+std::vector<std::vector<int>> TemporalRandomWalk::get_random_walks(
         const int max_walk_len,
         const RandomPickerType* walk_bias,
         const int num_walks_total,
@@ -178,18 +178,18 @@ std::vector<std::vector<int>> TemporalRandomWalkProxy::get_random_walks(
     return result;
 }
 
-size_t TemporalRandomWalkProxy::get_node_count() const {
+size_t TemporalRandomWalk::get_node_count() const {
     return temporal_random_walk::get_node_count(temporal_random_walk);
 }
 
-size_t TemporalRandomWalkProxy::get_edge_count() const {
+size_t TemporalRandomWalk::get_edge_count() const {
     #ifdef HAS_CUDA
     if (use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
         cudaMalloc(&d_result, sizeof(size_t));
 
-        TemporalRandomWalk* d_temporal_random_walk = temporal_random_walk::to_device_ptr(temporal_random_walk);
+        TemporalRandomWalkStore* d_temporal_random_walk = temporal_random_walk::to_device_ptr(temporal_random_walk);
         get_edge_count_kernel<<<1, 1>>>(d_result, temporal_random_walk);
 
         size_t host_result;
@@ -208,7 +208,7 @@ size_t TemporalRandomWalkProxy::get_edge_count() const {
     }
 }
 
-std::vector<int> TemporalRandomWalkProxy::get_node_ids() const {
+std::vector<int> TemporalRandomWalk::get_node_ids() const {
     const DataBlock<int> node_ids = temporal_random_walk::get_node_ids(temporal_random_walk);
     std::vector<int> result;
 
@@ -233,7 +233,7 @@ std::vector<int> TemporalRandomWalkProxy::get_node_ids() const {
     return result;
 }
 
-std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalkProxy::get_edges() const {
+std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() const {
     const DataBlock<Edge> edges = temporal_random_walk::get_edges(temporal_random_walk);
     std::vector<std::tuple<int, int, int64_t>> result;
     result.reserve(edges.size);
@@ -262,10 +262,10 @@ std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalkProxy::get_edges() 
     return result;
 }
 
-bool TemporalRandomWalkProxy::get_is_directed() const {
+bool TemporalRandomWalk::get_is_directed() const {
     return temporal_random_walk::get_is_directed(temporal_random_walk);
 }
 
-void TemporalRandomWalkProxy::clear() const {
+void TemporalRandomWalk::clear() const {
     temporal_random_walk::clear(temporal_random_walk);
 }

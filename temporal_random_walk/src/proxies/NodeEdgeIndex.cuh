@@ -1,5 +1,5 @@
-#ifndef NODE_EDGE_INDEX_PROXY_H
-#define NODE_EDGE_INDEX_PROXY_H
+#ifndef NODE_EDGE_INDEX_H
+#define NODE_EDGE_INDEX_H
 
 #include "../stores/node_edge_index.cuh"
 #include "../stores/edge_data.cuh"
@@ -7,18 +7,18 @@
 
 #ifdef HAS_CUDA
 
-__global__ void get_edge_range_kernel(SizeRange* result, const NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed);
+__global__ void get_edge_range_kernel(SizeRange* result, const NodeEdgeIndexStore* node_edge_index, int dense_node_id, bool forward, bool is_directed);
 
-__global__ void get_timestamp_group_range_kernel(SizeRange* result, const NodeEdgeIndex* node_edge_index, int dense_node_id, size_t group_idx, bool forward, bool is_directed);
+__global__ void get_timestamp_group_range_kernel(SizeRange* result, const NodeEdgeIndexStore* node_edge_index, int dense_node_id, size_t group_idx, bool forward, bool is_directed);
 
-__global__ void get_timestamp_group_count_kernel(size_t* result, const NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed);
+__global__ void get_timestamp_group_count_kernel(size_t* result, const NodeEdgeIndexStore* node_edge_index, int dense_node_id, bool forward, bool is_directed);
 
 #endif
 
-class NodeEdgeIndexProxy {
+class NodeEdgeIndex {
 public:
 
-    NodeEdgeIndex* node_edge_index;
+    NodeEdgeIndexStore* node_edge_index;
     bool owns_node_edge_index;
 
     std::vector<size_t> outbound_offsets() const {
@@ -234,17 +234,17 @@ public:
         }
     }
 
-    explicit NodeEdgeIndexProxy(bool use_gpu);
+    explicit NodeEdgeIndex(bool use_gpu);
 
-    explicit NodeEdgeIndexProxy(NodeEdgeIndex* existing_node_edge_index);
+    explicit NodeEdgeIndex(NodeEdgeIndexStore* existing_node_edge_index);
 
-    ~NodeEdgeIndexProxy();
+    ~NodeEdgeIndex();
 
-    NodeEdgeIndexProxy& operator=(const NodeEdgeIndexProxy& other);
+    NodeEdgeIndex& operator=(const NodeEdgeIndex& other);
 
     void clear() const;
 
-    void rebuild(EdgeData* edge_data, NodeMapping* node_mapping, bool is_directed) const;
+    void rebuild(EdgeDataStore* edge_data, NodeMappingStore* node_mapping, bool is_directed) const;
 
     [[nodiscard]] std::pair<size_t, size_t> get_edge_range(int dense_node_id, bool forward, bool is_directed) const;
 
@@ -252,9 +252,9 @@ public:
 
     [[nodiscard]] size_t get_timestamp_group_count(int dense_node_id, bool forward, bool is_directed) const;
 
-    void update_temporal_weights(const EdgeData* edge_data, double timescale_bound) const;
+    void update_temporal_weights(const EdgeDataStore* edge_data, double timescale_bound) const;
 
-    [[nodiscard]] NodeEdgeIndex* get_node_edge_index() const;
+    [[nodiscard]] NodeEdgeIndexStore* get_node_edge_index() const;
 };
 
-#endif // NODE_EDGE_INDEX_PROXY_H
+#endif // NODE_EDGE_INDEX_H

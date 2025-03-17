@@ -1,4 +1,4 @@
-#include "RandomPickerProxies.cuh"
+#include "RandomPicker.cuh"
 
 #include "../src/random/pickers.cuh"
 #include "../src/common/setup.cuh"
@@ -22,9 +22,9 @@ __global__ void pick_exponential_random_number_cuda_kernel(
 
 #endif
 
-ExponentialIndexRandomPickerProxy::ExponentialIndexRandomPickerProxy(const bool use_gpu) : use_gpu(use_gpu) {}
+ExponentialIndexRandomPicker::ExponentialIndexRandomPicker(const bool use_gpu) : use_gpu(use_gpu) {}
 
-int ExponentialIndexRandomPickerProxy::pick_random(const int start, const int end, const bool prioritize_end) const {
+int ExponentialIndexRandomPicker::pick_random(const int start, const int end, const bool prioritize_end) const {
     #ifdef HAS_CUDA
     if (use_gpu) {
         // Initialize CUDA random states (1 thread is enough since we only need 1 random number)
@@ -73,9 +73,9 @@ __global__ void pick_linear_random_number_cuda_kernel(
 
 #endif
 
-LinearRandomPickerProxy::LinearRandomPickerProxy(const bool use_gpu) : use_gpu(use_gpu) {}
+LinearRandomPicker::LinearRandomPicker(const bool use_gpu) : use_gpu(use_gpu) {}
 
-int LinearRandomPickerProxy::pick_random(const int start, const int end, const bool prioritize_end) const {
+int LinearRandomPicker::pick_random(const int start, const int end, const bool prioritize_end) const {
     #ifdef HAS_CUDA
     if (use_gpu) {
         // Initialize CUDA random states (1 thread is enough since we only need 1 random number)
@@ -121,9 +121,9 @@ __global__ void pick_uniform_random_number_cuda_kernel(
 }
 #endif
 
-UniformRandomPickerProxy::UniformRandomPickerProxy(const bool use_gpu) : use_gpu(use_gpu) {}
+UniformRandomPicker::UniformRandomPicker(const bool use_gpu) : use_gpu(use_gpu) {}
 
-int UniformRandomPickerProxy::pick_random(const int start, const int end, const bool /* prioritize_end */) const {
+int UniformRandomPicker::pick_random(const int start, const int end, const bool /* prioritize_end */) const {
     #ifdef HAS_CUDA
     if (use_gpu) {
         // Initialize CUDA random states (1 thread is enough since we only need 1 random number)
@@ -171,9 +171,9 @@ __global__ void pick_weighted_random_number_cuda_kernel(
 }
 #endif
 
-WeightBasedRandomPickerProxy::WeightBasedRandomPickerProxy(const bool use_gpu) : use_gpu(use_gpu) {}
+WeightBasedRandomPicker::WeightBasedRandomPicker(const bool use_gpu) : use_gpu(use_gpu) {}
 
-int WeightBasedRandomPickerProxy::pick_random(const double* weights, const size_t weights_size, const size_t group_start, const size_t group_end) const {
+int WeightBasedRandomPicker::pick_random(const double* weights, const size_t weights_size, const size_t group_start, const size_t group_end) const {
     #ifdef HAS_CUDA
     if (use_gpu) {
         // Initialize CUDA random states
@@ -212,7 +212,7 @@ int WeightBasedRandomPickerProxy::pick_random(const double* weights, const size_
     }
 }
 
-int WeightBasedRandomPickerProxy::pick_random(const std::vector<double>& cumulative_weights, const int group_start, const int group_end) const {
+int WeightBasedRandomPicker::pick_random(const std::vector<double>& cumulative_weights, const int group_start, const int group_end) const {
     return pick_random(cumulative_weights.data(), cumulative_weights.size(),
                      static_cast<size_t>(group_start), static_cast<size_t>(group_end));
 }

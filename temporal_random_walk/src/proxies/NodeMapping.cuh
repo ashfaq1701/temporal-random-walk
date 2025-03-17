@@ -1,24 +1,24 @@
-#ifndef NODE_MAPPING_PROXY_H
-#define NODE_MAPPING_PROXY_H
+#ifndef NODE_MAPPING_H
+#define NODE_MAPPING_H
 
 #include "../stores/node_mapping.cuh"
 
 // Kernel declarations for device operations
 #ifdef HAS_CUDA
 
-__global__ void size_kernel(size_t* result, const NodeMapping* node_mapping);
-__global__ void to_dense_kernel(int* result, const NodeMapping* node_mapping, int sparse_id);
-__global__ void to_sparse_kernel(int* result, const NodeMapping* node_mapping, int dense_id);
-__global__ void has_node_kernel(bool* result, const NodeMapping* node_mapping, int sparse_id);
-__global__ void mark_node_deleted_kernel(const NodeMapping* node_mapping, int sparse_id);
+__global__ void size_kernel(size_t* result, const NodeMappingStore* node_mapping);
+__global__ void to_dense_kernel(int* result, const NodeMappingStore* node_mapping, int sparse_id);
+__global__ void to_sparse_kernel(int* result, const NodeMappingStore* node_mapping, int dense_id);
+__global__ void has_node_kernel(bool* result, const NodeMappingStore* node_mapping, int sparse_id);
+__global__ void mark_node_deleted_kernel(const NodeMappingStore* node_mapping, int sparse_id);
 
 #endif
 
-class NodeMappingProxy {
+class NodeMapping {
 
 public:
 
-    NodeMapping* node_mapping;
+    NodeMappingStore* node_mapping;
     bool owns_node_mapping;
 
     std::vector<int> sparse_to_dense() const {
@@ -76,13 +76,13 @@ public:
         }
     }
 
-    explicit NodeMappingProxy(bool use_gpu);
+    explicit NodeMapping(bool use_gpu);
 
-    explicit NodeMappingProxy(NodeMapping* existing_node_mapping);
+    explicit NodeMapping(NodeMappingStore* existing_node_mapping);
 
-    ~NodeMappingProxy();
+    ~NodeMapping();
 
-    NodeMappingProxy& operator=(const NodeMappingProxy& other);
+    NodeMapping& operator=(const NodeMapping& other);
 
     [[nodiscard]] int to_dense(int sparse_id) const;
 
@@ -104,7 +104,7 @@ public:
 
     [[nodiscard]] std::vector<int> get_all_sparse_ids() const;
 
-    void update(const EdgeData* edge_data, size_t start_idx, size_t end_idx) const;
+    void update(const EdgeDataStore* edge_data, size_t start_idx, size_t end_idx) const;
 };
 
-#endif // NODE_MAPPING_PROXY_H
+#endif // NODE_MAPPING_H

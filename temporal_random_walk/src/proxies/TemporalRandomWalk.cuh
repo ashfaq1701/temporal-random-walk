@@ -1,5 +1,5 @@
-#ifndef TEMPORAL_RANDOM_WALK_PROXY_H
-#define TEMPORAL_RANDOM_WALK_PROXY_H
+#ifndef TEMPORAL_RANDOM_WALK_H
+#define TEMPORAL_RANDOM_WALK_H
 
 #include <thread>
 #include "../core/temporal_random_walk.cuh"
@@ -8,16 +8,16 @@
 
 #ifdef HAS_CUDA
 
-__global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalk* temporal_random_walk);
+__global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalkStore* temporal_random_walk);
 
 #endif
 
-class TemporalRandomWalkProxy {
+class TemporalRandomWalk {
     bool use_gpu;
-    TemporalRandomWalk* temporal_random_walk;
+    TemporalRandomWalkStore* temporal_random_walk;
 
 public:
-    explicit TemporalRandomWalkProxy(
+    explicit TemporalRandomWalk(
         bool is_directed,
         bool use_gpu,
         int64_t max_time_capacity=-1,
@@ -25,7 +25,7 @@ public:
         double timescale_bound=-1,
         size_t n_threads=std::thread::hardware_concurrency());
 
-    ~TemporalRandomWalkProxy();
+    ~TemporalRandomWalk();
 
     void add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges) const;
 

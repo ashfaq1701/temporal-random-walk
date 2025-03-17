@@ -1,39 +1,39 @@
-#include "EdgeDataProxy.cuh"
+#include "EdgeData.cuh"
 
 #ifdef HAS_CUDA
 
-__global__ void empty_kernel(bool* result, const EdgeData* edge_data) {
+__global__ void empty_kernel(bool* result, const EdgeDataStore* edge_data) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = edge_data::empty(edge_data);
     }
 }
 
-__global__ void size_kernel(size_t* result, const EdgeData* edge_data) {
+__global__ void size_kernel(size_t* result, const EdgeDataStore* edge_data) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = edge_data::size(edge_data);
     }
 }
 
 
-__global__ void find_group_after_timestamp_kernel(size_t* result, const EdgeData* edge_data, int64_t timestamp) {
+__global__ void find_group_after_timestamp_kernel(size_t* result, const EdgeDataStore* edge_data, int64_t timestamp) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = edge_data::find_group_after_timestamp_device(edge_data, timestamp);
     }
 }
 
-__global__ void find_group_before_timestamp_kernel(size_t* result, const EdgeData* edge_data, int64_t timestamp) {
+__global__ void find_group_before_timestamp_kernel(size_t* result, const EdgeDataStore* edge_data, int64_t timestamp) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = edge_data::find_group_before_timestamp_device(edge_data, timestamp);
     }
 }
 
-__global__ void get_timestamp_group_range_kernel(SizeRange* result, const EdgeData* edge_data, size_t group_idx) {
+__global__ void get_timestamp_group_range_kernel(SizeRange* result, const EdgeDataStore* edge_data, size_t group_idx) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = edge_data::get_timestamp_group_range(edge_data, group_idx);
     }
 }
 
-__global__ void get_timestamp_group_count_kernel(size_t* result, const EdgeData* edge_data) {
+__global__ void get_timestamp_group_count_kernel(size_t* result, const EdgeDataStore* edge_data) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = edge_data::get_timestamp_group_count(edge_data);
     }
@@ -41,19 +41,19 @@ __global__ void get_timestamp_group_count_kernel(size_t* result, const EdgeData*
 
 #endif
 
-EdgeDataProxy::EdgeDataProxy(const bool use_gpu): owns_edge_data(true) {
-    edge_data = new EdgeData(use_gpu);
+EdgeData::EdgeData(const bool use_gpu): owns_edge_data(true) {
+    edge_data = new EdgeDataStore(use_gpu);
 }
 
-EdgeDataProxy::EdgeDataProxy(EdgeData* existing_edge_data) : edge_data(existing_edge_data), owns_edge_data(false) {}
+EdgeData::EdgeData(EdgeDataStore* existing_edge_data) : edge_data(existing_edge_data), owns_edge_data(false) {}
 
-EdgeDataProxy::~EdgeDataProxy() {
+EdgeData::~EdgeData() {
     if (owns_edge_data && edge_data) {
         delete edge_data;
     }
 }
 
-EdgeDataProxy& EdgeDataProxy::operator=(const EdgeDataProxy& other) {
+EdgeData& EdgeData::operator=(const EdgeData& other) {
     if (this != &other) {
         if (owns_edge_data && edge_data) {
             delete edge_data;
@@ -61,7 +61,7 @@ EdgeDataProxy& EdgeDataProxy::operator=(const EdgeDataProxy& other) {
 
         owns_edge_data = other.owns_edge_data;
         if (other.owns_edge_data) {
-            edge_data = new EdgeData(other.edge_data->use_gpu);
+            edge_data = new EdgeDataStore(other.edge_data->use_gpu);
         } else {
             edge_data = other.edge_data;
         }
@@ -69,18 +69,18 @@ EdgeDataProxy& EdgeDataProxy::operator=(const EdgeDataProxy& other) {
     return *this;
 }
 
-void EdgeDataProxy::clear() const {
+void EdgeData::clear() const {
     edge_data::clear(edge_data);
 }
 
-size_t EdgeDataProxy::size() const {
+size_t EdgeData::size() const {
     #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
         cudaMalloc(&d_result, sizeof(size_t));
 
-        EdgeData* d_edge_data = edge_data::to_device_ptr(edge_data);
+        EdgeDataStore* d_edge_data = edge_data::to_device_ptr(edge_data);
         size_kernel<<<1, 1>>>(d_result, d_edge_data);
 
         size_t host_result;
@@ -99,22 +99,22 @@ size_t EdgeDataProxy::size() const {
     }
 }
 
-void EdgeDataProxy::resize(const size_t size) const {
+void EdgeData::resize(const size_t size) const {
     edge_data::resize(edge_data, size);
 }
 
-void EdgeDataProxy::set_size(const size_t size) const {
+void EdgeData::set_size(const size_t size) const {
     edge_data::set_size(edge_data, size);
 }
 
-bool EdgeDataProxy::empty() const {
+bool EdgeData::empty() const {
     #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         bool* d_result;
         cudaMalloc(&d_result, sizeof(bool));
 
-        EdgeData* d_edge_data = edge_data::to_device_ptr(edge_data);
+        EdgeDataStore* d_edge_data = edge_data::to_device_ptr(edge_data);
         empty_kernel<<<1, 1>>>(d_result, d_edge_data);
 
         bool host_result;
@@ -133,7 +133,7 @@ bool EdgeDataProxy::empty() const {
     }
 }
 
-void EdgeDataProxy::add_edges(const std::vector<int>& sources, const std::vector<int>& targets, const std::vector<int64_t>& timestamps) const {
+void EdgeData::add_edges(const std::vector<int>& sources, const std::vector<int>& targets, const std::vector<int64_t>& timestamps) const {
     if (sources.size() != targets.size() || sources.size() != timestamps.size()) {
         throw std::runtime_error("Vector sizes don't match for add_edges");
     }
@@ -143,7 +143,7 @@ void EdgeDataProxy::add_edges(const std::vector<int>& sources, const std::vector
     edge_data::add_edges(edge_data, sources.data(), targets.data(), timestamps.data(), size);
 }
 
-void EdgeDataProxy::push_back(const int source, const int target, const int64_t timestamp) const {
+void EdgeData::push_back(const int source, const int target, const int64_t timestamp) const {
     #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Allocate GPU memory for single elements
@@ -180,7 +180,7 @@ void EdgeDataProxy::push_back(const int source, const int target, const int64_t 
     }
 }
 
-std::vector<Edge> EdgeDataProxy::get_edges() const {
+std::vector<Edge> EdgeData::get_edges() const {
     // Call the optimized edge_data::get_edges function directly
     const DataBlock<Edge> edges_block = edge_data::get_edges(edge_data);
     std::vector<Edge> result;
@@ -213,7 +213,7 @@ std::vector<Edge> EdgeDataProxy::get_edges() const {
     return result;
 }
 
-void EdgeDataProxy::update_timestamp_groups() const {
+void EdgeData::update_timestamp_groups() const {
     #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         edge_data::update_timestamp_groups_cuda(edge_data);
@@ -225,7 +225,7 @@ void EdgeDataProxy::update_timestamp_groups() const {
     }
 }
 
-void EdgeDataProxy::update_temporal_weights(double timescale_bound) const {
+void EdgeData::update_temporal_weights(double timescale_bound) const {
     #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         edge_data::update_temporal_weights_cuda(edge_data, timescale_bound);
@@ -237,14 +237,14 @@ void EdgeDataProxy::update_temporal_weights(double timescale_bound) const {
     }
 }
 
-std::pair<size_t, size_t> EdgeDataProxy::get_timestamp_group_range(size_t group_idx) const {
+std::pair<size_t, size_t> EdgeData::get_timestamp_group_range(size_t group_idx) const {
     #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         SizeRange* d_result;
         cudaMalloc(&d_result, sizeof(SizeRange));
 
-        EdgeData* d_edge_data = edge_data::to_device_ptr(edge_data);
+        EdgeDataStore* d_edge_data = edge_data::to_device_ptr(edge_data);
         get_timestamp_group_range_kernel<<<1, 1>>>(d_result, d_edge_data, group_idx);
 
         SizeRange host_result;
@@ -264,14 +264,14 @@ std::pair<size_t, size_t> EdgeDataProxy::get_timestamp_group_range(size_t group_
     }
 }
 
-size_t EdgeDataProxy::get_timestamp_group_count() const {
+size_t EdgeData::get_timestamp_group_count() const {
     #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
         cudaMalloc(&d_result, sizeof(size_t));
 
-        EdgeData* d_edge_data = edge_data::to_device_ptr(edge_data);
+        EdgeDataStore* d_edge_data = edge_data::to_device_ptr(edge_data);
         get_timestamp_group_count_kernel<<<1, 1>>>(d_result, d_edge_data);
 
         size_t host_result;
@@ -290,14 +290,14 @@ size_t EdgeDataProxy::get_timestamp_group_count() const {
     }
 }
 
-size_t EdgeDataProxy::find_group_after_timestamp(int64_t timestamp) const {
+size_t EdgeData::find_group_after_timestamp(int64_t timestamp) const {
     #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
         cudaMalloc(&d_result, sizeof(size_t));
 
-        EdgeData* d_edge_data = edge_data::to_device_ptr(edge_data);
+        EdgeDataStore* d_edge_data = edge_data::to_device_ptr(edge_data);
         find_group_after_timestamp_kernel<<<1, 1>>>(d_result, d_edge_data, timestamp);
 
         size_t host_result;
@@ -316,14 +316,14 @@ size_t EdgeDataProxy::find_group_after_timestamp(int64_t timestamp) const {
     }
 }
 
-size_t EdgeDataProxy::find_group_before_timestamp(int64_t timestamp) const {
+size_t EdgeData::find_group_before_timestamp(int64_t timestamp) const {
     #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
         cudaMalloc(&d_result, sizeof(size_t));
 
-        EdgeData* d_edge_data = edge_data::to_device_ptr(edge_data);
+        EdgeDataStore* d_edge_data = edge_data::to_device_ptr(edge_data);
         find_group_before_timestamp_kernel<<<1, 1>>>(d_result, d_edge_data, timestamp);
 
         size_t host_result;

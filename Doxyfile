@@ -1,6 +1,6 @@
 PROJECT_NAME           = "Temporal Random Walk"
 PROJECT_BRIEF          = "Documentation for Temporal Random Walk library"
-INPUT                 = temporal_random_walk/src/proxies/TemporalRandomWalkProxy.cuh
+INPUT                 = temporal_random_walk/src/proxies/TemporalRandomWalk.cuh
 OUTPUT_DIRECTORY      = docs
 RECURSIVE             = YES  # Ensures all subdirectories are included
 
