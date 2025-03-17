@@ -5,9 +5,9 @@
 #include <curand_kernel.h>
 #include "macros.cuh"
 
-__global__ void setup_curand_states(curandState* rand_states, unsigned long seed);
-
 unsigned long get_random_seed();
+
+__global__ void setup_curand_states(curandState* rand_states, unsigned long seed);
 
 HOST curandState* get_cuda_rand_states(size_t grid_dim, size_t block_dim);
 

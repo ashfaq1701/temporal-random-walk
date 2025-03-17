@@ -2,15 +2,15 @@
 
 #include <random>
 
-__global__ void setup_curand_states(curandState* rand_states, const unsigned long seed) {
-    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
-    curand_init(seed, tid, 0, &rand_states[tid]);
-}
-
 unsigned long get_random_seed() {
     std::random_device rd;
     const unsigned long seed = rd() ^ (time(nullptr) << 1);
     return seed;
+}
+
+__global__ void setup_curand_states(curandState* rand_states, const unsigned long seed) {
+    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    curand_init(seed, tid, 0, &rand_states[tid]);
 }
 
 HOST curandState* get_cuda_rand_states(size_t grid_dim, size_t block_dim) {
