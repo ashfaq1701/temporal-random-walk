@@ -1,5 +1,6 @@
 #include "temporal_graph.cuh"
 
+#ifdef HAS_CUDA
 #include <cuda/std/__algorithm/lower_bound.h>
 #include <cuda/std/__algorithm/upper_bound.h>
 #include <thrust/device_ptr.h>
@@ -7,6 +8,7 @@
 #include <thrust/sort.h>
 #include <thrust/gather.h>
 #include <thrust/binary_search.h>
+#endif
 
 #include "../utils/random.cuh"
 #include "../common/cuda_config.cuh"

@@ -1,8 +1,10 @@
 #include "edge_data.cuh"
 
+#ifdef HAS_CUDA
 #include <thrust/device_vector.h>
 #include <cuda/std/__algorithm/lower_bound.h>
 #include <cuda/std/__algorithm/upper_bound.h>
+#endif
 
 #include "../common/memory.cuh"
 #include "../common/cuda_config.cuh"

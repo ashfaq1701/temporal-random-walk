@@ -1,10 +1,13 @@
 #include "node_edge_index.cuh"
 
 #include <common/cuda_config.cuh>
+
+#ifdef HAS_CUDA
 #include <thrust/device_ptr.h>
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/sequence.h>
 #include <thrust/sort.h>
+#endif
 
 #include "../common/memory.cuh"
 

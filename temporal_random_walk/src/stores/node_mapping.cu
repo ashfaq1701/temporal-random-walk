@@ -2,9 +2,12 @@
 
 #include "../common/memory.cuh"
 #include "../common/cuda_config.cuh"
+
+#ifdef HAS_CUDA
 #include <thrust/device_ptr.h>
 #include <thrust/count.h>
 #include <thrust/extrema.h>
+#endif
 
 HOST int node_mapping::to_dense(const NodeMapping *node_mapping, const int sparse_id) {
     if (sparse_id < 0 || sparse_id >= node_mapping->sparse_to_dense_size) {
