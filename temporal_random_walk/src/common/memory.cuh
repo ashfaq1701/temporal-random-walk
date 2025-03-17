@@ -17,6 +17,10 @@ __global__ void fill_kernel(T* memory, const size_t size, T* value) {
 
 template <typename T>
 HOST void allocate_memory(T** data_ptr, const size_t size, const bool use_gpu) {
+    if (size == 0) {
+        return;
+    }
+
     if (*data_ptr) {
         if (use_gpu) {
             cudaFree(*data_ptr);

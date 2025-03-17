@@ -28,7 +28,8 @@ protected:
 
 #ifdef HAS_CUDA
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<bool, false>
+    std::integral_constant<bool, false>,
+    std::integral_constant<bool, true>
 >;
 #else
 using GPU_USAGE_TYPES = ::testing::Types<
@@ -154,7 +155,7 @@ TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForLinearRandomPicke
     const double actual_prob_start = static_cast<double>(count_ones_start_prioritized) / num_trials;
 
     // Allow for some statistical variation
-    constexpr double tolerance = 0.1;  // 10% tolerance
+    constexpr double tolerance = 0.01;  // 1% tolerance
 
     EXPECT_NEAR(actual_prob_end, expected_prob_end, tolerance)
         << "When prioritizing end, probability of picking 1 should be approximately "
@@ -205,7 +206,7 @@ TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForExponentialRandom
     const double actual_prob_start = static_cast<double>(count_ones_start_prioritized) / num_trials;
 
     // Allow for some statistical variation
-    constexpr double tolerance = 0.15;  // 15% tolerance
+    constexpr double tolerance = 0.01;  // 1% tolerance
 
     EXPECT_NEAR(actual_prob_end, expected_prob_end, tolerance)
         << "When prioritizing end, probability of picking 1 should be approximately "

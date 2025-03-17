@@ -205,7 +205,7 @@ Edge TemporalGraphProxy::get_edge_at(RandomPickerType picker_type, int64_t times
         // Set up random state
         curandState* d_rand_states;
         cudaMalloc(&d_rand_states, sizeof(curandState));
-        setup_curand_states<<<1, 1>>>(d_rand_states, time(nullptr));
+        setup_curand_states<<<1, 1>>>(d_rand_states, get_random_seed());
 
         // Allocate memory for the result
         Edge* d_result;
@@ -238,7 +238,7 @@ Edge TemporalGraphProxy::get_node_edge_at(int node_id, RandomPickerType picker_t
         // Set up random state
         curandState* d_rand_states;
         cudaMalloc(&d_rand_states, sizeof(curandState));
-        setup_curand_states<<<1, 1>>>(d_rand_states, time(nullptr));
+        setup_curand_states<<<1, 1>>>(d_rand_states, get_random_seed());
 
         // Allocate memory for the result
         Edge* d_result;

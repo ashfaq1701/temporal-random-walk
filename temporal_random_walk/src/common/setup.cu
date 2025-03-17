@@ -1,8 +1,16 @@
 #include "setup.cuh"
 
+#include <random>
+
 __global__ void setup_curand_states(curandState* rand_states, const unsigned long seed) {
     const int tid = threadIdx.x + blockIdx.x * blockDim.x;
     curand_init(seed, tid, 0, &rand_states[tid]);
+}
+
+unsigned long get_random_seed() {
+    std::random_device rd;
+    const unsigned long seed = rd() ^ (time(nullptr) << 1);
+    return seed;
 }
 
 HOST curandState* get_cuda_rand_states(size_t grid_dim, size_t block_dim) {
@@ -11,7 +19,7 @@ HOST curandState* get_cuda_rand_states(size_t grid_dim, size_t block_dim) {
     curandState* rand_states;
     cudaMalloc(&rand_states, total_threads * sizeof(curandState));
 
-    setup_curand_states<<<grid_dim, block_dim>>>(rand_states, time(nullptr));
+    setup_curand_states<<<grid_dim, block_dim>>>(rand_states, get_random_seed());
 
     return rand_states;
 }

@@ -49,7 +49,8 @@ DEVICE T generate_random_value_device(T start, T end, curandState* state) {
 }
 
 DEVICE inline int generate_random_int_device(const int start, const int end, curandState* state) {
-    return start + (curand(state) % (end - start + 1));
+    const int rand_val = start + static_cast<int>(curand_uniform(state) * (end - start + 1));
+    return rand_val;
 }
 
 DEVICE inline int generate_random_number_bounded_by_device(const int max_bound, curandState* state) {

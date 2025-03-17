@@ -4,7 +4,8 @@
 #include "test_utils.h"
 #include "../test/test_utils.h"
 
-constexpr bool USE_GPU = true;
+constexpr bool USE_GPU = false;
+constexpr int NUM_WALKS_PER_NODE = 1000;
 
 int main(int argc, char* argv[]) {
     std::string file_path = "../../data/sample_data.csv";
@@ -33,14 +34,14 @@ int main(int argc, char* argv[]) {
     const auto walks_backward_for_all_nodes = temporal_random_walk.get_random_walks_and_times_for_all_nodes(
         80,
         &exponential_picker_type,
-        10,
+        NUM_WALKS_PER_NODE,
         &uniform_picker_type,
         WalkDirection::Backward_In_Time);
 
     const auto walks_forward_for_all_nodes = temporal_random_walk.get_random_walks_and_times_for_all_nodes(
         80,
         &exponential_picker_type,
-        10,
+        NUM_WALKS_PER_NODE,
         &uniform_picker_type,
         WalkDirection::Forward_In_Time);
     std::cout << "Walks forward: " << walks_forward_for_all_nodes.size() << ", average length " << get_average_walk_length(walks_forward_for_all_nodes) << std::endl;
