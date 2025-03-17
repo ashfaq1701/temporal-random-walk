@@ -37,7 +37,7 @@ var NAVTREE =
 
 var NAVTREEINDEX =
 [
-"_temporal_random_walk_proxy_8cuh_source.html"
+"_temporal_random_walk_8cuh_source.html"
 ];
 
 var SYNCONMSG = 'click to disable panel synchronization';

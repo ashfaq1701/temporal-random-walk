@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=11"/>
 <meta name="generator" content="Doxygen 1.13.2"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Temporal Random Walk: TemporalRandomWalkProxy Class Reference</title>
+<title>Temporal Random Walk: TemporalRandomWalk Class Reference</title>
 <link href="tabs.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript" src="dynsections.js"></script>
@@ -77,7 +77,7 @@ $(function() { codefold.init(0); });
 </div>
 <script type="text/javascript">
 /* @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&amp;dn=expat.txt MIT */
-$(function(){initNavTree('class_temporal_random_walk_proxy.html',''); initResizable(true); });
+$(function(){initNavTree('class_temporal_random_walk.html',''); initResizable(true); });
 /* @license-end */
 </script>
 <div id="doc-content">
@@ -105,62 +105,62 @@ $(function(){initNavTree('class_temporal_random_walk_proxy.html',''); initResiza
 <div class="header">
   <div class="summary">
 <a href="#pub-methods">Public Member Functions</a> &#124;
-<a href="class_temporal_random_walk_proxy-members.html">List of all members</a>  </div>
-  <div class="headertitle"><div class="title">TemporalRandomWalkProxy Class Reference</div></div>
+<a href="class_temporal_random_walk-members.html">List of all members</a>  </div>
+  <div class="headertitle"><div class="title">TemporalRandomWalk Class Reference</div></div>
 </div><!--header-->
 <div class="contents">
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="pub-methods" name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
-<tr class="memitem:ac71accf8b6645d89c9ef968021c1b88f" id="r_ac71accf8b6645d89c9ef968021c1b88f"><td class="memItemLeft" align="right" valign="top"><a id="ac71accf8b6645d89c9ef968021c1b88f" name="ac71accf8b6645d89c9ef968021c1b88f"></a>
-&#160;</td><td class="memItemRight" valign="bottom"><b>TemporalRandomWalkProxy</b> (bool is_directed, bool use_gpu, int64_t max_time_capacity=-1, bool enable_weight_computation=false, double timescale_bound=-1, size_t n_threads=std::thread::hardware_concurrency())</td></tr>
-<tr class="separator:ac71accf8b6645d89c9ef968021c1b88f"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a07684dea8b82f1bbb4256452ea6c477c" id="r_a07684dea8b82f1bbb4256452ea6c477c"><td class="memItemLeft" align="right" valign="top"><a id="a07684dea8b82f1bbb4256452ea6c477c" name="a07684dea8b82f1bbb4256452ea6c477c"></a>
+<tr class="memitem:a5ebaf9c5d336a0a65fce7d9daa7852ec" id="r_a5ebaf9c5d336a0a65fce7d9daa7852ec"><td class="memItemLeft" align="right" valign="top"><a id="a5ebaf9c5d336a0a65fce7d9daa7852ec" name="a5ebaf9c5d336a0a65fce7d9daa7852ec"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>TemporalRandomWalk</b> (bool is_directed, bool use_gpu, int64_t max_time_capacity=-1, bool enable_weight_computation=false, double timescale_bound=-1, size_t n_threads=std::thread::hardware_concurrency())</td></tr>
+<tr class="separator:a5ebaf9c5d336a0a65fce7d9daa7852ec"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:adad4d263c1b1cddb8d1a997601ac4136" id="r_adad4d263c1b1cddb8d1a997601ac4136"><td class="memItemLeft" align="right" valign="top"><a id="adad4d263c1b1cddb8d1a997601ac4136" name="adad4d263c1b1cddb8d1a997601ac4136"></a>
 void&#160;</td><td class="memItemRight" valign="bottom"><b>add_multiple_edges</b> (const std::vector&lt; std::tuple&lt; int, int, int64_t &gt; &gt; &amp;edges) const</td></tr>
-<tr class="separator:a07684dea8b82f1bbb4256452ea6c477c"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a877f3dfd9049007d710706eb9a850119" id="r_a877f3dfd9049007d710706eb9a850119"><td class="memItemLeft" align="right" valign="top"><a id="a877f3dfd9049007d710706eb9a850119" name="a877f3dfd9049007d710706eb9a850119"></a>
+<tr class="separator:adad4d263c1b1cddb8d1a997601ac4136"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aef79384151ecb6e2deead1f0aac7e8fb" id="r_aef79384151ecb6e2deead1f0aac7e8fb"><td class="memItemLeft" align="right" valign="top"><a id="aef79384151ecb6e2deead1f0aac7e8fb" name="aef79384151ecb6e2deead1f0aac7e8fb"></a>
 std::vector&lt; std::vector&lt; NodeWithTime &gt; &gt;&#160;</td><td class="memItemRight" valign="bottom"><b>get_random_walks_and_times_for_all_nodes</b> (int max_walk_len, const RandomPickerType *walk_bias, int num_walks_per_node, const RandomPickerType *initial_edge_bias=nullptr, WalkDirection walk_direction=WalkDirection::Forward_In_Time) const</td></tr>
-<tr class="separator:a877f3dfd9049007d710706eb9a850119"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ad4ba7896bcba4117b9825cf2207f3cbb" id="r_ad4ba7896bcba4117b9825cf2207f3cbb"><td class="memItemLeft" align="right" valign="top"><a id="ad4ba7896bcba4117b9825cf2207f3cbb" name="ad4ba7896bcba4117b9825cf2207f3cbb"></a>
+<tr class="separator:aef79384151ecb6e2deead1f0aac7e8fb"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a04db2c4ff0782d39ecee7f45ab0ea2ba" id="r_a04db2c4ff0782d39ecee7f45ab0ea2ba"><td class="memItemLeft" align="right" valign="top"><a id="a04db2c4ff0782d39ecee7f45ab0ea2ba" name="a04db2c4ff0782d39ecee7f45ab0ea2ba"></a>
 std::vector&lt; std::vector&lt; int &gt; &gt;&#160;</td><td class="memItemRight" valign="bottom"><b>get_random_walks_for_all_nodes</b> (int max_walk_len, const RandomPickerType *walk_bias, int num_walks_per_node, const RandomPickerType *initial_edge_bias=nullptr, WalkDirection walk_direction=WalkDirection::Forward_In_Time) const</td></tr>
-<tr class="separator:ad4ba7896bcba4117b9825cf2207f3cbb"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a8e53e56c074b0d866c60adaecf8d5bc3" id="r_a8e53e56c074b0d866c60adaecf8d5bc3"><td class="memItemLeft" align="right" valign="top"><a id="a8e53e56c074b0d866c60adaecf8d5bc3" name="a8e53e56c074b0d866c60adaecf8d5bc3"></a>
+<tr class="separator:a04db2c4ff0782d39ecee7f45ab0ea2ba"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a079efc7924d9ecdb1d5ca07cfda5dac5" id="r_a079efc7924d9ecdb1d5ca07cfda5dac5"><td class="memItemLeft" align="right" valign="top"><a id="a079efc7924d9ecdb1d5ca07cfda5dac5" name="a079efc7924d9ecdb1d5ca07cfda5dac5"></a>
 std::vector&lt; std::vector&lt; NodeWithTime &gt; &gt;&#160;</td><td class="memItemRight" valign="bottom"><b>get_random_walks_and_times</b> (int max_walk_len, const RandomPickerType *walk_bias, int num_walks_total, const RandomPickerType *initial_edge_bias=nullptr, WalkDirection walk_direction=WalkDirection::Forward_In_Time) const</td></tr>
-<tr class="separator:a8e53e56c074b0d866c60adaecf8d5bc3"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ab7c1314cc3821a113e3629ae84bd43d3" id="r_ab7c1314cc3821a113e3629ae84bd43d3"><td class="memItemLeft" align="right" valign="top"><a id="ab7c1314cc3821a113e3629ae84bd43d3" name="ab7c1314cc3821a113e3629ae84bd43d3"></a>
+<tr class="separator:a079efc7924d9ecdb1d5ca07cfda5dac5"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:af5514719301b257e602d7252fafec103" id="r_af5514719301b257e602d7252fafec103"><td class="memItemLeft" align="right" valign="top"><a id="af5514719301b257e602d7252fafec103" name="af5514719301b257e602d7252fafec103"></a>
 std::vector&lt; std::vector&lt; int &gt; &gt;&#160;</td><td class="memItemRight" valign="bottom"><b>get_random_walks</b> (int max_walk_len, const RandomPickerType *walk_bias, int num_walks_total, const RandomPickerType *initial_edge_bias=nullptr, WalkDirection walk_direction=WalkDirection::Forward_In_Time) const</td></tr>
-<tr class="separator:ab7c1314cc3821a113e3629ae84bd43d3"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aaf44a58c12b3f7478617a5163a51d303" id="r_aaf44a58c12b3f7478617a5163a51d303"><td class="memItemLeft" align="right" valign="top"><a id="aaf44a58c12b3f7478617a5163a51d303" name="aaf44a58c12b3f7478617a5163a51d303"></a>
+<tr class="separator:af5514719301b257e602d7252fafec103"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a35358ef576763d0211d6d5d3f149f998" id="r_a35358ef576763d0211d6d5d3f149f998"><td class="memItemLeft" align="right" valign="top"><a id="a35358ef576763d0211d6d5d3f149f998" name="a35358ef576763d0211d6d5d3f149f998"></a>
 size_t&#160;</td><td class="memItemRight" valign="bottom"><b>get_node_count</b> () const</td></tr>
-<tr class="separator:aaf44a58c12b3f7478617a5163a51d303"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a13dc615ae58656e10f53f464aba079f4" id="r_a13dc615ae58656e10f53f464aba079f4"><td class="memItemLeft" align="right" valign="top"><a id="a13dc615ae58656e10f53f464aba079f4" name="a13dc615ae58656e10f53f464aba079f4"></a>
+<tr class="separator:a35358ef576763d0211d6d5d3f149f998"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5155449cdfeaf0038f77955373cc85d1" id="r_a5155449cdfeaf0038f77955373cc85d1"><td class="memItemLeft" align="right" valign="top"><a id="a5155449cdfeaf0038f77955373cc85d1" name="a5155449cdfeaf0038f77955373cc85d1"></a>
 size_t&#160;</td><td class="memItemRight" valign="bottom"><b>get_edge_count</b> () const</td></tr>
-<tr class="separator:a13dc615ae58656e10f53f464aba079f4"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a982aa845284b53080bcb2ebf74472ffa" id="r_a982aa845284b53080bcb2ebf74472ffa"><td class="memItemLeft" align="right" valign="top"><a id="a982aa845284b53080bcb2ebf74472ffa" name="a982aa845284b53080bcb2ebf74472ffa"></a>
+<tr class="separator:a5155449cdfeaf0038f77955373cc85d1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:acaa12fd5136596670a817f77e8b0aacf" id="r_acaa12fd5136596670a817f77e8b0aacf"><td class="memItemLeft" align="right" valign="top"><a id="acaa12fd5136596670a817f77e8b0aacf" name="acaa12fd5136596670a817f77e8b0aacf"></a>
 std::vector&lt; int &gt;&#160;</td><td class="memItemRight" valign="bottom"><b>get_node_ids</b> () const</td></tr>
-<tr class="separator:a982aa845284b53080bcb2ebf74472ffa"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ac3589b89a3c9689d082738687346f778" id="r_ac3589b89a3c9689d082738687346f778"><td class="memItemLeft" align="right" valign="top"><a id="ac3589b89a3c9689d082738687346f778" name="ac3589b89a3c9689d082738687346f778"></a>
+<tr class="separator:acaa12fd5136596670a817f77e8b0aacf"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a79e30eb084799f48410762d6f419fb8a" id="r_a79e30eb084799f48410762d6f419fb8a"><td class="memItemLeft" align="right" valign="top"><a id="a79e30eb084799f48410762d6f419fb8a" name="a79e30eb084799f48410762d6f419fb8a"></a>
 std::vector&lt; std::tuple&lt; int, int, int64_t &gt; &gt;&#160;</td><td class="memItemRight" valign="bottom"><b>get_edges</b> () const</td></tr>
-<tr class="separator:ac3589b89a3c9689d082738687346f778"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:afbd9f274c504036578ffbf691b0aff11" id="r_afbd9f274c504036578ffbf691b0aff11"><td class="memItemLeft" align="right" valign="top"><a id="afbd9f274c504036578ffbf691b0aff11" name="afbd9f274c504036578ffbf691b0aff11"></a>
+<tr class="separator:a79e30eb084799f48410762d6f419fb8a"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:adf2a857c52a4ce6e9af01660c9a00176" id="r_adf2a857c52a4ce6e9af01660c9a00176"><td class="memItemLeft" align="right" valign="top"><a id="adf2a857c52a4ce6e9af01660c9a00176" name="adf2a857c52a4ce6e9af01660c9a00176"></a>
 bool&#160;</td><td class="memItemRight" valign="bottom"><b>get_is_directed</b> () const</td></tr>
-<tr class="separator:afbd9f274c504036578ffbf691b0aff11"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aef147e38e9797277c476a2caec16128b" id="r_aef147e38e9797277c476a2caec16128b"><td class="memItemLeft" align="right" valign="top"><a id="aef147e38e9797277c476a2caec16128b" name="aef147e38e9797277c476a2caec16128b"></a>
+<tr class="separator:adf2a857c52a4ce6e9af01660c9a00176"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a03af719bab8b227addf5adf3a38da650" id="r_a03af719bab8b227addf5adf3a38da650"><td class="memItemLeft" align="right" valign="top"><a id="a03af719bab8b227addf5adf3a38da650" name="a03af719bab8b227addf5adf3a38da650"></a>
 void&#160;</td><td class="memItemRight" valign="bottom"><b>clear</b> () const</td></tr>
-<tr class="separator:aef147e38e9797277c476a2caec16128b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="separator:a03af719bab8b227addf5adf3a38da650"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
 <div class="textblock">
-<p class="definition">Definition at line <a class="el" href="_temporal_random_walk_proxy_8cuh_source.html#l00015">15</a> of file <a class="el" href="_temporal_random_walk_proxy_8cuh_source.html">TemporalRandomWalkProxy.cuh</a>.</p>
+<p class="definition">Definition at line <a class="el" href="_temporal_random_walk_8cuh_source.html#l00015">15</a> of file <a class="el" href="_temporal_random_walk_8cuh_source.html">TemporalRandomWalk.cuh</a>.</p>
 </div><hr/>The documentation for this class was generated from the following file:<ul>
-<li>temporal_random_walk/src/proxies/<a class="el" href="_temporal_random_walk_proxy_8cuh_source.html">TemporalRandomWalkProxy.cuh</a></li>
+<li>temporal_random_walk/src/proxies/<a class="el" href="_temporal_random_walk_8cuh_source.html">TemporalRandomWalk.cuh</a></li>
 </ul>
 </div><!-- contents -->
 </div><!-- doc-content -->
 <!-- start footer part -->
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
   <ul>
-    <li class="navelem"><a class="el" href="class_temporal_random_walk_proxy.html">TemporalRandomWalkProxy</a></li>
+    <li class="navelem"><a class="el" href="class_temporal_random_walk.html">TemporalRandomWalk</a></li>
     <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.13.2 </li>
   </ul>
 </div>
