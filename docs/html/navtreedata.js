@@ -24,12 +24,20 @@
 */
 var NAVTREE =
 [
-  [ "Temporal Random Walk", "index.html", ]
+  [ "Temporal Random Walk", "index.html", [
+    [ "Classes", "annotated.html", [
+      [ "Class List", "annotated.html", "annotated_dup" ],
+      [ "Class Index", "classes.html", null ]
+    ] ],
+    [ "Files", "files.html", [
+      [ "File List", "files.html", "files_dup" ]
+    ] ]
+  ] ]
 ];
 
 var NAVTREEINDEX =
 [
-"index.html"
+"_temporal_random_walk_proxy_8cuh_source.html"
 ];
 
 var SYNCONMSG = 'click to disable panel synchronization';
