@@ -514,9 +514,9 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraph* graph, const 
     // Handle merging if we have existing edges
     if (start_idx > 0) {
         // Create merged arrays
-        int* merged_sources;
-        int* merged_targets;
-        int64_t* merged_timestamps;
+        int* merged_sources = nullptr;
+        int* merged_targets = nullptr;
+        int64_t* merged_timestamps = nullptr;
         allocate_memory(&merged_sources, total_size, true);
         allocate_memory(&merged_targets, total_size, true);
         allocate_memory(&merged_timestamps, total_size, true);

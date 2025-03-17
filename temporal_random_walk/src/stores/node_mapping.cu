@@ -44,7 +44,6 @@ HOST size_t node_mapping::active_size(const NodeMapping *node_mapping) {
     }
 
     if (node_mapping->use_gpu) {
-        cudaGetLastError();
 
         const auto start_ptr = thrust::device_pointer_cast(node_mapping->is_deleted);
         const auto end_ptr = start_ptr + static_cast<long>(node_mapping->is_deleted_size);

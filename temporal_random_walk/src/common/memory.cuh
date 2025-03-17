@@ -70,7 +70,7 @@ HOST void fill_memory(T* memory, size_t size, T value, bool use_gpu) {
     }
 
     if (use_gpu) {
-        T* d_value;
+        T* d_value = nullptr;
         cudaMalloc(&d_value, sizeof(T));
         cudaMemcpy(d_value, &value, sizeof(T), cudaMemcpyHostToDevice);
 

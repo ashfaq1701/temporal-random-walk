@@ -192,7 +192,22 @@ size_t TemporalRandomWalkProxy::get_edge_count() const {
 
 std::vector<int> TemporalRandomWalkProxy::get_node_ids() const {
     const DataBlock<int> node_ids = temporal_random_walk::get_node_ids(temporal_random_walk);
-    std::vector<int> result(node_ids.data, node_ids.data + node_ids.size);
+    std::vector<int> result;
+
+    if (node_ids.use_gpu) {
+        // Allocate temporary host memory
+        int* host_data = new int[node_ids.size];
+        cudaMemcpy(host_data, node_ids.data,
+                                     node_ids.size * sizeof(int),
+                                     cudaMemcpyDeviceToHost);
+
+        result.assign(host_data, host_data + node_ids.size);
+
+        delete[] host_data;
+    } else {
+        result.assign(node_ids.data, node_ids.data + node_ids.size);
+    }
+
     return result;
 }
 
@@ -201,8 +216,21 @@ std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalkProxy::get_edges() 
     std::vector<std::tuple<int, int, int64_t>> result;
     result.reserve(edges.size);
 
-    for (size_t i = 0; i < edges.size; i++) {
-        result.emplace_back(edges.data[i].u, edges.data[i].i, edges.data[i].ts);
+    if (edges.use_gpu) {
+        auto host_edges = new Edge[edges.size];
+        cudaMemcpy(host_edges, edges.data,
+                                    edges.size * sizeof(Edge),
+                                    cudaMemcpyDeviceToHost);
+
+        for (size_t i = 0; i < edges.size; i++) {
+            result.emplace_back(host_edges[i].u, host_edges[i].i, host_edges[i].ts);
+        }
+
+        delete[] host_edges;
+    } else {
+        for (size_t i = 0; i < edges.size; i++) {
+            result.emplace_back(edges.data[i].u, edges.data[i].i, edges.data[i].ts);
+        }
     }
 
     return result;

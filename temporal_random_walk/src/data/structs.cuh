@@ -83,7 +83,7 @@ struct SizeRange {
 
 template <typename T>
 struct DataBlock {
-    T* data;
+    T* data = nullptr;
     size_t size;
     bool use_gpu;
 
@@ -525,9 +525,9 @@ struct WalkSet {
 
     // Destructor
     HOST ~WalkSet() {
-        clear_memory(&nodes, use_gpu);
-        clear_memory(&timestamps, use_gpu);
-        clear_memory(&walk_lens, use_gpu);
+        nodes = nullptr;
+        timestamps = nullptr;
+        walk_lens = nullptr;
     }
 
     HOST WalkSet* to_device_ptr() {
