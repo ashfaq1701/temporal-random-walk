@@ -4,7 +4,12 @@
 #include "../src/proxies/NodeEdgeIndexProxy.cuh"
 
 constexpr int TOTAL_TIMESTEPS = 100000000;
+
+#ifdef HAS_CUDA
+constexpr bool USE_GPU = true;
+#else
 constexpr bool USE_GPU = false;
+#endif
 
 int main()
 {

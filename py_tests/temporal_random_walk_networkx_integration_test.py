@@ -2,7 +2,7 @@ import networkx as nx
 from temporal_random_walk import TemporalRandomWalk
 import pytest
 
-GPU_USAGE_MODE = "ON_CPU"
+GPU_USAGE_MODE = False
 
 def test_networkx_integration():
     # Create a simple temporal directed graph using NetworkX
