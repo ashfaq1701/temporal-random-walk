@@ -8,7 +8,7 @@
 ---
 
 ## 🔥 Why Temporal Random Walk?
-✅ **Performance First** – GPU-accelerated sampling for massive networks (development in progress)<br>
+✅ **Performance First** – GPU-accelerated sampling for massive networks<br>
 ✅ **Memory Efficient** – Smart memory management for large graphs  
 ✅ **Flexible Integration** – Easy Python bindings with **NumPy/NetworkX** support  
 ✅ **Production Ready** – Tested with hundreds of extensive unit tests.<br>
@@ -41,7 +41,7 @@ walks = walker.get_random_walks_for_all_nodes(
 ```
 
 ## ✨ Key Features
-- ⚡ **GPU acceleration** for large graphs (development in progress)  
+- ⚡ **GPU acceleration** for large graphs   
 - 🎯 **Multiple sampling strategies** – Uniform, Linear, Exponential
 - 🔄 **Forward & backward** temporal walks
 - 📡 **Rolling window support** for streaming data
