@@ -2,8 +2,8 @@
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 #include <optional>
-#include "../src/proxies/TemporalRandomWalkProxy.cuh"
-#include "../src/proxies/RandomPickerProxies.cuh"
+#include "../src/proxies/TemporalRandomWalk.cuh"
+#include "../src/proxies/RandomPicker.cuh"
 #include <stdexcept>
 #include "../src/data/enums.cuh"
 
@@ -53,12 +53,12 @@ WalkDirection walk_direction_from_string(const std::string& walk_direction_str)
 
 PYBIND11_MODULE(_temporal_random_walk, m)
 {
-    py::class_<TemporalRandomWalkProxy>(m, "TemporalRandomWalk")
+    py::class_<TemporalRandomWalk>(m, "TemporalRandomWalk")
         .def(py::init([](const bool is_directed, bool use_gpu, const std::optional<int64_t> max_time_capacity,
                         std::optional<bool> enable_weight_computation,
                         std::optional<double> timescale_bound)
              {
-                 return std::make_unique<TemporalRandomWalkProxy>(
+                 return std::make_unique<TemporalRandomWalk>(
                      is_directed,
                      use_gpu,
                      max_time_capacity.value_or(-1),
@@ -80,7 +80,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
              py::arg("max_time_capacity") = py::none(),
              py::arg("enable_weight_computation") = py::none(),
              py::arg("timescale_bound") = py::none())
-        .def("add_multiple_edges", [](TemporalRandomWalkProxy& tw, const std::vector<std::tuple<int, int, int64_t>>& edge_infos)
+        .def("add_multiple_edges", [](TemporalRandomWalk& tw, const std::vector<std::tuple<int, int, int64_t>>& edge_infos)
              {
                  tw.add_multiple_edges(edge_infos);
              },
@@ -92,7 +92,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             )",
             py::arg("edge_infos")
         )
-        .def("get_random_walks_for_all_nodes", [](TemporalRandomWalkProxy& tw,
+        .def("get_random_walks_for_all_nodes", [](TemporalRandomWalk& tw,
                                                   const int max_walk_len,
                                                   const std::string& walk_bias,
                                                   const int num_walks_per_node,
@@ -142,7 +142,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
              py::arg("initial_edge_bias") = py::none(),
              py::arg("walk_direction") = "Forward_In_Time")
 
-        .def("get_random_walks_and_times_for_all_nodes", [](TemporalRandomWalkProxy& tw,
+        .def("get_random_walks_and_times_for_all_nodes", [](TemporalRandomWalk& tw,
                                                const int max_walk_len,
                                                const std::string& walk_bias,
                                                const int num_walks_per_node,
@@ -208,7 +208,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
              py::arg("initial_edge_bias") = py::none(),
              py::arg("walk_direction") = "Forward_In_Time")
 
-        .def("get_random_walks", [](TemporalRandomWalkProxy& tw,
+        .def("get_random_walks", [](TemporalRandomWalk& tw,
                                     const int max_walk_len,
                                     const std::string& walk_bias,
                                     const int num_walks_per_node,
@@ -254,7 +254,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     representing a temporal path through the network.
             )")
 
-        .def("get_random_walks_and_times", [](TemporalRandomWalkProxy& tw,
+        .def("get_random_walks_and_times", [](TemporalRandomWalk& tw,
                                                const int max_walk_len,
                                                const std::string& walk_bias,
                                                const int num_walks_per_node,
@@ -321,21 +321,21 @@ PYBIND11_MODULE(_temporal_random_walk, m)
              py::arg("initial_edge_bias") = py::none(),
              py::arg("walk_direction") = "Forward_In_Time")
 
-        .def("get_node_count", &TemporalRandomWalkProxy::get_node_count,
+        .def("get_node_count", &TemporalRandomWalk::get_node_count,
             R"(
             Get total number of nodes in the graph.
 
             Returns:
                 int: Number of active nodes.
             )")
-        .def("get_edge_count", &TemporalRandomWalkProxy::get_edge_count,
+        .def("get_edge_count", &TemporalRandomWalk::get_edge_count,
              R"(
              Returns the total number of directed edges in the temporal graph.
 
              Returns:
                 int: The total number of directed edges.
              )")
-        .def("get_node_ids", [](const TemporalRandomWalkProxy& tw)
+        .def("get_node_ids", [](const TemporalRandomWalk& tw)
              {
                  const auto& node_ids = tw.get_node_ids();
                  py::array_t<int> py_node_ids(static_cast<long>(node_ids.size()));
@@ -355,12 +355,12 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 np.ndarray: A NumPy array with all node IDs.
             )"
         )
-        .def("clear", &TemporalRandomWalkProxy::clear,
+        .def("clear", &TemporalRandomWalk::clear,
              R"(
             Clears and reinitiates the underlying graph.
             )"
         )
-        .def("add_edges_from_networkx", [](TemporalRandomWalkProxy& tw, const py::object& nx_graph)
+        .def("add_edges_from_networkx", [](TemporalRandomWalk& tw, const py::object& nx_graph)
              {
                  const py::object edges = nx_graph.attr("edges")(py::arg("data") = true);
 
@@ -385,7 +385,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 nx_graph (networkx.Graph): NetworkX graph with timestamp edge attributes.
             )"
         )
-        .def("to_networkx", [](const TemporalRandomWalkProxy& tw)
+        .def("to_networkx", [](const TemporalRandomWalk& tw)
              {
                  const auto edges = tw.get_edges();
 
@@ -411,10 +411,10 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             )"
         );
 
-    py::class_<LinearRandomPickerProxy>(m, "LinearRandomPicker")
+    py::class_<LinearRandomPicker>(m, "LinearRandomPicker")
         .def(py::init([](const bool use_gpu)
              {
-                 return LinearRandomPickerProxy(use_gpu);
+                 return LinearRandomPicker(use_gpu);
              }),
              R"(
             Initialize linear time decay random picker.
@@ -424,7 +424,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             )",
              py::arg("use_gpu") = false)
 
-        .def("pick_random", &LinearRandomPickerProxy::pick_random,
+        .def("pick_random", &LinearRandomPicker::pick_random,
             R"(
             Pick random index with linear time decay probability.
 
@@ -438,10 +438,10 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             )",
             py::arg("start"), py::arg("end"), py::arg("prioritize_end") = true);
 
-    py::class_<ExponentialIndexRandomPickerProxy>(m, "ExponentialIndexRandomPicker")
+    py::class_<ExponentialIndexRandomPicker>(m, "ExponentialIndexRandomPicker")
         .def(py::init([](const bool use_gpu)
              {
-                 return ExponentialIndexRandomPickerProxy(use_gpu);
+                 return ExponentialIndexRandomPicker(use_gpu);
              }),
              R"(
             Initialize index based exponential time decay random picker.
@@ -452,7 +452,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             )",
              py::arg("use_gpu") = false)
 
-        .def("pick_random", &ExponentialIndexRandomPickerProxy::pick_random,
+        .def("pick_random", &ExponentialIndexRandomPicker::pick_random,
             R"(
             Pick random index with index based exponential time decay probability.
 
@@ -466,10 +466,10 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             )",
             py::arg("start"), py::arg("end"), py::arg("prioritize_end") = true);
 
-    py::class_<UniformRandomPickerProxy>(m, "UniformRandomPicker")
+    py::class_<UniformRandomPicker>(m, "UniformRandomPicker")
         .def(py::init([](const bool use_gpu)
              {
-                 return UniformRandomPickerProxy(use_gpu);
+                 return UniformRandomPicker(use_gpu);
              }),
              R"(
             Initialize uniform random picker.
@@ -479,7 +479,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             )",
              py::arg("use_gpu") = false)
 
-        .def("pick_random", &UniformRandomPickerProxy::pick_random,
+        .def("pick_random", &UniformRandomPicker::pick_random,
             R"(
             Pick random index with uniform probability.
 
@@ -493,10 +493,10 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             )",
             py::arg("start"), py::arg("end"), py::arg("prioritize_end") = true);
 
-    py::class_<WeightBasedRandomPickerProxy>(m, "WeightBasedRandomPicker")
+    py::class_<WeightBasedRandomPicker>(m, "WeightBasedRandomPicker")
         .def(py::init([](const bool use_gpu)
             {
-                return WeightBasedRandomPickerProxy(use_gpu);
+                return WeightBasedRandomPicker(use_gpu);
             }),
             R"(
             Initialize weight-based exponential time decay random picker.
@@ -506,8 +506,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             )",
             py::arg("use_gpu") = false)
 
-    .def("pick_random",
-        [](const WeightBasedRandomPickerProxy& picker, const std::vector<double>& cumulative_weights,
+        .def("pick_random", [](const WeightBasedRandomPicker& picker, const std::vector<double>& cumulative_weights,
             const int group_start, const int group_end)
             {
                 return picker.pick_random(cumulative_weights, group_start, group_end);

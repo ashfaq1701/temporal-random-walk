@@ -1,21 +1,21 @@
-#include "TemporalGraphProxy.cuh"
+#include "TemporalGraph.cuh"
 #include "../common/setup.cuh"
 
 #ifdef HAS_CUDA
 
-__global__ void get_total_edges_kernel(size_t* result, const TemporalGraph* graph) {
+__global__ void get_total_edges_kernel(size_t* result, const TemporalGraphStore* graph) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = temporal_graph::get_total_edges(graph);
     }
 }
 
-__global__ void get_edge_at_kernel(Edge* result, const TemporalGraph* graph, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state) {
+__global__ void get_edge_at_kernel(Edge* result, const TemporalGraphStore* graph, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = temporal_graph::get_edge_at_device(graph, picker_type, timestamp, forward, rand_state);
     }
 }
 
-__global__ void get_node_edge_at_kernel(Edge* result, TemporalGraph* graph, int node_id, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state) {
+__global__ void get_node_edge_at_kernel(Edge* result, TemporalGraphStore* graph, int node_id, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = temporal_graph::get_node_edge_at_device(graph, node_id, picker_type, timestamp, forward, rand_state);
     }
@@ -23,7 +23,7 @@ __global__ void get_node_edge_at_kernel(Edge* result, TemporalGraph* graph, int 
 
 #endif
 
-TemporalGraphProxy::TemporalGraphProxy(
+TemporalGraph::TemporalGraph(
     const bool is_directed,
     const bool use_gpu,
     const int64_t max_time_capacity,
@@ -31,19 +31,19 @@ TemporalGraphProxy::TemporalGraphProxy(
     const double timescale_bound)
     : owns_graph(true) {
 
-    graph = new TemporalGraph(is_directed, use_gpu, max_time_capacity, enable_weight_computation, timescale_bound);
+    graph = new TemporalGraphStore(is_directed, use_gpu, max_time_capacity, enable_weight_computation, timescale_bound);
 }
 
-TemporalGraphProxy::TemporalGraphProxy(TemporalGraph* existing_graph)
+TemporalGraph::TemporalGraph(TemporalGraphStore* existing_graph)
     : graph(existing_graph), owns_graph(false) {}
 
-TemporalGraphProxy::~TemporalGraphProxy() {
+TemporalGraph::~TemporalGraph() {
     if (owns_graph && graph) {
         delete graph;
     }
 }
 
-TemporalGraphProxy& TemporalGraphProxy::operator=(const TemporalGraphProxy& other) {
+TemporalGraph& TemporalGraph::operator=(const TemporalGraph& other) {
     if (this != &other) {
         if (owns_graph && graph) {
             delete graph;
@@ -51,7 +51,7 @@ TemporalGraphProxy& TemporalGraphProxy::operator=(const TemporalGraphProxy& othe
 
         owns_graph = other.owns_graph;
         if (other.owns_graph) {
-            graph = new TemporalGraph(
+            graph = new TemporalGraphStore(
                 other.graph->is_directed,
                 other.graph->use_gpu,
                 other.graph->max_time_capacity,
@@ -64,18 +64,18 @@ TemporalGraphProxy& TemporalGraphProxy::operator=(const TemporalGraphProxy& othe
     return *this;
 }
 
-void TemporalGraphProxy::update_temporal_weights() const {
+void TemporalGraph::update_temporal_weights() const {
     temporal_graph::update_temporal_weights(graph);
 }
 
-size_t TemporalGraphProxy::get_total_edges() const {
+size_t TemporalGraph::get_total_edges() const {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
         cudaMalloc(&d_result, sizeof(size_t));
 
-        TemporalGraph* d_graph = temporal_graph::to_device_ptr(graph);
+        TemporalGraphStore* d_graph = temporal_graph::to_device_ptr(graph);
         get_total_edges_kernel<<<1, 1>>>(d_result, d_graph);
 
         size_t host_result;
@@ -94,15 +94,15 @@ size_t TemporalGraphProxy::get_total_edges() const {
     }
 }
 
-size_t TemporalGraphProxy::get_node_count() const {
+size_t TemporalGraph::get_node_count() const {
     return temporal_graph::get_node_count(graph);
 }
 
-int64_t TemporalGraphProxy::get_latest_timestamp() const {
+int64_t TemporalGraph::get_latest_timestamp() const {
     return temporal_graph::get_latest_timestamp(graph);
 }
 
-std::vector<int> TemporalGraphProxy::get_node_ids() const {
+std::vector<int> TemporalGraph::get_node_ids() const {
     DataBlock<int> node_ids = temporal_graph::get_node_ids(graph);
     std::vector<int> result;
 
@@ -125,7 +125,7 @@ std::vector<int> TemporalGraphProxy::get_node_ids() const {
     return result;
 }
 
-std::vector<Edge> TemporalGraphProxy::get_edges() const {
+std::vector<Edge> TemporalGraph::get_edges() const {
     DataBlock<Edge> edges = temporal_graph::get_edges(graph);
     std::vector<Edge> result;
 
@@ -148,7 +148,7 @@ std::vector<Edge> TemporalGraphProxy::get_edges() const {
     return result;
 }
 
-void TemporalGraphProxy::add_multiple_edges(const std::vector<Edge>& new_edges) const {
+void TemporalGraph::add_multiple_edges(const std::vector<Edge>& new_edges) const {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         // Allocate device memory for edges
@@ -172,7 +172,7 @@ void TemporalGraphProxy::add_multiple_edges(const std::vector<Edge>& new_edges) 
     }
 }
 
-void TemporalGraphProxy::sort_and_merge_edges(size_t start_idx) const {
+void TemporalGraph::sort_and_merge_edges(size_t start_idx) const {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         temporal_graph::sort_and_merge_edges_cuda(graph, start_idx);
@@ -184,7 +184,7 @@ void TemporalGraphProxy::sort_and_merge_edges(size_t start_idx) const {
     }
 }
 
-void TemporalGraphProxy::delete_old_edges() const {
+void TemporalGraph::delete_old_edges() const {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         temporal_graph::delete_old_edges_cuda(graph);
@@ -196,7 +196,7 @@ void TemporalGraphProxy::delete_old_edges() const {
     }
 }
 
-size_t TemporalGraphProxy::count_timestamps_less_than(int64_t timestamp) const {
+size_t TemporalGraph::count_timestamps_less_than(int64_t timestamp) const {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         return temporal_graph::count_timestamps_less_than_cuda(graph, timestamp);
@@ -208,7 +208,7 @@ size_t TemporalGraphProxy::count_timestamps_less_than(int64_t timestamp) const {
     }
 }
 
-size_t TemporalGraphProxy::count_timestamps_greater_than(int64_t timestamp) const {
+size_t TemporalGraph::count_timestamps_greater_than(int64_t timestamp) const {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         return temporal_graph::count_timestamps_greater_than_cuda(graph, timestamp);
@@ -220,7 +220,7 @@ size_t TemporalGraphProxy::count_timestamps_greater_than(int64_t timestamp) cons
     }
 }
 
-size_t TemporalGraphProxy::count_node_timestamps_less_than(int node_id, int64_t timestamp) const {
+size_t TemporalGraph::count_node_timestamps_less_than(int node_id, int64_t timestamp) const {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         return temporal_graph::count_node_timestamps_less_than_cuda(graph, node_id, timestamp);
@@ -232,7 +232,7 @@ size_t TemporalGraphProxy::count_node_timestamps_less_than(int node_id, int64_t 
     }
 }
 
-size_t TemporalGraphProxy::count_node_timestamps_greater_than(int node_id, int64_t timestamp) const {
+size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t timestamp) const {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         return temporal_graph::count_node_timestamps_greater_than_cuda(graph, node_id, timestamp);
@@ -244,7 +244,7 @@ size_t TemporalGraphProxy::count_node_timestamps_greater_than(int node_id, int64
     }
 }
 
-Edge TemporalGraphProxy::get_edge_at(RandomPickerType picker_type, int64_t timestamp, bool forward) const {
+Edge TemporalGraph::get_edge_at(RandomPickerType picker_type, int64_t timestamp, bool forward) const {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         // Set up random state
@@ -257,7 +257,7 @@ Edge TemporalGraphProxy::get_edge_at(RandomPickerType picker_type, int64_t times
         cudaMalloc(&d_result, sizeof(Edge));
 
         // Copy graph to device
-        TemporalGraph* d_graph = temporal_graph::to_device_ptr(graph);
+        TemporalGraphStore* d_graph = temporal_graph::to_device_ptr(graph);
 
         // Launch kernel
         get_edge_at_kernel<<<1, 1>>>(d_result, d_graph, picker_type, timestamp, forward, d_rand_states);
@@ -281,7 +281,7 @@ Edge TemporalGraphProxy::get_edge_at(RandomPickerType picker_type, int64_t times
     }
 }
 
-Edge TemporalGraphProxy::get_node_edge_at(int node_id, RandomPickerType picker_type, int64_t timestamp, bool forward) const {
+Edge TemporalGraph::get_node_edge_at(int node_id, RandomPickerType picker_type, int64_t timestamp, bool forward) const {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         // Set up random state
@@ -294,7 +294,7 @@ Edge TemporalGraphProxy::get_node_edge_at(int node_id, RandomPickerType picker_t
         cudaMalloc(&d_result, sizeof(Edge));
 
         // Copy graph to device
-        TemporalGraph* d_graph = temporal_graph::to_device_ptr(graph);
+        TemporalGraphStore* d_graph = temporal_graph::to_device_ptr(graph);
 
         // Launch kernel
         get_node_edge_at_kernel<<<1, 1>>>(d_result, d_graph, node_id, picker_type, timestamp, forward, d_rand_states);

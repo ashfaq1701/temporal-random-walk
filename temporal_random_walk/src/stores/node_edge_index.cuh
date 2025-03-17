@@ -1,5 +1,5 @@
-#ifndef NODE_EDGE_INDEX_H
-#define NODE_EDGE_INDEX_H
+#ifndef NODE_EDGE_INDEX_STORE_H
+#define NODE_EDGE_INDEX_STORE_H
 
 #include <cstddef>
 
@@ -8,7 +8,7 @@
 #include "../common/macros.cuh"
 #include "../data/structs.cuh"
 
-struct NodeEdgeIndex {
+struct NodeEdgeIndexStore {
     bool use_gpu;
 
     size_t* outbound_offsets = nullptr;
@@ -44,9 +44,9 @@ struct NodeEdgeIndex {
     double* inbound_backward_cumulative_weights_exponential = nullptr;
     size_t inbound_backward_cumulative_weights_exponential_size = 0;
 
-    explicit NodeEdgeIndex(const bool use_gpu): use_gpu(use_gpu) {}
+    explicit NodeEdgeIndexStore(const bool use_gpu): use_gpu(use_gpu) {}
 
-    ~NodeEdgeIndex() {
+    ~NodeEdgeIndexStore() {
         #ifdef HAS_CUDA
         if (use_gpu) {
             if (outbound_offsets) cudaFree(outbound_offsets);
@@ -84,48 +84,48 @@ namespace node_edge_index {
     /**
      * Common Functions
      */
-    HOST void clear(NodeEdgeIndex* node_edge_index);
+    HOST void clear(NodeEdgeIndexStore* node_edge_index);
 
-    HOST DEVICE SizeRange get_edge_range(const NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed);
+    HOST DEVICE SizeRange get_edge_range(const NodeEdgeIndexStore* node_edge_index, int dense_node_id, bool forward, bool is_directed);
 
-    HOST DEVICE SizeRange get_timestamp_group_range(const NodeEdgeIndex* node_edge_index, int dense_node_id, size_t group_idx, bool forward, bool is_directed);
+    HOST DEVICE SizeRange get_timestamp_group_range(const NodeEdgeIndexStore* node_edge_index, int dense_node_id, size_t group_idx, bool forward, bool is_directed);
 
-    HOST DEVICE size_t get_timestamp_group_count(const NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed);
+    HOST DEVICE size_t get_timestamp_group_count(const NodeEdgeIndexStore* node_edge_index, int dense_node_id, bool forward, bool is_directed);
 
-    HOST DEVICE MemoryView<size_t> get_timestamp_offset_vector(const NodeEdgeIndex* node_edge_index, bool forward, bool is_directed);
+    HOST DEVICE MemoryView<size_t> get_timestamp_offset_vector(const NodeEdgeIndexStore* node_edge_index, bool forward, bool is_directed);
 
     /**
      * Rebuild related functions
      */
 
-    HOST void allocate_node_edge_offsets(NodeEdgeIndex* node_edge_index, size_t num_nodes, bool is_directed);
+    HOST void allocate_node_edge_offsets(NodeEdgeIndexStore* node_edge_index, size_t num_nodes, bool is_directed);
 
-    HOST void allocate_node_edge_indices(NodeEdgeIndex* node_edge_index, bool is_directed);
+    HOST void allocate_node_edge_indices(NodeEdgeIndexStore* node_edge_index, bool is_directed);
 
-    HOST void allocate_node_timestamp_indices(NodeEdgeIndex* node_edge_index, bool is_directed);
+    HOST void allocate_node_timestamp_indices(NodeEdgeIndexStore* node_edge_index, bool is_directed);
 
     /**
      * Std implementations
      */
 
     HOST void populate_dense_ids_std(
-        EdgeData* edge_data,
-        NodeMapping* node_mapping,
+        EdgeDataStore* edge_data,
+        NodeMappingStore* node_mapping,
         int* dense_sources,
         int* dense_targets
     );
 
     HOST void compute_node_edge_offsets_std(
-        NodeEdgeIndex* node_edge_index,
-        const EdgeData* edge_data,
+        NodeEdgeIndexStore* node_edge_index,
+        const EdgeDataStore* edge_data,
         const int* dense_sources,
         const int* dense_targets,
         bool is_directed
     );
 
     HOST void compute_node_edge_indices_std(
-        NodeEdgeIndex* node_edge_index,
-        const EdgeData* edge_data,
+        NodeEdgeIndexStore* node_edge_index,
+        const EdgeDataStore* edge_data,
         const int* dense_sources,
         const int* dense_targets,
         EdgeWithEndpointType* outbound_edge_indices_buffer,
@@ -133,20 +133,20 @@ namespace node_edge_index {
     );
 
     HOST void compute_node_timestamp_offsets_std(
-        NodeEdgeIndex* node_edge_index,
-        const EdgeData* edge_data,
+        NodeEdgeIndexStore* node_edge_index,
+        const EdgeDataStore* edge_data,
         size_t num_nodes,
         bool is_directed
     );
 
     HOST void compute_node_timestamp_indices_std(
-        NodeEdgeIndex* node_edge_index,
-        const EdgeData* edge_data,
+        NodeEdgeIndexStore* node_edge_index,
+        const EdgeDataStore* edge_data,
         size_t num_nodes,
         bool is_directed
     );
 
-    HOST void update_temporal_weights_std(NodeEdgeIndex* node_edge_index, const EdgeData* edge_data, double timescale_bound);
+    HOST void update_temporal_weights_std(NodeEdgeIndexStore* node_edge_index, const EdgeDataStore* edge_data, double timescale_bound);
 
     /**
      * Cuda implementations
@@ -154,23 +154,23 @@ namespace node_edge_index {
 
     #ifdef HAS_CUDA
     HOST void populate_dense_ids_cuda(
-        const EdgeData* edge_data,
-        const NodeMapping* node_mapping,
+        const EdgeDataStore* edge_data,
+        const NodeMappingStore* node_mapping,
         int* dense_sources,
         int* dense_targets
     );
 
     HOST void compute_node_edge_offsets_cuda(
-        NodeEdgeIndex* node_edge_index,
-        const EdgeData* edge_data,
+        NodeEdgeIndexStore* node_edge_index,
+        const EdgeDataStore* edge_data,
         int* dense_sources,
         int* dense_targets,
         bool is_directed
     );
 
     HOST void compute_node_edge_indices_cuda(
-        NodeEdgeIndex* node_edge_index,
-        const EdgeData* edge_data,
+        NodeEdgeIndexStore* node_edge_index,
+        const EdgeDataStore* edge_data,
         const int* dense_sources,
         const int* dense_targets,
         EdgeWithEndpointType* outbound_edge_indices_buffer,
@@ -178,25 +178,25 @@ namespace node_edge_index {
     );
 
     HOST void compute_node_timestamp_offsets_cuda(
-        NodeEdgeIndex* node_edge_index,
-        const EdgeData* edge_data,
+        NodeEdgeIndexStore* node_edge_index,
+        const EdgeDataStore* edge_data,
         size_t num_nodes,
         bool is_directed
     );
 
     HOST void compute_node_timestamp_indices_cuda(
-        NodeEdgeIndex* node_edge_index,
-        const EdgeData* edge_data,
+        NodeEdgeIndexStore* node_edge_index,
+        const EdgeDataStore* edge_data,
         size_t num_nodes,
         bool is_directed
     );
 
-    HOST void update_temporal_weights_cuda(NodeEdgeIndex* node_edge_index, const EdgeData* edge_data, double timescale_bound);
+    HOST void update_temporal_weights_cuda(NodeEdgeIndexStore* node_edge_index, const EdgeDataStore* edge_data, double timescale_bound);
 
-    HOST NodeEdgeIndex* to_device_ptr(const NodeEdgeIndex* node_edge_index);
+    HOST NodeEdgeIndexStore* to_device_ptr(const NodeEdgeIndexStore* node_edge_index);
     #endif
 
-    HOST void rebuild(NodeEdgeIndex* node_edge_index, EdgeData* edge_data, NodeMapping* node_mapping, bool is_directed);
+    HOST void rebuild(NodeEdgeIndexStore* node_edge_index, EdgeDataStore* edge_data, NodeMappingStore* node_mapping, bool is_directed);
 }
 
-#endif // NODE_EDGE_INDEX_H
+#endif // NODE_EDGE_INDEX_STORE_H

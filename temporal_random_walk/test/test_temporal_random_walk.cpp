@@ -2,7 +2,7 @@
 #include <cmath>
 
 #include "test_utils.h"
-#include "../src/proxies/TemporalRandomWalkProxy.cuh"
+#include "../src/proxies/TemporalRandomWalk.cuh"
 
 constexpr int TEST_NODE_ID = 42;
 constexpr int MAX_WALK_LEN = 20;
@@ -26,10 +26,10 @@ template<typename T>
 class EmptyTemporalRandomWalkTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        temporal_random_walk = std::make_unique<TemporalRandomWalkProxy>(true, T::value, -1, true, -1);
+        temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, -1, true, -1);
     }
 
-    std::unique_ptr<TemporalRandomWalkProxy> temporal_random_walk;
+    std::unique_ptr<TemporalRandomWalk> temporal_random_walk;
 };
 
 TYPED_TEST_SUITE(EmptyTemporalRandomWalkTest, GPU_USAGE_TYPES);
@@ -38,10 +38,10 @@ template<typename T>
 class EmptyTemporalRandomWalkTestWithMaxCapacity : public ::testing::Test {
 protected:
     void SetUp() override {
-        temporal_random_walk = std::make_unique<TemporalRandomWalkProxy>(true, T::value, MAX_TIME_CAPACITY, true, -1);
+        temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, MAX_TIME_CAPACITY, true, -1);
     }
 
-    std::unique_ptr<TemporalRandomWalkProxy> temporal_random_walk;
+    std::unique_ptr<TemporalRandomWalk> temporal_random_walk;
 };
 
 TYPED_TEST_SUITE(EmptyTemporalRandomWalkTestWithMaxCapacity, GPU_USAGE_TYPES);
@@ -54,12 +54,12 @@ protected:
     }
 
     void SetUp() override {
-        temporal_random_walk = std::make_unique<TemporalRandomWalkProxy>(true, T::value, -1, true, -1);
+        temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, -1, true, -1);
         temporal_random_walk->add_multiple_edges(sample_edges);
     }
 
     std::vector<std::tuple<int, int, int64_t>> sample_edges;
-    std::unique_ptr<TemporalRandomWalkProxy> temporal_random_walk;
+    std::unique_ptr<TemporalRandomWalk> temporal_random_walk;
 };
 
 TYPED_TEST_SUITE(FilledDirectedTemporalRandomWalkTest, GPU_USAGE_TYPES);
@@ -72,12 +72,12 @@ protected:
     }
 
     void SetUp() override {
-        temporal_random_walk = std::make_unique<TemporalRandomWalkProxy>(false, T::value, -1, true, -1);
+        temporal_random_walk = std::make_unique<TemporalRandomWalk>(false, T::value, -1, true, -1);
         temporal_random_walk->add_multiple_edges(sample_edges);
     }
 
     std::vector<std::tuple<int, int, int64_t>> sample_edges;
-    std::unique_ptr<TemporalRandomWalkProxy> temporal_random_walk;
+    std::unique_ptr<TemporalRandomWalk> temporal_random_walk;
 };
 
 TYPED_TEST_SUITE(FilledUndirectedTemporalRandomWalkTest, GPU_USAGE_TYPES);
@@ -86,7 +86,7 @@ template<typename T>
 class TimescaleBoundedTemporalRandomWalkTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        temporal_random_walk = std::make_unique<TemporalRandomWalkProxy>(true, T::value, -1, true, 10.0);
+        temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, -1, true, 10.0);
         temporal_random_walk->add_multiple_edges({
             // Node 1's outgoing edges
             {1, 2, 100},
@@ -106,14 +106,14 @@ protected:
         });
     }
 
-    std::unique_ptr<TemporalRandomWalkProxy> temporal_random_walk;
+    std::unique_ptr<TemporalRandomWalk> temporal_random_walk;
 };
 
 TYPED_TEST_SUITE(TimescaleBoundedTemporalRandomWalkTest, GPU_USAGE_TYPES);
 
 // Test the constructor of TemporalRandomWalk to ensure it initializes correctly.
 TYPED_TEST(EmptyTemporalRandomWalkTest, ConstructorTest) {
-    EXPECT_NO_THROW(this->temporal_random_walk = std::make_unique<TemporalRandomWalkProxy>(true, TypeParam::value));
+    EXPECT_NO_THROW(this->temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, TypeParam::value));
     EXPECT_EQ(this->temporal_random_walk->get_node_count(), 0); // Assuming initial node count is 0
 }
 

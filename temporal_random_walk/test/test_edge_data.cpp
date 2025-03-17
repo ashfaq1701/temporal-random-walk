@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
-#include "../src/proxies/EdgeDataProxy.cuh"
+#include "../src/proxies/EdgeData.cuh"
 
 template<typename T>
 class EdgeDataTest : public ::testing::Test {
 protected:
-    EdgeDataProxy edges;
+    EdgeData edges;
 
     EdgeDataTest() : edges(T::value) {}
 

@@ -1,5 +1,5 @@
-#ifndef TEMPORAL_GRAPH_PROXY_H
-#define TEMPORAL_GRAPH_PROXY_H
+#ifndef TEMPORAL_GRAPH_H
+#define TEMPORAL_GRAPH_H
 
 #include "../stores/temporal_graph.cuh"
 #include "../data/structs.cuh"
@@ -7,29 +7,29 @@
 
 #ifdef HAS_CUDA
 
-__global__ void get_total_edges_kernel(size_t* result, const TemporalGraph* graph);
-__global__ void get_edge_at_kernel(Edge* result, const TemporalGraph* graph, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state);
-__global__ void get_node_edge_at_kernel(Edge* result, TemporalGraph* graph, int node_id, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state);
+__global__ void get_total_edges_kernel(size_t* result, const TemporalGraphStore* graph);
+__global__ void get_edge_at_kernel(Edge* result, const TemporalGraphStore* graph, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state);
+__global__ void get_node_edge_at_kernel(Edge* result, TemporalGraphStore* graph, int node_id, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state);
 
 #endif
 
-class TemporalGraphProxy {
+class TemporalGraph {
 public:
-    TemporalGraph* graph;
+    TemporalGraphStore* graph;
     bool owns_graph;
 
-    explicit TemporalGraphProxy(
+    explicit TemporalGraph(
         bool is_directed,
         bool use_gpu,
         int64_t max_time_capacity = -1,
         bool enable_weight_computation = false,
         double timescale_bound = -1);
 
-    explicit TemporalGraphProxy(TemporalGraph* existing_graph);
+    explicit TemporalGraph(TemporalGraphStore* existing_graph);
 
-    ~TemporalGraphProxy();
+    ~TemporalGraph();
 
-    TemporalGraphProxy& operator=(const TemporalGraphProxy& other);
+    TemporalGraph& operator=(const TemporalGraph& other);
 
     void update_temporal_weights() const;
 
@@ -61,7 +61,7 @@ public:
 
     [[nodiscard]] Edge get_node_edge_at(int node_id, RandomPickerType picker_type, int64_t timestamp = -1, bool forward = true) const;
 
-    [[nodiscard]] TemporalGraph* get_graph() const;
+    [[nodiscard]] TemporalGraphStore* get_graph() const;
 };
 
-#endif // TEMPORAL_GRAPH_PROXY_H
+#endif // TEMPORAL_GRAPH_H

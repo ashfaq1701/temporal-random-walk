@@ -1,14 +1,14 @@
 #include <gtest/gtest.h>
-#include "../src/proxies/NodeEdgeIndexProxy.cuh"
-#include "../src/proxies/EdgeDataProxy.cuh"
-#include "../src/proxies/NodeMappingProxy.cuh"
+#include "../src/proxies/NodeEdgeIndex.cuh"
+#include "../src/proxies/EdgeData.cuh"
+#include "../src/proxies/NodeMapping.cuh"
 
 template<typename  T>
 class NodeEdgeIndexTest : public ::testing::Test {
 protected:
-    NodeEdgeIndexProxy index;
-    EdgeDataProxy edges;
-    NodeMappingProxy mapping;
+    NodeEdgeIndex index;
+    EdgeData edges;
+    NodeMapping mapping;
 
     NodeEdgeIndexTest(): index(T::value), edges(T::value), mapping(T::value) {}
 

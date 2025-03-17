@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "../src/proxies/EdgeDataProxy.cuh"
+#include "../src/proxies/EdgeData.cuh"
 #include <cmath>
 
 template<typename T>
@@ -17,7 +17,7 @@ protected:
         EXPECT_NEAR(weights.back(), 1.0, 1e-6);
     }
 
-    static void add_test_edges(const EdgeDataProxy& edges) {
+    static void add_test_edges(const EdgeData& edges) {
         edges.push_back(1, 2, 10);
         edges.push_back(1, 3, 10);
         edges.push_back(2, 3, 20);
@@ -52,7 +52,7 @@ using GPU_USAGE_TYPES = ::testing::Types<
 TYPED_TEST_SUITE(EdgeDataWeightTest, GPU_USAGE_TYPES);
 
 TYPED_TEST(EdgeDataWeightTest, SingleTimestampGroup) {
-    const EdgeDataProxy edges(TypeParam::value);
+    const EdgeData edges(TypeParam::value);
     edges.push_back(1, 2, 10);
     edges.push_back(2, 3, 10);
     edges.update_timestamp_groups();
@@ -67,7 +67,7 @@ TYPED_TEST(EdgeDataWeightTest, SingleTimestampGroup) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, WeightNormalization) {
-    EdgeDataProxy edges(TypeParam::value);
+    EdgeData edges(TypeParam::value);
     this->add_test_edges(edges);
     edges.update_temporal_weights(-1);
 
@@ -80,7 +80,7 @@ TYPED_TEST(EdgeDataWeightTest, WeightNormalization) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, ForwardWeightBias) {
-    EdgeDataProxy edges(TypeParam::value);
+    EdgeData edges(TypeParam::value);
 
     this->add_test_edges(edges);
     edges.update_temporal_weights(-1);
@@ -96,7 +96,7 @@ TYPED_TEST(EdgeDataWeightTest, ForwardWeightBias) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, BackwardWeightBias) {
-    EdgeDataProxy edges(TypeParam::value);
+    EdgeData edges(TypeParam::value);
     this->add_test_edges(edges);
     edges.update_temporal_weights(-1);
 
@@ -111,7 +111,7 @@ TYPED_TEST(EdgeDataWeightTest, BackwardWeightBias) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, WeightExponentialDecay) {
-    const EdgeDataProxy edges(TypeParam::value);
+    const EdgeData edges(TypeParam::value);
 
     edges.push_back(1, 2, 10);
     edges.push_back(2, 3, 20);
@@ -144,7 +144,7 @@ TYPED_TEST(EdgeDataWeightTest, WeightExponentialDecay) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, UpdateWeights) {
-    EdgeDataProxy edges(TypeParam::value);
+    EdgeData edges(TypeParam::value);
     this->add_test_edges(edges);
     edges.update_temporal_weights(-1);
 
@@ -167,7 +167,7 @@ TYPED_TEST(EdgeDataWeightTest, UpdateWeights) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, TimescaleBoundZero) {
-    EdgeDataProxy edges(TypeParam::value);
+    EdgeData edges(TypeParam::value);
     this->add_test_edges(edges);
     edges.update_temporal_weights(0);  // Should behave like -1
 
@@ -176,7 +176,7 @@ TYPED_TEST(EdgeDataWeightTest, TimescaleBoundZero) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, TimescaleBoundPositive) {
-    EdgeDataProxy edges(TypeParam::value);
+    EdgeData edges(TypeParam::value);
     this->add_test_edges(edges);
     constexpr double timescale_bound = 30.0;
     edges.update_temporal_weights(timescale_bound);
@@ -208,7 +208,7 @@ TYPED_TEST(EdgeDataWeightTest, TimescaleBoundPositive) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, ScalingComparison) {
-    EdgeDataProxy edges(TypeParam::value);
+    EdgeData edges(TypeParam::value);
     this->add_test_edges(edges);
 
     // Test relative weight proportions are preserved
@@ -233,7 +233,7 @@ TYPED_TEST(EdgeDataWeightTest, ScalingComparison) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, ScaledWeightBounds) {
-    const EdgeDataProxy edges(TypeParam::value);
+    const EdgeData edges(TypeParam::value);
     edges.push_back(1, 2, 100);
     edges.push_back(2, 3, 300);
     edges.push_back(3, 4, 700);
@@ -269,7 +269,7 @@ TYPED_TEST(EdgeDataWeightTest, ScaledWeightBounds) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, DifferentTimescaleBounds) {
-    EdgeDataProxy edges(TypeParam::value);
+    EdgeData edges(TypeParam::value);
     this->add_test_edges(edges);
 
     std::vector<double> bounds = {5.0, 10.0, 20.0};
@@ -296,7 +296,7 @@ TYPED_TEST(EdgeDataWeightTest, DifferentTimescaleBounds) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, SingleTimestampWithBounds) {
-    const EdgeDataProxy edges(TypeParam::value);
+    const EdgeData edges(TypeParam::value);
     // All edges have same timestamp
     edges.push_back(1, 2, 100);
     edges.push_back(2, 3, 100);
@@ -314,7 +314,7 @@ TYPED_TEST(EdgeDataWeightTest, SingleTimestampWithBounds) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, WeightMonotonicity) {
-    EdgeDataProxy edges(TypeParam::value);
+    EdgeData edges(TypeParam::value);
     this->add_test_edges(edges);
 
     const double timescale_bound = 20.0;
@@ -352,7 +352,7 @@ TYPED_TEST(EdgeDataWeightTest, WeightMonotonicity) {
 }
 
 TYPED_TEST(EdgeDataWeightTest, TimescaleScalingPrecision) {
-    const EdgeDataProxy edges(TypeParam::value);
+    const EdgeData edges(TypeParam::value);
     // Use precise timestamps for exact validation
     edges.push_back(1, 2, 100);
     edges.push_back(2, 3, 300);

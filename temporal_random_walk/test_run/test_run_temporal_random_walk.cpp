@@ -1,6 +1,6 @@
 #include <vector>
 
-#include "../src/proxies/TemporalRandomWalkProxy.cuh"
+#include "../src/proxies/TemporalRandomWalk.cuh"
 #include "test_utils.h"
 
 #ifdef HAS_CUDA
@@ -28,7 +28,7 @@ int main() {
         {5, 4, 32}
     };
 
-    TemporalRandomWalkProxy temporal_random_walk(true, USE_GPU);
+    TemporalRandomWalk temporal_random_walk(true, USE_GPU);
     temporal_random_walk.add_multiple_edges(edges);
 
     constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;

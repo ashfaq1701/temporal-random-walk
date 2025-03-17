@@ -1,14 +1,14 @@
 #include <gtest/gtest.h>
-#include "../src/proxies/TemporalGraphProxy.cuh"
+#include "../src/proxies/TemporalGraph.cuh"
 
 template<typename T>
 class TemporalGraphTest : public ::testing::Test {
 protected:
-    std::unique_ptr<TemporalGraphProxy> graph;
+    std::unique_ptr<TemporalGraph> graph;
 
     void SetUp() override {
         // Create directed graph by default
-        graph = std::make_unique<TemporalGraphProxy>(true, T::value);
+        graph = std::make_unique<TemporalGraph>(true, T::value);
     }
 
     // Helper to create edge tuples
@@ -108,7 +108,7 @@ TYPED_TEST(TemporalGraphTest, MaintainSortedOrderTest) {
 // Test time window functionality
 TYPED_TEST(TemporalGraphTest, TimeWindowTest) {
     // Create graph with 100 time unit window
-    this->graph = std::make_unique<TemporalGraphProxy>(true, TypeParam::value, 100);
+    this->graph = std::make_unique<TemporalGraph>(true, TypeParam::value, 100);
 
     // Add edges spanning the time window
     std::vector<Edge> edges = {
@@ -155,7 +155,7 @@ TYPED_TEST(TemporalGraphTest, EdgeAdditionEdgeCasesTest) {
 
 // Test deletion of nodes when all their edges are removed
 TYPED_TEST(TemporalGraphTest, NodeDeletionTest) {
-    this->graph = std::make_unique<TemporalGraphProxy>(true, TypeParam::value, 100);  // 100 time unit window
+    this->graph = std::make_unique<TemporalGraph>(true, TypeParam::value, 100);  // 100 time unit window
 
     // Add initial edges
     std::vector<Edge> edges1 = {
@@ -180,7 +180,7 @@ TYPED_TEST(TemporalGraphTest, NodeDeletionTest) {
 
 // Test undirected graph behavior
 TYPED_TEST(TemporalGraphTest, UndirectedGraphEdgeAdditionTest) {
-    this->graph = std::make_unique<TemporalGraphProxy>(false, TypeParam::value);  // Undirected
+    this->graph = std::make_unique<TemporalGraph>(false, TypeParam::value);  // Undirected
 
     std::vector<Edge> edges = {
         Edge {2, 1, 100},  // Should be stored as (1,2,100)
@@ -228,7 +228,7 @@ TYPED_TEST(TemporalGraphTest, CountTimestampsTest) {
    EXPECT_EQ(this->graph->count_timestamps_greater_than(500), 0);  // After last timestamp
 
    // Test empty graph
-   this->graph = std::make_unique<TemporalGraphProxy>(true, TypeParam::value);
+   this->graph = std::make_unique<TemporalGraph>(true, TypeParam::value);
    EXPECT_EQ(this->graph->count_timestamps_less_than(100), 0);
    EXPECT_EQ(this->graph->count_timestamps_greater_than(100), 0);
 }
@@ -280,7 +280,7 @@ TYPED_TEST(TemporalGraphTest, CountNodeTimestampsDirectedTest) {
 
 TYPED_TEST(TemporalGraphTest, CountNodeTimestampsUndirectedTest) {
    // Create undirected graph
-   this->graph = std::make_unique<TemporalGraphProxy>(false, TypeParam::value);
+   this->graph = std::make_unique<TemporalGraph>(false, TypeParam::value);
 
    // Add edges - note that order will be normalized (smaller ID becomes source)
    std::vector<Edge> edges = {
@@ -380,7 +380,7 @@ TYPED_TEST(TemporalGraphTest, GetEdgeAtTest) {
     EXPECT_EQ(ts8, -1);
 
     // Test with empty graph
-    this->graph = std::make_unique<TemporalGraphProxy>(true, TypeParam::value);
+    this->graph = std::make_unique<TemporalGraph>(true, TypeParam::value);
     auto [src9, tgt9, ts9] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 100, true);
     EXPECT_EQ(ts9, -1);
 }

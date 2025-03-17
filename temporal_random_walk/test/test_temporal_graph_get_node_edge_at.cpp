@@ -1,14 +1,14 @@
 #include <gtest/gtest.h>
-#include "../src/proxies/TemporalGraphProxy.cuh"
+#include "../src/proxies/TemporalGraph.cuh"
 
 
 template<typename T>
 class TemporalGraphGetNodeEdgeAtTest : public ::testing::Test {
 protected:
-    std::unique_ptr<TemporalGraphProxy> graph;
+    std::unique_ptr<TemporalGraph> graph;
 
     void SetUp() override {
-        graph = std::make_unique<TemporalGraphProxy>(true, T::value); // directed graph
+        graph = std::make_unique<TemporalGraph>(true, T::value); // directed graph
     }
 
     // Helper to verify edge fields
@@ -142,7 +142,7 @@ TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, EdgeCasesTest) {
     this->verify_edge(edge, -1, -1, -1);
 
     // Test empty graph
-    this->graph = std::make_unique<TemporalGraphProxy>(true, TypeParam::value);
+    this->graph = std::make_unique<TemporalGraph>(true, TypeParam::value);
     edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, -1, true);
     this->verify_edge(edge, -1, -1, -1);
 }
@@ -197,7 +197,7 @@ TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, ExactTimestampTest) {
 // Test exact timestamp matching for undirected graphs
 TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, ExactTimestampUndirectedTest) {
     // Create undirected graph
-    this->graph = std::make_unique<TemporalGraphProxy>(false, TypeParam::value);
+    this->graph = std::make_unique<TemporalGraph>(false, TypeParam::value);
 
     auto edges = std::vector<Edge>{
         // Edges connecting to node 10

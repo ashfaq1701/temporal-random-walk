@@ -11,7 +11,7 @@
 
 #include "../common/memory.cuh"
 
-HOST void node_edge_index::clear(NodeEdgeIndex* node_edge_index) {
+HOST void node_edge_index::clear(NodeEdgeIndexStore* node_edge_index) {
     // Clear edge CSR structures
     clear_memory(&node_edge_index->outbound_offsets, node_edge_index->use_gpu);
     node_edge_index->outbound_offsets_size = 0;
@@ -49,7 +49,7 @@ HOST void node_edge_index::clear(NodeEdgeIndex* node_edge_index) {
     node_edge_index->inbound_backward_cumulative_weights_exponential_size = 0;
 }
 
-HOST DEVICE SizeRange node_edge_index::get_edge_range(const NodeEdgeIndex* node_edge_index, const int dense_node_id, const bool forward, const bool is_directed) {
+HOST DEVICE SizeRange node_edge_index::get_edge_range(const NodeEdgeIndexStore* node_edge_index, const int dense_node_id, const bool forward, const bool is_directed) {
     if (is_directed) {
         const size_t* offsets = forward ? node_edge_index->outbound_offsets : node_edge_index->inbound_offsets;
         size_t offsets_size = forward ? node_edge_index->outbound_offsets_size : node_edge_index->inbound_offsets_size;
@@ -74,7 +74,7 @@ HOST DEVICE SizeRange node_edge_index::get_edge_range(const NodeEdgeIndex* node_
     }
 }
 
-HOST DEVICE SizeRange node_edge_index::get_timestamp_group_range(const NodeEdgeIndex* node_edge_index, const int dense_node_id, const size_t group_idx, const bool forward, const bool is_directed) {
+HOST DEVICE SizeRange node_edge_index::get_timestamp_group_range(const NodeEdgeIndexStore* node_edge_index, const int dense_node_id, const size_t group_idx, const bool forward, const bool is_directed) {
     const size_t* group_offsets = nullptr;
     size_t group_offsets_size = 0;
     const size_t* group_indices = nullptr;
@@ -118,7 +118,7 @@ HOST DEVICE SizeRange node_edge_index::get_timestamp_group_range(const NodeEdgeI
     return SizeRange{group_start, group_end};
 }
 
-HOST DEVICE size_t node_edge_index::get_timestamp_group_count(const NodeEdgeIndex* node_edge_index, const int dense_node_id, const bool forward, const bool is_directed) {
+HOST DEVICE size_t node_edge_index::get_timestamp_group_count(const NodeEdgeIndexStore* node_edge_index, const int dense_node_id, const bool forward, const bool is_directed) {
     // Get the appropriate timestamp offset vector
     MemoryView<size_t> offsets_block = get_timestamp_offset_vector(node_edge_index, forward, is_directed);
     const size_t* offsets = offsets_block.data;
@@ -136,7 +136,7 @@ HOST DEVICE size_t node_edge_index::get_timestamp_group_count(const NodeEdgeInde
     return end - start;
 }
 
-HOST DEVICE MemoryView<size_t> node_edge_index::get_timestamp_offset_vector(const NodeEdgeIndex* node_edge_index, const bool forward, const bool is_directed) {
+HOST DEVICE MemoryView<size_t> node_edge_index::get_timestamp_offset_vector(const NodeEdgeIndexStore* node_edge_index, const bool forward, const bool is_directed) {
     if (is_directed && !forward) {
         return MemoryView<size_t>{
             node_edge_index->inbound_timestamp_group_offsets,
@@ -150,7 +150,7 @@ HOST DEVICE MemoryView<size_t> node_edge_index::get_timestamp_offset_vector(cons
     }
 }
 
-HOST void node_edge_index::allocate_node_edge_offsets(NodeEdgeIndex* node_edge_index, size_t num_nodes, bool is_directed) {
+HOST void node_edge_index::allocate_node_edge_offsets(NodeEdgeIndexStore* node_edge_index, size_t num_nodes, bool is_directed) {
     allocate_memory(&node_edge_index->outbound_offsets, num_nodes + 1, node_edge_index->use_gpu);
     node_edge_index->outbound_offsets_size = num_nodes + 1;
     fill_memory(node_edge_index->outbound_offsets, num_nodes + 1, static_cast<size_t>(0), node_edge_index->use_gpu);
@@ -171,7 +171,7 @@ HOST void node_edge_index::allocate_node_edge_offsets(NodeEdgeIndex* node_edge_i
     }
 }
 
-HOST void node_edge_index::allocate_node_edge_indices(NodeEdgeIndex* node_edge_index, bool is_directed) {
+HOST void node_edge_index::allocate_node_edge_indices(NodeEdgeIndexStore* node_edge_index, bool is_directed) {
     size_t num_outbound_edges = 0;
 
     #ifdef HAS_CUDA
@@ -215,7 +215,7 @@ HOST void node_edge_index::allocate_node_edge_indices(NodeEdgeIndex* node_edge_i
     }
 }
 
-HOST void node_edge_index::allocate_node_timestamp_indices(NodeEdgeIndex* node_edge_index, bool is_directed) {
+HOST void node_edge_index::allocate_node_timestamp_indices(NodeEdgeIndexStore* node_edge_index, bool is_directed) {
     size_t num_outbound_groups = 0;
 
     #ifdef HAS_CUDA
@@ -260,8 +260,8 @@ HOST void node_edge_index::allocate_node_timestamp_indices(NodeEdgeIndex* node_e
 }
 
 HOST void node_edge_index::populate_dense_ids_std(
-    EdgeData* edge_data,
-    NodeMapping* node_mapping,
+    EdgeDataStore* edge_data,
+    NodeMappingStore* node_mapping,
     int* dense_sources,
     int* dense_targets
 ) {
@@ -278,8 +278,8 @@ HOST void node_edge_index::populate_dense_ids_std(
 }
 
 HOST void node_edge_index::compute_node_edge_offsets_std(
-    NodeEdgeIndex* node_edge_index,
-    const EdgeData* edge_data,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
     const int* dense_sources,
     const int* dense_targets,
     const bool is_directed
@@ -312,8 +312,8 @@ HOST void node_edge_index::compute_node_edge_offsets_std(
 }
 
 HOST void node_edge_index::compute_node_edge_indices_std(
-    NodeEdgeIndex* node_edge_index,
-    const EdgeData* edge_data,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
     const int* dense_sources,
     const int* dense_targets,
     EdgeWithEndpointType* outbound_edge_indices_buffer,
@@ -366,8 +366,8 @@ HOST void node_edge_index::compute_node_edge_indices_std(
 }
 
 HOST void node_edge_index::compute_node_timestamp_offsets_std(
-    NodeEdgeIndex* node_edge_index,
-    const EdgeData* edge_data,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
     const size_t num_nodes,
     const bool is_directed
 ) {
@@ -437,8 +437,8 @@ HOST void node_edge_index::compute_node_timestamp_offsets_std(
 }
 
 HOST void node_edge_index::compute_node_timestamp_indices_std(
-    NodeEdgeIndex* node_edge_index,
-    const EdgeData* edge_data,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
     const size_t num_nodes,
     const bool is_directed
 ) {
@@ -489,8 +489,8 @@ HOST void node_edge_index::compute_node_timestamp_indices_std(
 }
 
 HOST void node_edge_index::update_temporal_weights_std(
-    NodeEdgeIndex* node_edge_index,
-    const EdgeData* edge_data,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
     const double timescale_bound
 ) {
     const size_t num_nodes = node_edge_index->outbound_offsets_size - 1;
@@ -628,8 +628,8 @@ HOST void node_edge_index::update_temporal_weights_std(
 #ifdef HAS_CUDA
 
 HOST void node_edge_index::populate_dense_ids_cuda(
-    const EdgeData* edge_data,
-    const NodeMapping* node_mapping,
+    const EdgeDataStore* edge_data,
+    const NodeMappingStore* node_mapping,
     int* dense_sources,
     int* dense_targets
 ) {
@@ -667,8 +667,8 @@ HOST void node_edge_index::populate_dense_ids_cuda(
 }
 
 HOST void node_edge_index::compute_node_edge_offsets_cuda(
-    NodeEdgeIndex* node_edge_index,
-    const EdgeData* edge_data,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
     int* dense_sources,
     int* dense_targets,
     bool is_directed
@@ -725,8 +725,8 @@ HOST void node_edge_index::compute_node_edge_offsets_cuda(
 }
 
 HOST void node_edge_index::compute_node_edge_indices_cuda(
-    NodeEdgeIndex* node_edge_index,
-    const EdgeData* edge_data,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
     const int* dense_sources,
     const int* dense_targets,
     EdgeWithEndpointType* outbound_edge_indices_buffer,
@@ -803,8 +803,8 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
 }
 
 HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
-    NodeEdgeIndex* node_edge_index,
-    const EdgeData* edge_data,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
     const size_t num_nodes,
     const bool is_directed
 ) {
@@ -913,8 +913,8 @@ HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
 }
 
 HOST void node_edge_index::compute_node_timestamp_indices_cuda(
-    NodeEdgeIndex* node_edge_index,
-    const EdgeData* edge_data,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
     const size_t num_nodes,
     const bool is_directed
 ) {
@@ -979,8 +979,8 @@ HOST void node_edge_index::compute_node_timestamp_indices_cuda(
 }
 
 HOST void node_edge_index::update_temporal_weights_cuda(
-    NodeEdgeIndex* node_edge_index,
-    const EdgeData* edge_data,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
     double timescale_bound
 ) {
     // Get the number of nodes and timestamp groups
@@ -1192,17 +1192,17 @@ HOST void node_edge_index::update_temporal_weights_cuda(
     }
 }
 
-HOST NodeEdgeIndex* node_edge_index::to_device_ptr(const NodeEdgeIndex* node_edge_index) {
+HOST NodeEdgeIndexStore* node_edge_index::to_device_ptr(const NodeEdgeIndexStore* node_edge_index) {
     // Create a new NodeEdgeIndex object on the device
-    NodeEdgeIndex* device_node_edge_index;
-    cudaMalloc(&device_node_edge_index, sizeof(NodeEdgeIndex));
+    NodeEdgeIndexStore* device_node_edge_index;
+    cudaMalloc(&device_node_edge_index, sizeof(NodeEdgeIndexStore));
 
     // If already using GPU, just copy the struct with its pointers
     if (node_edge_index->use_gpu) {
-        cudaMemcpy(device_node_edge_index, node_edge_index, sizeof(NodeEdgeIndex), cudaMemcpyHostToDevice);
+        cudaMemcpy(device_node_edge_index, node_edge_index, sizeof(NodeEdgeIndexStore), cudaMemcpyHostToDevice);
     } else {
         // Create a temporary copy to modify for device pointers
-        NodeEdgeIndex temp_node_edge_index = *node_edge_index;
+        NodeEdgeIndexStore temp_node_edge_index = *node_edge_index;
 
         // Copy each array to device if it exists
         if (node_edge_index->outbound_offsets) {
@@ -1293,7 +1293,7 @@ HOST NodeEdgeIndex* node_edge_index::to_device_ptr(const NodeEdgeIndex* node_edg
         temp_node_edge_index.use_gpu = true;
 
         // Copy the updated struct to device
-        cudaMemcpy(device_node_edge_index, &temp_node_edge_index, sizeof(NodeEdgeIndex), cudaMemcpyHostToDevice);
+        cudaMemcpy(device_node_edge_index, &temp_node_edge_index, sizeof(NodeEdgeIndexStore), cudaMemcpyHostToDevice);
     }
 
     return device_node_edge_index;
@@ -1301,7 +1301,7 @@ HOST NodeEdgeIndex* node_edge_index::to_device_ptr(const NodeEdgeIndex* node_edg
 
 #endif
 
-HOST void node_edge_index::rebuild(NodeEdgeIndex* node_edge_index, EdgeData* edge_data, NodeMapping* node_mapping, bool is_directed) {
+HOST void node_edge_index::rebuild(NodeEdgeIndexStore* node_edge_index, EdgeDataStore* edge_data, NodeMappingStore* node_mapping, bool is_directed) {
     // Get sizes
     const size_t num_nodes = node_mapping::size(node_mapping);
     const size_t num_edges = edge_data->timestamps_size;
