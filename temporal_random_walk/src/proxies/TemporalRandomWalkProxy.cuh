@@ -6,7 +6,11 @@
 #include "../data/structs.cuh"
 #include "../data/enums.cuh"
 
+#ifdef HAS_CUDA
+
 __global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalk* temporal_random_walk);
+
+#endif
 
 class TemporalRandomWalkProxy {
     bool use_gpu;

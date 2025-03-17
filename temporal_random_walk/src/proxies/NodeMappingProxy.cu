@@ -1,5 +1,7 @@
 #include "NodeMappingProxy.cuh"
 
+#ifdef HAS_CUDA
+
 // Kernel implementations
 __global__ void size_kernel(size_t* result, const NodeMapping* node_mapping) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
@@ -34,6 +36,8 @@ __global__ void mark_node_deleted_kernel(const NodeMapping* node_mapping, int sp
     }
 }
 
+#endif
+
 NodeMappingProxy::NodeMappingProxy(const bool use_gpu) : owns_node_mapping(true) {
     node_mapping = new NodeMapping(use_gpu);
 }
@@ -64,6 +68,7 @@ NodeMappingProxy& NodeMappingProxy::operator=(const NodeMappingProxy& other) {
 }
 
 int NodeMappingProxy::to_dense(const int sparse_id) const {
+    #ifdef HAS_CUDA
     if (node_mapping->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         int* d_result;
@@ -79,13 +84,17 @@ int NodeMappingProxy::to_dense(const int sparse_id) const {
         cudaFree(d_node_mapping);
 
         return host_result;
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         return node_mapping::to_dense(node_mapping, sparse_id);
     }
 }
 
 int NodeMappingProxy::to_sparse(int dense_id) const {
+    #ifdef HAS_CUDA
     if (node_mapping->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         int* d_result;
@@ -101,13 +110,17 @@ int NodeMappingProxy::to_sparse(int dense_id) const {
         cudaFree(d_node_mapping);
 
         return host_result;
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         return node_mapping::to_sparse(node_mapping, dense_id);
     }
 }
 
 size_t NodeMappingProxy::size() const {
+    #ifdef HAS_CUDA
     if (node_mapping->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
@@ -123,7 +136,10 @@ size_t NodeMappingProxy::size() const {
         cudaFree(d_node_mapping);
 
         return host_result;
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         return node_mapping::size(node_mapping);
     }
@@ -139,6 +155,7 @@ std::vector<int> NodeMappingProxy::get_active_node_ids() const {
     DataBlock<int> ids_block = node_mapping::get_active_node_ids(node_mapping);
     std::vector<int> result;
 
+    #ifdef HAS_CUDA
     // Copy data from DataBlock to std::vector
     if (node_mapping->use_gpu) {
         // For GPU data, need to copy from device to host
@@ -147,7 +164,10 @@ std::vector<int> NodeMappingProxy::get_active_node_ids() const {
 
         result.assign(host_ids, host_ids + ids_block.size);
         delete[] host_ids;
-    } else {
+    }
+    else
+    #endif
+    {
         // For CPU data, can directly copy
         result.assign(ids_block.data, ids_block.data + ids_block.size);
     }
@@ -166,18 +186,23 @@ void NodeMappingProxy::reserve(size_t size) const {
 }
 
 void NodeMappingProxy::mark_node_deleted(int sparse_id) const {
+    #ifdef HAS_CUDA
     if (node_mapping->use_gpu) {
         // For GPU, use mark_node_deleted_from_ptr via kernel
         NodeMapping* d_node_mapping = node_mapping::to_device_ptr(node_mapping);
         mark_node_deleted_kernel<<<1, 1>>>(d_node_mapping, sparse_id);
         cudaFree(d_node_mapping);
-    } else {
+    }
+    else
+    #endif
+    {
         // For CPU, use regular mark_node_deleted
         node_mapping::mark_node_deleted(node_mapping, sparse_id);
     }
 }
 
 bool NodeMappingProxy::has_node(int sparse_id) const {
+    #ifdef HAS_CUDA
     if (node_mapping->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         bool* d_result;
@@ -193,7 +218,10 @@ bool NodeMappingProxy::has_node(int sparse_id) const {
         cudaFree(d_node_mapping);
 
         return host_result;
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         return node_mapping::has_node(node_mapping, sparse_id);
     }
@@ -204,6 +232,7 @@ std::vector<int> NodeMappingProxy::get_all_sparse_ids() const {
     MemoryView<int> sparse_ids = node_mapping::get_all_sparse_ids(node_mapping);
     std::vector<int> result;
 
+    #ifdef HAS_CUDA
     if (node_mapping->use_gpu) {
         // For GPU data, need to copy from device to host
         const auto host_ids = new int[sparse_ids.size];
@@ -211,7 +240,10 @@ std::vector<int> NodeMappingProxy::get_all_sparse_ids() const {
 
         result.assign(host_ids, host_ids + sparse_ids.size);
         delete[] host_ids;
-    } else {
+    }
+    else
+    #endif
+    {
         // For CPU data, can directly copy
         result.assign(sparse_ids.data, sparse_ids.data + sparse_ids.size);
     }
@@ -220,10 +252,13 @@ std::vector<int> NodeMappingProxy::get_all_sparse_ids() const {
 }
 
 void NodeMappingProxy::update(const EdgeData* edge_data, size_t start_idx, size_t end_idx) const {
-    // Choose between std and cuda implementations based on mode
+    #ifdef HAS_CUDA
     if (node_mapping->use_gpu) {
         node_mapping::update_cuda(node_mapping, edge_data, start_idx, end_idx);
-    } else {
+    }
+    else
+    #endif
+    {
         node_mapping::update_std(node_mapping, edge_data, start_idx, end_idx);
     }
 }

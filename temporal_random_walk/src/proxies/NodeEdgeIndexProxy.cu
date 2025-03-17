@@ -3,6 +3,8 @@
 #include "../stores/node_edge_index.cuh"
 #include "../data/structs.cuh"
 
+#ifdef HAS_CUDA
+
 __global__ void get_edge_range_kernel(SizeRange* result, const NodeEdgeIndex* node_edge_index, int dense_node_id, bool forward, bool is_directed) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = node_edge_index::get_edge_range(node_edge_index, dense_node_id, forward, is_directed);
@@ -20,6 +22,8 @@ __global__ void get_timestamp_group_count_kernel(size_t* result, const NodeEdgeI
         *result = node_edge_index::get_timestamp_group_count(node_edge_index, dense_node_id, forward, is_directed);
     }
 }
+
+#endif
 
 NodeEdgeIndexProxy::NodeEdgeIndexProxy(bool use_gpu): owns_node_edge_index(true) {
     node_edge_index = new NodeEdgeIndex(use_gpu);
@@ -59,6 +63,7 @@ void NodeEdgeIndexProxy::rebuild(EdgeData* edge_data, NodeMapping* node_mapping,
 }
 
 std::pair<size_t, size_t> NodeEdgeIndexProxy::get_edge_range(int dense_node_id, bool forward, bool is_directed) const {
+    #ifdef HAS_CUDA
     if (node_edge_index->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         SizeRange* d_result;
@@ -74,7 +79,10 @@ std::pair<size_t, size_t> NodeEdgeIndexProxy::get_edge_range(int dense_node_id, 
         cudaFree(d_node_edge_index);
 
         return {host_result.from, host_result.to};
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         SizeRange result = node_edge_index::get_edge_range(node_edge_index, dense_node_id, forward, is_directed);
         return {result.from, result.to};
@@ -82,6 +90,7 @@ std::pair<size_t, size_t> NodeEdgeIndexProxy::get_edge_range(int dense_node_id, 
 }
 
 std::pair<size_t, size_t> NodeEdgeIndexProxy::get_timestamp_group_range(int dense_node_id, size_t group_idx, bool forward, bool is_directed) const {
+    #ifdef HAS_CUDA
     if (node_edge_index->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         SizeRange* d_result;
@@ -97,7 +106,10 @@ std::pair<size_t, size_t> NodeEdgeIndexProxy::get_timestamp_group_range(int dens
         cudaFree(d_node_edge_index);
 
         return {host_result.from, host_result.to};
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         SizeRange result = node_edge_index::get_timestamp_group_range(node_edge_index, dense_node_id, group_idx, forward, is_directed);
         return {result.from, result.to};
@@ -105,6 +117,7 @@ std::pair<size_t, size_t> NodeEdgeIndexProxy::get_timestamp_group_range(int dens
 }
 
 size_t NodeEdgeIndexProxy::get_timestamp_group_count(int dense_node_id, bool forward, bool is_directed) const {
+    #ifdef HAS_CUDA
     if (node_edge_index->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
@@ -120,16 +133,23 @@ size_t NodeEdgeIndexProxy::get_timestamp_group_count(int dense_node_id, bool for
         cudaFree(d_node_edge_index);
 
         return host_result;
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         return node_edge_index::get_timestamp_group_count(node_edge_index, dense_node_id, forward, is_directed);
     }
 }
 
 void NodeEdgeIndexProxy::update_temporal_weights(const EdgeData* edge_data, const double timescale_bound) const {
+    #ifdef HAS_CUDA
     if (node_edge_index->use_gpu) {
         node_edge_index::update_temporal_weights_cuda(node_edge_index, edge_data, timescale_bound);
-    } else {
+    }
+    else
+    #endif
+    {
         node_edge_index::update_temporal_weights_std(node_edge_index, edge_data, timescale_bound);
     }
 }

@@ -3,6 +3,8 @@
 #include "../src/random/pickers.cuh"
 #include "../src/common/setup.cuh"
 
+#ifdef HAS_CUDA
+
 __global__ void pick_exponential_random_number_cuda_kernel(
     int* result,
     const int start,
@@ -18,9 +20,12 @@ __global__ void pick_exponential_random_number_cuda_kernel(
     }
 }
 
+#endif
+
 ExponentialIndexRandomPickerProxy::ExponentialIndexRandomPickerProxy(const bool use_gpu) : use_gpu(use_gpu) {}
 
 int ExponentialIndexRandomPickerProxy::pick_random(const int start, const int end, const bool prioritize_end) const {
+    #ifdef HAS_CUDA
     if (use_gpu) {
         // Initialize CUDA random states (1 thread is enough since we only need 1 random number)
         curandState* rand_states = get_cuda_rand_states(1, 1);
@@ -41,11 +46,15 @@ int ExponentialIndexRandomPickerProxy::pick_random(const int start, const int en
         cudaFree(rand_states);
 
         return h_result;
-    } else {
+    }
+    else
+    #endif
+    {
         return random_pickers::pick_random_exponential_index_host(start, end, prioritize_end);
     }
 }
 
+#ifdef HAS_CUDA
 
 __global__ void pick_linear_random_number_cuda_kernel(
     int* result,
@@ -62,9 +71,12 @@ __global__ void pick_linear_random_number_cuda_kernel(
     }
 }
 
+#endif
+
 LinearRandomPickerProxy::LinearRandomPickerProxy(const bool use_gpu) : use_gpu(use_gpu) {}
 
 int LinearRandomPickerProxy::pick_random(const int start, const int end, const bool prioritize_end) const {
+    #ifdef HAS_CUDA
     if (use_gpu) {
         // Initialize CUDA random states (1 thread is enough since we only need 1 random number)
         curandState* rand_states = get_cuda_rand_states(1, 1);
@@ -85,12 +97,15 @@ int LinearRandomPickerProxy::pick_random(const int start, const int end, const b
         cudaFree(rand_states);
 
         return h_result;
-    } else {
+    }
+    else
+    #endif
+    {
         return random_pickers::pick_random_linear_host(start, end, prioritize_end);
     }
 }
 
-
+#ifdef HAS_CUDA
 __global__ void pick_uniform_random_number_cuda_kernel(
     int* result,
     const int start,
@@ -104,10 +119,12 @@ __global__ void pick_uniform_random_number_cuda_kernel(
         *result = random_pickers::pick_random_uniform_device(start, end, &rand_states[idx]);
     }
 }
+#endif
 
 UniformRandomPickerProxy::UniformRandomPickerProxy(const bool use_gpu) : use_gpu(use_gpu) {}
 
 int UniformRandomPickerProxy::pick_random(const int start, const int end, const bool /* prioritize_end */) const {
+    #ifdef HAS_CUDA
     if (use_gpu) {
         // Initialize CUDA random states (1 thread is enough since we only need 1 random number)
         curandState* rand_states = get_cuda_rand_states(1, 1);
@@ -128,11 +145,15 @@ int UniformRandomPickerProxy::pick_random(const int start, const int end, const 
         cudaFree(rand_states);
 
         return h_result;
-    } else {
+    }
+    else
+    #endif
+    {
         return random_pickers::pick_random_uniform_host(start, end);
     }
 }
 
+#ifdef HAS_CUDA
 __global__ void pick_weighted_random_number_cuda_kernel(
     int* result,
     double* weights,
@@ -148,10 +169,12 @@ __global__ void pick_weighted_random_number_cuda_kernel(
         *result = random_pickers::pick_random_exponential_weights_device(weights, weights_size, group_start, group_end, &rand_states[idx]);
     }
 }
+#endif
 
 WeightBasedRandomPickerProxy::WeightBasedRandomPickerProxy(const bool use_gpu) : use_gpu(use_gpu) {}
 
 int WeightBasedRandomPickerProxy::pick_random(const double* weights, const size_t weights_size, const size_t group_start, const size_t group_end) const {
+    #ifdef HAS_CUDA
     if (use_gpu) {
         // Initialize CUDA random states
         curandState* rand_states = get_cuda_rand_states(1, 1);
@@ -180,7 +203,10 @@ int WeightBasedRandomPickerProxy::pick_random(const double* weights, const size_
         cudaFree(rand_states);
 
         return h_result;
-    } else {
+    }
+    else
+    #endif
+    {
         return random_pickers::pick_random_exponential_weights_host(
             const_cast<double*>(weights), weights_size, group_start, group_end);
     }

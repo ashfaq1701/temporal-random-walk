@@ -2,7 +2,10 @@
 
 #include <cmath>
 #include <stdexcept>
+
+#ifdef HAS_CUDA
 #include <cuda/std/__algorithm/lower_bound.h>
+#endif
 
 #include "../utils/random.cuh"
 
@@ -106,6 +109,7 @@ HOST int random_pickers::pick_random_exponential_weights_host(double* weights, c
             random_val) - weights);
 }
 
+#ifdef HAS_CUDA
 DEVICE int random_pickers::pick_random_linear_device(const int start, const int end, const bool prioritize_end, curandState* rand_state) {
     if (start >= end) {
         return -1;
@@ -206,6 +210,8 @@ DEVICE int random_pickers::pick_random_exponential_weights_device(double* weight
             random_val) - weights);
 }
 
+#endif
+
 HOST DEVICE bool random_pickers::is_index_based_picker(const RandomPickerType picker_type) {
     return picker_type == RandomPickerType::Linear || picker_type == RandomPickerType::Uniform ||
         picker_type == RandomPickerType::ExponentialIndex ||
@@ -231,30 +237,32 @@ HOST int random_pickers::pick_using_index_based_picker_host(const RandomPickerTy
     }
 }
 
-DEVICE int random_pickers::pick_using_index_based_picker_device(const RandomPickerType random_picker, const int start, const int end, const bool prioritize_end, curandState* rand_state) {
-    switch (random_picker) {
-        case RandomPickerType::Linear:
-            return pick_random_linear_device(start, end, prioritize_end, rand_state);
-        case RandomPickerType::ExponentialIndex:
-            return pick_random_exponential_index_device(start, end, prioritize_end, rand_state);
-        case RandomPickerType::Uniform:
-            return pick_random_uniform_device(start, end, rand_state);
-        // ONLY FOR TEST
-        case RandomPickerType::TEST_FIRST:
-            return start;
-        case RandomPickerType::TEST_LAST:
-            return end - 1;
-        default:
-            return -1;
-    }
-}
-
 HOST int random_pickers::pick_using_weight_based_picker_host(const RandomPickerType random_picker, double* weights, const size_t weights_size, const size_t group_start, const size_t group_end) {
     if (random_picker != RandomPickerType::ExponentialWeight) {
         return -1;
     }
 
     return pick_random_exponential_weights_host(weights, weights_size, group_start, group_end);
+}
+
+#ifdef HAS_CUDA
+
+DEVICE int random_pickers::pick_using_index_based_picker_device(const RandomPickerType random_picker, const int start, const int end, const bool prioritize_end, curandState* rand_state) {
+    switch (random_picker) {
+    case RandomPickerType::Linear:
+        return pick_random_linear_device(start, end, prioritize_end, rand_state);
+    case RandomPickerType::ExponentialIndex:
+        return pick_random_exponential_index_device(start, end, prioritize_end, rand_state);
+    case RandomPickerType::Uniform:
+        return pick_random_uniform_device(start, end, rand_state);
+        // ONLY FOR TEST
+    case RandomPickerType::TEST_FIRST:
+        return start;
+    case RandomPickerType::TEST_LAST:
+        return end - 1;
+    default:
+        return -1;
+    }
 }
 
 DEVICE int random_pickers::pick_using_weight_based_picker_device(const RandomPickerType random_picker, double* weights, const size_t weights_size, const size_t group_start, const size_t group_end, curandState* rand_state) {
@@ -264,3 +272,5 @@ DEVICE int random_pickers::pick_using_weight_based_picker_device(const RandomPic
 
     return pick_random_exponential_weights_device(weights, weights_size, group_start, group_end, rand_state);
 }
+
+#endif

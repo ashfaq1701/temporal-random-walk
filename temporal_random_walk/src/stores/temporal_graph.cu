@@ -18,10 +18,14 @@
 #include "node_mapping.cuh"
 
 HOST void temporal_graph::update_temporal_weights(const TemporalGraph* graph) {
+    #ifdef HAS_CUDA
     if (graph->use_gpu) {
         edge_data::update_temporal_weights_cuda(graph->edge_data, graph->timescale_bound);
         node_edge_index::update_temporal_weights_cuda(graph->node_edge_index, graph->edge_data, graph->timescale_bound);
-    } else {
+    }
+    else
+    #endif
+    {
         edge_data::update_temporal_weights_std(graph->edge_data, graph->timescale_bound);
         node_edge_index::update_temporal_weights_std(graph->node_edge_index, graph->edge_data, graph->timescale_bound);
     }
@@ -347,6 +351,7 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_std(TemporalGraph
     return std::distance(it, timestamp_group_indices + static_cast<int>(group_end));
 }
 
+#ifdef HAS_CUDA
 HOST void temporal_graph::add_multiple_edges_cuda(TemporalGraph* graph, const Edge* new_edges, const size_t num_new_edges) {
     if (num_new_edges == 0) return;
 
@@ -776,6 +781,7 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_cuda(const Tempor
 
     return thrust::distance(it, thrust::device_pointer_cast(timestamp_group_indices) + static_cast<int>(group_end));
 }
+#endif
 
 HOST Edge temporal_graph::get_edge_at_host(
     const TemporalGraph* graph,
@@ -1069,6 +1075,7 @@ HOST Edge temporal_graph::get_node_edge_at_host(
     };
 }
 
+#ifdef HAS_CUDA
 DEVICE Edge temporal_graph::get_edge_at_device(
     const TemporalGraph* graph,
         const RandomPickerType picker_type,
@@ -1400,3 +1407,5 @@ HOST TemporalGraph* temporal_graph::to_device_ptr(const TemporalGraph* graph) {
 
     return device_graph;
 }
+
+#endif

@@ -1,10 +1,14 @@
 #include "TemporalRandomWalkProxy.cuh"
 
+#ifdef HAS_CUDA
+
 __global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalk* temporal_random_walk) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = temporal_random_walk::get_edge_count(temporal_random_walk);
     }
 }
+
+#endif
 
 TemporalRandomWalkProxy::TemporalRandomWalkProxy(
         const bool is_directed,
@@ -40,6 +44,8 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalkProxy::get_random_walks
         const WalkDirection walk_direction) const {
 
     WalkSet walk_set;
+
+    #ifdef HAS_CUDA
     if (use_gpu) {
         walk_set = temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
             temporal_random_walk,
@@ -48,7 +54,10 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalkProxy::get_random_walks
             num_walks_per_node,
             initial_edge_bias,
             walk_direction);
-    } else {
+    }
+    else
+    #endif
+    {
         walk_set = temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
             temporal_random_walk,
             max_walk_len,
@@ -106,6 +115,8 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalkProxy::get_random_walks
         const WalkDirection walk_direction) const {
 
     WalkSet walk_set;
+
+    #ifdef HAS_CUDA
     if (use_gpu) {
         walk_set = temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
             temporal_random_walk,
@@ -114,7 +125,10 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalkProxy::get_random_walks
             num_walks_total,
             initial_edge_bias,
             walk_direction);
-    } else {
+    }
+    else
+    #endif
+    {
         walk_set = temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
             temporal_random_walk,
             max_walk_len,
@@ -169,6 +183,7 @@ size_t TemporalRandomWalkProxy::get_node_count() const {
 }
 
 size_t TemporalRandomWalkProxy::get_edge_count() const {
+    #ifdef HAS_CUDA
     if (use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
@@ -184,7 +199,10 @@ size_t TemporalRandomWalkProxy::get_edge_count() const {
         cudaFree(d_temporal_random_walk);
 
         return host_result;
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         return temporal_random_walk::get_edge_count(temporal_random_walk);
     }
@@ -194,6 +212,7 @@ std::vector<int> TemporalRandomWalkProxy::get_node_ids() const {
     const DataBlock<int> node_ids = temporal_random_walk::get_node_ids(temporal_random_walk);
     std::vector<int> result;
 
+    #ifdef HAS_CUDA
     if (node_ids.use_gpu) {
         // Allocate temporary host memory
         int* host_data = new int[node_ids.size];
@@ -204,7 +223,10 @@ std::vector<int> TemporalRandomWalkProxy::get_node_ids() const {
         result.assign(host_data, host_data + node_ids.size);
 
         delete[] host_data;
-    } else {
+    }
+    else
+    #endif
+    {
         result.assign(node_ids.data, node_ids.data + node_ids.size);
     }
 
@@ -216,6 +238,7 @@ std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalkProxy::get_edges() 
     std::vector<std::tuple<int, int, int64_t>> result;
     result.reserve(edges.size);
 
+    #ifdef HAS_CUDA
     if (edges.use_gpu) {
         auto host_edges = new Edge[edges.size];
         cudaMemcpy(host_edges, edges.data,
@@ -227,7 +250,10 @@ std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalkProxy::get_edges() 
         }
 
         delete[] host_edges;
-    } else {
+    }
+    else
+    #endif
+    {
         for (size_t i = 0; i < edges.size; i++) {
             result.emplace_back(edges.data[i].u, edges.data[i].i, edges.data[i].ts);
         }

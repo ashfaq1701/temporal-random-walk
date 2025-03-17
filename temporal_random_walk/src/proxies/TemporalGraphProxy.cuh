@@ -5,9 +5,13 @@
 #include "../data/structs.cuh"
 #include "../data/enums.cuh"
 
+#ifdef HAS_CUDA
+
 __global__ void get_total_edges_kernel(size_t* result, const TemporalGraph* graph);
 __global__ void get_edge_at_kernel(Edge* result, const TemporalGraph* graph, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state);
 __global__ void get_node_edge_at_kernel(Edge* result, TemporalGraph* graph, int node_id, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state);
+
+#endif
 
 class TemporalGraphProxy {
 public:

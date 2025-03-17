@@ -104,9 +104,13 @@ struct DataBlock {
 
     HOST ~DataBlock() {
         if (data) {
+            #ifdef HAS_CUDA
             if (use_gpu) {
                 cudaFree(data);
-            } else {
+            }
+            else
+            #endif
+            {
                 delete[] data;
             }
         }

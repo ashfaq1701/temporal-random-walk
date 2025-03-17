@@ -1,5 +1,7 @@
 #include "EdgeDataProxy.cuh"
 
+#ifdef HAS_CUDA
+
 __global__ void empty_kernel(bool* result, const EdgeData* edge_data) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = edge_data::empty(edge_data);
@@ -37,6 +39,8 @@ __global__ void get_timestamp_group_count_kernel(size_t* result, const EdgeData*
     }
 }
 
+#endif
+
 EdgeDataProxy::EdgeDataProxy(const bool use_gpu): owns_edge_data(true) {
     edge_data = new EdgeData(use_gpu);
 }
@@ -70,6 +74,7 @@ void EdgeDataProxy::clear() const {
 }
 
 size_t EdgeDataProxy::size() const {
+    #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
@@ -85,7 +90,10 @@ size_t EdgeDataProxy::size() const {
         cudaFree(d_edge_data);
 
         return host_result;
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         return edge_data::size(edge_data);
     }
@@ -100,6 +108,7 @@ void EdgeDataProxy::set_size(const size_t size) const {
 }
 
 bool EdgeDataProxy::empty() const {
+    #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         bool* d_result;
@@ -115,7 +124,10 @@ bool EdgeDataProxy::empty() const {
         cudaFree(d_edge_data);
 
         return host_result;
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         return edge_data::empty(edge_data);
     }
@@ -132,6 +144,7 @@ void EdgeDataProxy::add_edges(const std::vector<int>& sources, const std::vector
 }
 
 void EdgeDataProxy::push_back(const int source, const int target, const int64_t timestamp) const {
+    #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Allocate GPU memory for single elements
         int* d_source = nullptr;
@@ -154,7 +167,10 @@ void EdgeDataProxy::push_back(const int source, const int target, const int64_t 
         cudaFree(d_source);
         cudaFree(d_target);
         cudaFree(d_timestamp);
-    } else {
+    }
+    else
+    #endif
+    {
         // For CPU implementation, create small arrays
         const int sources[1] = { source };
         const int targets[1] = { target };
@@ -170,6 +186,7 @@ std::vector<Edge> EdgeDataProxy::get_edges() const {
     std::vector<Edge> result;
 
     // Copy data from DataBlock to std::vector
+    #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // For GPU data, need to copy from device to host
         const auto host_edges = new Edge[edges_block.size];
@@ -182,7 +199,10 @@ std::vector<Edge> EdgeDataProxy::get_edges() const {
         if (edges_block.data) {
             cudaFree(edges_block.data);
         }
-    } else {
+    }
+    else
+    #endif
+    {
         // For CPU data, can directly copy
         result.assign(edges_block.data, edges_block.data + edges_block.size);
 
@@ -194,22 +214,31 @@ std::vector<Edge> EdgeDataProxy::get_edges() const {
 }
 
 void EdgeDataProxy::update_timestamp_groups() const {
+    #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         edge_data::update_timestamp_groups_cuda(edge_data);
-    } else {
+    }
+    else
+    #endif
+    {
         edge_data::update_timestamp_groups_std(edge_data);
     }
 }
 
 void EdgeDataProxy::update_temporal_weights(double timescale_bound) const {
+    #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         edge_data::update_temporal_weights_cuda(edge_data, timescale_bound);
-    } else {
+    }
+    else
+    #endif
+    {
         edge_data::update_temporal_weights_std(edge_data, timescale_bound);
     }
 }
 
 std::pair<size_t, size_t> EdgeDataProxy::get_timestamp_group_range(size_t group_idx) const {
+    #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         SizeRange* d_result;
@@ -225,7 +254,10 @@ std::pair<size_t, size_t> EdgeDataProxy::get_timestamp_group_range(size_t group_
         cudaFree(d_edge_data);
 
         return {host_result.from, host_result.to};
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         SizeRange result = edge_data::get_timestamp_group_range(edge_data, group_idx);
         return {result.from, result.to};
@@ -233,6 +265,7 @@ std::pair<size_t, size_t> EdgeDataProxy::get_timestamp_group_range(size_t group_
 }
 
 size_t EdgeDataProxy::get_timestamp_group_count() const {
+    #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
@@ -248,13 +281,17 @@ size_t EdgeDataProxy::get_timestamp_group_count() const {
         cudaFree(d_edge_data);
 
         return host_result;
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         return edge_data::get_timestamp_group_count(edge_data);
     }
 }
 
 size_t EdgeDataProxy::find_group_after_timestamp(int64_t timestamp) const {
+    #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
@@ -270,13 +307,17 @@ size_t EdgeDataProxy::find_group_after_timestamp(int64_t timestamp) const {
         cudaFree(d_edge_data);
 
         return host_result;
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         return edge_data::find_group_after_timestamp(edge_data, timestamp);
     }
 }
 
 size_t EdgeDataProxy::find_group_before_timestamp(int64_t timestamp) const {
+    #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
@@ -292,7 +333,10 @@ size_t EdgeDataProxy::find_group_before_timestamp(int64_t timestamp) const {
         cudaFree(d_edge_data);
 
         return host_result;
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         return edge_data::find_group_before_timestamp(edge_data, timestamp);
     }

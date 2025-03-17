@@ -3,7 +3,11 @@
 #include "../src/proxies/TemporalRandomWalkProxy.cuh"
 #include "test_utils.h"
 
+#ifdef HAS_CUDA
+constexpr bool USE_GPU = true;
+#else
 constexpr bool USE_GPU = false;
+#endif
 
 int main() {
     const std::vector<std::tuple<int, int, int64_t>> edges {

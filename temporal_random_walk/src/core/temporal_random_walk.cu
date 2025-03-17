@@ -4,9 +4,13 @@
 #include "../common/setup.cuh"
 
 HOST void temporal_random_walk::add_multiple_edges(const TemporalRandomWalk* temporal_random_walk, const Edge* edge_infos, const size_t num_edges) {
+    #ifdef HAS_CUDA
     if (temporal_random_walk->use_gpu) {
         temporal_graph::add_multiple_edges_cuda(temporal_random_walk->temporal_graph, edge_infos, num_edges);
-    } else {
+    }
+    else
+    #endif
+    {
         temporal_graph::add_multiple_edges_std(temporal_random_walk->temporal_graph, edge_infos, num_edges);
     }
 }

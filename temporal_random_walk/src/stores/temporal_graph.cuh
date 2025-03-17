@@ -80,6 +80,8 @@ namespace temporal_graph {
      * CUDA implementations
      */
 
+    #ifdef HAS_CUDA
+
     HOST void add_multiple_edges_cuda(TemporalGraph* graph, const Edge* new_edges, size_t num_new_edges);
 
     HOST void sort_and_merge_edges_cuda(TemporalGraph* graph, size_t start_idx);
@@ -93,6 +95,8 @@ namespace temporal_graph {
     HOST size_t count_node_timestamps_less_than_cuda(const TemporalGraph* graph, int node_id, int64_t timestamp);
 
     HOST size_t count_node_timestamps_greater_than_cuda(const TemporalGraph* graph, int node_id, int64_t timestamp);
+
+    #endif
 
     /**
      * Host functions
@@ -115,6 +119,8 @@ namespace temporal_graph {
      * Device functions
      */
 
+    #ifdef HAS_CUDA
+
     DEVICE Edge get_edge_at_device(
         const TemporalGraph* graph,
         RandomPickerType picker_type,
@@ -131,6 +137,8 @@ namespace temporal_graph {
         curandState* rand_state);
 
     HOST TemporalGraph* to_device_ptr(const TemporalGraph* graph);
+
+    #endif
 
 }
 

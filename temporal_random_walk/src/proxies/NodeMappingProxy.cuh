@@ -4,11 +4,15 @@
 #include "../stores/node_mapping.cuh"
 
 // Kernel declarations for device operations
+#ifdef HAS_CUDA
+
 __global__ void size_kernel(size_t* result, const NodeMapping* node_mapping);
 __global__ void to_dense_kernel(int* result, const NodeMapping* node_mapping, int sparse_id);
 __global__ void to_sparse_kernel(int* result, const NodeMapping* node_mapping, int dense_id);
 __global__ void has_node_kernel(bool* result, const NodeMapping* node_mapping, int sparse_id);
 __global__ void mark_node_deleted_kernel(const NodeMapping* node_mapping, int sparse_id);
+
+#endif
 
 class NodeMappingProxy {
 
@@ -18,13 +22,17 @@ public:
     bool owns_node_mapping;
 
     std::vector<int> sparse_to_dense() const {
+        #ifdef HAS_CUDA
         if (node_mapping->use_gpu) {
             std::vector<int> result(node_mapping->sparse_to_dense_size);
             cudaMemcpy(result.data(), node_mapping->sparse_to_dense,
                       node_mapping->sparse_to_dense_size * sizeof(int),
                       cudaMemcpyDeviceToHost);
             return result;
-        } else {
+        }
+        else
+        #endif
+        {
             return std::vector<int>(node_mapping->sparse_to_dense,
                                    node_mapping->sparse_to_dense +
                                    node_mapping->sparse_to_dense_size);
@@ -32,13 +40,17 @@ public:
     }
 
     std::vector<int> dense_to_sparse() const {
+        #ifdef HAS_CUDA
         if (node_mapping->use_gpu) {
             std::vector<int> result(node_mapping->dense_to_sparse_size);
             cudaMemcpy(result.data(), node_mapping->dense_to_sparse,
                       node_mapping->dense_to_sparse_size * sizeof(int),
                       cudaMemcpyDeviceToHost);
             return result;
-        } else {
+        }
+        else
+        #endif
+        {
             return std::vector<int>(node_mapping->dense_to_sparse,
                                    node_mapping->dense_to_sparse +
                                    node_mapping->dense_to_sparse_size);
@@ -46,6 +58,7 @@ public:
     }
 
     std::vector<bool> is_deleted() const {
+        #ifdef HAS_CUDA
         if (node_mapping->use_gpu) {
             std::vector<char> temp_buffer(node_mapping->is_deleted_size);
 
@@ -54,7 +67,10 @@ public:
                        cudaMemcpyDeviceToHost);
 
             return std::vector<bool>(temp_buffer.begin(), temp_buffer.end());
-        } else {
+        }
+        else
+        #endif
+        {
             return std::vector<bool>(node_mapping->is_deleted,
                         node_mapping->is_deleted + node_mapping->is_deleted_size);
         }

@@ -1,6 +1,8 @@
 #include "TemporalGraphProxy.cuh"
 #include "../common/setup.cuh"
 
+#ifdef HAS_CUDA
+
 __global__ void get_total_edges_kernel(size_t* result, const TemporalGraph* graph) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = temporal_graph::get_total_edges(graph);
@@ -18,6 +20,8 @@ __global__ void get_node_edge_at_kernel(Edge* result, TemporalGraph* graph, int 
         *result = temporal_graph::get_node_edge_at_device(graph, node_id, picker_type, timestamp, forward, rand_state);
     }
 }
+
+#endif
 
 TemporalGraphProxy::TemporalGraphProxy(
     const bool is_directed,
@@ -65,6 +69,7 @@ void TemporalGraphProxy::update_temporal_weights() const {
 }
 
 size_t TemporalGraphProxy::get_total_edges() const {
+    #ifdef HAS_CUDA
     if (graph->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
@@ -80,7 +85,10 @@ size_t TemporalGraphProxy::get_total_edges() const {
         cudaFree(d_graph);
 
         return host_result;
-    } else {
+    }
+    else
+    #endif
+    {
         // Direct call for CPU implementation
         return temporal_graph::get_total_edges(graph);
     }
@@ -98,6 +106,7 @@ std::vector<int> TemporalGraphProxy::get_node_ids() const {
     DataBlock<int> node_ids = temporal_graph::get_node_ids(graph);
     std::vector<int> result;
 
+    #ifdef HAS_CUDA
     if (graph->use_gpu) {
         // For GPU data, need to copy from device to host
         const auto host_ids = new int[node_ids.size];
@@ -105,7 +114,10 @@ std::vector<int> TemporalGraphProxy::get_node_ids() const {
 
         result.assign(host_ids, host_ids + node_ids.size);
         delete[] host_ids;
-    } else {
+    }
+    else
+    #endif
+    {
         // For CPU data, can directly copy
         result.assign(node_ids.data, node_ids.data + node_ids.size);
     }
@@ -117,6 +129,7 @@ std::vector<Edge> TemporalGraphProxy::get_edges() const {
     DataBlock<Edge> edges = temporal_graph::get_edges(graph);
     std::vector<Edge> result;
 
+    #ifdef HAS_CUDA
     if (graph->use_gpu) {
         // For GPU data, need to copy from device to host
         const auto host_edges = new Edge[edges.size];
@@ -124,7 +137,10 @@ std::vector<Edge> TemporalGraphProxy::get_edges() const {
 
         result.assign(host_edges, host_edges + edges.size);
         delete[] host_edges;
-    } else {
+    }
+    else
+    #endif
+    {
         // For CPU data, can directly copy
         result.assign(edges.data, edges.data + edges.size);
     }
@@ -133,6 +149,7 @@ std::vector<Edge> TemporalGraphProxy::get_edges() const {
 }
 
 void TemporalGraphProxy::add_multiple_edges(const std::vector<Edge>& new_edges) const {
+    #ifdef HAS_CUDA
     if (graph->use_gpu) {
         // Allocate device memory for edges
         Edge* d_edges = nullptr;
@@ -146,61 +163,89 @@ void TemporalGraphProxy::add_multiple_edges(const std::vector<Edge>& new_edges) 
 
         // Clean up
         cudaFree(d_edges);
-    } else {
+    }
+    else
+    #endif
+    {
         // Call CPU implementation directly
         temporal_graph::add_multiple_edges_std(graph, new_edges.data(), new_edges.size());
     }
 }
 
 void TemporalGraphProxy::sort_and_merge_edges(size_t start_idx) const {
+    #ifdef HAS_CUDA
     if (graph->use_gpu) {
         temporal_graph::sort_and_merge_edges_cuda(graph, start_idx);
-    } else {
+    }
+    else
+    #endif
+    {
         temporal_graph::sort_and_merge_edges_std(graph, start_idx);
     }
 }
 
 void TemporalGraphProxy::delete_old_edges() const {
+    #ifdef HAS_CUDA
     if (graph->use_gpu) {
         temporal_graph::delete_old_edges_cuda(graph);
-    } else {
+    }
+    else
+    #endif
+    {
         temporal_graph::delete_old_edges_std(graph);
     }
 }
 
 size_t TemporalGraphProxy::count_timestamps_less_than(int64_t timestamp) const {
+    #ifdef HAS_CUDA
     if (graph->use_gpu) {
         return temporal_graph::count_timestamps_less_than_cuda(graph, timestamp);
-    } else {
+    }
+    else
+    #endif
+    {
         return temporal_graph::count_timestamps_less_than_std(graph, timestamp);
     }
 }
 
 size_t TemporalGraphProxy::count_timestamps_greater_than(int64_t timestamp) const {
+    #ifdef HAS_CUDA
     if (graph->use_gpu) {
         return temporal_graph::count_timestamps_greater_than_cuda(graph, timestamp);
-    } else {
+    }
+    else
+    #endif
+    {
         return temporal_graph::count_timestamps_greater_than_std(graph, timestamp);
     }
 }
 
 size_t TemporalGraphProxy::count_node_timestamps_less_than(int node_id, int64_t timestamp) const {
+    #ifdef HAS_CUDA
     if (graph->use_gpu) {
         return temporal_graph::count_node_timestamps_less_than_cuda(graph, node_id, timestamp);
-    } else {
+    }
+    else
+    #endif
+    {
         return temporal_graph::count_node_timestamps_less_than_std(graph, node_id, timestamp);
     }
 }
 
 size_t TemporalGraphProxy::count_node_timestamps_greater_than(int node_id, int64_t timestamp) const {
+    #ifdef HAS_CUDA
     if (graph->use_gpu) {
         return temporal_graph::count_node_timestamps_greater_than_cuda(graph, node_id, timestamp);
-    } else {
+    }
+    else
+    #endif
+    {
         return temporal_graph::count_node_timestamps_greater_than_std(graph, node_id, timestamp);
     }
 }
 
 Edge TemporalGraphProxy::get_edge_at(RandomPickerType picker_type, int64_t timestamp, bool forward) const {
+    #ifdef HAS_CUDA
     if (graph->use_gpu) {
         // Set up random state
         curandState* d_rand_states;
@@ -227,13 +272,17 @@ Edge TemporalGraphProxy::get_edge_at(RandomPickerType picker_type, int64_t times
         cudaFree(d_graph);
 
         return host_result;
-    } else {
+    }
+    else
+    #endif
+    {
         // Call CPU implementation directly
         return temporal_graph::get_edge_at_host(graph, picker_type, timestamp, forward);
     }
 }
 
 Edge TemporalGraphProxy::get_node_edge_at(int node_id, RandomPickerType picker_type, int64_t timestamp, bool forward) const {
+    #ifdef HAS_CUDA
     if (graph->use_gpu) {
         // Set up random state
         curandState* d_rand_states;
@@ -260,7 +309,10 @@ Edge TemporalGraphProxy::get_node_edge_at(int node_id, RandomPickerType picker_t
         cudaFree(d_graph);
 
         return host_result;
-    } else {
+    }
+    else
+    #endif
+    {
         // Call CPU implementation directly
         return temporal_graph::get_node_edge_at_host(graph, node_id, picker_type, timestamp, forward);
     }

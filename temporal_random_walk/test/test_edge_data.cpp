@@ -22,7 +22,7 @@ using GPU_USAGE_TYPES = ::testing::Types<
     std::integral_constant<bool, true>
 >;
 #else
-using GPU_USAGE_TYPES = ::testing::Types
+using GPU_USAGE_TYPES = ::testing::Types<
     std::integral_constant<bool, false>   // CPU mode only
 >;
 #endif

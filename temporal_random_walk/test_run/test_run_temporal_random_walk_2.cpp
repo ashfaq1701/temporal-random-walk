@@ -4,7 +4,12 @@
 #include "test_utils.h"
 #include "../test/test_utils.h"
 
+#ifdef HAS_CUDA
+constexpr bool USE_GPU = true;
+#else
 constexpr bool USE_GPU = false;
+#endif
+
 constexpr int NUM_WALKS_PER_NODE = 1000;
 
 int main(int argc, char* argv[]) {
