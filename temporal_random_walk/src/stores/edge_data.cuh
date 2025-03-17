@@ -32,6 +32,7 @@ struct EdgeData {
     explicit EdgeData(const bool use_gpu): use_gpu(use_gpu) {}
 
     ~EdgeData() {
+        #ifdef HAS_CUDA
         if (use_gpu) {
             if (sources) cudaFree(sources);
             if (targets) cudaFree(targets);
@@ -40,7 +41,9 @@ struct EdgeData {
             if (unique_timestamps) cudaFree(unique_timestamps);
             if (forward_cumulative_weights_exponential) cudaFree(forward_cumulative_weights_exponential);
             if (backward_cumulative_weights_exponential) cudaFree(backward_cumulative_weights_exponential);
-        } else {
+        } else
+        #endif
+        {
             delete[] sources;
             delete[] targets;
             delete[] timestamps;

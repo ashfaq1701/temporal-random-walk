@@ -271,6 +271,8 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
     return walk_set;
 }
 
+#ifdef HAS_CUDA
+
 __global__ void temporal_random_walk::generate_random_walks_kernel(
     WalkSet* walk_set,
     TemporalGraph* temporal_graph,
@@ -546,3 +548,5 @@ HOST TemporalRandomWalk* temporal_random_walk::to_device_ptr(const TemporalRando
 
     return device_temporal_random_walk;
 }
+
+#endif

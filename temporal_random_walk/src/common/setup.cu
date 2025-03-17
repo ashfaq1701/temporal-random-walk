@@ -9,6 +9,7 @@ unsigned long get_random_seed() {
 }
 
 #ifdef HAS_CUDA
+
 __global__ void setup_curand_states(curandState* rand_states, const unsigned long seed) {
     const int tid = threadIdx.x + blockIdx.x * blockDim.x;
     curand_init(seed, tid, 0, &rand_states[tid]);
@@ -32,4 +33,5 @@ HOST std::pair<size_t, size_t> get_optimal_launch_params(const size_t data_size,
     grid_dim = std::max(grid_dim, min_grid_size);
     return {grid_dim, block_dim};
 }
+
 #endif

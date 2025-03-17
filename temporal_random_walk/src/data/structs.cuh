@@ -91,9 +91,13 @@ struct DataBlock {
     HOST DataBlock(const size_t size, const bool use_gpu) : size(size), use_gpu(use_gpu) {
         if (size == 0) {
             data = nullptr;
-        } else if (use_gpu) {
+        }
+        #ifdef HAS_CUDA
+        else if (use_gpu) {
             cudaMalloc(&data, size * sizeof(T));
-        } else {
+        }
+        #endif
+        else {
             data = new T[size];  // CPU allocation
         }
     }
@@ -178,6 +182,7 @@ struct DividedVector {
         elements_size = total_size;
 
         // Populate the elements array
+        #ifdef HAS_CUDA
         if (use_gpu) {
             // Create temporary host array
             IndexValuePair<int, T>* host_elements = new IndexValuePair<int, T>[total_size];
@@ -194,7 +199,10 @@ struct DividedVector {
             // Copy to device
             cudaMemcpy(elements, host_elements, total_size * sizeof(IndexValuePair<int, T>), cudaMemcpyHostToDevice);
             delete[] host_elements;
-        } else {
+        }
+        else
+        #endif
+        {
             // Directly fill the host array
             for (int i = 0; i < n; i++) {
                 const size_t start_idx = host_group_offsets[i];
@@ -206,11 +214,13 @@ struct DividedVector {
             }
         }
 
+        #ifdef HAS_CUDA
         // If using GPU, copy offsets to device
         if (use_gpu) {
             cudaMemcpy(group_offsets, host_group_offsets, (n + 1) * sizeof(size_t), cudaMemcpyHostToDevice);
             delete[] host_group_offsets;
         }
+        #endif
 
         total_len = total_size;
     }
@@ -311,9 +321,14 @@ struct DividedVector {
         }
 
         size_t offset;
+
+        #ifdef HAS_CUDA
         if (use_gpu) {
             cudaMemcpy(&offset, &group_offsets[group_idx], sizeof(size_t), cudaMemcpyDeviceToHost);
-        } else {
+        }
+        else
+        #endif
+        {
             offset = group_offsets[group_idx];
         }
 
@@ -327,9 +342,14 @@ struct DividedVector {
         }
 
         size_t offset;
+
+        #ifdef HAS_CUDA
         if (use_gpu) {
             cudaMemcpy(&offset, &group_offsets[group_idx + 1], sizeof(size_t), cudaMemcpyDeviceToHost);
-        } else {
+        }
+        else
+        #endif
+        {
             offset = group_offsets[group_idx + 1];
         }
 
@@ -343,10 +363,15 @@ struct DividedVector {
         }
 
         size_t start, end;
+
+        #ifdef HAS_CUDA
         if (use_gpu) {
             cudaMemcpy(&start, &group_offsets[group_idx], sizeof(size_t), cudaMemcpyDeviceToHost);
             cudaMemcpy(&end, &group_offsets[group_idx + 1], sizeof(size_t), cudaMemcpyDeviceToHost);
-        } else {
+        }
+        else
+        #endif
+        {
             start = group_offsets[group_idx];
             end = group_offsets[group_idx + 1];
         }
@@ -530,6 +555,8 @@ struct WalkSet {
         walk_lens = nullptr;
     }
 
+    #ifdef HAS_CUDA
+
     HOST WalkSet* to_device_ptr() {
         WalkSet* device_walk_set;
         cudaMalloc(&device_walk_set, sizeof(WalkSet));
@@ -579,6 +606,8 @@ struct WalkSet {
         use_gpu = false; // We copied to host memory
     }
 
+    #endif
+
     HOST DEVICE void add_hop(const int walk_number, const int node, const int64_t timestamp) {
         const size_t offset = walk_number * max_len + walk_lens[walk_number];
         nodes[offset] = node;
@@ -587,12 +616,16 @@ struct WalkSet {
     }
 
     HOST size_t get_walk_len(const int walk_number) {
+        #ifdef HAS_CUDA
         if (use_gpu) {
             // Need to copy from device to host
             size_t walk_len;
             cudaMemcpy(&walk_len, &walk_lens[walk_number], sizeof(size_t), cudaMemcpyDeviceToHost);
             return walk_len;
-        } else {
+        }
+        else
+        #endif
+        {
             return walk_lens[walk_number];
         }
     }
@@ -602,6 +635,7 @@ struct WalkSet {
     }
 
     HOST NodeWithTime get_walk_hop(const int walk_number, const int hop_number) {
+        #ifdef HAS_CUDA
         if (use_gpu) {
             // Need to copy from device to host
             size_t walk_len;
@@ -618,7 +652,10 @@ struct WalkSet {
             cudaMemcpy(&timestamp, &timestamps[offset], sizeof(int64_t), cudaMemcpyDeviceToHost);
 
             return NodeWithTime{node, timestamp};
-        } else {
+        }
+        else
+        #endif
+        {
             size_t walk_len = walk_lens[walk_number];
             if (hop_number < 0 || hop_number >= walk_len) {
                 return NodeWithTime{-1, -1};  // Return invalid entry

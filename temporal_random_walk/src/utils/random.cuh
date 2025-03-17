@@ -2,11 +2,14 @@
 #define UTILS_RANDOM_H
 
 #include <random>
+#include <ctime>
+
+#ifdef HAS_CUDA
 #include <thrust/device_ptr.h>
 #include <thrust/shuffle.h>
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
-#include <ctime>
+#endif
 
 #include "../common/macros.cuh"
 #include "../common/cuda_config.cuh"
@@ -43,6 +46,8 @@ HOST void shuffle_vector_host(T* vec, size_t size) {
     std::shuffle(vec, vec + size, rng);
 }
 
+#ifdef HAS_CUDA
+
 template <typename T>
 DEVICE T generate_random_value_device(T start, T end, curandState* state) {
     return start + (end - start) * curand_uniform(state);
@@ -72,6 +77,6 @@ HOST void shuffle_vector_device(T* data, size_t size) {
     thrust::shuffle(DEVICE_EXECUTION_POLICY, d_data, d_data + size, random_engine);
 }
 
-
+#endif
 
 #endif // UTILS_RANDOM_H

@@ -1,10 +1,13 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include <cstddef>
+#ifdef HAS_CUDA
 #include <thrust/device_ptr.h>
 #include <thrust/transform.h>
 #include <thrust/iterator/counting_iterator.h>
+#endif
+
+#include <cstddef>
 
 #include "../data/structs.cuh"
 #include "../common/macros.cuh"
@@ -17,6 +20,7 @@ HOST inline DataBlock<int> repeat_elements(const DataBlock<int>& arr, int times,
     // Allocate memory for the output
     DataBlock<int> repeated_items(output_size, use_gpu);
 
+    #ifdef HAS_CUDA
     if (use_gpu) {
         // Create device pointers
         const int* arr_ptr = arr.data;
@@ -33,7 +37,9 @@ HOST inline DataBlock<int> repeat_elements(const DataBlock<int>& arr, int times,
             }
         );
     }
-    else {
+    else
+    #endif
+    {
         // CPU implementation
         for (size_t i = 0; i < input_size; ++i) {
             for (int j = 0; j < times; ++j) {
@@ -57,6 +63,7 @@ HOST inline DataBlock<int> divide_number(const int n, const int i, const bool us
     const int base_value = n / i;
     const int remainder = n % i;
 
+    #ifdef HAS_CUDA
     if (use_gpu) {
         // Create a temporary host array
         int* host_parts = new int[i];
@@ -72,7 +79,10 @@ HOST inline DataBlock<int> divide_number(const int n, const int i, const bool us
         // Copy to device
         cudaMemcpy(parts.data, host_parts, i * sizeof(int), cudaMemcpyHostToDevice);
         delete[] host_parts;
-    } else {
+    }
+    else
+    #endif
+    {
         // Fill with base values
         std::fill_n(parts.data, i, base_value);
 

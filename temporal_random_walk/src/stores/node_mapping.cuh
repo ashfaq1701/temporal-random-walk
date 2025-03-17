@@ -21,11 +21,15 @@ struct NodeMapping {
     explicit NodeMapping(const bool use_gpu): use_gpu(use_gpu) {}
 
     ~NodeMapping() {
+        #ifdef HAS_CUDA
         if (use_gpu) {
             if (sparse_to_dense) cudaFree(sparse_to_dense);
             if (dense_to_sparse) cudaFree(dense_to_sparse);
             if (is_deleted) cudaFree(is_deleted);
-        } else {
+        }
+        else
+        #endif
+        {
             delete[] sparse_to_dense;
             delete[] dense_to_sparse;
             delete[] is_deleted;

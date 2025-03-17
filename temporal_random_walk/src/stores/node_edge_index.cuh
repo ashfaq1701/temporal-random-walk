@@ -47,6 +47,7 @@ struct NodeEdgeIndex {
     explicit NodeEdgeIndex(const bool use_gpu): use_gpu(use_gpu) {}
 
     ~NodeEdgeIndex() {
+        #ifdef HAS_CUDA
         if (use_gpu) {
             if (outbound_offsets) cudaFree(outbound_offsets);
             if (inbound_offsets) cudaFree(inbound_offsets);
@@ -59,7 +60,10 @@ struct NodeEdgeIndex {
             if (outbound_forward_cumulative_weights_exponential) cudaFree(outbound_forward_cumulative_weights_exponential);
             if (outbound_backward_cumulative_weights_exponential) cudaFree(outbound_backward_cumulative_weights_exponential);
             if (inbound_backward_cumulative_weights_exponential) cudaFree(inbound_backward_cumulative_weights_exponential);
-        } else {
+        }
+        else
+        #endif
+        {
             delete[] outbound_offsets;
             delete[] inbound_offsets;
             delete[] outbound_indices;

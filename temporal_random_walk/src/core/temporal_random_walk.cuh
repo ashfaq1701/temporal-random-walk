@@ -15,7 +15,9 @@ struct TemporalRandomWalk {
     size_t n_threads;
     ThreadPool* thread_pool;
 
+    #ifdef HAS_CUDA
     cudaDeviceProp* cuda_device_prop;
+    #endif
     TemporalGraph* temporal_graph;
 
     TemporalRandomWalk(
@@ -40,8 +42,10 @@ struct TemporalRandomWalk {
             enable_weight_computation,
             timescale_bound);
 
+        #ifdef HAS_CUDA
         cuda_device_prop = new cudaDeviceProp();
         cudaGetDeviceProperties(cuda_device_prop, 0);
+        #endif
     }
 };
 
@@ -100,6 +104,8 @@ namespace temporal_random_walk {
      * CUDA implementations
      */
 
+    #ifdef HAS_CUDA
+
     __global__ void generate_random_walks_kernel(
         WalkSet* walk_set,
         TemporalGraph* temporal_graph,
@@ -129,6 +135,8 @@ namespace temporal_random_walk {
         WalkDirection walk_direction=WalkDirection::Forward_In_Time);
 
     HOST TemporalRandomWalk* to_device_ptr(const TemporalRandomWalk* graph);
+
+    #endif
 
 }
 #endif // TEMPORAL_RANDOM_WALK_H

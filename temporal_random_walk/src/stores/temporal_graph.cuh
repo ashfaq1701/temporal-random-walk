@@ -1,7 +1,9 @@
 #ifndef TEMPORAL_GRAPH_H
 #define TEMPORAL_GRAPH_H
 
+#ifdef HAS_CUDA
 #include <curand_kernel.h>
+#endif
 
 #include "edge_data.cuh"
 #include "node_edge_index.cuh"
