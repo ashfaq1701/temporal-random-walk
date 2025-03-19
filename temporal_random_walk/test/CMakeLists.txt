@@ -1,6 +1,7 @@
 find_package(GTest CONFIG REQUIRED)
 
 set(TEST_FILES
+        test_hash_map.cpp
         test_edge_data.cpp
         test_edge_data_weights.cpp
         test_node_edge_index.cpp

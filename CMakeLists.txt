@@ -34,6 +34,7 @@ endif()
 
 set(SRC_FILES
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/common/setup.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/data/IntHashMap.cu
 
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/edge_data.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/node_edge_index.cu

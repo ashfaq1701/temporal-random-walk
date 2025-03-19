@@ -93,32 +93,6 @@ int NodeMapping::to_dense(const int sparse_id) const {
     }
 }
 
-int NodeMapping::to_sparse(int dense_id) const {
-    #ifdef HAS_CUDA
-    if (node_mapping->use_gpu) {
-        // Call via CUDA kernel for GPU implementation
-        int* d_result;
-        cudaMalloc(&d_result, sizeof(int));
-
-        NodeMappingStore* d_node_mapping = node_mapping::to_device_ptr(node_mapping);
-        to_sparse_kernel<<<1, 1>>>(d_result, d_node_mapping, dense_id);
-
-        int host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(int), cudaMemcpyDeviceToHost);
-
-        cudaFree(d_result);
-        cudaFree(d_node_mapping);
-
-        return host_result;
-    }
-    else
-    #endif
-    {
-        // Direct call for CPU implementation
-        return node_mapping::to_sparse(node_mapping, dense_id);
-    }
-}
-
 size_t NodeMapping::size() const {
     #ifdef HAS_CUDA
     if (node_mapping->use_gpu) {

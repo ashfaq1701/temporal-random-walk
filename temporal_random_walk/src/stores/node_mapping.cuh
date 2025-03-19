@@ -4,6 +4,7 @@
 #include <cstddef>
 
 #include "../data/structs.cuh"
+#include "../data/IntHashMap.cuh"
 #include "edge_data.cuh"
 
 struct NodeMappingStore {
@@ -42,8 +43,6 @@ namespace node_mapping {
      * Common Methods
      */
     HOST int to_dense(const NodeMappingStore *node_mapping, int sparse_id);
-
-    HOST int to_sparse(const NodeMappingStore *node_mapping, int dense_id);
 
     HOST DEVICE size_t size(const NodeMappingStore *node_mapping);
 

@@ -86,8 +86,6 @@ public:
 
     [[nodiscard]] int to_dense(int sparse_id) const;
 
-    [[nodiscard]] int to_sparse(int dense_id) const;
-
     [[nodiscard]] size_t size() const;
 
     [[nodiscard]] size_t active_size() const;
