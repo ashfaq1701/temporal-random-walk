@@ -18,7 +18,7 @@ struct NodeMappingStore {
 
     explicit NodeMappingStore(const size_t node_count_max_bound, const bool use_gpu)
         : node_count_max_bound(node_count_max_bound), use_gpu(use_gpu) {
-        node_index = new IntHashMap(node_count_max_bound);
+        node_index = new IntHashMap(node_count_max_bound, use_gpu);
     }
 
     ~NodeMappingStore() {

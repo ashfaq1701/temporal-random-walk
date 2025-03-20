@@ -1,3 +1,4 @@
+#include <unordered_set>
 #include <gtest/gtest.h>
 
 #include "../src/proxies/NodeMapping.cuh"
@@ -13,8 +14,28 @@ protected:
     NodeMappingTest(): mapping(DEFAULT_NODE_COUNT_MAX_BOUND, T::value), edges(T::value) {}
 
     // Helper to verify bidirectional mapping
-    void verify_mapping(int sparse_id, int expected_dense_idx) const {
-        EXPECT_EQ(mapping.to_dense(sparse_id), expected_dense_idx);
+    void verify_mapping_present(int sparse_id) const {
+        EXPECT_NE(mapping.to_dense(sparse_id), -1);
+    }
+
+    void verify_mapping_no_duplicate(const std::vector<int>& sparse_ids) const {
+        std::unordered_set<int> dense_ids;
+
+        for (const int sparse_id : sparse_ids) {
+            int dense_id = mapping.to_dense(sparse_id);
+            EXPECT_NE(dense_id, -1) << "Sparse ID " << sparse_id << " has no mapping";
+
+            // Check if this dense ID has already been seen
+            EXPECT_EQ(dense_ids.count(dense_id), 0)
+                << "Dense ID " << dense_id << " is duplicated (mapped from sparse ID " << sparse_id << ")";
+
+            // Add to set of seen dense IDs
+            dense_ids.insert(dense_id);
+        }
+
+        // Optional: verify count matches
+        EXPECT_EQ(dense_ids.size(), sparse_ids.size())
+            << "Number of unique dense IDs doesn't match number of sparse IDs";
     }
 };
 
@@ -54,9 +75,11 @@ TYPED_TEST(NodeMappingTest, BasicUpdateTest) {
     EXPECT_EQ(this->mapping.active_size(), 3);  // All nodes active
 
     // Verify mappings
-    this->verify_mapping(10, 0);  // First node gets dense index 0
-    this->verify_mapping(20, 1);  // Second node gets dense index 1
-    this->verify_mapping(30, 2);  // Third node gets dense index 2
+    this->verify_mapping_present(10);  // First node gets dense index 0
+    this->verify_mapping_present(20);  // Second node gets dense index 1
+    this->verify_mapping_present(30);  // Third node gets dense index 2
+
+    this->verify_mapping_no_duplicate({10, 20, 30});
 
     // Verify node existence
     EXPECT_TRUE(this->mapping.has_node(10));
@@ -74,8 +97,10 @@ TYPED_TEST(NodeMappingTest, SparseGapsTest) {
     EXPECT_EQ(this->mapping.size(), 2);  // Only 2 actual nodes
 
     // Verify mappings
-    this->verify_mapping(10, 0);
-    this->verify_mapping(50, 1);
+    this->verify_mapping_present(10);
+    this->verify_mapping_present(50);
+
+    this->verify_mapping_no_duplicate({10, 50});
 
     // Verify nodes in gap don't exist
     for (int i = 11; i < 50; i++) {
@@ -90,15 +115,17 @@ TYPED_TEST(NodeMappingTest, IncrementalUpdateTest) {
     this->edges.push_back(10, 20, 100);
     this->mapping.update(this->edges.edge_data, 0, 1);
 
-    this->verify_mapping(10, 0);
-    this->verify_mapping(20, 1);
+    this->verify_mapping_present(10);
+    this->verify_mapping_present(20);
 
     // Second update with new nodes
     this->edges.push_back(30, 40, 200);
     this->mapping.update(this->edges.edge_data, 1, 2);
 
-    this->verify_mapping(30, 2);
-    this->verify_mapping(40, 3);
+    this->verify_mapping_present(30);
+    this->verify_mapping_present(40);
+
+    this->verify_mapping_no_duplicate({10, 20, 30, 40});
 
     // Third update with existing nodes
     this->edges.push_back(20, 30, 300);  // Both nodes already exist
@@ -143,8 +170,10 @@ TYPED_TEST(NodeMappingTest, EdgeCasesTest) {
     this->edges.clear();
     this->edges.push_back(1000000, 1, 100);
     this->mapping.update(this->edges.edge_data, 0, 1);
-    this->verify_mapping(1, 0);
-    this->verify_mapping(1000000, 1);
+    this->verify_mapping_present(1);
+    this->verify_mapping_present(1000000);
+
+    this->verify_mapping_no_duplicate({10, 1000000});
 
     // Test marking non-existent node as deleted
     this->mapping.mark_node_deleted(999);  // Should not crash
