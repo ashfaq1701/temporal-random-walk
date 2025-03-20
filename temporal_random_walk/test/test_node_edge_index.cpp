@@ -2,6 +2,7 @@
 #include "../src/proxies/NodeEdgeIndex.cuh"
 #include "../src/proxies/EdgeData.cuh"
 #include "../src/proxies/NodeMapping.cuh"
+#include "../src/common/const.cuh"
 
 template<typename  T>
 class NodeEdgeIndexTest : public ::testing::Test {
@@ -10,7 +11,7 @@ protected:
     EdgeData edges;
     NodeMapping mapping;
 
-    NodeEdgeIndexTest(): index(T::value), edges(T::value), mapping(T::value) {}
+    NodeEdgeIndexTest(): index(T::value), edges(T::value), mapping(DEFAULT_NODE_COUNT_MAX_BOUND, T::value) {}
 
     // Helper function to set up a simple directed graph
     void setup_simple_directed_graph() {

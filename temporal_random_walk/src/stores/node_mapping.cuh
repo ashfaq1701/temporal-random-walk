@@ -7,6 +7,7 @@
 #include "edge_data.cuh"
 
 struct NodeMappingStore {
+    int node_count_max_bound;
     bool use_gpu;
 
     int *sparse_to_dense = nullptr;
@@ -18,7 +19,10 @@ struct NodeMappingStore {
     bool *is_deleted = nullptr;
     size_t is_deleted_size = 0;
 
-    explicit NodeMappingStore(const bool use_gpu): use_gpu(use_gpu) {}
+    explicit NodeMappingStore(
+        const int node_count_max_bound,
+        const bool use_gpu)
+        : node_count_max_bound(node_count_max_bound), use_gpu(use_gpu) {}
 
     ~NodeMappingStore() {
         #ifdef HAS_CUDA
@@ -42,8 +46,6 @@ namespace node_mapping {
      * Common Methods
      */
     HOST int to_dense(const NodeMappingStore *node_mapping, int sparse_id);
-
-    HOST int to_sparse(const NodeMappingStore *node_mapping, int dense_id);
 
     HOST DEVICE size_t size(const NodeMappingStore *node_mapping);
 
@@ -78,8 +80,6 @@ namespace node_mapping {
      */
 
     DEVICE int to_dense_device(const NodeMappingStore *node_mapping, int sparse_id);
-
-    DEVICE int to_sparse_device(const NodeMappingStore *node_mapping, int dense_id);
 
     DEVICE int to_dense_from_ptr_device(const int *sparse_to_dense, int sparse_id, size_t size);
 

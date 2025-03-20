@@ -28,10 +28,17 @@ TemporalGraph::TemporalGraph(
     const bool use_gpu,
     const int64_t max_time_capacity,
     const bool enable_weight_computation,
-    const double timescale_bound)
+    const double timescale_bound,
+    const int node_count_max_bound)
     : owns_graph(true) {
 
-    graph = new TemporalGraphStore(is_directed, use_gpu, max_time_capacity, enable_weight_computation, timescale_bound);
+    graph = new TemporalGraphStore(
+        is_directed,
+        use_gpu,
+        max_time_capacity,
+        enable_weight_computation,
+        timescale_bound,
+        node_count_max_bound);
 }
 
 TemporalGraph::TemporalGraph(TemporalGraphStore* existing_graph)
@@ -56,7 +63,8 @@ TemporalGraph& TemporalGraph::operator=(const TemporalGraph& other) {
                 other.graph->use_gpu,
                 other.graph->max_time_capacity,
                 other.graph->enable_weight_computation,
-                other.graph->timescale_bound);
+                other.graph->timescale_bound,
+                other.graph->node_count_max_bound);
         } else {
             graph = other.graph;
         }

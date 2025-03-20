@@ -6,10 +6,9 @@
 #include "../src/proxies/RandomPicker.cuh"
 #include <stdexcept>
 #include "../src/data/enums.cuh"
+#include "../src/common/const.cuh"
 
 namespace py = pybind11;
-
-constexpr double DEFAULT_TIMESCALE_BOUND = -1;
 
 RandomPickerType picker_type_from_string(const std::string& picker_type_str)
 {
@@ -56,14 +55,16 @@ PYBIND11_MODULE(_temporal_random_walk, m)
     py::class_<TemporalRandomWalk>(m, "TemporalRandomWalk")
         .def(py::init([](const bool is_directed, bool use_gpu, const std::optional<int64_t> max_time_capacity,
                         std::optional<bool> enable_weight_computation,
-                        std::optional<double> timescale_bound)
+                        std::optional<double> timescale_bound,
+                        std::optional<int> node_count_max_bound)
              {
                  return std::make_unique<TemporalRandomWalk>(
                      is_directed,
                      use_gpu,
                      max_time_capacity.value_or(-1),
                      enable_weight_computation.value_or(false),
-                     timescale_bound.value_or(DEFAULT_TIMESCALE_BOUND));
+                     timescale_bound.value_or(DEFAULT_TIMESCALE_BOUND),
+                     node_count_max_bound.value_or(DEFAULT_NODE_COUNT_MAX_BOUND));
              }),
              R"(
             Initialize a temporal random walk generator.
@@ -73,13 +74,15 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             use_gpu (bool): Whether to use GPU or not.
             max_time_capacity (int, optional): Maximum time window for edges. Edges older than (latest_time - max_time_capacity) are removed. Use -1 for no limit. Defaults to -1.
             enable_weight_computation (bool, optional): Enable CTDNE weight computation. Required for ExponentialWeight picker. Defaults to False.
-            timescale_bound (float, optional): Scale factor for temporal differences. Used to prevent numerical issues with large time differences. Defaults to 50.0.
+            timescale_bound (float, optional): Scale factor for temporal differences. Used to prevent numerical issues with large time differences. Defaults to -1.0.
+            node_count_max_bound (int, optional): Maximum node count in the graph. Defaults to 100000.
             )",
              py::arg("is_directed"),
              py::arg("use_gpu") = false,
              py::arg("max_time_capacity") = py::none(),
              py::arg("enable_weight_computation") = py::none(),
-             py::arg("timescale_bound") = py::none())
+             py::arg("timescale_bound") = py::none(),
+             py::arg("node_count_max_bound") = py::none())
         .def("add_multiple_edges", [](TemporalRandomWalk& tw, const std::vector<std::tuple<int, int, int64_t>>& edge_infos)
              {
                  tw.add_multiple_edges(edge_infos);

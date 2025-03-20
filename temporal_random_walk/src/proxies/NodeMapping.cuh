@@ -76,7 +76,7 @@ public:
         }
     }
 
-    explicit NodeMapping(bool use_gpu);
+    explicit NodeMapping(int node_count_max_bound, bool use_gpu);
 
     explicit NodeMapping(NodeMappingStore* existing_node_mapping);
 

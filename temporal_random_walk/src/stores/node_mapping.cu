@@ -27,24 +27,6 @@ HOST int node_mapping::to_dense(const NodeMappingStore *node_mapping, const int 
     }
 }
 
-HOST int node_mapping::to_sparse(const NodeMappingStore *node_mapping, const int dense_id) {
-    if (dense_id < 0 || dense_id >= node_mapping->dense_to_sparse_size) {
-        return -1;
-    }
-
-    #ifdef HAS_CUDA
-    if (node_mapping->use_gpu) {
-        int sparse_id;
-        cudaMemcpy(&sparse_id, node_mapping->dense_to_sparse + dense_id, sizeof(int), cudaMemcpyDeviceToHost);
-        return sparse_id;
-    }
-    else
-    #endif
-    {
-        return node_mapping->dense_to_sparse[dense_id];
-    }
-}
-
 HOST DEVICE size_t node_mapping::size(const NodeMappingStore *node_mapping) {
     return node_mapping->dense_to_sparse_size;
 }
@@ -467,14 +449,6 @@ DEVICE int node_mapping::to_dense_device(const NodeMappingStore *node_mapping, c
     }
 
     return node_mapping->sparse_to_dense[sparse_id];
-}
-
-DEVICE int node_mapping::to_sparse_device(const NodeMappingStore *node_mapping, const int dense_id) {
-    if (dense_id < 0 || dense_id >= node_mapping->dense_to_sparse_size) {
-        return -1;
-    }
-
-    return node_mapping->dense_to_sparse[dense_id];
 }
 
 DEVICE int node_mapping::to_dense_from_ptr_device(const int *sparse_to_dense, const int sparse_id, const size_t size) {

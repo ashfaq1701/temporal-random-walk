@@ -15,12 +15,6 @@ __global__ void to_dense_kernel(int* result, const NodeMappingStore* node_mappin
     }
 }
 
-__global__ void to_sparse_kernel(int* result, const NodeMappingStore* node_mapping, const int dense_id) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = node_mapping::to_sparse_device(node_mapping, dense_id);
-    }
-}
-
 __global__ void has_node_kernel(bool* result, const NodeMappingStore* node_mapping, int sparse_id) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = node_mapping::has_node(node_mapping, sparse_id);
@@ -38,8 +32,8 @@ __global__ void mark_node_deleted_kernel(const NodeMappingStore* node_mapping, i
 
 #endif
 
-NodeMapping::NodeMapping(const bool use_gpu) : owns_node_mapping(true) {
-    node_mapping = new NodeMappingStore(use_gpu);
+NodeMapping::NodeMapping(const int node_count_max_bound, const bool use_gpu) : owns_node_mapping(true) {
+    node_mapping = new NodeMappingStore(node_count_max_bound, use_gpu);
 }
 
 NodeMapping::NodeMapping(NodeMappingStore* existing_node_mapping)
@@ -59,7 +53,7 @@ NodeMapping& NodeMapping::operator=(const NodeMapping& other) {
 
         owns_node_mapping = other.owns_node_mapping;
         if (other.owns_node_mapping) {
-            node_mapping = new NodeMappingStore(other.node_mapping->use_gpu);
+            node_mapping = new NodeMappingStore(other.node_mapping->node_count_max_bound, other.node_mapping->use_gpu);
         } else {
             node_mapping = other.node_mapping;
         }
@@ -90,32 +84,6 @@ int NodeMapping::to_dense(const int sparse_id) const {
     {
         // Direct call for CPU implementation
         return node_mapping::to_dense(node_mapping, sparse_id);
-    }
-}
-
-int NodeMapping::to_sparse(int dense_id) const {
-    #ifdef HAS_CUDA
-    if (node_mapping->use_gpu) {
-        // Call via CUDA kernel for GPU implementation
-        int* d_result;
-        cudaMalloc(&d_result, sizeof(int));
-
-        NodeMappingStore* d_node_mapping = node_mapping::to_device_ptr(node_mapping);
-        to_sparse_kernel<<<1, 1>>>(d_result, d_node_mapping, dense_id);
-
-        int host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(int), cudaMemcpyDeviceToHost);
-
-        cudaFree(d_result);
-        cudaFree(d_node_mapping);
-
-        return host_result;
-    }
-    else
-    #endif
-    {
-        // Direct call for CPU implementation
-        return node_mapping::to_sparse(node_mapping, dense_id);
     }
 }
 

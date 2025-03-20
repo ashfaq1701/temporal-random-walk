@@ -41,7 +41,8 @@ HOST void temporal_random_walk::clear(TemporalRandomWalkStore* temporal_random_w
        temporal_random_walk->use_gpu,
        temporal_random_walk->max_time_capacity,
        temporal_random_walk->enable_weight_computation,
-       temporal_random_walk->timescale_bound);
+       temporal_random_walk->timescale_bound,
+       temporal_random_walk->node_count_max_bound);
 }
 
 HOST DEVICE bool temporal_random_walk::get_should_walk_forward(const WalkDirection walk_direction) {

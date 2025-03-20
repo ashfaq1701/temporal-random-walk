@@ -5,6 +5,7 @@
 #include "../core/temporal_random_walk.cuh"
 #include "../data/structs.cuh"
 #include "../data/enums.cuh"
+#include "../common/const.cuh"
 
 #ifdef HAS_CUDA
 
@@ -22,7 +23,8 @@ public:
         bool use_gpu,
         int64_t max_time_capacity=-1,
         bool enable_weight_computation=false,
-        double timescale_bound=-1,
+        double timescale_bound=DEFAULT_TIMESCALE_BOUND,
+        int node_count_max_bound=DEFAULT_NODE_COUNT_MAX_BOUND,
         size_t n_threads=std::thread::hardware_concurrency());
 
     ~TemporalRandomWalk();

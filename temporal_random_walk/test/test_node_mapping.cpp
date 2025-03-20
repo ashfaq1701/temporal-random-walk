@@ -2,6 +2,7 @@
 
 #include "../src/proxies/NodeMapping.cuh"
 #include "../src/proxies/EdgeData.cuh"
+#include "../src/common/const.cuh"
 
 template<typename T>
 class NodeMappingTest : public ::testing::Test {
@@ -9,14 +10,11 @@ protected:
     NodeMapping mapping;
     EdgeData edges;
 
-    NodeMappingTest(): mapping(T::value), edges(T::value) {}
+    NodeMappingTest(): mapping(DEFAULT_NODE_COUNT_MAX_BOUND, T::value), edges(T::value) {}
 
     // Helper to verify bidirectional mapping
     void verify_mapping(int sparse_id, int expected_dense_idx) const {
         EXPECT_EQ(mapping.to_dense(sparse_id), expected_dense_idx);
-        if (expected_dense_idx != -1) {
-            EXPECT_EQ(mapping.to_sparse(expected_dense_idx), sparse_id);
-        }
     }
 };
 
@@ -43,7 +41,6 @@ TYPED_TEST(NodeMappingTest, EmptyStateTest) {
     // Test invalid mappings in empty state
     EXPECT_EQ(this->mapping.to_dense(0), -1);
     EXPECT_EQ(this->mapping.to_dense(-1), -1);
-    EXPECT_EQ(this->mapping.to_sparse(0), -1);
     EXPECT_FALSE(this->mapping.has_node(0));
 }
 
@@ -150,10 +147,6 @@ TYPED_TEST(NodeMappingTest, EdgeCasesTest) {
     this->mapping.update(this->edges.edge_data, 0, 1);
     this->verify_mapping(1, 0);
     this->verify_mapping(1000000, 1);
-
-    // Test invalid dense indices
-    EXPECT_EQ(this->mapping.to_sparse(-1), -1);
-    EXPECT_EQ(this->mapping.to_sparse(1000000), -1);
 
     // Test marking non-existent node as deleted
     this->mapping.mark_node_deleted(999);  // Should not crash
