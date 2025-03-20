@@ -20,18 +20,6 @@ struct NodeMappingStore {
         : node_count_max_bound(node_count_max_bound), use_gpu(use_gpu) {
         node_index = new IntHashMap(node_count_max_bound, use_gpu);
     }
-
-    ~NodeMappingStore() {
-        #ifdef HAS_CUDA
-        if (use_gpu) {
-            if (is_deleted) cudaFree(is_deleted);
-        }
-        else
-        #endif
-        {
-            delete[] is_deleted;
-        }
-    }
 };
 
 __global__ void copy_count_elements_kernel(size_t* dst, const IntHashMap* src);

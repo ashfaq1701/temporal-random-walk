@@ -42,8 +42,6 @@ struct IntHashMap {
 public:
     HOST explicit IntHashMap(size_t fixed_capacity, bool on_gpu = false);
 
-    HOST ~IntHashMap();
-
     HOST void insert_host(int key, int value);
 
     HOST bool insert_if_absent_host(int key, int value);

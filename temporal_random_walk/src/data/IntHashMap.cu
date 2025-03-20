@@ -207,11 +207,6 @@ HOST IntHashMap::IntHashMap(const size_t fixed_capacity, const bool on_gpu)
     fill_memory(keys, capacity, EMPTY_KEY, use_gpu);
 }
 
-HOST IntHashMap::~IntHashMap() {
-    clear_memory(&keys, use_gpu);
-    clear_memory(&values, use_gpu);
-}
-
 HOST void IntHashMap::insert_host(const int key, const int value) {
     if (use_gpu) {
         size_t* d_count;
