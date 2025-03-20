@@ -24,7 +24,7 @@ TYPED_TEST_SUITE(IntHashMapTest, GPU_USAGE_TYPES);
 
 // Test empty state
 TYPED_TEST(IntHashMapTest, EmptyStateTest) {
-    EXPECT_FALSE(this->hash_map.has_value_host(1));
+    EXPECT_FALSE(this->hash_map.has_key_host(1));
     EXPECT_EQ(this->hash_map.get_host(1, -999), -999);
 }
 
@@ -62,8 +62,8 @@ TYPED_TEST(IntHashMapTest, ValueUpdateTest) {
 TYPED_TEST(IntHashMapTest, ExistsCheckTest) {
     this->hash_map.insert_host(123, 456);
 
-    EXPECT_TRUE(this->hash_map.has_value_host(123));
-    EXPECT_FALSE(this->hash_map.has_value_host(456));
+    EXPECT_TRUE(this->hash_map.has_key_host(123));
+    EXPECT_FALSE(this->hash_map.has_key_host(456));
 }
 
 // Test collision handling
@@ -89,7 +89,7 @@ TYPED_TEST(IntHashMapTest, EmptyKeyTest) {
     // Trying to insert EMPTY_KEY should be a no-op
     this->hash_map.insert_host(EMPTY_KEY, 999);
 
-    EXPECT_FALSE(this->hash_map.has_value_host(EMPTY_KEY));
+    EXPECT_FALSE(this->hash_map.has_key_host(EMPTY_KEY));
     EXPECT_EQ(this->hash_map.get_host(EMPTY_KEY, -1), -1);
 }
 
@@ -141,4 +141,59 @@ TYPED_TEST(IntHashMapTest, ElementCountTest) {
 
     this->hash_map.insert_host(3, 30);
     EXPECT_EQ(this->hash_map.size(), 3);
+}
+
+// Test insert_if_absent functionality
+TYPED_TEST(IntHashMapTest, InsertIfAbsentTest) {
+    // Insert some initial values
+    bool success1 = this->hash_map.insert_if_absent_host(10, 100);
+    bool success2 = this->hash_map.insert_if_absent_host(20, 200);
+
+    // These should succeed since keys don't exist yet
+    EXPECT_TRUE(success1);
+    EXPECT_TRUE(success2);
+
+    // Verify inserted values
+    EXPECT_EQ(this->hash_map.get_host(10, -1), 100);
+    EXPECT_EQ(this->hash_map.get_host(20, -1), 200);
+
+    // Try to insert existing keys with different values
+    bool success3 = this->hash_map.insert_if_absent_host(10, 1000);
+    bool success4 = this->hash_map.insert_if_absent_host(20, 2000);
+
+    // These should fail since keys already exist
+    EXPECT_FALSE(success3);
+    EXPECT_FALSE(success4);
+
+    // Verify values were not updated
+    EXPECT_EQ(this->hash_map.get_host(10, -1), 100);
+    EXPECT_EQ(this->hash_map.get_host(20, -1), 200);
+
+    // Insert a new key
+    bool success5 = this->hash_map.insert_if_absent_host(30, 300);
+    EXPECT_TRUE(success5);
+    EXPECT_EQ(this->hash_map.get_host(30, -1), 300);
+
+    // Check element count
+    EXPECT_EQ(this->hash_map.size(), 3);
+
+    // Test with EMPTY_KEY (should fail)
+    bool success6 = this->hash_map.insert_if_absent_host(EMPTY_KEY, 999);
+    EXPECT_FALSE(success6);
+    EXPECT_FALSE(this->hash_map.has_key_host(EMPTY_KEY));
+
+    // Test collision handling
+    IntHashMap small_map(4, TypeParam::value);
+    EXPECT_TRUE(small_map.insert_if_absent_host(4, 400));    // Hash: 4 & 3 = 0
+    EXPECT_TRUE(small_map.insert_if_absent_host(8, 800));    // Hash: 8 & 3 = 0 (collision)
+    EXPECT_TRUE(small_map.insert_if_absent_host(12, 1200));  // Hash: 12 & 3 = 0 (collision)
+
+    // All values should be correctly retrievable despite collisions
+    EXPECT_EQ(small_map.get_host(4, -1), 400);
+    EXPECT_EQ(small_map.get_host(8, -1), 800);
+    EXPECT_EQ(small_map.get_host(12, -1), 1200);
+
+    // Try to add existing colliding key
+    EXPECT_FALSE(small_map.insert_if_absent_host(8, 888));
+    EXPECT_EQ(small_map.get_host(8, -1), 800);  // Original value maintained
 }

@@ -21,42 +21,6 @@ public:
     NodeMappingStore* node_mapping;
     bool owns_node_mapping;
 
-    std::vector<int> sparse_to_dense() const {
-        #ifdef HAS_CUDA
-        if (node_mapping->use_gpu) {
-            std::vector<int> result(node_mapping->sparse_to_dense_size);
-            cudaMemcpy(result.data(), node_mapping->sparse_to_dense,
-                      node_mapping->sparse_to_dense_size * sizeof(int),
-                      cudaMemcpyDeviceToHost);
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<int>(node_mapping->sparse_to_dense,
-                                   node_mapping->sparse_to_dense +
-                                   node_mapping->sparse_to_dense_size);
-        }
-    }
-
-    std::vector<int> dense_to_sparse() const {
-        #ifdef HAS_CUDA
-        if (node_mapping->use_gpu) {
-            std::vector<int> result(node_mapping->dense_to_sparse_size);
-            cudaMemcpy(result.data(), node_mapping->dense_to_sparse,
-                      node_mapping->dense_to_sparse_size * sizeof(int),
-                      cudaMemcpyDeviceToHost);
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<int>(node_mapping->dense_to_sparse,
-                                   node_mapping->dense_to_sparse +
-                                   node_mapping->dense_to_sparse_size);
-        }
-    }
-
     std::vector<bool> is_deleted() const {
         #ifdef HAS_CUDA
         if (node_mapping->use_gpu) {
@@ -76,7 +40,9 @@ public:
         }
     }
 
-    explicit NodeMapping(bool use_gpu);
+    explicit NodeMapping(
+        size_t node_count_max_boun,
+        bool use_gpu);
 
     explicit NodeMapping(NodeMappingStore* existing_node_mapping);
 
@@ -99,8 +65,6 @@ public:
     void mark_node_deleted(int sparse_id) const;
 
     [[nodiscard]] bool has_node(int sparse_id) const;
-
-    [[nodiscard]] std::vector<int> get_all_sparse_ids() const;
 
     void update(const EdgeDataStore* edge_data, size_t start_idx, size_t end_idx) const;
 };

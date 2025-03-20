@@ -633,24 +633,23 @@ HOST void node_edge_index::populate_dense_ids_cuda(
     int* dense_sources,
     int* dense_targets
 ) {
+    // First, convert the NodeIndexMap to a device pointer
+    IntHashMap* d_node_index = node_mapping->node_index->to_device_ptr();
+
     // Create device pointers from raw pointers
     thrust::device_ptr<int> d_sources(edge_data->sources);
     thrust::device_ptr<int> d_targets(edge_data->targets);
     thrust::device_ptr<int> d_dense_sources(dense_sources);
     thrust::device_ptr<int> d_dense_targets(dense_targets);
 
-    // Get raw pointer to sparse_to_dense mapping
-    int* sparse_to_dense_ptr = node_mapping->sparse_to_dense;
-    size_t sparse_to_dense_size = node_mapping->sparse_to_dense_size;
-
-    // Transform source IDs from sparse to dense
+    // Transform source IDs from sparse to dense using the device NodeIndexMap
     thrust::transform(
         DEVICE_EXECUTION_POLICY,
         d_sources,
         d_sources + static_cast<long>(edge_data->sources_size),
         d_dense_sources,
-        [sparse_to_dense_ptr, sparse_to_dense_size] DEVICE (const int id) {
-            return node_mapping::to_dense_from_ptr_device(sparse_to_dense_ptr, id, sparse_to_dense_size);
+        [d_node_index] DEVICE (const int id) {
+            return d_node_index->get_device(id);
         }
     );
 
@@ -660,10 +659,13 @@ HOST void node_edge_index::populate_dense_ids_cuda(
         d_targets,
         d_targets + static_cast<long>(edge_data->targets_size),
         d_dense_targets,
-        [sparse_to_dense_ptr, sparse_to_dense_size] DEVICE (const int id) {
-            return node_mapping::to_dense_from_ptr_device(sparse_to_dense_ptr, id, sparse_to_dense_size);
+        [d_node_index] DEVICE (const int id) {
+            return d_node_index->get_device(id);
         }
     );
+
+    // Clean up the device NodeIndexMap
+    cudaFree(d_node_index);
 }
 
 HOST void node_edge_index::compute_node_edge_offsets_cuda(

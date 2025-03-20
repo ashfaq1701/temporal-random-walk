@@ -9,26 +9,16 @@
 #include <thrust/extrema.h>
 #endif
 
-HOST int node_mapping::to_dense(const NodeMappingStore *node_mapping, const int sparse_id) {
-    if (sparse_id < 0 || sparse_id >= node_mapping->sparse_to_dense_size) {
-        return -1;
-    }
+__global__ void copy_count_elements_kernel(size_t* dst, const IntHashMap* src) {
+    *dst = src->count_elements;
+}
 
-    #ifdef HAS_CUDA
-    if (node_mapping->use_gpu) {
-        int dense_id;
-        cudaMemcpy(&dense_id, node_mapping->sparse_to_dense + sparse_id, sizeof(int), cudaMemcpyDeviceToHost);
-        return dense_id;
-    }
-    else
-    #endif
-    {
-        return node_mapping->sparse_to_dense[sparse_id];
-    }
+HOST int node_mapping::to_dense(const NodeMappingStore *node_mapping, const int sparse_id) {
+    return node_mapping->node_index->get_host(sparse_id);
 }
 
 HOST DEVICE size_t node_mapping::size(const NodeMappingStore *node_mapping) {
-    return node_mapping->dense_to_sparse_size;
+    return node_mapping->node_index->size();
 }
 
 HOST size_t node_mapping::active_size(const NodeMappingStore *node_mapping) {
@@ -68,34 +58,83 @@ HOST DataBlock<int> node_mapping::get_active_node_ids(const NodeMappingStore *no
     const size_t active_count = active_size(node_mapping);
     DataBlock<int> result(active_count, node_mapping->use_gpu);
 
+    if (active_count == 0) {
+        return result;
+    }
+
     #ifdef HAS_CUDA
     if (node_mapping->use_gpu) {
-        // GPU version using thrust::device_ptr
-        thrust::device_ptr<int> d_dense_to_sparse(node_mapping->dense_to_sparse);
-        thrust::device_ptr<bool> d_is_deleted(node_mapping->is_deleted);
-        thrust::device_ptr<int> d_result(result.data);  // Assuming result.d_data is a device pointer
+        // Get all keys directly as device pointers
+        int* d_all_keys = nullptr;
+        int* d_all_values = nullptr;
+        size_t key_count = 0;
 
-        // Use Thrust's copy_if to filter active nodes
+        node_mapping->node_index->get_all_keys_values(&d_all_keys, &d_all_values, &key_count);
+
+        if (key_count == 0) {
+            cudaFree(d_all_keys);
+            cudaFree(d_all_values);
+            return result;
+        }
+
+        // Create device pointers for thrust
+        thrust::device_ptr<int> d_keys(d_all_keys);
+        thrust::device_ptr<bool> d_is_deleted(node_mapping->is_deleted);
+        thrust::device_ptr<int> d_result(result.data);
+
+        // Use thrust to filter out deleted nodes
         thrust::copy_if(
             DEVICE_EXECUTION_POLICY,
-            d_dense_to_sparse,
-            d_dense_to_sparse + static_cast<long>(node_mapping->dense_to_sparse_size),
+            d_keys,
+            d_keys + static_cast<long>(key_count),
             d_result,
-            [d_is_deleted] DEVICE (const int sparse_id) {
-                return (sparse_id >= 0) && !d_is_deleted[sparse_id];
+            [d_is_deleted, size=node_mapping->is_deleted_size] DEVICE (const int sparse_id) {
+                return (sparse_id >= 0 && sparse_id < size && !d_is_deleted[sparse_id]);
             }
         );
+
+        // Cleanup
+        cudaFree(d_all_keys);
+        cudaFree(d_all_values);
     }
     else
     #endif
     {
+        // Get all keys on host
+        int* all_keys = nullptr;
+        int* all_values = nullptr;
+        size_t key_count = 0;
+
+        node_mapping->node_index->get_all_keys_values(&all_keys, &all_values, &key_count);
+
+        if (key_count == 0) {
+            delete[] all_keys;
+            delete[] all_values;
+            return result;
+        }
+
+        // CPU version - filter active nodes
         size_t index = 0;
-        for (size_t i = 0; i < node_mapping->dense_to_sparse_size; i++) {
-            int sparse_id = node_mapping->dense_to_sparse[i];
-            if (sparse_id >= 0 && sparse_id < node_mapping->is_deleted_size && !node_mapping->is_deleted[sparse_id]) {
+        for (size_t i = 0; i < key_count; i++) {
+            int sparse_id = all_keys[i];
+
+            // Check if it's active (not deleted)
+            if (sparse_id >= 0 &&
+                sparse_id < node_mapping->is_deleted_size &&
+                !node_mapping->is_deleted[sparse_id]) {
+
                 result.data[index++] = sparse_id;
+
+                // Safety check to avoid buffer overflow
+                if (index >= active_count) {
+                    break;
+                }
             }
         }
+
+        // Clean up
+        delete[] all_keys;
+        delete[] all_values;
     }
 
     return result;
@@ -103,27 +142,12 @@ HOST DataBlock<int> node_mapping::get_active_node_ids(const NodeMappingStore *no
 
 
 HOST void node_mapping::clear(NodeMappingStore *node_mapping) {
-    clear_memory(&node_mapping->sparse_to_dense, node_mapping->use_gpu);
-    node_mapping->sparse_to_dense_size = 0;
-
-    clear_memory(&node_mapping->dense_to_sparse, node_mapping->use_gpu);
-    node_mapping->dense_to_sparse_size = 0;
-
+    node_mapping->node_index->clear();
     clear_memory(&node_mapping->is_deleted, node_mapping->use_gpu);
     node_mapping->is_deleted_size = 0;
 }
 
 HOST void node_mapping::reserve(NodeMappingStore *node_mapping, size_t size) {
-    if (size > node_mapping->sparse_to_dense_size) {
-        resize_memory(&node_mapping->sparse_to_dense, node_mapping->sparse_to_dense_size, size, node_mapping->use_gpu);
-        node_mapping->sparse_to_dense_size = size;
-    }
-
-    if (size > node_mapping->dense_to_sparse_size) {
-        resize_memory(&node_mapping->dense_to_sparse, node_mapping->dense_to_sparse_size, size, node_mapping->use_gpu);
-        node_mapping->dense_to_sparse_size = size;
-    }
-
     if (size > node_mapping->is_deleted_size) {
         resize_memory(&node_mapping->is_deleted, node_mapping->is_deleted_size, size, node_mapping->use_gpu);
         node_mapping->is_deleted_size = size;
@@ -138,15 +162,12 @@ HOST void node_mapping::mark_node_deleted(const NodeMappingStore *node_mapping, 
     node_mapping->is_deleted[sparse_id] = true;
 }
 
-
-HOST MemoryView<int> node_mapping::get_all_sparse_ids(const NodeMappingStore *node_mapping) {
-    return MemoryView<int>{node_mapping->dense_to_sparse, node_mapping->dense_to_sparse_size};
+HOST bool node_mapping:: has_node_host(const NodeMappingStore *node_mapping, const int sparse_id) {
+    return node_mapping->node_index->has_key_host(sparse_id);
 }
 
-HOST DEVICE bool node_mapping:: has_node(const NodeMappingStore *node_mapping, const int sparse_id) {
-    return sparse_id >= 0 &&
-           sparse_id < node_mapping->sparse_to_dense_size &&
-           node_mapping->sparse_to_dense[sparse_id] != -1;
+DEVICE bool node_mapping:: has_node_device(const NodeMappingStore *node_mapping, const int sparse_id) {
+    return node_mapping->node_index->has_key_device(sparse_id);
 }
 
 HOST void node_mapping::update_std(
@@ -155,7 +176,7 @@ HOST void node_mapping::update_std(
     const size_t start_idx,
     const size_t end_idx) {
 
-    // First pass: find max node ID
+    // First pass: find max node ID for is_deleted array sizing
     int max_node_id = 0;
     for (size_t i = start_idx; i < end_idx; i++) {
         max_node_id = std::max({
@@ -165,95 +186,57 @@ HOST void node_mapping::update_std(
         });
     }
 
-    // Extend sparse_to_dense and is_deleted if needed
-    if (max_node_id >= node_mapping->sparse_to_dense_size) {
-        // Allocate new larger arrays
+    // Resize is_deleted array if needed
+    if (max_node_id >= node_mapping->is_deleted_size) {
+        // Allocate new larger array
         const size_t new_size = max_node_id + 1;
-
-        int* new_sparse_to_dense = nullptr;
         bool* new_is_deleted = nullptr;
 
-        allocate_memory(&new_sparse_to_dense, new_size, node_mapping->use_gpu);
         allocate_memory(&new_is_deleted, new_size, node_mapping->use_gpu);
 
         // Copy existing data
-        if (node_mapping->sparse_to_dense_size > 0) {
-            memcpy(new_sparse_to_dense, node_mapping->sparse_to_dense,
-                   node_mapping->sparse_to_dense_size * sizeof(int));
+        if (node_mapping->is_deleted_size > 0) {
             memcpy(new_is_deleted, node_mapping->is_deleted,
                    node_mapping->is_deleted_size * sizeof(bool));
         }
 
-        // Initialize new elements
-        for (size_t i = node_mapping->sparse_to_dense_size; i < new_size; i++) {
-            new_sparse_to_dense[i] = -1;
+        // Initialize new elements to true (deleted)
+        for (size_t i = node_mapping->is_deleted_size; i < new_size; i++) {
             new_is_deleted[i] = true;
         }
 
-        // Free old arrays
-        clear_memory(&node_mapping->sparse_to_dense, node_mapping->use_gpu);
+        // Free old array
         clear_memory(&node_mapping->is_deleted, node_mapping->use_gpu);
 
-        // Update pointers and sizes
-        node_mapping->sparse_to_dense = new_sparse_to_dense;
-        node_mapping->sparse_to_dense_size = new_size;
+        // Update pointer and size
         node_mapping->is_deleted = new_is_deleted;
         node_mapping->is_deleted_size = new_size;
     }
 
-    // Collect all nodes from the edges
-    std::vector<int> new_nodes;
-    new_nodes.reserve((end_idx - start_idx) * 2);
+    int next_node_id = 0;
 
     for (size_t i = start_idx; i < end_idx; i++) {
-        new_nodes.push_back(edge_data->sources[i]);
-        new_nodes.push_back(edge_data->targets[i]);
-    }
+        const int source = edge_data->sources[i];
+        const int target = edge_data->targets[i];
 
-    // Sort and remove duplicates
-    std::sort(new_nodes.begin(), new_nodes.end());
-    new_nodes.erase(std::unique(new_nodes.begin(), new_nodes.end()), new_nodes.end());
+        // Process source node
+        if (source >= 0) {
+            // Mark as not deleted
+            node_mapping->is_deleted[source] = false;
+            if (!node_mapping->node_index->has_key_host(source)) {
+                node_mapping->node_index->insert_host(source, next_node_id++);
+            }
+        }
 
-    // Count how many new mappings we need
-    size_t new_mappings_count = 0;
-    for (int node : new_nodes) {
-        if (node >= 0 && node_mapping->sparse_to_dense[node] == -1) {
-            new_mappings_count++;
+        // Process target node
+        if (target >= 0) {
+            // Mark as not deleted
+            node_mapping->is_deleted[target] = false;
+            if (!node_mapping->node_index->has_key_host(target)) {
+                node_mapping->node_index->insert_host(target, next_node_id++);
+            }
         }
     }
-
-    // Resize dense_to_sparse once to accommodate all new mappings
-    if (new_mappings_count > 0) {
-        const size_t new_dense_size = node_mapping->dense_to_sparse_size + new_mappings_count;
-        resize_memory(
-            &node_mapping->dense_to_sparse,
-            node_mapping->dense_to_sparse_size,
-            new_dense_size,
-            node_mapping->use_gpu
-        );
-    }
-
-    // Map unmapped nodes
-    size_t dense_index = node_mapping->dense_to_sparse_size;
-    for (const int node : new_nodes) {
-        if (node < 0) continue;
-
-        // Mark as not deleted
-        node_mapping->is_deleted[node] = false;
-
-        // If not mapped yet, add to dense_to_sparse and update sparse_to_dense
-        if (node_mapping->sparse_to_dense[node] == -1) {
-            // Update sparse_to_dense mapping
-            node_mapping->sparse_to_dense[node] = static_cast<int>(dense_index);
-
-            // Add the node to dense_to_sparse
-            node_mapping->dense_to_sparse[dense_index] = node;
-            dense_index++;
-        }
-    }
-
-    // Update the dense_to_sparse size
-    node_mapping->dense_to_sparse_size = dense_index;
 }
 
 #ifdef HAS_CUDA
@@ -262,13 +245,13 @@ HOST void node_mapping::update_cuda(NodeMappingStore *node_mapping, const EdgeDa
     thrust::device_ptr<int> d_sources(edge_data->sources + start_idx);
     thrust::device_ptr<int> d_targets(edge_data->targets + start_idx);
 
-    auto max_source = thrust::max_element(
+    const auto max_source = thrust::max_element(
         DEVICE_EXECUTION_POLICY,
         d_sources,
         d_sources + static_cast<long>(end_idx - start_idx)
     );
 
-    auto max_target = thrust::max_element(
+    const auto max_target = thrust::max_element(
         DEVICE_EXECUTION_POLICY,
         d_targets,
         d_targets + static_cast<long>(end_idx - start_idx)
@@ -287,176 +270,121 @@ HOST void node_mapping::update_cuda(NodeMappingStore *node_mapping, const EdgeDa
                   sizeof(int), cudaMemcpyDeviceToHost);
     }
 
-    int max_node_id = std::max(max_source_value, max_target_value);
+    const int max_node_id = std::max(max_source_value, max_target_value);
 
     if (max_node_id < 0) {
         return;
     }
 
-    // Extend arrays if needed
-    if (max_node_id >= node_mapping->sparse_to_dense_size) {
-        size_t new_size = max_node_id + 1;
-
-        // Allocate new arrays
-        int* new_sparse_to_dense = nullptr;
+    // Resize is_deleted array if needed
+    if (max_node_id >= node_mapping->is_deleted_size) {
+        const size_t new_size = max_node_id + 1;
         bool* new_is_deleted = nullptr;
 
-        allocate_memory(&new_sparse_to_dense, new_size, true);
         allocate_memory(&new_is_deleted, new_size, true);
 
         // Copy existing data
-        if (node_mapping->sparse_to_dense_size > 0) {
-            cudaMemcpy(new_sparse_to_dense, node_mapping->sparse_to_dense,
-                      node_mapping->sparse_to_dense_size * sizeof(int),
-                      cudaMemcpyDeviceToDevice);
-
+        if (node_mapping->is_deleted_size > 0) {
             cudaMemcpy(new_is_deleted, node_mapping->is_deleted,
                       node_mapping->is_deleted_size * sizeof(bool),
                       cudaMemcpyDeviceToDevice);
         }
 
-        // Initialize new elements
-        fill_memory(
-            new_sparse_to_dense + node_mapping->sparse_to_dense_size,
-            new_size - node_mapping->sparse_to_dense_size,
-            -1,
-            true);
-
+        // Initialize new elements to true (deleted)
         fill_memory(
             new_is_deleted + node_mapping->is_deleted_size,
             new_size - node_mapping->is_deleted_size,
             true,
             true);
 
-        // Free old arrays
-        if (node_mapping->sparse_to_dense) cudaFree(node_mapping->sparse_to_dense);
+        // Free old array
         if (node_mapping->is_deleted) cudaFree(node_mapping->is_deleted);
 
-        // Update pointers and sizes
-        node_mapping->sparse_to_dense = new_sparse_to_dense;
-        node_mapping->sparse_to_dense_size = new_size;
+        // Update pointer and size
         node_mapping->is_deleted = new_is_deleted;
         node_mapping->is_deleted_size = new_size;
     }
 
-    // Allocate flags array for new nodes
-    int* d_new_node_flags = nullptr;
-    cudaMalloc(&d_new_node_flags, (max_node_id + 1) * sizeof(int));
-    cudaMemset(d_new_node_flags, 0, (max_node_id + 1) * sizeof(int));
+    int *d_next_node_id;
+    cudaMalloc(&d_next_node_id, sizeof(int));
+    cudaMemset(d_next_node_id, static_cast<int>(node_mapping->node_index->size()), sizeof(int));
 
-    // Mark nodes as not deleted and identify new nodes
-    int* sparse_to_dense_ptr = node_mapping->sparse_to_dense;
-    bool* is_deleted_ptr = node_mapping->is_deleted;
-    int* sources_ptr = edge_data->sources;
-    int* targets_ptr = edge_data->targets;
+    IntHashMap* d_node_index = node_mapping->node_index->to_device_ptr();
+    int* sources = edge_data->sources;
+    int* targets = edge_data->targets;
+    bool* is_deleted = node_mapping->is_deleted;
 
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(start_idx),
         thrust::make_counting_iterator<size_t>(end_idx),
-        [sparse_to_dense_ptr, is_deleted_ptr, sources_ptr, targets_ptr, d_new_node_flags]
-        DEVICE (const size_t idx) {
-            const int source = sources_ptr[idx];
-            const int target = targets_ptr[idx];
+        [d_node_index, sources, targets, is_deleted, d_next_node_id] __device__ (size_t i) {
+            const int source = sources[i];
+            const int target = targets[i];
 
+            // Process Source Node
             if (source >= 0) {
-                is_deleted_ptr[source] = false;
-                if (sparse_to_dense_ptr[source] == -1) {
-                    d_new_node_flags[source] = 1;
+                // Regular update to is_deleted flag
+                is_deleted[source] = false;
+
+                bool inserted = false;
+
+                while (!inserted) {
+                    if (d_node_index->has_key_device(source)) {
+                        // Another thread has already inserted it
+                        inserted = true;
+                    } else {
+                        // Reserve a new ID
+                        const int new_id = atomicAdd(d_next_node_id, 1);
+
+                        // Try to insert atomically
+                        inserted = d_node_index->insert_if_absent_device(source, new_id);
+
+                        // If insertion failed (another thread won the race), return the ID
+                        if (!inserted) {
+                            atomicSub(d_next_node_id, 1);
+                        }
+                    }
                 }
             }
 
+            // Process Target Node
             if (target >= 0) {
-                is_deleted_ptr[target] = false;
-                if (sparse_to_dense_ptr[target] == -1) {
-                    d_new_node_flags[target] = 1;
+                // Regular update to is_deleted flag
+                is_deleted[target] = false;
+
+                bool inserted = false;
+
+                while (!inserted) {
+                    if (d_node_index->has_key_device(target)) {
+                        // Another thread has already inserted it
+                        inserted = true;
+                    } else {
+                        // Reserve a new ID
+                        const int new_id = atomicAdd(d_next_node_id, 1);
+
+                        // Try to insert atomically
+                        inserted = d_node_index->insert_if_absent_device(target, new_id);
+
+                        // If insertion failed (another thread won the race), return the ID
+                        if (!inserted) {
+                            atomicSub(d_next_node_id, 1);
+                        }
+                    }
                 }
             }
         }
     );
 
-    // Calculate positions for new nodes
-    int* d_new_node_positions = nullptr;
-    cudaMalloc(&d_new_node_positions, (max_node_id + 1) * sizeof(int));
-
-    thrust::device_ptr<int> d_flags(d_new_node_flags);
-    thrust::device_ptr<int> d_positions(d_new_node_positions);
-
-    // Get total count of new nodes using reduce
-    int new_nodes_count = thrust::reduce(
-        DEVICE_EXECUTION_POLICY,
-        d_flags,
-        d_flags + (max_node_id + 1)
-    );
-
-    // Calculate prefix sum for positions
-    thrust::exclusive_scan(
-        DEVICE_EXECUTION_POLICY,
-        d_flags,
-        d_flags + (max_node_id + 1),
-        d_positions
-    );
-
-    // Resize dense_to_sparse array
-    size_t old_size = node_mapping->dense_to_sparse_size;
-    size_t new_size = old_size + new_nodes_count;
-
-    if (new_nodes_count > 0) {
-        int* new_dense_to_sparse = nullptr;
-        cudaMalloc(&new_dense_to_sparse, new_size * sizeof(int));
-
-        // Copy existing data
-        if (old_size > 0) {
-            cudaMemcpy(new_dense_to_sparse,
-                      node_mapping->dense_to_sparse,
-                      old_size * sizeof(int),
-                      cudaMemcpyDeviceToDevice);
-        }
-
-        // Free old array
-        if (node_mapping->dense_to_sparse) cudaFree(node_mapping->dense_to_sparse);
-
-        // Update pointer and size
-        node_mapping->dense_to_sparse = new_dense_to_sparse;
-        node_mapping->dense_to_sparse_size = new_size;
-    }
-
-    // Assign dense indices in parallel
-    int* dense_to_sparse_ptr = node_mapping->dense_to_sparse;
-
-    thrust::for_each(
-        DEVICE_EXECUTION_POLICY,
-        thrust::make_counting_iterator<size_t>(0),
-        thrust::make_counting_iterator<size_t>(max_node_id + 1),
-        [sparse_to_dense_ptr, dense_to_sparse_ptr, d_new_node_flags, d_new_node_positions, old_size]
-        DEVICE (const size_t idx) {
-            if (d_new_node_flags[idx]) {
-                const int new_dense_idx = static_cast<int>(old_size) + d_new_node_positions[idx];
-                sparse_to_dense_ptr[idx] = new_dense_idx;
-                dense_to_sparse_ptr[new_dense_idx] = static_cast<int>(idx);
-            }
-        }
-    );
-
-    // Free temporary device memory
-    cudaFree(d_new_node_flags);
-    cudaFree(d_new_node_positions);
+    size_t* d_count;
+    cudaMalloc(&d_count, sizeof(size_t));
+    copy_count_elements_kernel<<<1, 1>>>(d_count, d_node_index);
+    cudaMemcpy(&(node_mapping->node_index->count_elements), d_count, sizeof(size_t), cudaMemcpyDeviceToHost);
+    cudaFree(d_count);
 }
 
 DEVICE int node_mapping::to_dense_device(const NodeMappingStore *node_mapping, const int sparse_id) {
-    if (sparse_id < 0 || sparse_id >= node_mapping->sparse_to_dense_size) {
-        return -1;
-    }
-
-    return node_mapping->sparse_to_dense[sparse_id];
-}
-
-DEVICE int node_mapping::to_sparse_device(const NodeMappingStore *node_mapping, const int dense_id) {
-    if (dense_id < 0 || dense_id >= node_mapping->dense_to_sparse_size) {
-        return -1;
-    }
-
-    return node_mapping->dense_to_sparse[dense_id];
+    return node_mapping->node_index->get_device(sparse_id);
 }
 
 DEVICE int node_mapping::to_dense_from_ptr_device(const int *sparse_to_dense, const int sparse_id, const size_t size) {
@@ -476,25 +404,16 @@ HOST NodeMappingStore* node_mapping::to_device_ptr(const NodeMappingStore* node_
 
     // If already using GPU, just copy the struct with its pointers
     if (node_mapping->use_gpu) {
-        cudaMemcpy(device_node_mapping, node_mapping, sizeof(NodeMappingStore), cudaMemcpyHostToDevice);
+        // Create a temporary copy to modify for device pointers
+        NodeMappingStore temp_node_mapping = *node_mapping;
+        temp_node_mapping.node_index = node_mapping->node_index->to_device_ptr();
+        cudaMemcpy(device_node_mapping, &temp_node_mapping, sizeof(NodeMappingStore), cudaMemcpyHostToDevice);
     } else {
         // Create a temporary copy to modify for device pointers
         NodeMappingStore temp_node_mapping = *node_mapping;
 
         // Copy each array to device if it exists
-        if (node_mapping->sparse_to_dense) {
-            int* d_sparse_to_dense;
-            cudaMalloc(&d_sparse_to_dense, node_mapping->sparse_to_dense_size * sizeof(int));
-            cudaMemcpy(d_sparse_to_dense, node_mapping->sparse_to_dense, node_mapping->sparse_to_dense_size * sizeof(int), cudaMemcpyHostToDevice);
-            temp_node_mapping.sparse_to_dense = d_sparse_to_dense;
-        }
-
-        if (node_mapping->dense_to_sparse) {
-            int* d_dense_to_sparse;
-            cudaMalloc(&d_dense_to_sparse, node_mapping->dense_to_sparse_size * sizeof(int));
-            cudaMemcpy(d_dense_to_sparse, node_mapping->dense_to_sparse, node_mapping->dense_to_sparse_size * sizeof(int), cudaMemcpyHostToDevice);
-            temp_node_mapping.dense_to_sparse = d_dense_to_sparse;
-        }
+        temp_node_mapping.node_index = node_mapping->node_index->to_device_ptr();
 
         if (node_mapping->is_deleted) {
             bool* d_is_deleted;

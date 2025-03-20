@@ -2,6 +2,7 @@
 
 #include "../src/proxies/NodeMapping.cuh"
 #include "../src/proxies/EdgeData.cuh"
+#include "../src/common/constants.cuh"
 
 template<typename T>
 class NodeMappingTest : public ::testing::Test {
@@ -9,7 +10,7 @@ protected:
     NodeMapping mapping;
     EdgeData edges;
 
-    NodeMappingTest(): mapping(T::value), edges(T::value) {}
+    NodeMappingTest(): mapping(DEFAULT_NODE_COUNT_MAX_BOUND, T::value), edges(T::value) {}
 
     // Helper to verify bidirectional mapping
     void verify_mapping(int sparse_id, int expected_dense_idx) const {
@@ -35,7 +36,6 @@ TYPED_TEST(NodeMappingTest, EmptyStateTest) {
     EXPECT_EQ(this->mapping.size(), 0);
     EXPECT_EQ(this->mapping.active_size(), 0);
     EXPECT_TRUE(this->mapping.get_active_node_ids().empty());
-    EXPECT_TRUE(this->mapping.get_all_sparse_ids().empty());
 
     // Test invalid mappings in empty state
     EXPECT_EQ(this->mapping.to_dense(0), -1);
@@ -72,7 +72,6 @@ TYPED_TEST(NodeMappingTest, SparseGapsTest) {
 
     // Verify size handling with gaps
     EXPECT_EQ(this->mapping.size(), 2);  // Only 2 actual nodes
-    EXPECT_GE(this->mapping.sparse_to_dense().size(), 51);  // But space for all up to 50
 
     // Verify mappings
     this->verify_mapping(10, 0);

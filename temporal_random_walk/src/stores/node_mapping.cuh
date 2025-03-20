@@ -8,35 +8,33 @@
 #include "edge_data.cuh"
 
 struct NodeMappingStore {
+    size_t node_count_max_bound;
     bool use_gpu;
 
-    int *sparse_to_dense = nullptr;
-    size_t sparse_to_dense_size = 0;
-
-    int *dense_to_sparse = nullptr;
-    size_t dense_to_sparse_size = 0;
+    IntHashMap* node_index;
 
     bool *is_deleted = nullptr;
     size_t is_deleted_size = 0;
 
-    explicit NodeMappingStore(const bool use_gpu): use_gpu(use_gpu) {}
+    explicit NodeMappingStore(const size_t node_count_max_bound, const bool use_gpu)
+        : node_count_max_bound(node_count_max_bound), use_gpu(use_gpu) {
+        node_index = new IntHashMap(node_count_max_bound);
+    }
 
     ~NodeMappingStore() {
         #ifdef HAS_CUDA
         if (use_gpu) {
-            if (sparse_to_dense) cudaFree(sparse_to_dense);
-            if (dense_to_sparse) cudaFree(dense_to_sparse);
             if (is_deleted) cudaFree(is_deleted);
         }
         else
         #endif
         {
-            delete[] sparse_to_dense;
-            delete[] dense_to_sparse;
             delete[] is_deleted;
         }
     }
 };
+
+__global__ void copy_count_elements_kernel(size_t* dst, const IntHashMap* src);
 
 namespace node_mapping {
     /**
@@ -56,9 +54,9 @@ namespace node_mapping {
 
     HOST void mark_node_deleted(const NodeMappingStore *node_mapping, int sparse_id);
 
-    HOST MemoryView<int> get_all_sparse_ids(const NodeMappingStore *node_mapping);
+    HOST bool has_node_host(const NodeMappingStore *node_mapping, int sparse_id);
 
-    HOST DEVICE bool has_node(const NodeMappingStore *node_mapping, int sparse_id);
+    DEVICE bool has_node_device(const NodeMappingStore *node_mapping, int sparse_id);
 
     /**
      * Std Implementations
@@ -77,8 +75,6 @@ namespace node_mapping {
      */
 
     DEVICE int to_dense_device(const NodeMappingStore *node_mapping, int sparse_id);
-
-    DEVICE int to_sparse_device(const NodeMappingStore *node_mapping, int dense_id);
 
     DEVICE int to_dense_from_ptr_device(const int *sparse_to_dense, int sparse_id, size_t size);
 

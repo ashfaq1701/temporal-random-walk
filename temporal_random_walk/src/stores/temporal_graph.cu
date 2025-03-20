@@ -224,7 +224,7 @@ HOST void temporal_graph::delete_old_edges_std(TemporalGraphStore* graph) {
     const size_t remaining = edge_data::size(graph->edge_data) - delete_count;
 
     // Track which nodes still have edges
-    bool* has_edges = new bool[graph->node_mapping->sparse_to_dense_size];
+    bool* has_edges = new bool[graph->node_mapping->node_index->size()];
 
     if (remaining > 0) {
         remove_first_n_memory(
@@ -255,7 +255,7 @@ HOST void temporal_graph::delete_old_edges_std(TemporalGraphStore* graph) {
     edge_data::set_size(graph->edge_data, remaining);
 
     // Mark nodes with no edges as deleted
-    for (size_t i = 0; i < graph->node_mapping->sparse_to_dense_size; i++) {
+    for (size_t i = 0; i < graph->node_mapping->node_index->size(); i++) {
         if (!has_edges[i]) {
             node_mapping::mark_node_deleted(graph->node_mapping, static_cast<int>(i));
         }
@@ -622,8 +622,8 @@ HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore* graph) {
 
     // Create bool array for tracking nodes with edges
     bool* has_edges;
-    allocate_memory(&has_edges, graph->node_mapping->sparse_to_dense_size, true);
-    fill_memory(has_edges, graph->node_mapping->sparse_to_dense_size, false, true);
+    allocate_memory(&has_edges, graph->node_mapping->node_index->size(), true);
+    fill_memory(has_edges, graph->node_mapping->node_index->size(), false, true);
 
     if (remaining > 0) {
         // Move edges using thrust::copy
@@ -671,7 +671,7 @@ HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore* graph) {
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
-        thrust::make_counting_iterator<size_t>(graph->node_mapping->sparse_to_dense_size),
+        thrust::make_counting_iterator<size_t>(graph->node_mapping->node_index->size()),
         [has_edges, is_deleted_ptr, is_deleted_size] DEVICE (const size_t i) {
             if (!has_edges[i]) {
                 node_mapping::mark_node_deleted_from_ptr(is_deleted_ptr, static_cast<int>(i), static_cast<int>(is_deleted_size));

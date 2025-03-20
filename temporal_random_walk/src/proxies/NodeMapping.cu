@@ -15,15 +15,9 @@ __global__ void to_dense_kernel(int* result, const NodeMappingStore* node_mappin
     }
 }
 
-__global__ void to_sparse_kernel(int* result, const NodeMappingStore* node_mapping, const int dense_id) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = node_mapping::to_sparse_device(node_mapping, dense_id);
-    }
-}
-
 __global__ void has_node_kernel(bool* result, const NodeMappingStore* node_mapping, int sparse_id) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = node_mapping::has_node(node_mapping, sparse_id);
+        *result = node_mapping::has_node_device(node_mapping, sparse_id);
     }
 }
 
@@ -38,8 +32,8 @@ __global__ void mark_node_deleted_kernel(const NodeMappingStore* node_mapping, i
 
 #endif
 
-NodeMapping::NodeMapping(const bool use_gpu) : owns_node_mapping(true) {
-    node_mapping = new NodeMappingStore(use_gpu);
+NodeMapping::NodeMapping(const size_t node_count_max_bound, const bool use_gpu) : owns_node_mapping(true) {
+    node_mapping = new NodeMappingStore(node_count_max_bound, use_gpu);
 }
 
 NodeMapping::NodeMapping(NodeMappingStore* existing_node_mapping)
@@ -59,7 +53,7 @@ NodeMapping& NodeMapping::operator=(const NodeMapping& other) {
 
         owns_node_mapping = other.owns_node_mapping;
         if (other.owns_node_mapping) {
-            node_mapping = new NodeMappingStore(other.node_mapping->use_gpu);
+            node_mapping = new NodeMappingStore(other.node_mapping->node_count_max_bound, other.node_mapping->use_gpu);
         } else {
             node_mapping = other.node_mapping;
         }
@@ -197,32 +191,8 @@ bool NodeMapping::has_node(int sparse_id) const {
     #endif
     {
         // Direct call for CPU implementation
-        return node_mapping::has_node(node_mapping, sparse_id);
+        return node_mapping::has_node_host(node_mapping, sparse_id);
     }
-}
-
-std::vector<int> NodeMapping::get_all_sparse_ids() const {
-    // This function is HOST only
-    MemoryView<int> sparse_ids = node_mapping::get_all_sparse_ids(node_mapping);
-    std::vector<int> result;
-
-    #ifdef HAS_CUDA
-    if (node_mapping->use_gpu) {
-        // For GPU data, need to copy from device to host
-        const auto host_ids = new int[sparse_ids.size];
-        cudaMemcpy(host_ids, sparse_ids.data, sparse_ids.size * sizeof(int), cudaMemcpyDeviceToHost);
-
-        result.assign(host_ids, host_ids + sparse_ids.size);
-        delete[] host_ids;
-    }
-    else
-    #endif
-    {
-        // For CPU data, can directly copy
-        result.assign(sparse_ids.data, sparse_ids.data + sparse_ids.size);
-    }
-
-    return result;
 }
 
 void NodeMapping::update(const EdgeDataStore* edge_data, size_t start_idx, size_t end_idx) const {

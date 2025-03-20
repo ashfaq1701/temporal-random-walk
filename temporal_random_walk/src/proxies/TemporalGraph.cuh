@@ -2,6 +2,7 @@
 #define TEMPORAL_GRAPH_H
 
 #include "../stores/temporal_graph.cuh"
+#include "../common/constants.cuh"
 #include "../data/structs.cuh"
 #include "../data/enums.cuh"
 
@@ -23,7 +24,8 @@ public:
         bool use_gpu,
         int64_t max_time_capacity = -1,
         bool enable_weight_computation = false,
-        double timescale_bound = -1);
+        double timescale_bound = -1,
+        size_t node_count_max_bound=DEFAULT_NODE_COUNT_MAX_BOUND);
 
     explicit TemporalGraph(TemporalGraphStore* existing_graph);
 
