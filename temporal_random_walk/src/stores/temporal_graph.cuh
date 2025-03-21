@@ -17,6 +17,7 @@ struct TemporalGraphStore {
     int64_t max_time_capacity;
     bool enable_weight_computation;
     double timescale_bound;
+    int node_count_max_bound;
 
     EdgeDataStore *edge_data;
     NodeEdgeIndexStore *node_edge_index;
@@ -29,14 +30,15 @@ struct TemporalGraphStore {
         const bool use_gpu,
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
-        const double timescale_bound):
+        const double timescale_bound,
+        const int node_count_max_bound):
         is_directed(is_directed), use_gpu(use_gpu), max_time_capacity(max_time_capacity),
         enable_weight_computation(enable_weight_computation), timescale_bound(timescale_bound),
-        latest_timestamp(0) {
+        node_count_max_bound(node_count_max_bound), latest_timestamp(0) {
 
         edge_data = new EdgeDataStore(use_gpu);
         node_edge_index = new NodeEdgeIndexStore(use_gpu);
-        node_mapping = new NodeMappingStore(use_gpu);
+        node_mapping = new NodeMappingStore(node_count_max_bound, use_gpu);
     }
 };
 

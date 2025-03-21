@@ -3,6 +3,7 @@
 #include "../src/proxies/NodeEdgeIndex.cuh"
 #include "../src/proxies/EdgeData.cuh"
 #include "../src/proxies/NodeMapping.cuh"
+#include "../src/common/const.cuh"
 
 template<typename T>
 class NodeEdgeIndexWeightTest : public ::testing::Test {
@@ -64,7 +65,7 @@ protected:
         edges.push_back(3, 4, 40);
         edges.update_timestamp_groups();
 
-        const NodeMapping mapping(T::value);  // CPU mode
+        const NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, T::value);  // CPU mode
         mapping.update(edges.edge_data, 0, edges.size());
 
         index = NodeEdgeIndex(T::value);  // CPU mode
@@ -90,7 +91,7 @@ TYPED_TEST_SUITE(NodeEdgeIndexWeightTest, GPU_USAGE_TYPES);
 
 TYPED_TEST(NodeEdgeIndexWeightTest, EmptyGraph) {
     EdgeData empty_edges(TypeParam::value);
-    NodeMapping empty_mapping(TypeParam::value);
+    NodeMapping empty_mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
     this->index = NodeEdgeIndex(TypeParam::value);
     this->index.rebuild(empty_edges.edge_data, empty_mapping.node_mapping, true);
     this->index.update_temporal_weights(empty_edges.edge_data, -1);
@@ -120,7 +121,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightBiasPerNode) {
     edges.push_back(1, 4, 300);
     edges.update_timestamp_groups();
 
-    NodeMapping mapping(TypeParam::value);
+    NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
     mapping.update(edges.edge_data, 0, edges.size());
 
     this->index = NodeEdgeIndex(TypeParam::value);
@@ -155,7 +156,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, ScaledWeightRatios) {
     edges.push_back(1, 4, 500);
     edges.update_timestamp_groups();
 
-    NodeMapping mapping(TypeParam::value);
+    NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
     mapping.update(edges.edge_data, 0, edges.size());
 
     this->index = NodeEdgeIndex(TypeParam::value);
@@ -216,7 +217,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightConsistencyAcrossUpdates) {
    edges.push_back(1, 3, 10);
    edges.update_timestamp_groups();
 
-   NodeMapping mapping(TypeParam::value);
+   NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
    mapping.update(edges.edge_data, 0, edges.size());
 
    this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
@@ -236,7 +237,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, SingleTimestampGroupPerNode) {
    edges.push_back(2, 3, 10);
    edges.update_timestamp_groups();
 
-   NodeMapping mapping(TypeParam::value);
+   NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
    mapping.update(edges.edge_data, 0, edges.size());
 
    this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
@@ -261,7 +262,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundZero) {
     edges.push_back(1, 4, 30);
     edges.update_timestamp_groups();
 
-    NodeMapping mapping(TypeParam::value);
+    NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
     mapping.update(edges.edge_data, 0, edges.size());
 
     this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
@@ -282,7 +283,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundWithSingleTimestamp) {
     edges.push_back(node_id, 4, 10);
     edges.update_timestamp_groups();
 
-    NodeMapping mapping(TypeParam::value);
+    NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
     mapping.update(edges.edge_data, 0, edges.size());
 
     // Get the dense index for node_id
@@ -311,7 +312,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightOrderPreservation) {
     edges.push_back(1, 4, 30);
     edges.update_timestamp_groups();
 
-    NodeMapping mapping(TypeParam::value);
+    NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
     mapping.update(edges.edge_data, 0, edges.size());
     this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
 
@@ -345,7 +346,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleNormalizationTest) {
     edges.push_back(1, 5, 100000);    // Large gap
     edges.update_timestamp_groups();
 
-    NodeMapping mapping(TypeParam::value);  // CPU mode
+    NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);  // CPU mode
     mapping.update(edges.edge_data, 0, edges.size());
 
     this->index = NodeEdgeIndex(TypeParam::value);  // CPU mode

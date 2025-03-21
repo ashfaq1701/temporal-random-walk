@@ -224,7 +224,8 @@ HOST void temporal_graph::delete_old_edges_std(TemporalGraphStore* graph) {
     const size_t remaining = edge_data::size(graph->edge_data) - delete_count;
 
     // Track which nodes still have edges
-    bool* has_edges = new bool[graph->node_mapping->sparse_to_dense_size];
+    bool* has_edges = new bool[graph->node_mapping->capacity];
+    fill_memory(has_edges, graph->node_mapping->capacity, false, false);
 
     if (remaining > 0) {
         remove_first_n_memory(
@@ -247,17 +248,17 @@ HOST void temporal_graph::delete_old_edges_std(TemporalGraphStore* graph) {
 
         // Mark nodes that still have edges
         for (size_t i = 0; i < remaining; i++) {
-            has_edges[graph->edge_data->sources[i]] = true;
-            has_edges[graph->edge_data->targets[i]] = true;
+            has_edges[node_mapping::to_dense(graph->node_mapping, graph->edge_data->sources[i])] = true;
+            has_edges[node_mapping::to_dense(graph->node_mapping, graph->edge_data->targets[i])] = true;
         }
     }
 
     edge_data::set_size(graph->edge_data, remaining);
 
     // Mark nodes with no edges as deleted
-    for (size_t i = 0; i < graph->node_mapping->sparse_to_dense_size; i++) {
+    for (size_t i = 0; i < graph->node_mapping->capacity; i++) {
         if (!has_edges[i]) {
-            node_mapping::mark_node_deleted(graph->node_mapping, static_cast<int>(i));
+            node_mapping::mark_node_deleted(graph->node_mapping, graph->node_mapping->node_index[i]);
         }
     }
 
@@ -266,7 +267,6 @@ HOST void temporal_graph::delete_old_edges_std(TemporalGraphStore* graph) {
     // Update all data structures after edge deletion
     edge_data::update_timestamp_groups_std(graph->edge_data);
     node_mapping::update_std(graph->node_mapping, graph->edge_data, 0, graph->edge_data->timestamps_size);
-    node_edge_index::rebuild(graph->node_edge_index, graph->edge_data, graph->node_mapping, graph->is_directed);
 }
 
 HOST size_t temporal_graph::count_timestamps_less_than_std(const TemporalGraphStore* graph, const int64_t timestamp) {
@@ -622,8 +622,8 @@ HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore* graph) {
 
     // Create bool array for tracking nodes with edges
     bool* has_edges;
-    allocate_memory(&has_edges, graph->node_mapping->sparse_to_dense_size, true);
-    fill_memory(has_edges, graph->node_mapping->sparse_to_dense_size, false, true);
+    allocate_memory(&has_edges, graph->node_mapping->capacity, true);
+    fill_memory(has_edges, graph->node_mapping->capacity, false, true);
 
     if (remaining > 0) {
         // Move edges using thrust::copy
@@ -649,14 +649,16 @@ HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore* graph) {
         // Mark nodes with edges in parallel
         int* sources_ptr = graph->edge_data->sources;
         int* targets_ptr = graph->edge_data->targets;
+        int* node_index = graph->node_mapping->node_index;
+        int capacity = graph->node_mapping->capacity;
 
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(remaining),
-            [sources_ptr, targets_ptr, has_edges] HOST DEVICE (const size_t i) {
-                has_edges[sources_ptr[i]] = true;
-                has_edges[targets_ptr[i]] = true;
+            [sources_ptr, targets_ptr, has_edges, node_index, capacity] DEVICE (const size_t i) {
+                has_edges[node_mapping::to_dense_from_ptr_device(node_index, sources_ptr[i], capacity)] = true;
+                has_edges[node_mapping::to_dense_from_ptr_device(node_index, targets_ptr[i], capacity)] = true;
             }
         );
     }
@@ -665,16 +667,17 @@ HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore* graph) {
     edge_data::set_size(graph->edge_data, remaining);
 
     bool* is_deleted_ptr = graph->node_mapping->is_deleted;
-    const auto is_deleted_size = graph->node_mapping->is_deleted_size;
+    int* node_index_ptr = graph->node_mapping->node_index;
+    const auto node_index_capacity = graph->node_mapping->capacity;
 
     // Mark deleted nodes in parallel
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
-        thrust::make_counting_iterator<size_t>(graph->node_mapping->sparse_to_dense_size),
-        [has_edges, is_deleted_ptr, is_deleted_size] DEVICE (const size_t i) {
+        thrust::make_counting_iterator<size_t>(node_index_capacity),
+        [has_edges, is_deleted_ptr, node_index_ptr, node_index_capacity] DEVICE (const size_t i) {
             if (!has_edges[i]) {
-                node_mapping::mark_node_deleted_from_ptr(is_deleted_ptr, static_cast<int>(i), static_cast<int>(is_deleted_size));
+                node_mapping::mark_node_deleted_from_ptr(is_deleted_ptr, node_index_ptr, node_index_ptr[i], node_index_capacity);
             }
         }
     );
@@ -685,7 +688,6 @@ HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore* graph) {
     // Update data structures
     edge_data::update_timestamp_groups_cuda(graph->edge_data);
     node_mapping::update_cuda(graph->node_mapping, graph->edge_data, 0, graph->edge_data->timestamps_size);
-    node_edge_index::rebuild(graph->node_edge_index, graph->edge_data, graph->node_mapping, graph->is_directed);
 }
 
 HOST size_t temporal_graph::count_timestamps_less_than_cuda(const TemporalGraphStore* graph, const int64_t timestamp) {

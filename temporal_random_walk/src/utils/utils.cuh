@@ -99,4 +99,19 @@ HOST DEVICE inline int pick_other_number(const int first, const int second, cons
     return (picked_number == first) ? second : first;
 }
 
+HOST DEVICE inline size_t next_power_of_two(const size_t n) {
+    // If n is already a power of 2, return it
+    if ((n & (n - 1)) == 0) {
+        return n;
+    }
+
+    // Otherwise, find the next power of 2
+    size_t power = 1;
+    while (power < n) {
+        power <<= 1;
+    }
+
+    return power;
+}
+
 #endif // UTILS_H

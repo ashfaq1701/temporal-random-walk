@@ -21,62 +21,7 @@ public:
     NodeMappingStore* node_mapping;
     bool owns_node_mapping;
 
-    std::vector<int> sparse_to_dense() const {
-        #ifdef HAS_CUDA
-        if (node_mapping->use_gpu) {
-            std::vector<int> result(node_mapping->sparse_to_dense_size);
-            cudaMemcpy(result.data(), node_mapping->sparse_to_dense,
-                      node_mapping->sparse_to_dense_size * sizeof(int),
-                      cudaMemcpyDeviceToHost);
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<int>(node_mapping->sparse_to_dense,
-                                   node_mapping->sparse_to_dense +
-                                   node_mapping->sparse_to_dense_size);
-        }
-    }
-
-    std::vector<int> dense_to_sparse() const {
-        #ifdef HAS_CUDA
-        if (node_mapping->use_gpu) {
-            std::vector<int> result(node_mapping->dense_to_sparse_size);
-            cudaMemcpy(result.data(), node_mapping->dense_to_sparse,
-                      node_mapping->dense_to_sparse_size * sizeof(int),
-                      cudaMemcpyDeviceToHost);
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<int>(node_mapping->dense_to_sparse,
-                                   node_mapping->dense_to_sparse +
-                                   node_mapping->dense_to_sparse_size);
-        }
-    }
-
-    std::vector<bool> is_deleted() const {
-        #ifdef HAS_CUDA
-        if (node_mapping->use_gpu) {
-            std::vector<char> temp_buffer(node_mapping->is_deleted_size);
-
-            cudaMemcpy(temp_buffer.data(), node_mapping->is_deleted,
-                       node_mapping->is_deleted_size * sizeof(bool),
-                       cudaMemcpyDeviceToHost);
-
-            return std::vector<bool>(temp_buffer.begin(), temp_buffer.end());
-        }
-        else
-        #endif
-        {
-            return std::vector<bool>(node_mapping->is_deleted,
-                        node_mapping->is_deleted + node_mapping->is_deleted_size);
-        }
-    }
-
-    explicit NodeMapping(bool use_gpu);
+    explicit NodeMapping(int node_count_max_bound, bool use_gpu);
 
     explicit NodeMapping(NodeMappingStore* existing_node_mapping);
 

@@ -12,6 +12,7 @@ struct TemporalRandomWalkStore {
     int64_t max_time_capacity;
     bool enable_weight_computation;
     double timescale_bound;
+    int node_count_max_bound;
     size_t n_threads;
     ThreadPool* thread_pool;
 
@@ -26,6 +27,7 @@ struct TemporalRandomWalkStore {
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
         const double timescale_bound,
+        const int node_count_max_bound,
         const size_t n_threads): thread_pool(new ThreadPool(n_threads)) {
 
         this->is_directed = is_directed;
@@ -33,6 +35,7 @@ struct TemporalRandomWalkStore {
         this->max_time_capacity = max_time_capacity;
         this->enable_weight_computation = enable_weight_computation;
         this->timescale_bound = timescale_bound;
+        this->node_count_max_bound = node_count_max_bound;
         this->n_threads = n_threads;
 
         this->temporal_graph = new TemporalGraphStore(
@@ -40,7 +43,8 @@ struct TemporalRandomWalkStore {
             use_gpu,
             max_time_capacity,
             enable_weight_computation,
-            timescale_bound);
+            timescale_bound,
+            node_count_max_bound);
 
         #ifdef HAS_CUDA
         cuda_device_prop = new cudaDeviceProp();
