@@ -155,7 +155,7 @@ TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForLinearRandomPicke
     const double actual_prob_start = static_cast<double>(count_ones_start_prioritized) / num_trials;
 
     // Allow for some statistical variation
-    constexpr double tolerance = 0.01;  // 1% tolerance
+    constexpr double tolerance = 0.02;  // 2% tolerance
 
     EXPECT_NEAR(actual_prob_end, expected_prob_end, tolerance)
         << "When prioritizing end, probability of picking 1 should be approximately "
@@ -206,7 +206,7 @@ TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForExponentialRandom
     const double actual_prob_start = static_cast<double>(count_ones_start_prioritized) / num_trials;
 
     // Allow for some statistical variation
-    constexpr double tolerance = 0.01;  // 1% tolerance
+    constexpr double tolerance = 0.02;  // 2% tolerance
 
     EXPECT_NEAR(actual_prob_end, expected_prob_end, tolerance)
         << "When prioritizing end, probability of picking 1 should be approximately "

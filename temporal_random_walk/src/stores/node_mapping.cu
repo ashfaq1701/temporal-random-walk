@@ -8,13 +8,10 @@
 #include <thrust/extrema.h>
 #endif
 
-HOST DEVICE uint32_t murmur3_32(uint32_t key) {
-    key ^= key >> 16;
-    key *= 0x85ebca6b;
-    key ^= key >> 13;
-    key *= 0xc2b2ae35;
-    key ^= key >> 16;
-    return key;
+HOST DEVICE size_t hash_function(const int key, const size_t capacity) {
+    auto k = static_cast<uint32_t>(key);
+    k ^= k >> 16;  // Simple mixing step
+    return (k * 0x9E3779B9) & (capacity - 1);
 }
 
 __global__ void add_nodes_kernel(int* node_index, const int capacity, const int* node_ids, const size_t num_nodes, size_t* size) {
@@ -26,7 +23,7 @@ __global__ void add_nodes_kernel(int* node_index, const int capacity, const int*
         return;
     }
 
-    uint32_t hash = murmur3_32(key) % capacity;
+    uint32_t hash = hash_function(key, capacity);
     const size_t start = hash;
 
     while (true) {
@@ -61,7 +58,7 @@ HOST void add_nodes_host(int* node_index, const int capacity, const int* node_id
             continue;
         }
 
-        uint32_t hash = murmur3_32(key) % capacity;
+        uint32_t hash = hash_function(key, capacity);
         const size_t start = hash;
 
         while (true) {
@@ -95,7 +92,7 @@ HOST DEVICE bool check_if_has_node(const int* node_index, const int capacity, co
         return false;
     }
 
-    uint32_t hash = murmur3_32(node_id) % capacity;
+    uint32_t hash = hash_function(node_id, capacity);
     const size_t start = hash;
 
     while (true) {
@@ -127,7 +124,7 @@ __global__ void get_index_kernel(int* result, const int* node_index, const int c
     }
 
     if (threadIdx.x == 0 && blockIdx.x == 0) {
-        uint32_t hash = murmur3_32(node_id) % capacity;
+        uint32_t hash = hash_function(node_id, capacity);
         const size_t start = hash;
 
         while (true) {
@@ -160,7 +157,7 @@ HOST DEVICE int get_index(const int* node_index, const int capacity, const int n
         return -1;
     }
 
-    uint32_t hash = murmur3_32(node_id) % capacity;
+    uint32_t hash = hash_function(node_id, capacity);
     const size_t start = hash;
 
     while (true) {
