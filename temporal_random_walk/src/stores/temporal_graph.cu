@@ -225,6 +225,7 @@ HOST void temporal_graph::delete_old_edges_std(TemporalGraphStore* graph) {
 
     // Track which nodes still have edges
     bool* has_edges = new bool[graph->node_mapping->capacity];
+    fill_memory(has_edges, graph->node_mapping->capacity, false, false);
 
     if (remaining > 0) {
         remove_first_n_memory(
