@@ -98,7 +98,7 @@ namespace node_edge_index {
      * Rebuild related functions
      */
 
-    HOST void allocate_node_edge_offsets(NodeEdgeIndexStore* node_edge_index, size_t num_nodes, bool is_directed);
+    HOST void allocate_node_edge_offsets(NodeEdgeIndexStore* node_edge_index, size_t node_index_capacity, bool is_directed);
 
     HOST void allocate_node_edge_indices(NodeEdgeIndexStore* node_edge_index, bool is_directed);
 
@@ -135,14 +135,14 @@ namespace node_edge_index {
     HOST void compute_node_timestamp_offsets_std(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
-        size_t num_nodes,
+        size_t node_index_capacity,
         bool is_directed
     );
 
     HOST void compute_node_timestamp_indices_std(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
-        size_t num_nodes,
+        size_t node_index_capacity,
         bool is_directed
     );
 
@@ -180,14 +180,14 @@ namespace node_edge_index {
     HOST void compute_node_timestamp_offsets_cuda(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
-        size_t num_nodes,
+        size_t node_index_capacity,
         bool is_directed
     );
 
     HOST void compute_node_timestamp_indices_cuda(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
-        size_t num_nodes,
+        size_t node_index_capacity,
         bool is_directed
     );
 

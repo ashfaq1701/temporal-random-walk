@@ -150,24 +150,24 @@ HOST DEVICE MemoryView<size_t> node_edge_index::get_timestamp_offset_vector(cons
     }
 }
 
-HOST void node_edge_index::allocate_node_edge_offsets(NodeEdgeIndexStore* node_edge_index, size_t num_nodes, bool is_directed) {
-    allocate_memory(&node_edge_index->outbound_offsets, num_nodes + 1, node_edge_index->use_gpu);
-    node_edge_index->outbound_offsets_size = num_nodes + 1;
-    fill_memory(node_edge_index->outbound_offsets, num_nodes + 1, static_cast<size_t>(0), node_edge_index->use_gpu);
+HOST void node_edge_index::allocate_node_edge_offsets(NodeEdgeIndexStore* node_edge_index, size_t node_index_capacity, bool is_directed) {
+    allocate_memory(&node_edge_index->outbound_offsets, node_index_capacity + 1, node_edge_index->use_gpu);
+    node_edge_index->outbound_offsets_size = node_index_capacity + 1;
+    fill_memory(node_edge_index->outbound_offsets, node_index_capacity + 1, static_cast<size_t>(0), node_edge_index->use_gpu);
 
-    allocate_memory(&node_edge_index->outbound_timestamp_group_offsets, num_nodes + 1, node_edge_index->use_gpu);
-    node_edge_index->outbound_timestamp_group_offsets_size = num_nodes + 1;
-    fill_memory(node_edge_index->outbound_timestamp_group_offsets, num_nodes + 1, static_cast<size_t>(0), node_edge_index->use_gpu);
+    allocate_memory(&node_edge_index->outbound_timestamp_group_offsets, node_index_capacity + 1, node_edge_index->use_gpu);
+    node_edge_index->outbound_timestamp_group_offsets_size = node_index_capacity + 1;
+    fill_memory(node_edge_index->outbound_timestamp_group_offsets, node_index_capacity + 1, static_cast<size_t>(0), node_edge_index->use_gpu);
 
     // For directed graphs, also allocate inbound structures
     if (is_directed) {
-        allocate_memory(&node_edge_index->inbound_offsets, num_nodes + 1, node_edge_index->use_gpu);
-        node_edge_index->inbound_offsets_size = num_nodes + 1;
-        fill_memory(node_edge_index->inbound_offsets, num_nodes + 1, static_cast<size_t>(0), node_edge_index->use_gpu);
+        allocate_memory(&node_edge_index->inbound_offsets, node_index_capacity + 1, node_edge_index->use_gpu);
+        node_edge_index->inbound_offsets_size = node_index_capacity + 1;
+        fill_memory(node_edge_index->inbound_offsets, node_index_capacity + 1, static_cast<size_t>(0), node_edge_index->use_gpu);
 
-        allocate_memory(&node_edge_index->inbound_timestamp_group_offsets, num_nodes + 1, node_edge_index->use_gpu);
-        node_edge_index->inbound_timestamp_group_offsets_size = num_nodes + 1;
-        fill_memory(node_edge_index->inbound_timestamp_group_offsets, num_nodes + 1, static_cast<size_t>(0), node_edge_index->use_gpu);
+        allocate_memory(&node_edge_index->inbound_timestamp_group_offsets, node_index_capacity + 1, node_edge_index->use_gpu);
+        node_edge_index->inbound_timestamp_group_offsets_size = node_index_capacity + 1;
+        fill_memory(node_edge_index->inbound_timestamp_group_offsets, node_index_capacity + 1, static_cast<size_t>(0), node_edge_index->use_gpu);
     }
 }
 
@@ -368,19 +368,19 @@ HOST void node_edge_index::compute_node_edge_indices_std(
 HOST void node_edge_index::compute_node_timestamp_offsets_std(
     NodeEdgeIndexStore* node_edge_index,
     const EdgeDataStore* edge_data,
-    const size_t num_nodes,
+    const size_t node_index_capacity,
     const bool is_directed
 ) {
     // Temporary arrays to store group counts for each node
-    auto* outbound_group_count = new size_t[num_nodes]();  // Initialize to zeros
+    auto* outbound_group_count = new size_t[node_index_capacity]();  // Initialize to zeros
     size_t* inbound_group_count = nullptr;
 
     if (is_directed) {
-        inbound_group_count = new size_t[num_nodes]();  // Initialize to zeros
+        inbound_group_count = new size_t[node_index_capacity]();  // Initialize to zeros
     }
 
     // Count timestamp groups for each node
-    for (size_t node = 0; node < num_nodes; node++) {
+    for (size_t node = 0; node < node_index_capacity; node++) {
         // Process outbound groups
         size_t start = node_edge_index->outbound_offsets[node];
         size_t end = node_edge_index->outbound_offsets[node + 1];
@@ -421,7 +421,7 @@ HOST void node_edge_index::compute_node_timestamp_offsets_std(
     // Calculate prefix sums for group offsets
     node_edge_index->outbound_timestamp_group_offsets[0] = 0;  // Start at 0
 
-    for (size_t i = 0; i < num_nodes; i++) {
+    for (size_t i = 0; i < node_index_capacity; i++) {
         node_edge_index->outbound_timestamp_group_offsets[i + 1] =
             node_edge_index->outbound_timestamp_group_offsets[i] + outbound_group_count[i];
 
@@ -439,11 +439,11 @@ HOST void node_edge_index::compute_node_timestamp_offsets_std(
 HOST void node_edge_index::compute_node_timestamp_indices_std(
     NodeEdgeIndexStore* node_edge_index,
     const EdgeDataStore* edge_data,
-    const size_t num_nodes,
+    const size_t node_index_capacity,
     const bool is_directed
 ) {
     // Process each node
-    for (size_t node = 0; node < num_nodes; node++) {
+    for (size_t node = 0; node < node_index_capacity; node++) {
         // Fill outbound timestamp group indices
         size_t start = node_edge_index->outbound_offsets[node];
         size_t end = node_edge_index->outbound_offsets[node + 1];
@@ -493,7 +493,7 @@ HOST void node_edge_index::update_temporal_weights_std(
     const EdgeDataStore* edge_data,
     const double timescale_bound
 ) {
-    const size_t num_nodes = node_edge_index->outbound_offsets_size - 1;
+    const size_t node_index_capacity = node_edge_index->outbound_offsets_size - 1;
 
     // Resize temporal weights arrays
     const size_t outbound_groups_size = node_edge_index->outbound_timestamp_group_indices_size;
@@ -528,7 +528,7 @@ HOST void node_edge_index::update_temporal_weights_std(
     }
 
     // Process each node
-    for (size_t node = 0; node < num_nodes; node++) {
+    for (size_t node = 0; node < node_index_capacity; node++) {
         // Outbound weights
         MemoryView<size_t> outbound_offsets = get_timestamp_offset_vector(node_edge_index, true, false);
         const size_t out_start = outbound_offsets.data[node];
@@ -640,8 +640,8 @@ HOST void node_edge_index::populate_dense_ids_cuda(
     thrust::device_ptr<int> d_dense_targets(dense_targets);
 
     // Get raw pointer to sparse_to_dense mapping
-    int* sparse_to_dense_ptr = node_mapping->sparse_to_dense;
-    size_t sparse_to_dense_size = node_mapping->sparse_to_dense_size;
+    int* node_index_ptr = node_mapping->node_index;
+    size_t node_index_capacity = node_mapping->capacity;
 
     // Transform source IDs from sparse to dense
     thrust::transform(
@@ -649,8 +649,8 @@ HOST void node_edge_index::populate_dense_ids_cuda(
         d_sources,
         d_sources + static_cast<long>(edge_data->sources_size),
         d_dense_sources,
-        [sparse_to_dense_ptr, sparse_to_dense_size] DEVICE (const int id) {
-            return node_mapping::to_dense_from_ptr_device(sparse_to_dense_ptr, id, sparse_to_dense_size);
+        [node_index_ptr, node_index_capacity] DEVICE (const int id) {
+            return node_mapping::to_dense_from_ptr_device(node_index_ptr, id, static_cast<int>(node_index_capacity));
         }
     );
 
@@ -660,8 +660,8 @@ HOST void node_edge_index::populate_dense_ids_cuda(
         d_targets,
         d_targets + static_cast<long>(edge_data->targets_size),
         d_dense_targets,
-        [sparse_to_dense_ptr, sparse_to_dense_size] DEVICE (const int id) {
-            return node_mapping::to_dense_from_ptr_device(sparse_to_dense_ptr, id, sparse_to_dense_size);
+        [node_index_ptr, node_index_capacity] DEVICE (const int id) {
+            return node_mapping::to_dense_from_ptr_device(node_index_ptr, id, static_cast<int>(node_index_capacity));
         }
     );
 }
@@ -805,19 +805,19 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
 HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
     NodeEdgeIndexStore* node_edge_index,
     const EdgeDataStore* edge_data,
-    const size_t num_nodes,
+    const size_t node_index_capacity,
     const bool is_directed
 ) {
     // Allocate device memory for temporary arrays to count groups per node
     size_t* d_outbound_group_count = nullptr;
     size_t* d_inbound_group_count = nullptr;
 
-    cudaMalloc(&d_outbound_group_count, num_nodes * sizeof(size_t));
-    cudaMemset(d_outbound_group_count, 0, num_nodes * sizeof(size_t));
+    cudaMalloc(&d_outbound_group_count, node_index_capacity * sizeof(size_t));
+    cudaMemset(d_outbound_group_count, 0, node_index_capacity * sizeof(size_t));
 
     if (is_directed) {
-        cudaMalloc(&d_inbound_group_count, num_nodes * sizeof(size_t));
-        cudaMemset(d_inbound_group_count, 0, num_nodes * sizeof(size_t));
+        cudaMalloc(&d_inbound_group_count, node_index_capacity * sizeof(size_t));
+        cudaMemset(d_inbound_group_count, 0, node_index_capacity * sizeof(size_t));
     }
 
     // Get raw pointers for data access in kernel
@@ -834,7 +834,7 @@ HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
-        thrust::make_counting_iterator<size_t>(num_nodes),
+        thrust::make_counting_iterator<size_t>(node_index_capacity),
         [outbound_offsets_ptr, inbound_offsets_ptr,
          outbound_indices_ptr, inbound_indices_ptr,
          outbound_group_count_ptr, inbound_group_count_ptr,
@@ -884,7 +884,7 @@ HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
     thrust::inclusive_scan(
         DEVICE_EXECUTION_POLICY,
         d_outbound_group_count_thrust,
-        d_outbound_group_count_thrust + static_cast<long>(num_nodes),
+        d_outbound_group_count_thrust + static_cast<long>(node_index_capacity),
         d_outbound_timestamp_group_offsets + 1
     );
 
@@ -900,7 +900,7 @@ HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
         thrust::inclusive_scan(
             DEVICE_EXECUTION_POLICY,
             d_inbound_group_count_thrust,
-            d_inbound_group_count_thrust + static_cast<long>(num_nodes),
+            d_inbound_group_count_thrust + static_cast<long>(node_index_capacity),
             d_inbound_timestamp_group_offsets + 1
         );
     }
@@ -915,7 +915,7 @@ HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
 HOST void node_edge_index::compute_node_timestamp_indices_cuda(
     NodeEdgeIndexStore* node_edge_index,
     const EdgeDataStore* edge_data,
-    const size_t num_nodes,
+    const size_t node_index_capacity,
     const bool is_directed
 ) {
     // Get raw pointers for data access in kernel
@@ -933,7 +933,7 @@ HOST void node_edge_index::compute_node_timestamp_indices_cuda(
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
-        thrust::make_counting_iterator<size_t>(num_nodes),
+        thrust::make_counting_iterator<size_t>(node_index_capacity),
         [outbound_offsets_ptr, inbound_offsets_ptr,
          outbound_indices_ptr, inbound_indices_ptr,
          outbound_timestamp_group_offsets_ptr, inbound_timestamp_group_offsets_ptr,
@@ -984,7 +984,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
     double timescale_bound
 ) {
     // Get the number of nodes and timestamp groups
-    const size_t num_nodes = node_edge_index->outbound_offsets_size - 1;
+    const size_t node_index_capacity = node_edge_index->outbound_offsets_size - 1;
     const size_t outbound_groups_size = node_edge_index->outbound_timestamp_group_indices_size;
 
     // Resize outbound weight arrays
@@ -1035,7 +1035,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(num_nodes),
+            thrust::make_counting_iterator<size_t>(node_index_capacity),
             [timestamps_ptr, outbound_indices_ptr, outbound_group_indices_ptr,
              outbound_offsets_ptr, d_forward_weights, d_backward_weights, timescale_bound]
              DEVICE (const size_t node) {
@@ -1134,7 +1134,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(num_nodes),
+            thrust::make_counting_iterator<size_t>(node_index_capacity),
             [timestamps_ptr, inbound_indices_ptr, inbound_group_indices_ptr,
              inbound_offsets_ptr, d_backward_weights, timescale_bound]
              DEVICE (const size_t node) {
@@ -1303,7 +1303,7 @@ HOST NodeEdgeIndexStore* node_edge_index::to_device_ptr(const NodeEdgeIndexStore
 
 HOST void node_edge_index::rebuild(NodeEdgeIndexStore* node_edge_index, EdgeDataStore* edge_data, NodeMappingStore* node_mapping, bool is_directed) {
     // Get sizes
-    const size_t num_nodes = node_mapping::size(node_mapping);
+    const size_t node_index_capacity = node_mapping->capacity;
     const size_t num_edges = edge_data->timestamps_size;
 
     // Allocate buffers for dense IDs
@@ -1324,7 +1324,7 @@ HOST void node_edge_index::rebuild(NodeEdgeIndexStore* node_edge_index, EdgeData
     }
 
     // Step 2: Allocate and compute node edge offsets
-    allocate_node_edge_offsets(node_edge_index, num_nodes, is_directed);
+    allocate_node_edge_offsets(node_edge_index, node_index_capacity, is_directed);
 
     #ifdef HAS_CUDA
     if (node_edge_index->use_gpu) {
@@ -1360,12 +1360,12 @@ HOST void node_edge_index::rebuild(NodeEdgeIndexStore* node_edge_index, EdgeData
     // Step 4: Compute node timestamp offsets
     #ifdef HAS_CUDA
     if (node_edge_index->use_gpu) {
-        compute_node_timestamp_offsets_cuda(node_edge_index, edge_data, num_nodes, is_directed);
+        compute_node_timestamp_offsets_cuda(node_edge_index, edge_data, node_index_capacity, is_directed);
     }
     else
     #endif
     {
-        compute_node_timestamp_offsets_std(node_edge_index, edge_data, num_nodes, is_directed);
+        compute_node_timestamp_offsets_std(node_edge_index, edge_data, node_index_capacity, is_directed);
     }
 
     // Step 5: Allocate and compute node timestamp indices
@@ -1373,12 +1373,12 @@ HOST void node_edge_index::rebuild(NodeEdgeIndexStore* node_edge_index, EdgeData
 
     #ifdef HAS_CUDA
     if (node_edge_index->use_gpu) {
-        compute_node_timestamp_indices_cuda(node_edge_index, edge_data, num_nodes, is_directed);
+        compute_node_timestamp_indices_cuda(node_edge_index, edge_data, node_index_capacity, is_directed);
     }
     else
     #endif
     {
-        compute_node_timestamp_indices_std(node_edge_index, edge_data, num_nodes, is_directed);
+        compute_node_timestamp_indices_std(node_edge_index, edge_data, node_index_capacity, is_directed);
     }
 
     // Clean up dense ID buffers

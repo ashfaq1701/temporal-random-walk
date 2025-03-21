@@ -25,8 +25,9 @@ __global__ void mark_node_deleted_kernel(const NodeMappingStore* node_mapping, i
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         node_mapping::mark_node_deleted_from_ptr(
             node_mapping->is_deleted,
+            node_mapping->node_index,
             sparse_id,
-            static_cast<int>(node_mapping->is_deleted_size));
+            node_mapping->capacity);
     }
 }
 
@@ -148,11 +149,6 @@ void NodeMapping::clear() const {
     node_mapping::clear(node_mapping);
 }
 
-void NodeMapping::reserve(size_t size) const {
-    // This function is HOST only
-    node_mapping::reserve(node_mapping, size);
-}
-
 void NodeMapping::mark_node_deleted(int sparse_id) const {
     #ifdef HAS_CUDA
     if (node_mapping->use_gpu) {
@@ -197,7 +193,7 @@ bool NodeMapping::has_node(int sparse_id) const {
 
 std::vector<int> NodeMapping::get_all_sparse_ids() const {
     // This function is HOST only
-    MemoryView<int> sparse_ids = node_mapping::get_all_sparse_ids(node_mapping);
+    DataBlock<int> sparse_ids = node_mapping::get_all_sparse_ids(node_mapping);
     std::vector<int> result;
 
     #ifdef HAS_CUDA
