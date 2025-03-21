@@ -14,6 +14,7 @@ HOST DEVICE size_t hash_function(const int key, const size_t capacity) {
     return (k * 0x9E3779B9) & (capacity - 1);
 }
 
+#ifdef HAS_CUDA
 __global__ void add_nodes_kernel(int* node_index, const int capacity, const int* node_ids, const size_t num_nodes, size_t* size) {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= num_nodes) return;
@@ -50,6 +51,7 @@ __global__ void add_nodes_kernel(int* node_index, const int capacity, const int*
         }
     }
 }
+#endif
 
 HOST void add_nodes_host(int* node_index, const int capacity, const int* node_ids, const size_t num_nodes, size_t* size) {
     for (size_t idx = 0; idx < num_nodes; idx++) {
@@ -116,6 +118,7 @@ HOST DEVICE bool check_if_has_node(const int* node_index, const int capacity, co
     }
 }
 
+#ifdef HAS_CUDA
 __global__ void get_index_kernel(int* result, const int* node_index, const int capacity, const int node_id) {
     // Only one thread needs to execute this
     if (node_id < 0) {
@@ -151,6 +154,7 @@ __global__ void get_index_kernel(int* result, const int* node_index, const int c
         }
     }
 }
+#endif
 
 HOST DEVICE int get_index(const int* node_index, const int capacity, const int node_id) {
     if (node_id < 0) {
