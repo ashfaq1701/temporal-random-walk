@@ -24,7 +24,8 @@ struct NodeMappingStore {
         const int node_count_max_bound,
         const bool use_gpu)
         : node_count_max_bound(node_count_max_bound), use_gpu(use_gpu), node_size(0) {
-        capacity = next_prime(static_cast<int>(node_count_max_bound / HASH_INDEX_LOAD_FACTOR));
+        capacity = next_power_of_two(node_count_max_bound / HASH_INDEX_LOAD_FACTOR);
+
         allocate_memory(&node_index, capacity, use_gpu);
         fill_memory(node_index, capacity, -1, use_gpu);
 

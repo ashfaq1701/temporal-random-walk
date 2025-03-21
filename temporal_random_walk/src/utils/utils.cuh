@@ -99,31 +99,19 @@ HOST DEVICE inline int pick_other_number(const int first, const int second, cons
     return (picked_number == first) ? second : first;
 }
 
-/**
-* Prime number computation
-*/
-
-inline bool is_prime(const int n) {
-    if (n < 2) return false;
-    if (n == 2 || n == 3) return true;
-    if (n % 2 == 0 || n % 3 == 0) return false;
-
-    // Check divisibility up to sqrt(n) using 6k ± 1 optimization
-    for (int i = 5; i * i <= n; i += 6) {
-        if (n % i == 0 || n % (i + 2) == 0) return false;
+HOST DEVICE inline size_t next_power_of_two(const size_t n) {
+    // If n is already a power of 2, return it
+    if ((n & (n - 1)) == 0) {
+        return n;
     }
-    return true;
-}
 
-// Finds the next prime number greater than or equal to n
-inline int next_prime(int n) {
-    if (n <= 2) return 2;
-    if (n % 2 == 0) n++;  // Start with an odd number
-
-    while (!is_prime(n)) {
-        n += 2;  // Skip even numbers
+    // Otherwise, find the next power of 2
+    size_t power = 1;
+    while (power < n) {
+        power <<= 1;
     }
-    return n;
+
+    return power;
 }
 
 #endif // UTILS_H
