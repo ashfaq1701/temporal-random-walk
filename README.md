@@ -22,7 +22,7 @@
 from temporal_random_walk import TemporalRandomWalk
 
 # Create a directed temporal graph
-walker = TemporalRandomWalk(is_directed=True, use_gpu=True)
+walker = TemporalRandomWalk(is_directed=True, use_gpu=True, node_count_max_bound=10)
 
 # Add edges: (source, target, timestamp)
 edges = [

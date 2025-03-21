@@ -58,7 +58,7 @@ Classes
             int: Selected index
 
 `TemporalRandomWalk(...)`
-:   __init__(self: _temporal_random_walk.TemporalRandomWalk, is_directed: bool, use_gpu: bool = False, max_time_capacity: Optional[int] = None, enable_weight_computation: Optional[bool] = None, timescale_bound: Optional[float] = None) -> None
+:   __init__(self: _temporal_random_walk.TemporalRandomWalk, is_directed: bool, use_gpu: bool = False, max_time_capacity: Optional[int] = None, enable_weight_computation: Optional[bool] = None, timescale_bound: Optional[float] = None, node_count_max_bound: Optional[int] = None) -> None
     
     
     Initialize a temporal random walk generator.
@@ -68,7 +68,8 @@ Classes
     use_gpu (bool): Whether to use GPU or not.
     max_time_capacity (int, optional): Maximum time window for edges. Edges older than (latest_time - max_time_capacity) are removed. Use -1 for no limit. Defaults to -1.
     enable_weight_computation (bool, optional): Enable CTDNE weight computation. Required for ExponentialWeight picker. Defaults to False.
-    timescale_bound (float, optional): Scale factor for temporal differences. Used to prevent numerical issues with large time differences. Defaults to 50.0.
+    timescale_bound (float, optional): Scale factor for temporal differences. Used to prevent numerical issues with large time differences. Defaults to -1.0.
+    node_count_max_bound (int, optional): Maximum node count in the graph. Defaults to 10000. Setting this to a realistically higher bound can help save memory.
 
     ### Ancestors (in MRO)
 
