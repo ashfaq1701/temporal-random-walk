@@ -10,8 +10,14 @@
 
 HOST DEVICE size_t hash_function(const int key, const size_t capacity) {
     auto k = static_cast<uint32_t>(key);
-    k ^= k >> 16;  // Simple mixing step
-    return (k * 0x9E3779B9) & (capacity - 1);
+
+    k ^= k >> 16;
+    k *= 0x85ebca6b;
+    k ^= k >> 13;
+    k *= 0xc2b2ae35;
+    k ^= k >> 16;
+
+    return static_cast<size_t>(k) & (capacity - 1);
 }
 
 #ifdef HAS_CUDA
