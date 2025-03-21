@@ -266,7 +266,6 @@ HOST void temporal_graph::delete_old_edges_std(TemporalGraphStore* graph) {
     // Update all data structures after edge deletion
     edge_data::update_timestamp_groups_std(graph->edge_data);
     node_mapping::update_std(graph->node_mapping, graph->edge_data, 0, graph->edge_data->timestamps_size);
-    node_edge_index::rebuild(graph->node_edge_index, graph->edge_data, graph->node_mapping, graph->is_directed);
 }
 
 HOST size_t temporal_graph::count_timestamps_less_than_std(const TemporalGraphStore* graph, const int64_t timestamp) {
@@ -688,7 +687,6 @@ HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore* graph) {
     // Update data structures
     edge_data::update_timestamp_groups_cuda(graph->edge_data);
     node_mapping::update_cuda(graph->node_mapping, graph->edge_data, 0, graph->edge_data->timestamps_size);
-    node_edge_index::rebuild(graph->node_edge_index, graph->edge_data, graph->node_mapping, graph->is_directed);
 }
 
 HOST size_t temporal_graph::count_timestamps_less_than_cuda(const TemporalGraphStore* graph, const int64_t timestamp) {
