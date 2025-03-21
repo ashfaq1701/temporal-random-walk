@@ -75,7 +75,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             max_time_capacity (int, optional): Maximum time window for edges. Edges older than (latest_time - max_time_capacity) are removed. Use -1 for no limit. Defaults to -1.
             enable_weight_computation (bool, optional): Enable CTDNE weight computation. Required for ExponentialWeight picker. Defaults to False.
             timescale_bound (float, optional): Scale factor for temporal differences. Used to prevent numerical issues with large time differences. Defaults to -1.0.
-            node_count_max_bound (int, optional): Maximum node count in the graph. Defaults to 100000.
+            node_count_max_bound (int, optional): Maximum node count in the graph. Defaults to 10000. Setting this to a realistically higher bound can help save memory.
             )",
              py::arg("is_directed"),
              py::arg("use_gpu") = false,
