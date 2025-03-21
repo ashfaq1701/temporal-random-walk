@@ -43,8 +43,6 @@ namespace node_mapping {
      */
     HOST int to_dense(const NodeMappingStore *node_mapping, int sparse_id);
 
-    HOST int to_sparse(const NodeMappingStore *node_mapping, int dense_id);
-
     HOST DEVICE size_t size(const NodeMappingStore *node_mapping);
 
     HOST size_t active_size(const NodeMappingStore *node_mapping);
@@ -78,8 +76,6 @@ namespace node_mapping {
      */
 
     DEVICE int to_dense_device(const NodeMappingStore *node_mapping, int sparse_id);
-
-    DEVICE int to_sparse_device(const NodeMappingStore *node_mapping, int dense_id);
 
     DEVICE int to_dense_from_ptr_device(const int *sparse_to_dense, int sparse_id, size_t size);
 
