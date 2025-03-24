@@ -24,6 +24,7 @@ if __name__ == '__main__':
 
     with open(data_file_path, mode='r', newline='') as csvfile:
         csv_reader = csv.reader(csvfile, delimiter=",")
+        next(csv_reader)
         for row in csv_reader:
             u = int(row[0])
             i = int(row[1])
