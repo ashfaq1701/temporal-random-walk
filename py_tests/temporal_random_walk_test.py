@@ -4,7 +4,7 @@ import time
 from temporal_random_walk import TemporalRandomWalk
 
 
-GPU_USAGE_MODE = True
+GPU_USAGE_MODE = False
 
 def print_walks_for_nodes(walks):
     for idx, walk in enumerate(walks):
