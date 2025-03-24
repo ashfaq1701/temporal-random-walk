@@ -148,7 +148,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
         .def("get_random_walks_and_times_for_all_nodes", [](TemporalRandomWalk& tw,
                                                const int max_walk_len,
                                                const std::string& walk_bias,
-                                               const int num_walks_total,
+                                               const int num_walks_per_node,
                                                const std::optional<std::string>& initial_edge_bias = std::nullopt,
                                                const std::string& walk_direction = "Forward_In_Time")
              {
@@ -165,7 +165,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                  const auto walks_with_times = tw.get_random_walks_and_times_for_all_nodes(
                      max_walk_len,
                      &walk_bias_enum,
-                     num_walks_total,
+                     num_walks_per_node,
                      initial_edge_bias_enum_ptr,
                      walk_direction_enum);
 
@@ -196,7 +196,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                         - "Linear": Linear time decay
                         - "ExponentialIndex": Exponential decay with indices
                         - "ExponentialWeight": Exponential decay with weights
-                num_walks_total (int): Total number of walks.
+                num_walks_per_node (int): Number of walks per starting node.
                 initial_edge_bias (str, optional): Bias type for first edge selection.
                     Uses walk_bias if not specified.
                 walk_direction (str, optional): Direction of temporal random walks.
@@ -207,7 +207,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             )",
              py::arg("max_walk_len"),
              py::arg("walk_bias"),
-             py::arg("num_walks_total"),
+             py::arg("num_walks_per_node"),
              py::arg("initial_edge_bias") = py::none(),
              py::arg("walk_direction") = "Forward_In_Time")
 
@@ -246,7 +246,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                         - "Linear": Linear decay based on time
                         - "ExponentialIndex": Exponential decay with index sampling
                         - "ExponentialWeight": Exponential decay with timestamp weights
-                num_walks_per_node (int): Number of walks to generate per node
+                num_walks_total (int): Total number of walks to generate.
                 initial_edge_bias (str, optional): Bias type for selecting first edge.
                     Uses walk_bias if not specified.
                 walk_direction (str, optional): Direction of temporal random walk.
@@ -255,12 +255,17 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             Returns:
                 List[List[int]]: A list of walks, where each walk is a list of node IDs
                     representing a temporal path through the network.
-            )")
+            )",
+             py::arg("max_walk_len"),
+             py::arg("walk_bias"),
+             py::arg("num_walks_total"),
+             py::arg("initial_edge_bias") = py::none(),
+             py::arg("walk_direction") = "Forward_In_Time")
 
         .def("get_random_walks_and_times", [](TemporalRandomWalk& tw,
                                                const int max_walk_len,
                                                const std::string& walk_bias,
-                                               const int num_walks_per_node,
+                                               const int num_walks_total,
                                                const std::optional<std::string>& initial_edge_bias = std::nullopt,
                                                const std::string& walk_direction = "Forward_In_Time")
              {
@@ -277,7 +282,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                  auto walks_with_times = tw.get_random_walks_and_times(
                      max_walk_len,
                      &walk_bias_enum,
-                     num_walks_per_node,
+                     num_walks_total,
                      initial_edge_bias_enum_ptr,
                      walk_direction_enum);
 
@@ -308,7 +313,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                         - "Linear": Linear time decay
                         - "ExponentialIndex": Exponential decay with indices
                         - "ExponentialWeight": Exponential decay with weights
-                num_walks_total (int): Total number of walks.
+                num_walks_total (int): Total Number of walks to generate.
                 initial_edge_bias (str, optional): Bias type for first edge selection.
                     Uses walk_bias if not specified.
                 walk_direction (str, optional): Direction of temporal random walks.
