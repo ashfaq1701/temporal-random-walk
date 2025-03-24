@@ -24,12 +24,13 @@ if __name__ == '__main__':
 
     with open(data_file_path, mode='r', newline='') as csvfile:
         csv_reader = csv.reader(csvfile, delimiter=",")
-        next(csv_reader)
         for row in csv_reader:
             u = int(row[0])
             i = int(row[1])
             ts = int(row[2])
             data_tuples.append((u, i, ts))
+
+    print(f"--- Total edges: {len(data_tuples)} ---")
 
     start_time = time.time()
     temporal_random_walk_obj.add_multiple_edges(data_tuples)
