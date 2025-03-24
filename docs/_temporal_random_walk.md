@@ -113,7 +113,7 @@ Classes
         Returns:
             np.ndarray: A NumPy array with all node IDs.
 
-    `get_random_walks(self: _temporal_random_walk.TemporalRandomWalk, arg0: int, arg1: str, arg2: int, arg3: str | None, arg4: str)`
+    `get_random_walks(self: _temporal_random_walk.TemporalRandomWalk, max_walk_len: int, walk_bias: str, num_walks_total: int, initial_edge_bias: str | None = None, walk_direction: str = 'Forward_In_Time')`
     :   Generates temporal random walks.
         
         Args:
@@ -124,7 +124,7 @@ Classes
                     - "Linear": Linear decay based on time
                     - "ExponentialIndex": Exponential decay with index sampling
                     - "ExponentialWeight": Exponential decay with timestamp weights
-            num_walks_per_node (int): Number of walks to generate per node
+            num_walks_total (int): Total number of walks to generate.
             initial_edge_bias (str, optional): Bias type for selecting first edge.
                 Uses walk_bias if not specified.
             walk_direction (str, optional): Direction of temporal random walk.
@@ -134,7 +134,7 @@ Classes
             List[List[int]]: A list of walks, where each walk is a list of node IDs
                 representing a temporal path through the network.
 
-    `get_random_walks_and_times(self: _temporal_random_walk.TemporalRandomWalk, max_walk_len: int, walk_bias: str, num_walks_per_node: int, initial_edge_bias: str | None = None, walk_direction: str = 'Forward_In_Time')`
+    `get_random_walks_and_times(self: _temporal_random_walk.TemporalRandomWalk, max_walk_len: int, walk_bias: str, num_walks_total: int, initial_edge_bias: str | None = None, walk_direction: str = 'Forward_In_Time')`
     :   Generate temporal random walks with timestamps.
         
         Args:
@@ -145,7 +145,7 @@ Classes
                     - "Linear": Linear time decay
                     - "ExponentialIndex": Exponential decay with indices
                     - "ExponentialWeight": Exponential decay with weights
-            num_walks_per_node (int): Number of walks per starting node.
+            num_walks_total (int): Total Number of walks to generate.
             initial_edge_bias (str, optional): Bias type for first edge selection.
                 Uses walk_bias if not specified.
             walk_direction (str, optional): Direction of temporal random walks.
