@@ -41,10 +41,10 @@ if __name__ == '__main__':
     print(f'Total nodes: {temporal_random_walk_obj.get_node_count()}')
 
     start_time = time.time()
-    walks = temporal_random_walk_obj.get_random_walks_and_times_for_all_nodes(
+    walks = temporal_random_walk_obj.get_random_walks_and_times(
         max_walk_len=20,
         walk_bias="ExponentialIndex",
-        num_walks_per_node=10,
+        num_walks_total=1_000_000,
         initial_edge_bias="Linear",
         walk_direction="Forward_In_Time"
     )
