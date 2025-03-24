@@ -10,7 +10,7 @@ constexpr bool USE_GPU = true;
 constexpr bool USE_GPU = false;
 #endif
 
-constexpr int NUM_WALKS_PER_NODE = 1000;
+constexpr int NUM_WALKS_PER_NODE = 1000000;
 
 int main(int argc, char* argv[]) {
     std::string file_path = "../../data/sample_data.csv";
@@ -36,14 +36,14 @@ int main(int argc, char* argv[]) {
 
     start = std::chrono::high_resolution_clock::now();
 
-    const auto walks_backward_for_all_nodes = temporal_random_walk.get_random_walks_and_times_for_all_nodes(
+    const auto walks_backward_for_all_nodes = temporal_random_walk.get_random_walks_and_times(
         80,
         &exponential_picker_type,
         NUM_WALKS_PER_NODE,
         &uniform_picker_type,
         WalkDirection::Backward_In_Time);
 
-    const auto walks_forward_for_all_nodes = temporal_random_walk.get_random_walks_and_times_for_all_nodes(
+    const auto walks_forward_for_all_nodes = temporal_random_walk.get_random_walks_and_times(
         80,
         &exponential_picker_type,
         NUM_WALKS_PER_NODE,

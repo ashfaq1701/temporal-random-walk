@@ -126,7 +126,7 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_
 
     #ifdef HAS_CUDA
     if (use_gpu) {
-        walk_set = temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
+        walk_set = temporal_random_walk::get_random_walks_and_times_cuda(
             temporal_random_walk,
             max_walk_len,
             walk_bias,
@@ -137,7 +137,7 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_
     else
     #endif
     {
-        walk_set = temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
+        walk_set = temporal_random_walk::get_random_walks_and_times_std(
             temporal_random_walk,
             max_walk_len,
             walk_bias,
@@ -172,7 +172,7 @@ std::vector<std::vector<int>> TemporalRandomWalk::get_random_walks(
         const RandomPickerType* initial_edge_bias,
         const WalkDirection walk_direction) const {
 
-    auto walks_with_times = get_random_walks_and_times_for_all_nodes(
+    auto walks_with_times = get_random_walks_and_times(
         max_walk_len, walk_bias, num_walks_total, initial_edge_bias, walk_direction);
 
     std::vector<std::vector<int>> result(walks_with_times.size());
