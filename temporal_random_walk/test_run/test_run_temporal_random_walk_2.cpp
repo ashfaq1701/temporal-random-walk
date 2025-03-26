@@ -5,7 +5,7 @@
 #include "../test/test_utils.h"
 
 #ifdef HAS_CUDA
-constexpr bool USE_GPU = false;
+constexpr bool USE_GPU = true;
 #else
 constexpr bool USE_GPU = false;
 #endif
