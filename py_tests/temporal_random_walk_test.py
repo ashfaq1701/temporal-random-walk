@@ -41,7 +41,15 @@ if __name__ == '__main__':
     print(f'Total nodes: {temporal_random_walk_obj.get_node_count()}')
 
     start_time = time.time()
-    walks = temporal_random_walk_obj.get_random_walks_and_times(
+    walks_1 = temporal_random_walk_obj.get_random_walks_and_times(
+        max_walk_len=20,
+        walk_bias="ExponentialIndex",
+        num_walks_total=100_000,
+        initial_edge_bias="Uniform",
+        walk_direction="Forward_In_Time"
+    )
+
+    walks_2 = temporal_random_walk_obj.get_random_walks_and_times(
         max_walk_len=20,
         walk_bias="ExponentialIndex",
         num_walks_total=100_000,
@@ -50,5 +58,5 @@ if __name__ == '__main__':
     )
     print(f"--- Walk generation time : {time.time() - start_time}---")
 
-    print(f"Number of walks {len(walks)}")
-    print_walks_for_nodes(walks[:100])
+    print(f"Number of walks {len(walks_2)}")
+    print_walks_for_nodes(walks_2[:100])
