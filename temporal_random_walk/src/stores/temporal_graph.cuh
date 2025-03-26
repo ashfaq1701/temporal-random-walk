@@ -14,6 +14,7 @@
 struct TemporalGraphStore {
     bool is_directed;
     bool use_gpu;
+
     int64_t max_time_capacity;
     bool enable_weight_computation;
     double timescale_bound;
@@ -32,9 +33,9 @@ struct TemporalGraphStore {
         const bool enable_weight_computation,
         const double timescale_bound,
         const int node_count_max_bound):
-        is_directed(is_directed), use_gpu(use_gpu), max_time_capacity(max_time_capacity),
-        enable_weight_computation(enable_weight_computation), timescale_bound(timescale_bound),
-        node_count_max_bound(node_count_max_bound), latest_timestamp(0) {
+        is_directed(is_directed), use_gpu(use_gpu),
+        max_time_capacity(max_time_capacity), enable_weight_computation(enable_weight_computation),
+        timescale_bound(timescale_bound), node_count_max_bound(node_count_max_bound), latest_timestamp(0) {
 
         edge_data = new EdgeDataStore(use_gpu);
         node_edge_index = new NodeEdgeIndexStore(use_gpu);
@@ -44,9 +45,9 @@ struct TemporalGraphStore {
     ~TemporalGraphStore() {
         #ifdef HAS_CUDA
         if (use_gpu) {
-            if (edge_data) cudaFree(edge_data);
-            if (node_mapping) cudaFree(node_mapping);
-            if (node_edge_index) cudaFree(node_edge_index);
+            if (edge_data) clear_memory(&edge_data, use_gpu);
+            if (node_mapping) clear_memory(&node_mapping, use_gpu);
+            if (node_edge_index) clear_memory(&node_edge_index, use_gpu);
         }
         else
         #endif

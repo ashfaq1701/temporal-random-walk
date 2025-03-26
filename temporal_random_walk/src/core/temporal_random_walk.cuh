@@ -53,8 +53,17 @@ struct TemporalRandomWalkStore {
     }
 
     ~TemporalRandomWalkStore() {
-        delete this->temporal_graph;
-        delete this->cuda_device_prop;
+        #ifdef HAS_CUDA
+        if (use_gpu) {
+            clear_memory(&temporal_graph, use_gpu);
+            clear_memory(&cuda_device_prop, use_gpu);
+        }
+        else
+        #endif
+        {
+            delete temporal_graph;
+            delete cuda_device_prop;
+        }
     }
 };
 
