@@ -302,7 +302,7 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
     if (start_node_ids[walk_idx] == -1) {
         start_edge = temporal_graph::get_edge_at_device(
             temporal_graph,
-            edge_picker_type,
+            start_picker_type,
             -1,
             should_walk_forward,
             local_state);
