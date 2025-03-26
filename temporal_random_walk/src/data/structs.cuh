@@ -111,7 +111,7 @@ struct DataBlock {
             else
             #endif
             {
-                delete[] data;
+                free(data);
             }
         }
     }
