@@ -13,6 +13,7 @@ struct NodeMappingStore {
 
     int node_count_max_bound;
     bool use_gpu;
+    bool owns_data;
 
     int* node_index = nullptr;
     bool* is_deleted = nullptr;
@@ -23,7 +24,7 @@ struct NodeMappingStore {
     explicit NodeMappingStore(
         const int node_count_max_bound,
         const bool use_gpu)
-        : node_count_max_bound(node_count_max_bound), use_gpu(use_gpu), node_size(0) {
+        : node_count_max_bound(node_count_max_bound), use_gpu(use_gpu), owns_data(true), node_size(0) {
         capacity = next_power_of_two(node_count_max_bound / HASH_INDEX_LOAD_FACTOR);
 
         allocate_memory(&node_index, capacity, use_gpu);
@@ -34,16 +35,12 @@ struct NodeMappingStore {
     }
 
     ~NodeMappingStore() {
-        #ifdef HAS_CUDA
-        if (use_gpu) {
-            if (node_index) cudaFree(node_index);
-            if (is_deleted) cudaFree(is_deleted);
-        }
-        else
-        #endif
-        {
-            delete[] node_index;
-            delete[] is_deleted;
+        if (owns_data) {
+            clear_memory(&node_index, use_gpu);
+            clear_memory(&is_deleted, use_gpu);
+        } else {
+            node_index = nullptr;
+            is_deleted = nullptr;
         }
     }
 };

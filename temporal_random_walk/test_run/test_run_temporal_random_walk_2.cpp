@@ -5,12 +5,12 @@
 #include "../test/test_utils.h"
 
 #ifdef HAS_CUDA
-constexpr bool USE_GPU = true;
+constexpr bool USE_GPU = false;
 #else
 constexpr bool USE_GPU = false;
 #endif
 
-constexpr int NUM_WALKS_PER_NODE = 1000000;
+constexpr int NUM_WALKS_PER_NODE = 500000;
 
 int main(int argc, char* argv[]) {
     std::string file_path = "../../data/sample_data.csv";
@@ -36,29 +36,44 @@ int main(int argc, char* argv[]) {
 
     start = std::chrono::high_resolution_clock::now();
 
-    const auto walks_backward_for_all_nodes = temporal_random_walk.get_random_walks_and_times(
+    const auto walks_backward_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
         80,
         &exponential_picker_type,
         NUM_WALKS_PER_NODE,
         &uniform_picker_type,
         WalkDirection::Backward_In_Time);
 
-    const auto walks_forward_for_all_nodes = temporal_random_walk.get_random_walks_and_times(
+    const auto walks_backward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
+        80,
+        &exponential_picker_type,
+        NUM_WALKS_PER_NODE,
+        &uniform_picker_type,
+        WalkDirection::Backward_In_Time);
+
+    const auto walks_forward_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
         80,
         &exponential_picker_type,
         NUM_WALKS_PER_NODE,
         &uniform_picker_type,
         WalkDirection::Forward_In_Time);
-    std::cout << "Walks forward: " << walks_forward_for_all_nodes.size() << ", average length " << get_average_walk_length(walks_forward_for_all_nodes) << std::endl;
 
-    std::cout << "Walks backward: " << walks_backward_for_all_nodes.size() << ", average length " << get_average_walk_length(walks_backward_for_all_nodes) << std::endl;
+    const auto walks_forward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
+        80,
+        &exponential_picker_type,
+        NUM_WALKS_PER_NODE,
+        &uniform_picker_type,
+        WalkDirection::Forward_In_Time);
+
+    std::cout << "Walks forward: " << walks_forward_for_all_nodes_2.size() << ", average length " << get_average_walk_length(walks_forward_for_all_nodes_2) << std::endl;
+
+    std::cout << "Walks backward: " << walks_backward_for_all_nodes_2.size() << ", average length " << get_average_walk_length(walks_backward_for_all_nodes_2) << std::endl;
 
     end = std::chrono::high_resolution_clock::now();
     duration = end - start;
     std::cout << "Walk generation time: " << duration.count() << " seconds" << std::endl;
 
     std::vector<std::vector<NodeWithTime>> first_100_walks_forward;
-    first_100_walks_forward.assign(walks_forward_for_all_nodes.begin(), walks_forward_for_all_nodes.begin() + 100);
+    first_100_walks_forward.assign(walks_forward_for_all_nodes_2.begin(), walks_forward_for_all_nodes_2.begin() + 100);
 
     print_temporal_random_walks_with_times(first_100_walks_forward);
 

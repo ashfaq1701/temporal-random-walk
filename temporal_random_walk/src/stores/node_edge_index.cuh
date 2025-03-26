@@ -10,6 +10,7 @@
 
 struct NodeEdgeIndexStore {
     bool use_gpu;
+    bool owns_data;
 
     size_t* outbound_offsets = nullptr;
     size_t outbound_offsets_size = 0;
@@ -44,37 +45,33 @@ struct NodeEdgeIndexStore {
     double* inbound_backward_cumulative_weights_exponential = nullptr;
     size_t inbound_backward_cumulative_weights_exponential_size = 0;
 
-    explicit NodeEdgeIndexStore(const bool use_gpu): use_gpu(use_gpu) {}
+    explicit NodeEdgeIndexStore(const bool use_gpu): use_gpu(use_gpu), owns_data(true) {}
 
     ~NodeEdgeIndexStore() {
-        #ifdef HAS_CUDA
-        if (use_gpu) {
-            if (outbound_offsets) cudaFree(outbound_offsets);
-            if (inbound_offsets) cudaFree(inbound_offsets);
-            if (outbound_indices) cudaFree(outbound_indices);
-            if (inbound_indices) cudaFree(inbound_indices);
-            if (outbound_timestamp_group_offsets) cudaFree(outbound_timestamp_group_offsets);
-            if (inbound_timestamp_group_offsets) cudaFree(inbound_timestamp_group_offsets);
-            if (outbound_timestamp_group_indices) cudaFree(outbound_timestamp_group_indices);
-            if (inbound_timestamp_group_indices) cudaFree(inbound_timestamp_group_indices);
-            if (outbound_forward_cumulative_weights_exponential) cudaFree(outbound_forward_cumulative_weights_exponential);
-            if (outbound_backward_cumulative_weights_exponential) cudaFree(outbound_backward_cumulative_weights_exponential);
-            if (inbound_backward_cumulative_weights_exponential) cudaFree(inbound_backward_cumulative_weights_exponential);
-        }
-        else
-        #endif
-        {
-            delete[] outbound_offsets;
-            delete[] inbound_offsets;
-            delete[] outbound_indices;
-            delete[] inbound_indices;
-            delete[] outbound_timestamp_group_offsets;
-            delete[] inbound_timestamp_group_offsets;
-            delete[] outbound_timestamp_group_indices;
-            delete[] inbound_timestamp_group_indices;
-            delete[] outbound_forward_cumulative_weights_exponential;
-            delete[] outbound_backward_cumulative_weights_exponential;
-            delete[] inbound_backward_cumulative_weights_exponential;
+        if (owns_data) {
+            clear_memory(&outbound_offsets, use_gpu);
+            clear_memory(&inbound_offsets, use_gpu);
+            clear_memory(&outbound_indices, use_gpu);
+            clear_memory(&inbound_indices, use_gpu);
+            clear_memory(&outbound_timestamp_group_offsets, use_gpu);
+            clear_memory(&inbound_timestamp_group_offsets, use_gpu);
+            clear_memory(&outbound_timestamp_group_indices, use_gpu);
+            clear_memory(&inbound_timestamp_group_indices, use_gpu);
+            clear_memory(&outbound_forward_cumulative_weights_exponential, use_gpu);
+            clear_memory(&outbound_backward_cumulative_weights_exponential, use_gpu);
+            clear_memory(&inbound_backward_cumulative_weights_exponential, use_gpu);
+        } else {
+            outbound_offsets = nullptr;
+            inbound_offsets = nullptr;
+            outbound_indices = nullptr;
+            inbound_indices = nullptr;
+            outbound_timestamp_group_offsets = nullptr;
+            inbound_timestamp_group_offsets = nullptr;
+            outbound_timestamp_group_indices = nullptr;
+            inbound_timestamp_group_indices = nullptr;
+            outbound_forward_cumulative_weights_exponential = nullptr;
+            outbound_backward_cumulative_weights_exponential = nullptr;
+            inbound_backward_cumulative_weights_exponential = nullptr;
         }
     }
 };

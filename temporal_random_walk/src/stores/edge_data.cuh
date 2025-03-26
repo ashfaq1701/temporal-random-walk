@@ -7,6 +7,7 @@
 
 struct EdgeDataStore {
     bool use_gpu;
+    bool owns_data;
 
     int* sources = nullptr;
     size_t sources_size = 0;
@@ -29,28 +30,25 @@ struct EdgeDataStore {
     double* backward_cumulative_weights_exponential = nullptr;
     size_t backward_cumulative_weights_exponential_size = 0;
 
-    explicit EdgeDataStore(const bool use_gpu): use_gpu(use_gpu) {}
+    explicit EdgeDataStore(const bool use_gpu): use_gpu(use_gpu), owns_data(true) {}
 
     ~EdgeDataStore() {
-        #ifdef HAS_CUDA
-        if (use_gpu) {
-            if (sources) cudaFree(sources);
-            if (targets) cudaFree(targets);
-            if (timestamps) cudaFree(timestamps);
-            if (timestamp_group_offsets) cudaFree(timestamp_group_offsets);
-            if (unique_timestamps) cudaFree(unique_timestamps);
-            if (forward_cumulative_weights_exponential) cudaFree(forward_cumulative_weights_exponential);
-            if (backward_cumulative_weights_exponential) cudaFree(backward_cumulative_weights_exponential);
-        } else
-        #endif
-        {
-            delete[] sources;
-            delete[] targets;
-            delete[] timestamps;
-            delete[] timestamp_group_offsets;
-            delete[] unique_timestamps;
-            delete[] forward_cumulative_weights_exponential;
-            delete[] backward_cumulative_weights_exponential;
+        if (owns_data) {
+            clear_memory(&sources, use_gpu);
+            clear_memory(&targets, use_gpu);
+            clear_memory(&timestamps, use_gpu);
+            clear_memory(&timestamp_group_offsets, use_gpu);
+            clear_memory(&unique_timestamps, use_gpu);
+            clear_memory(&forward_cumulative_weights_exponential, use_gpu);
+            clear_memory(&backward_cumulative_weights_exponential, use_gpu);
+        } else {
+            sources = nullptr;
+            targets = nullptr;
+            timestamps = nullptr;
+            timestamp_group_offsets = nullptr;
+            unique_timestamps = nullptr;
+            forward_cumulative_weights_exponential = nullptr;
+            backward_cumulative_weights_exponential = nullptr;
         }
     }
 };

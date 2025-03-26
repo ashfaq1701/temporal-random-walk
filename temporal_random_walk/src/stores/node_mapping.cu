@@ -574,12 +574,15 @@ HOST NodeMappingStore* node_mapping::to_device_ptr(const NodeMappingStore* node_
     NodeMappingStore* device_node_mapping;
     cudaMalloc(&device_node_mapping, sizeof(NodeMappingStore));
 
+    // Create a temporary copy to modify for device pointers
+    NodeMappingStore temp_node_mapping = *node_mapping;
+    temp_node_mapping.owns_data = false;
+
     // If already using GPU, just copy the struct with its pointers
     if (node_mapping->use_gpu) {
         cudaMemcpy(device_node_mapping, node_mapping, sizeof(NodeMappingStore), cudaMemcpyHostToDevice);
     } else {
-        // Create a temporary copy to modify for device pointers
-        NodeMappingStore temp_node_mapping = *node_mapping;
+        temp_node_mapping.owns_data = true;
 
         // Copy each array to device if it exists
         if (node_mapping->node_index) {
@@ -602,6 +605,8 @@ HOST NodeMappingStore* node_mapping::to_device_ptr(const NodeMappingStore* node_
         // Copy the updated struct to device
         cudaMemcpy(device_node_mapping, &temp_node_mapping, sizeof(NodeMappingStore), cudaMemcpyHostToDevice);
     }
+
+    temp_node_mapping.owns_data = false;
 
     return device_node_mapping;
 }

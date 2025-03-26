@@ -1197,12 +1197,15 @@ HOST NodeEdgeIndexStore* node_edge_index::to_device_ptr(const NodeEdgeIndexStore
     NodeEdgeIndexStore* device_node_edge_index;
     cudaMalloc(&device_node_edge_index, sizeof(NodeEdgeIndexStore));
 
+    // Create a temporary copy to modify for device pointers
+    NodeEdgeIndexStore temp_node_edge_index = *node_edge_index;
+    temp_node_edge_index.owns_data = false;
+
     // If already using GPU, just copy the struct with its pointers
     if (node_edge_index->use_gpu) {
         cudaMemcpy(device_node_edge_index, node_edge_index, sizeof(NodeEdgeIndexStore), cudaMemcpyHostToDevice);
     } else {
-        // Create a temporary copy to modify for device pointers
-        NodeEdgeIndexStore temp_node_edge_index = *node_edge_index;
+        temp_node_edge_index.owns_data = true;
 
         // Copy each array to device if it exists
         if (node_edge_index->outbound_offsets) {
@@ -1295,6 +1298,8 @@ HOST NodeEdgeIndexStore* node_edge_index::to_device_ptr(const NodeEdgeIndexStore
         // Copy the updated struct to device
         cudaMemcpy(device_node_edge_index, &temp_node_edge_index, sizeof(NodeEdgeIndexStore), cudaMemcpyHostToDevice);
     }
+
+    temp_node_edge_index.owns_data = false;
 
     return device_node_edge_index;
 }

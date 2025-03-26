@@ -51,6 +51,11 @@ struct TemporalRandomWalkStore {
         cudaGetDeviceProperties(cuda_device_prop, 0);
         #endif
     }
+
+    ~TemporalRandomWalkStore() {
+        delete this->temporal_graph;
+        delete this->cuda_device_prop;
+    }
 };
 
 namespace temporal_random_walk {

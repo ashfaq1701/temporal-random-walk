@@ -40,6 +40,22 @@ struct TemporalGraphStore {
         node_edge_index = new NodeEdgeIndexStore(use_gpu);
         node_mapping = new NodeMappingStore(node_count_max_bound, use_gpu);
     }
+
+    ~TemporalGraphStore() {
+        #ifdef HAS_CUDA
+        if (use_gpu) {
+            if (edge_data) cudaFree(edge_data);
+            if (node_mapping) cudaFree(node_mapping);
+            if (node_edge_index) cudaFree(node_edge_index);
+        }
+        else
+        #endif
+        {
+            delete edge_data;
+            delete node_mapping;
+            delete node_edge_index;
+        }
+    }
 };
 
 namespace temporal_graph {

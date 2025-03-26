@@ -98,7 +98,7 @@ struct DataBlock {
         }
         #endif
         else {
-            data = new T[size];  // CPU allocation
+            data = static_cast<T *>(malloc(sizeof(T) * size));  // CPU allocation
         }
     }
 
@@ -554,9 +554,9 @@ struct WalkSet {
 
     // Destructor
     HOST ~WalkSet() {
-        nodes = nullptr;
-        timestamps = nullptr;
-        walk_lens = nullptr;
+        clear_memory(&nodes, use_gpu);
+        clear_memory(&timestamps, use_gpu);
+        clear_memory(&walk_lens, use_gpu);
     }
 
     #ifdef HAS_CUDA
