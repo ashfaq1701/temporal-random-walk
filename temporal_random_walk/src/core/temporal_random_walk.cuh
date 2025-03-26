@@ -62,7 +62,9 @@ struct TemporalRandomWalkStore {
         #endif
         {
             delete temporal_graph;
+            #ifdef HAS_CUDA
             delete cuda_device_prop;
+            #endif
         }
     }
 };
