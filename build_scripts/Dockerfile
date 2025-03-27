@@ -86,6 +86,8 @@ RUN cmake --version
 # Switch to the non-root user
 USER user
 
+ENV PATH="/home/user/.local/bin:${PATH}"
+
 # Set working directory
 WORKDIR /project
 
