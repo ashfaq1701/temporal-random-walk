@@ -19,13 +19,16 @@ else()
     find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 endif()
 
+# Get pybind11 include path using the correct Python executable
 execute_process(
-        COMMAND ${Python3_EXECUTABLE} -c "import pybind11; print(f'{pybind11.get_include()}/../share/cmake/pybind11')"
-        OUTPUT_VARIABLE PYBIND11_DIR
+        COMMAND ${Python3_EXECUTABLE} -m pybind11 --includes
+        OUTPUT_VARIABLE PYBIND11_INCLUDES
         OUTPUT_STRIP_TRAILING_WHITESPACE
 )
-set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH};${PYBIND11_DIR}")
-find_package(pybind11 REQUIRED)
+
+# Extract only the include paths from the result
+string(REGEX MATCHALL "-I[^ ]+" PYBIND11_INCLUDE_FLAGS "${PYBIND11_INCLUDES}")
+string(REPLACE "-I" "" PYBIND11_INCLUDE_DIRS "${PYBIND11_INCLUDE_FLAGS}")
 
 option(HAS_CUDA "Enable CUDA support" ON)
 
