@@ -1,5 +1,6 @@
 #include "edge_data.cuh"
 
+#include <algorithm>
 #ifdef HAS_CUDA
 #include <thrust/device_vector.h>
 #include <cuda/std/__algorithm/lower_bound.h>

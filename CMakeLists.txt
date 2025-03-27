@@ -2,10 +2,22 @@
 cmake_minimum_required(VERSION 3.28)
 project(temporal_random_walk)
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_GLIBCXX_USE_CXX11_ABI=0")
 set(CMAKE_CXX_STANDARD 17)
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-set(Python3_EXECUTABLE "${CMAKE_SOURCE_DIR}/venv/bin/python")
+# Use directly provided Python paths if available
+if(DEFINED PYTHON_EXECUTABLE AND DEFINED PYTHON_INCLUDE_DIR AND DEFINED PYTHON_LIBRARY)
+    set(Python3_EXECUTABLE ${PYTHON_EXECUTABLE})
+    set(Python3_INCLUDE_DIRS ${PYTHON_INCLUDE_DIR})
+    set(Python3_LIBRARIES ${PYTHON_LIBRARY})
+    message(STATUS "Using provided Python paths:")
+    message(STATUS "  Python3_EXECUTABLE: ${Python3_EXECUTABLE}")
+    message(STATUS "  Python3_INCLUDE_DIRS: ${Python3_INCLUDE_DIRS}")
+    message(STATUS "  Python3_LIBRARIES: ${Python3_LIBRARIES}")
+else()
+    # Fall back to automatic detection
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+endif()
 
 execute_process(
         COMMAND ${Python3_EXECUTABLE} -c "import pybind11; print(f'{pybind11.get_include()}/../share/cmake/pybind11')"

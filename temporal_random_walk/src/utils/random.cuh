@@ -3,6 +3,7 @@
 
 #include <random>
 #include <ctime>
+#include <algorithm>
 
 #ifdef HAS_CUDA
 #include <thrust/device_ptr.h>

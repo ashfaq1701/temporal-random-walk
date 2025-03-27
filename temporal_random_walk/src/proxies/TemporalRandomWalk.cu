@@ -1,5 +1,8 @@
 #include "TemporalRandomWalk.cuh"
 
+#include <algorithm>
+#include <iterator>
+
 #ifdef HAS_CUDA
 
 __global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalkStore* temporal_random_walk) {

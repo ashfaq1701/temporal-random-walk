@@ -1,5 +1,6 @@
 #include "node_edge_index.cuh"
 
+#include <algorithm>
 #include <common/cuda_config.cuh>
 
 #ifdef HAS_CUDA
