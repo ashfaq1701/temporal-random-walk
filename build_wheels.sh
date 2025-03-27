@@ -1,4 +1,5 @@
 rm -rf build
+rm -rf temporal_random_walk.egg-info/
 rm -rf dist
 rm -rf wheelhouse
 
