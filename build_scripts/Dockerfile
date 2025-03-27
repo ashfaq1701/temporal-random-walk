@@ -1,30 +1,38 @@
-FROM quay.io/pypa/manylinux_2_34_x86_64
+FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
 
-# ------------
-# Install cuda
-# ------------
+ENV DEBIAN_FRONTEND=noninteractive
 
-ARG VER="12-8"
-ARG ARCH="x86_64"
+ARG USER_ID
+ARG GROUP_ID
 
-RUN dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo
-RUN dnf -y install cuda-compiler-${VER}.${ARCH} \
-                   cuda-libraries-${VER}.${ARCH} \
-                   cuda-libraries-devel-${VER}.${ARCH}
-RUN dnf clean all
-RUN rm -rf /var/cache/dnf/*
-RUN echo "/usr/local/cuda/lib64" >> /etc/ld.so.conf.d/999_nvidia_cuda.conf
+RUN groupadd -g ${GROUP_ID:-1000} user && \
+    useradd -u ${USER_ID:-1000} -g ${GROUP_ID:-1000} -m user
 
-# -------------------------
-# Set environment variables
-# -------------------------
+# Install Python versions and development tools
+RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    build-essential cmake \
+    git wget curl \
+    pkg-config
 
-ENV PATH="/usr/local/cuda/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
-ENV CUDA_HOME=/usr/local/cuda
-ENV CUDA_ROOT=/usr/local/cuda
-ENV CUDA_PATH=/usr/local/cuda
-ENV CUDADIR=/usr/local/cuda
+# Add deadsnakes PPA for multiple Python versions
+RUN add-apt-repository ppa:deadsnakes/ppa && apt-get update
+
+# Install Python versions
+RUN apt-get install -y \
+    python3.8-dev python3.8-distutils \
+    python3.9-dev python3.9-distutils \
+    python3.10-dev python3.10-distutils \
+    python3.11-dev python3.11-distutils \
+    python3.12-dev
+
+# Install pip for each Python version
+RUN wget https://bootstrap.pypa.io/get-pip.py && \
+    python3.8 get-pip.py && \
+    python3.9 get-pip.py && \
+    python3.10 get-pip.py && \
+    python3.11 get-pip.py && \
+    python3.12 get-pip.py
 
 # Install vcpkg
 RUN git clone https://github.com/microsoft/vcpkg.git /opt/vcpkg && \
