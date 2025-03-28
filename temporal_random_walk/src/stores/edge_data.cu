@@ -55,7 +55,7 @@ HOST void edge_data::set_size(EdgeDataStore* edge_data, size_t size) {
     edge_data->timestamps_size = size;
 }
 
-HOST bool edge_data::empty(const EdgeDataStore *edge_data) {
+HOST DEVICE bool edge_data::empty(const EdgeDataStore *edge_data) {
     return edge_data->timestamps_size == 0;
 }
 
