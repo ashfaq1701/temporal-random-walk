@@ -5,6 +5,7 @@
 #include <iostream>
 #include <cstring>
 
+#include "error_handlers.cuh"
 #include "macros.cuh"
 
 #ifdef HAS_CUDA
@@ -26,7 +27,7 @@ HOST void allocate_memory(T** data_ptr, const size_t size, const bool use_gpu) {
     if (*data_ptr) {
         #ifdef HAS_CUDA
         if (use_gpu) {
-            cudaFree(*data_ptr);
+            CUDA_CHECK_AND_CLEAR(cudaFree(*data_ptr));
         } else
         #endif
         {
@@ -37,7 +38,7 @@ HOST void allocate_memory(T** data_ptr, const size_t size, const bool use_gpu) {
 
     #ifdef HAS_CUDA
     if (use_gpu) {
-        cudaMalloc(data_ptr, size * sizeof(T));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(data_ptr, size * sizeof(T)));
     }
     else
     #endif
@@ -61,10 +62,10 @@ HOST void resize_memory(T** data_ptr, const size_t size, size_t new_size, bool u
 
     #ifdef HAS_CUDA
     if (use_gpu) {
-        cudaMalloc(&new_ptr, new_size * sizeof(T));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&new_ptr, new_size * sizeof(T)));
         if (new_ptr) {
-            cudaMemcpy(new_ptr, *data_ptr, std::min(size, new_size) * sizeof(T), cudaMemcpyDeviceToDevice);
-            cudaFree(*data_ptr);
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(new_ptr, *data_ptr, std::min(size, new_size) * sizeof(T), cudaMemcpyDeviceToDevice));
+            CUDA_CHECK_AND_CLEAR(cudaFree(*data_ptr));
         }
     }
     else
@@ -90,16 +91,16 @@ HOST void fill_memory(T* memory, size_t size, T value, bool use_gpu) {
     #ifdef HAS_CUDA
     if (use_gpu) {
         T* d_value = nullptr;
-        cudaMalloc(&d_value, sizeof(T));
-        cudaMemcpy(d_value, &value, sizeof(T), cudaMemcpyHostToDevice);
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_value, sizeof(T)));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_value, &value, sizeof(T), cudaMemcpyHostToDevice));
 
         constexpr int threadsPerBlock = 256;
         int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
 
         fill_kernel<<<blocksPerGrid, threadsPerBlock>>>(memory, size, d_value);
-        cudaDeviceSynchronize();
+        CUDA_KERNEL_CHECK("After fill_kernel execution");
 
-        cudaFree(d_value);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_value));
     }
     else
     #endif
@@ -118,12 +119,12 @@ HOST void append_memory(T** data_ptr, size_t& size, const T* new_data, const siz
     #ifdef HAS_CUDA
     if (use_gpu) {
         // Allocate new GPU memory
-        cudaMalloc(&new_ptr, total_size * sizeof(T));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&new_ptr, total_size * sizeof(T)));
         if (size > 0) {
-            cudaMemcpy(new_ptr, *data_ptr, size * sizeof(T), cudaMemcpyDeviceToDevice); // Copy old data
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(new_ptr, *data_ptr, size * sizeof(T), cudaMemcpyDeviceToDevice)); // Copy old data
         }
-        cudaMemcpy(new_ptr + size, new_data, new_size * sizeof(T), cudaMemcpyDeviceToDevice); // Append new data
-        cudaFree(*data_ptr); // Free old memory
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(new_ptr + size, new_data, new_size * sizeof(T), cudaMemcpyDeviceToDevice)); // Append new data
+        CUDA_CHECK_AND_CLEAR(cudaFree(*data_ptr)); // Free old memory
     }
     else
     #endif
@@ -157,9 +158,9 @@ HOST void clear_memory(T** data_ptr, const bool use_gpu) {
 
             if (check_error == cudaSuccess &&
                 (attributes.type == cudaMemoryTypeDevice || attributes.type == cudaMemoryTypeManaged)) {
-                cudaFree(*data_ptr);
+                CUDA_CHECK_AND_CLEAR(cudaFree(*data_ptr));
             } else {
-                cudaGetLastError();
+                clearCudaErrorState();
             }
         }
         else
@@ -180,13 +181,13 @@ HOST void copy_memory(T* dst, const T* src, const size_t size, const bool dst_gp
 
     #ifdef HAS_CUDA
     if (dst_gpu && src_gpu) {
-        cudaMemcpy(dst, src, size * sizeof(T), cudaMemcpyDeviceToDevice);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(dst, src, size * sizeof(T), cudaMemcpyDeviceToDevice));
     } else if (dst_gpu && !src_gpu) {
         // Host to device
-        cudaMemcpy(dst, src, size * sizeof(T), cudaMemcpyHostToDevice);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(dst, src, size * sizeof(T), cudaMemcpyHostToDevice));
     } else if (!dst_gpu && src_gpu) {
         // Device to host
-        cudaMemcpy(dst, src, size * sizeof(T), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(dst, src, size * sizeof(T), cudaMemcpyDeviceToHost));
     }
     else
     #endif
@@ -207,10 +208,10 @@ HOST void remove_first_n_memory(T** data_ptr, size_t& size, size_t n, const bool
 
     #ifdef HAS_CUDA
     if (use_gpu) {
-        cudaMalloc(&new_ptr, new_size * sizeof(T));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&new_ptr, new_size * sizeof(T)));
         if (new_ptr) {
-            cudaMemcpy(new_ptr, *data_ptr + n, new_size * sizeof(T), cudaMemcpyDeviceToDevice);
-            cudaFree(*data_ptr);
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(new_ptr, *data_ptr + n, new_size * sizeof(T), cudaMemcpyDeviceToDevice));
+            CUDA_CHECK_AND_CLEAR(cudaFree(*data_ptr));
         }
     }
     else
