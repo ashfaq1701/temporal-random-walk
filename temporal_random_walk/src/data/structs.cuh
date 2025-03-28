@@ -94,7 +94,7 @@ struct DataBlock {
         }
         #ifdef HAS_CUDA
         else if (use_gpu) {
-            cudaMalloc(&data, size * sizeof(T));
+            CUDA_CHECK_AND_CLEAR(cudaMalloc(&data, size * sizeof(T)));
         }
         #endif
         else {
@@ -106,7 +106,7 @@ struct DataBlock {
         if (data) {
             #ifdef HAS_CUDA
             if (use_gpu) {
-                cudaFree(data);
+                CUDA_CHECK_AND_CLEAR(cudaFree(data));
             }
             else
             #endif
@@ -201,7 +201,7 @@ struct DividedVector {
             }
 
             // Copy to device
-            cudaMemcpy(elements, host_elements, total_size * sizeof(IndexValuePair<int, T>), cudaMemcpyHostToDevice);
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(elements, host_elements, total_size * sizeof(IndexValuePair<int, T>), cudaMemcpyHostToDevice));
             delete[] host_elements;
         }
         else
@@ -221,7 +221,7 @@ struct DividedVector {
         #ifdef HAS_CUDA
         // If using GPU, copy offsets to device
         if (use_gpu) {
-            cudaMemcpy(group_offsets, host_group_offsets, (n + 1) * sizeof(size_t), cudaMemcpyHostToDevice);
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(group_offsets, host_group_offsets, (n + 1) * sizeof(size_t), cudaMemcpyHostToDevice));
             delete[] host_group_offsets;
         }
         #endif
@@ -328,7 +328,7 @@ struct DividedVector {
 
         #ifdef HAS_CUDA
         if (use_gpu) {
-            cudaMemcpy(&offset, &group_offsets[group_idx], sizeof(size_t), cudaMemcpyDeviceToHost);
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(&offset, &group_offsets[group_idx], sizeof(size_t), cudaMemcpyDeviceToHost));
         }
         else
         #endif
@@ -349,7 +349,7 @@ struct DividedVector {
 
         #ifdef HAS_CUDA
         if (use_gpu) {
-            cudaMemcpy(&offset, &group_offsets[group_idx + 1], sizeof(size_t), cudaMemcpyDeviceToHost);
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(&offset, &group_offsets[group_idx + 1], sizeof(size_t), cudaMemcpyDeviceToHost));
         }
         else
         #endif
@@ -370,8 +370,8 @@ struct DividedVector {
 
         #ifdef HAS_CUDA
         if (use_gpu) {
-            cudaMemcpy(&start, &group_offsets[group_idx], sizeof(size_t), cudaMemcpyDeviceToHost);
-            cudaMemcpy(&end, &group_offsets[group_idx + 1], sizeof(size_t), cudaMemcpyDeviceToHost);
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(&start, &group_offsets[group_idx], sizeof(size_t), cudaMemcpyDeviceToHost));
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(&end, &group_offsets[group_idx + 1], sizeof(size_t), cudaMemcpyDeviceToHost));
         }
         else
         #endif
@@ -382,6 +382,7 @@ struct DividedVector {
 
         return end - start;
     }
+
 
     // Helper class for iterating over a group
     struct GroupIterator {
@@ -563,8 +564,8 @@ struct WalkSet {
 
     HOST WalkSet* to_device_ptr() {
         WalkSet* device_walk_set;
-        cudaMalloc(&device_walk_set, sizeof(WalkSet));
-        cudaMemcpy(device_walk_set, this, sizeof(WalkSet), cudaMemcpyHostToDevice);
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&device_walk_set, sizeof(WalkSet)));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_walk_set, this, sizeof(WalkSet), cudaMemcpyHostToDevice));
         return device_walk_set;
     }
 
@@ -572,7 +573,7 @@ struct WalkSet {
     HOST void copy_from_device(const WalkSet* d_walk_set) {
         // First copy the metadata structure
         WalkSet temp_walk_set;
-        cudaMemcpy(&temp_walk_set, d_walk_set, sizeof(WalkSet), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&temp_walk_set, d_walk_set, sizeof(WalkSet), cudaMemcpyDeviceToHost));
 
         // Ensure host memory is properly sized
         if (nodes_size < temp_walk_set.nodes_size) {
@@ -594,14 +595,14 @@ struct WalkSet {
         }
 
         // Copy data from device memory to host memory
-        cudaMemcpy(nodes, temp_walk_set.nodes,
-                   sizeof(int) * temp_walk_set.nodes_size, cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(nodes, temp_walk_set.nodes,
+                   sizeof(int) * temp_walk_set.nodes_size, cudaMemcpyDeviceToHost));
 
-        cudaMemcpy(timestamps, temp_walk_set.timestamps,
-                   sizeof(int64_t) * temp_walk_set.timestamps_size, cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(timestamps, temp_walk_set.timestamps,
+                   sizeof(int64_t) * temp_walk_set.timestamps_size, cudaMemcpyDeviceToHost));
 
-        cudaMemcpy(walk_lens, temp_walk_set.walk_lens,
-                   sizeof(size_t) * temp_walk_set.walk_lens_size, cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(walk_lens, temp_walk_set.walk_lens,
+                   sizeof(size_t) * temp_walk_set.walk_lens_size, cudaMemcpyDeviceToHost));
 
         // Update metadata
         num_walks = temp_walk_set.num_walks;
@@ -624,7 +625,7 @@ struct WalkSet {
         if (use_gpu) {
             // Need to copy from device to host
             size_t walk_len;
-            cudaMemcpy(&walk_len, &walk_lens[walk_number], sizeof(size_t), cudaMemcpyDeviceToHost);
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(&walk_len, &walk_lens[walk_number], sizeof(size_t), cudaMemcpyDeviceToHost));
             return walk_len;
         }
         else
@@ -643,7 +644,7 @@ struct WalkSet {
         if (use_gpu) {
             // Need to copy from device to host
             size_t walk_len;
-            cudaMemcpy(&walk_len, &walk_lens[walk_number], sizeof(size_t), cudaMemcpyDeviceToHost);
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(&walk_len, &walk_lens[walk_number], sizeof(size_t), cudaMemcpyDeviceToHost));
 
             if (hop_number < 0 || hop_number >= walk_len) {
                 return NodeWithTime{-1, -1};  // Return invalid entry
@@ -652,8 +653,8 @@ struct WalkSet {
             const size_t offset = walk_number * max_len + hop_number;
             int node;
             int64_t timestamp;
-            cudaMemcpy(&node, &nodes[offset], sizeof(int), cudaMemcpyDeviceToHost);
-            cudaMemcpy(&timestamp, &timestamps[offset], sizeof(int64_t), cudaMemcpyDeviceToHost);
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(&node, &nodes[offset], sizeof(int), cudaMemcpyDeviceToHost));
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(&timestamp, &timestamps[offset], sizeof(int64_t), cudaMemcpyDeviceToHost));
 
             return NodeWithTime{node, timestamp};
         }

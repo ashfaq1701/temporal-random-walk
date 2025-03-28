@@ -1,5 +1,6 @@
 #include "TemporalGraph.cuh"
 #include "../common/setup.cuh"
+#include "../common/error_handlers.cuh"
 
 #ifdef HAS_CUDA
 
@@ -81,16 +82,17 @@ size_t TemporalGraph::get_total_edges() const {
     if (graph->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
-        cudaMalloc(&d_result, sizeof(size_t));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(size_t)));
 
         TemporalGraphStore* d_graph = temporal_graph::to_device_ptr(graph);
         get_total_edges_kernel<<<1, 1>>>(d_result, d_graph);
+        CUDA_KERNEL_CHECK("After get_total_edges_kernel execution");
 
         size_t host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_result);
-        cudaFree(d_graph);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_graph));
 
         return host_result;
     }
@@ -118,7 +120,7 @@ std::vector<int> TemporalGraph::get_node_ids() const {
     if (graph->use_gpu) {
         // For GPU data, need to copy from device to host
         const auto host_ids = new int[node_ids.size];
-        cudaMemcpy(host_ids, node_ids.data, node_ids.size * sizeof(int), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(host_ids, node_ids.data, node_ids.size * sizeof(int), cudaMemcpyDeviceToHost));
 
         result.assign(host_ids, host_ids + node_ids.size);
         delete[] host_ids;
@@ -141,7 +143,7 @@ std::vector<Edge> TemporalGraph::get_edges() const {
     if (graph->use_gpu) {
         // For GPU data, need to copy from device to host
         const auto host_edges = new Edge[edges.size];
-        cudaMemcpy(host_edges, edges.data, edges.size * sizeof(Edge), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(host_edges, edges.data, edges.size * sizeof(Edge), cudaMemcpyDeviceToHost));
 
         result.assign(host_edges, host_edges + edges.size);
         delete[] host_edges;
@@ -161,16 +163,16 @@ void TemporalGraph::add_multiple_edges(const std::vector<Edge>& new_edges) const
     if (graph->use_gpu) {
         // Allocate device memory for edges
         Edge* d_edges = nullptr;
-        cudaMalloc(&d_edges, new_edges.size() * sizeof(Edge));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_edges, new_edges.size() * sizeof(Edge)));
 
         // Copy edges to device
-        cudaMemcpy(d_edges, new_edges.data(), new_edges.size() * sizeof(Edge), cudaMemcpyHostToDevice);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_edges, new_edges.data(), new_edges.size() * sizeof(Edge), cudaMemcpyHostToDevice));
 
         // Call CUDA implementation
         temporal_graph::add_multiple_edges_cuda(graph, d_edges, new_edges.size());
 
         // Clean up
-        cudaFree(d_edges);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_edges));
     }
     else
     #endif
@@ -257,27 +259,29 @@ Edge TemporalGraph::get_edge_at(RandomPickerType picker_type, int64_t timestamp,
     if (graph->use_gpu) {
         // Set up random state
         curandState* d_rand_states;
-        cudaMalloc(&d_rand_states, sizeof(curandState));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_rand_states, sizeof(curandState)));
         setup_curand_states<<<1, 1>>>(d_rand_states, get_random_seed());
+        CUDA_KERNEL_CHECK("After setup_curand_states in get_edge_at");
 
         // Allocate memory for the result
         Edge* d_result;
-        cudaMalloc(&d_result, sizeof(Edge));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(Edge)));
 
         // Copy graph to device
         TemporalGraphStore* d_graph = temporal_graph::to_device_ptr(graph);
 
         // Launch kernel
         get_edge_at_kernel<<<1, 1>>>(d_result, d_graph, picker_type, timestamp, forward, d_rand_states);
+        CUDA_KERNEL_CHECK("After get_edge_at_kernel execution");
 
         // Copy result back to host
         Edge host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(Edge), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(Edge), cudaMemcpyDeviceToHost));
 
         // Clean up
-        cudaFree(d_rand_states);
-        cudaFree(d_result);
-        cudaFree(d_graph);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_rand_states));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_graph));
 
         return host_result;
     }
@@ -294,27 +298,29 @@ Edge TemporalGraph::get_node_edge_at(int node_id, RandomPickerType picker_type, 
     if (graph->use_gpu) {
         // Set up random state
         curandState* d_rand_states;
-        cudaMalloc(&d_rand_states, sizeof(curandState));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_rand_states, sizeof(curandState)));
         setup_curand_states<<<1, 1>>>(d_rand_states, get_random_seed());
+        CUDA_KERNEL_CHECK("After setup_curand_states in get_node_edge_at");
 
         // Allocate memory for the result
         Edge* d_result;
-        cudaMalloc(&d_result, sizeof(Edge));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(Edge)));
 
         // Copy graph to device
         TemporalGraphStore* d_graph = temporal_graph::to_device_ptr(graph);
 
         // Launch kernel
         get_node_edge_at_kernel<<<1, 1>>>(d_result, d_graph, node_id, picker_type, timestamp, forward, d_rand_states);
+        CUDA_KERNEL_CHECK("After get_node_edge_at_kernel execution");
 
         // Copy result back to host
         Edge host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(Edge), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(Edge), cudaMemcpyDeviceToHost));
 
         // Clean up
-        cudaFree(d_rand_states);
-        cudaFree(d_result);
-        cudaFree(d_graph);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_rand_states));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_graph));
 
         return host_result;
     }

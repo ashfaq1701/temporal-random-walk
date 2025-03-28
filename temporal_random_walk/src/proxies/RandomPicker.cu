@@ -1,5 +1,6 @@
 #include "RandomPicker.cuh"
 
+#include "../common/error_handlers.cuh"
 #include "../src/random/pickers.cuh"
 #include "../src/common/setup.cuh"
 
@@ -32,18 +33,19 @@ int ExponentialIndexRandomPicker::pick_random(const int start, const int end, co
 
         // Allocate device memory for the result
         int* d_result;
-        cudaMalloc(&d_result, sizeof(int));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(int)));
 
         // Launch kernel with a single thread
         pick_exponential_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, prioritize_end, rand_states);
+        CUDA_KERNEL_CHECK("After pick_exponential_random_number_cuda_kernel execution");
 
         // Copy result back to host
         int h_result;
-        cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost));
 
         // Clean up
-        cudaFree(d_result);
-        cudaFree(rand_states);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(rand_states));
 
         return h_result;
     }
@@ -83,18 +85,19 @@ int LinearRandomPicker::pick_random(const int start, const int end, const bool p
 
         // Allocate device memory for the result
         int* d_result;
-        cudaMalloc(&d_result, sizeof(int));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(int)));
 
         // Launch kernel with a single thread
         pick_linear_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, prioritize_end, rand_states);
+        CUDA_KERNEL_CHECK("After pick_linear_random_number_cuda_kernel execution");
 
         // Copy result back to host
         int h_result;
-        cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost));
 
         // Clean up
-        cudaFree(d_result);
-        cudaFree(rand_states);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(rand_states));
 
         return h_result;
     }
@@ -131,18 +134,19 @@ int UniformRandomPicker::pick_random(const int start, const int end, const bool 
 
         // Allocate device memory for the result
         int* d_result;
-        cudaMalloc(&d_result, sizeof(int));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(int)));
 
         // Launch kernel with a single thread
         pick_uniform_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, rand_states);
+        CUDA_KERNEL_CHECK("After pick_uniform_random_number_cuda_kernel execution");
 
         // Copy result back to host
         int h_result;
-        cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost));
 
         // Clean up
-        cudaFree(d_result);
-        cudaFree(rand_states);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(rand_states));
 
         return h_result;
     }
@@ -152,6 +156,7 @@ int UniformRandomPicker::pick_random(const int start, const int end, const bool 
         return random_pickers::pick_random_uniform_host(start, end);
     }
 }
+
 
 #ifdef HAS_CUDA
 __global__ void pick_weighted_random_number_cuda_kernel(
@@ -181,26 +186,27 @@ int WeightBasedRandomPicker::pick_random(const double* weights, const size_t wei
 
         // Allocate device memory for weights
         double* d_weights;
-        cudaMalloc(&d_weights, weights_size * sizeof(double));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_weights, weights_size * sizeof(double)));
 
         // Copy weights to device
-        cudaMemcpy(d_weights, weights, weights_size * sizeof(double), cudaMemcpyHostToDevice);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_weights, weights, weights_size * sizeof(double), cudaMemcpyHostToDevice));
 
         // Allocate device memory for the result
         int* d_result;
-        cudaMalloc(&d_result, sizeof(int));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(int)));
 
         // Launch kernel with a single thread
         pick_weighted_random_number_cuda_kernel<<<1, 1>>>(d_result, d_weights, weights_size, group_start, group_end, rand_states);
+        CUDA_KERNEL_CHECK("After pick_weighted_random_number_cuda_kernel execution");
 
         // Copy result back to host
         int h_result;
-        cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost));
 
         // Clean up
-        cudaFree(d_result);
-        cudaFree(d_weights);
-        cudaFree(rand_states);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_weights));
+        CUDA_CHECK_AND_CLEAR(cudaFree(rand_states));
 
         return h_result;
     }

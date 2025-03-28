@@ -12,6 +12,7 @@
 #include "../data/structs.cuh"
 #include "../common/macros.cuh"
 #include "../common/cuda_config.cuh"
+#include "../common/error_handlers.cuh"
 
 HOST inline DataBlock<int> repeat_elements(const DataBlock<int>& arr, int times, const bool use_gpu) {
     const size_t input_size = arr.size;
@@ -36,6 +37,8 @@ HOST inline DataBlock<int> repeat_elements(const DataBlock<int>& arr, int times,
                 return arr_ptr[original_idx];
             }
         );
+
+        CUDA_KERNEL_CHECK("After thrust transform in repeat_elements");
     }
     else
     #endif
@@ -77,7 +80,7 @@ HOST inline DataBlock<int> divide_number(const int n, const int i, const bool us
         }
 
         // Copy to device
-        cudaMemcpy(parts.data, host_parts, i * sizeof(int), cudaMemcpyHostToDevice);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(parts.data, host_parts, i * sizeof(int), cudaMemcpyHostToDevice));
         delete[] host_parts;
     }
     else

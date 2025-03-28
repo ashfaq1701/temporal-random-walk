@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <iterator>
 
+#include "../common/error_handlers.cuh"
+
 #ifdef HAS_CUDA
 
 __global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalkStore* temporal_random_walk) {
@@ -198,16 +200,17 @@ size_t TemporalRandomWalk::get_edge_count() const {
     if (use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
-        cudaMalloc(&d_result, sizeof(size_t));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(size_t)));
 
         TemporalRandomWalkStore* d_temporal_random_walk = temporal_random_walk::to_device_ptr(temporal_random_walk);
-        get_edge_count_kernel<<<1, 1>>>(d_result, temporal_random_walk);
+        get_edge_count_kernel<<<1, 1>>>(d_result, d_temporal_random_walk);
+        CUDA_KERNEL_CHECK("After get_edge_count_kernel execution");
 
         size_t host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_result);
-        cudaFree(d_temporal_random_walk);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_temporal_random_walk));
 
         return host_result;
     }
@@ -227,9 +230,9 @@ std::vector<int> TemporalRandomWalk::get_node_ids() const {
     if (node_ids.use_gpu) {
         // Allocate temporary host memory
         int* host_data = new int[node_ids.size];
-        cudaMemcpy(host_data, node_ids.data,
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(host_data, node_ids.data,
                                      node_ids.size * sizeof(int),
-                                     cudaMemcpyDeviceToHost);
+                                     cudaMemcpyDeviceToHost));
 
         result.assign(host_data, host_data + node_ids.size);
 
@@ -252,9 +255,9 @@ std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() const
     #ifdef HAS_CUDA
     if (edges.use_gpu) {
         auto host_edges = new Edge[edges.size];
-        cudaMemcpy(host_edges, edges.data,
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(host_edges, edges.data,
                                     edges.size * sizeof(Edge),
-                                    cudaMemcpyDeviceToHost);
+                                    cudaMemcpyDeviceToHost));
 
         for (size_t i = 0; i < edges.size; i++) {
             result.emplace_back(host_edges[i].u, host_edges[i].i, host_edges[i].ts);

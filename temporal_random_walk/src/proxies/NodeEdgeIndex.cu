@@ -2,6 +2,7 @@
 
 #include "../stores/node_edge_index.cuh"
 #include "../data/structs.cuh"
+#include "../common/error_handlers.cuh"
 
 #ifdef HAS_CUDA
 
@@ -67,16 +68,17 @@ std::pair<size_t, size_t> NodeEdgeIndex::get_edge_range(int dense_node_id, bool 
     if (node_edge_index->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         SizeRange* d_result;
-        cudaMalloc(&d_result, sizeof(SizeRange));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(SizeRange)));
 
         NodeEdgeIndexStore* d_node_edge_index = node_edge_index::to_device_ptr(node_edge_index);
         get_edge_range_kernel<<<1, 1>>>(d_result, d_node_edge_index, dense_node_id, forward, is_directed);
+        CUDA_KERNEL_CHECK("After get_edge_range_kernel execution");
 
         SizeRange host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(SizeRange), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(SizeRange), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_result);
-        cudaFree(d_node_edge_index);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_node_edge_index));
 
         return {host_result.from, host_result.to};
     }
@@ -94,16 +96,17 @@ std::pair<size_t, size_t> NodeEdgeIndex::get_timestamp_group_range(int dense_nod
     if (node_edge_index->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         SizeRange* d_result;
-        cudaMalloc(&d_result, sizeof(SizeRange));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(SizeRange)));
 
         NodeEdgeIndexStore* d_node_edge_index = node_edge_index::to_device_ptr(node_edge_index);
         get_timestamp_group_range_kernel<<<1, 1>>>(d_result, d_node_edge_index, dense_node_id, group_idx, forward, is_directed);
+        CUDA_KERNEL_CHECK("After get_timestamp_group_range_kernel execution");
 
         SizeRange host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(SizeRange), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(SizeRange), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_result);
-        cudaFree(d_node_edge_index);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_node_edge_index));
 
         return {host_result.from, host_result.to};
     }
@@ -121,16 +124,17 @@ size_t NodeEdgeIndex::get_timestamp_group_count(int dense_node_id, bool forward,
     if (node_edge_index->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
-        cudaMalloc(&d_result, sizeof(size_t));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(size_t)));
 
         NodeEdgeIndexStore* d_node_edge_index = node_edge_index::to_device_ptr(node_edge_index);
         get_timestamp_group_count_kernel<<<1, 1>>>(d_result, d_node_edge_index, dense_node_id, forward, is_directed);
+        CUDA_KERNEL_CHECK("After get_timestamp_group_count_kernel execution");
 
         size_t host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_result);
-        cudaFree(d_node_edge_index);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_node_edge_index));
 
         return host_result;
     }

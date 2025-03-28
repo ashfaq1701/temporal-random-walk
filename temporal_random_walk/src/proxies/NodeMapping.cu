@@ -1,4 +1,5 @@
 #include "NodeMapping.cuh"
+#include "../common/error_handlers.cuh"
 
 #ifdef HAS_CUDA
 
@@ -62,21 +63,23 @@ NodeMapping& NodeMapping::operator=(const NodeMapping& other) {
     return *this;
 }
 
+
 int NodeMapping::to_dense(const int sparse_id) const {
     #ifdef HAS_CUDA
     if (node_mapping->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         int* d_result;
-        cudaMalloc(&d_result, sizeof(int));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(int)));
 
         NodeMappingStore* d_node_mapping = node_mapping::to_device_ptr(node_mapping);
         to_dense_kernel<<<1, 1>>>(d_result, d_node_mapping, sparse_id);
+        CUDA_KERNEL_CHECK("After to_dense_kernel execution");
 
         int host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(int), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(int), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_result);
-        cudaFree(d_node_mapping);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_node_mapping));
 
         return host_result;
     }
@@ -93,16 +96,17 @@ size_t NodeMapping::size() const {
     if (node_mapping->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
-        cudaMalloc(&d_result, sizeof(size_t));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(size_t)));
 
         NodeMappingStore* d_node_mapping = node_mapping::to_device_ptr(node_mapping);
         size_kernel<<<1, 1>>>(d_result, d_node_mapping);
+        CUDA_KERNEL_CHECK("After size_kernel execution");
 
         size_t host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_result);
-        cudaFree(d_node_mapping);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_node_mapping));
 
         return host_result;
     }
@@ -129,7 +133,7 @@ std::vector<int> NodeMapping::get_active_node_ids() const {
     if (node_mapping->use_gpu) {
         // For GPU data, need to copy from device to host
         const auto host_ids = new int[ids_block.size];
-        cudaMemcpy(host_ids, ids_block.data, ids_block.size * sizeof(int), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(host_ids, ids_block.data, ids_block.size * sizeof(int), cudaMemcpyDeviceToHost));
 
         result.assign(host_ids, host_ids + ids_block.size);
         delete[] host_ids;
@@ -155,7 +159,8 @@ void NodeMapping::mark_node_deleted(int sparse_id) const {
         // For GPU, use mark_node_deleted_from_ptr via kernel
         NodeMappingStore* d_node_mapping = node_mapping::to_device_ptr(node_mapping);
         mark_node_deleted_kernel<<<1, 1>>>(d_node_mapping, sparse_id);
-        cudaFree(d_node_mapping);
+        CUDA_KERNEL_CHECK("After mark_node_deleted_kernel execution");
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_node_mapping));
     }
     else
     #endif
@@ -170,16 +175,17 @@ bool NodeMapping::has_node(int sparse_id) const {
     if (node_mapping->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         bool* d_result;
-        cudaMalloc(&d_result, sizeof(bool));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(bool)));
 
         NodeMappingStore* d_node_mapping = node_mapping::to_device_ptr(node_mapping);
         has_node_kernel<<<1, 1>>>(d_result, d_node_mapping, sparse_id);
+        CUDA_KERNEL_CHECK("After has_node_kernel execution");
 
         bool host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(bool), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(bool), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_result);
-        cudaFree(d_node_mapping);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_node_mapping));
 
         return host_result;
     }
@@ -200,7 +206,7 @@ std::vector<int> NodeMapping::get_all_sparse_ids() const {
     if (node_mapping->use_gpu) {
         // For GPU data, need to copy from device to host
         const auto host_ids = new int[sparse_ids.size];
-        cudaMemcpy(host_ids, sparse_ids.data, sparse_ids.size * sizeof(int), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(host_ids, sparse_ids.data, sparse_ids.size * sizeof(int), cudaMemcpyDeviceToHost));
 
         result.assign(host_ids, host_ids + sparse_ids.size);
         delete[] host_ids;

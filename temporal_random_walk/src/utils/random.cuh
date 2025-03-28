@@ -4,6 +4,7 @@
 #include <random>
 #include <ctime>
 #include <algorithm>
+#include "../common/error_handlers.cuh"
 
 #ifdef HAS_CUDA
 #include <thrust/device_ptr.h>
@@ -76,6 +77,7 @@ HOST void shuffle_vector_device(T* data, size_t size) {
     thrust::device_ptr<T> d_data(data);
     thrust::default_random_engine random_engine(static_cast<unsigned int>(std::time(nullptr)));
     thrust::shuffle(DEVICE_EXECUTION_POLICY, d_data, d_data + size, random_engine);
+    CUDA_KERNEL_CHECK("After thrust shuffle in shuffle_vector_device");
 }
 
 #endif

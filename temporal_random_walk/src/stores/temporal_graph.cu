@@ -12,6 +12,7 @@
 
 #include "../utils/random.cuh"
 #include "../common/cuda_config.cuh"
+#include "../common/error_handlers.cuh"
 #include "../random/pickers.cuh"
 #include "edge_data.cuh"
 #include "node_edge_index.cuh"
@@ -363,20 +364,20 @@ HOST void temporal_graph::add_multiple_edges_cuda(TemporalGraphStore* graph, con
     int* d_targets = nullptr;
     int64_t* d_timestamps = nullptr;
 
-    cudaMalloc(&d_sources, num_new_edges * sizeof(int));
-    cudaMalloc(&d_targets, num_new_edges * sizeof(int));
-    cudaMalloc(&d_timestamps, num_new_edges * sizeof(int64_t));
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_sources, num_new_edges * sizeof(int)));
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_targets, num_new_edges * sizeof(int)));
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_timestamps, num_new_edges * sizeof(int64_t)));
 
     // Copy edges to device if they're not already there
     Edge* d_edges = nullptr;
-    cudaMalloc(&d_edges, num_new_edges * sizeof(Edge));
-    cudaMemcpy(d_edges, new_edges, num_new_edges * sizeof(Edge), cudaMemcpyHostToDevice);
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_edges, num_new_edges * sizeof(Edge)));
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_edges, new_edges, num_new_edges * sizeof(Edge), cudaMemcpyHostToDevice));
 
     // Process edges in parallel and find maximum timestamp
     const int64_t host_latest_timestamp = graph->latest_timestamp;
     int64_t* d_latest_timestamp = nullptr;
-    cudaMalloc(&d_latest_timestamp, sizeof(int64_t));
-    cudaMemcpy(d_latest_timestamp, &host_latest_timestamp, sizeof(int64_t), cudaMemcpyHostToDevice);
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_latest_timestamp, sizeof(int64_t)));
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_latest_timestamp, &host_latest_timestamp, sizeof(int64_t), cudaMemcpyHostToDevice));
 
     const bool is_directed = graph->is_directed;
 
@@ -401,10 +402,11 @@ HOST void temporal_graph::add_multiple_edges_cuda(TemporalGraphStore* graph, con
                       static_cast<unsigned long long>(d_edges[i].ts));
         }
     );
+    CUDA_KERNEL_CHECK("After thrust for_each in add_multiple_edges_cuda");
 
-    cudaMemcpy(&graph->latest_timestamp, d_latest_timestamp, sizeof(int64_t), cudaMemcpyDeviceToHost);
-    cudaFree(d_latest_timestamp);
-    cudaFree(d_edges);
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(&graph->latest_timestamp, d_latest_timestamp, sizeof(int64_t), cudaMemcpyDeviceToHost));
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_latest_timestamp));
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_edges));
 
     // Add edges to edge data
     edge_data::add_edges(graph->edge_data, d_sources, d_targets, d_timestamps, num_new_edges);
@@ -432,9 +434,9 @@ HOST void temporal_graph::add_multiple_edges_cuda(TemporalGraphStore* graph, con
     }
 
     // Clean up
-    cudaFree(d_sources);
-    cudaFree(d_targets);
-    cudaFree(d_timestamps);
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_sources));
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_targets));
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_timestamps));
 }
 
 HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, const size_t start_idx) {
@@ -454,6 +456,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
         thrust::device_pointer_cast(indices + new_edges_count),
         start_idx
     );
+    CUDA_KERNEL_CHECK("After thrust sequence in sort_and_merge_edges_cuda");
 
     auto timestamps_ptr = graph->edge_data->timestamps;
 
@@ -466,6 +469,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
             return timestamps_ptr[i] < timestamps_ptr[j];
         }
     );
+    CUDA_KERNEL_CHECK("After thrust sort in sort_and_merge_edges_cuda");
 
     // Create temporary arrays for sorted data
     int* sorted_sources = nullptr;
@@ -482,6 +486,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
         thrust::device_pointer_cast(indices + new_edges_count),
         thrust::device_pointer_cast(graph->edge_data->sources),
         thrust::device_pointer_cast(sorted_sources));
+    CUDA_KERNEL_CHECK("After thrust gather sources in sort_and_merge_edges_cuda");
 
     thrust::gather(
         thrust::device,
@@ -490,6 +495,8 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
         thrust::device_pointer_cast(graph->edge_data->targets),
         thrust::device_pointer_cast(sorted_targets)
     );
+    CUDA_KERNEL_CHECK("After thrust gather targets in sort_and_merge_edges_cuda");
+
     thrust::gather(
         thrust::device,
         thrust::device_pointer_cast(indices),
@@ -497,26 +504,27 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
         thrust::device_pointer_cast(graph->edge_data->timestamps),
         thrust::device_pointer_cast(sorted_timestamps)
     );
+    CUDA_KERNEL_CHECK("After thrust gather timestamps in sort_and_merge_edges_cuda");
 
     // Copy sorted data back
-    cudaMemcpy(
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(
         graph->edge_data->sources + start_idx,
         sorted_sources,
         new_edges_count * sizeof(int),
         cudaMemcpyDeviceToDevice
-    );
-    cudaMemcpy(
+    ));
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(
         graph->edge_data->targets + start_idx,
         sorted_targets,
         new_edges_count * sizeof(int),
         cudaMemcpyDeviceToDevice
-    );
-    cudaMemcpy(
+    ));
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(
         graph->edge_data->timestamps + start_idx,
         sorted_timestamps,
         new_edges_count * sizeof(int64_t),
         cudaMemcpyDeviceToDevice
-    );
+    ));
 
     // Handle merging if we have existing edges
     if (start_idx > 0) {
@@ -566,26 +574,27 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
                 return thrust::get<2>(a) <= thrust::get<2>(b);
             }
         );
+        CUDA_KERNEL_CHECK("After thrust merge in sort_and_merge_edges_cuda");
 
         // Copy merged results back
-        cudaMemcpy(
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(
             graph->edge_data->sources,
             merged_sources,
             total_size * sizeof(int),
             cudaMemcpyDeviceToDevice
-        );
-        cudaMemcpy(
+        ));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(
             graph->edge_data->targets,
             merged_targets,
             total_size * sizeof(int),
             cudaMemcpyDeviceToDevice
-        );
-        cudaMemcpy(
+        ));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(
             graph->edge_data->timestamps,
             merged_timestamps,
             total_size * sizeof(int64_t),
             cudaMemcpyDeviceToDevice
-        );
+        ));
 
         // Free merged arrays
         clear_memory(&merged_sources, true);
@@ -615,13 +624,15 @@ HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore* graph) {
         thrust::device_pointer_cast(timestamps_ptr + timestamps_size),
         cutoff_time
     );
+    CUDA_KERNEL_CHECK("After thrust upper_bound in delete_old_edges_cuda");
+
     if (it == thrust::device_pointer_cast(timestamps_ptr)) return;
 
     const int delete_count = static_cast<int>(it - thrust::device_pointer_cast(timestamps_ptr));
     const size_t remaining = graph->edge_data->timestamps_size - delete_count;
 
     // Create bool array for tracking nodes with edges
-    bool* has_edges;
+    bool* has_edges = nullptr;
     allocate_memory(&has_edges, graph->node_mapping->capacity, true);
     fill_memory(has_edges, graph->node_mapping->capacity, false, true);
 
@@ -633,18 +644,23 @@ HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore* graph) {
             thrust::device_pointer_cast(graph->edge_data->sources + graph->edge_data->sources_size),
             thrust::device_pointer_cast(graph->edge_data->sources)
         );
+        CUDA_KERNEL_CHECK("After thrust copy sources in delete_old_edges_cuda");
+
         thrust::copy(
             DEVICE_EXECUTION_POLICY,
             thrust::device_pointer_cast(graph->edge_data->targets + delete_count),
             thrust::device_pointer_cast(graph->edge_data->targets + graph->edge_data->targets_size),
             thrust::device_pointer_cast(graph->edge_data->targets)
         );
+        CUDA_KERNEL_CHECK("After thrust copy targets in delete_old_edges_cuda");
+
         thrust::copy(
             DEVICE_EXECUTION_POLICY,
             thrust::device_pointer_cast(graph->edge_data->timestamps + delete_count),
             thrust::device_pointer_cast(graph->edge_data->timestamps + graph->edge_data->timestamps_size),
             thrust::device_pointer_cast(graph->edge_data->timestamps)
         );
+        CUDA_KERNEL_CHECK("After thrust copy timestamps in delete_old_edges_cuda");
 
         // Mark nodes with edges in parallel
         int* sources_ptr = graph->edge_data->sources;
@@ -661,6 +677,7 @@ HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore* graph) {
                 has_edges[node_mapping::to_dense_from_ptr_device(node_index, targets_ptr[i], capacity)] = true;
             }
         );
+        CUDA_KERNEL_CHECK("After thrust for_each mark nodes in delete_old_edges_cuda");
     }
 
     // Update sizes
@@ -681,6 +698,7 @@ HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore* graph) {
             }
         }
     );
+    CUDA_KERNEL_CHECK("After thrust for_each mark deleted in delete_old_edges_cuda");
 
     // Free temporary memory
     clear_memory(&has_edges, true);
@@ -697,7 +715,10 @@ HOST size_t temporal_graph::count_timestamps_less_than_cuda(const TemporalGraphS
         DEVICE_EXECUTION_POLICY,
         thrust::device_pointer_cast(graph->edge_data->unique_timestamps),
         thrust::device_pointer_cast(graph->edge_data->unique_timestamps + graph->edge_data->unique_timestamps_size),
-        timestamp);
+        timestamp
+    );
+    CUDA_KERNEL_CHECK("After thrust lower_bound in count_timestamps_less_than_cuda");
+
     return it - thrust::device_pointer_cast(graph->edge_data->unique_timestamps);
 }
 
@@ -708,7 +729,10 @@ HOST size_t temporal_graph::count_timestamps_greater_than_cuda(const TemporalGra
         DEVICE_EXECUTION_POLICY,
         thrust::device_pointer_cast(graph->edge_data->unique_timestamps),
         thrust::device_pointer_cast(graph->edge_data->unique_timestamps + graph->edge_data->unique_timestamps_size),
-        timestamp);
+        timestamp
+    );
+    CUDA_KERNEL_CHECK("After thrust upper_bound in count_timestamps_greater_than_cuda");
+
     return thrust::device_pointer_cast(graph->edge_data->unique_timestamps + graph->edge_data->unique_timestamps_size) - it;
 }
 
@@ -733,8 +757,8 @@ HOST size_t temporal_graph::count_node_timestamps_less_than_cuda(const TemporalG
 
     // Copy offsets from device to host
     size_t group_start, group_end;
-    cudaMemcpy(&group_start, timestamp_group_offsets + dense_idx, sizeof(size_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&group_end, timestamp_group_offsets + dense_idx + 1, sizeof(size_t), cudaMemcpyDeviceToHost);
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(&group_start, timestamp_group_offsets + dense_idx, sizeof(size_t), cudaMemcpyDeviceToHost));
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(&group_end, timestamp_group_offsets + dense_idx + 1, sizeof(size_t), cudaMemcpyDeviceToHost));
     if (group_start == group_end) return 0;
 
     int64_t* timestamps_ptr = graph->edge_data->timestamps;
@@ -749,6 +773,7 @@ HOST size_t temporal_graph::count_node_timestamps_less_than_cuda(const TemporalG
         {
             return timestamps_ptr[edge_indices[group_pos]] < ts;
         });
+    CUDA_KERNEL_CHECK("After thrust lower_bound in count_node_timestamps_less_than_cuda");
 
     return thrust::distance(thrust::device_pointer_cast(timestamp_group_indices) + static_cast<int>(group_start), it);
 }
@@ -764,8 +789,8 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_cuda(const Tempor
 
     // Copy offsets from device to host
     size_t group_start, group_end;
-    cudaMemcpy(&group_start, timestamp_group_offsets + dense_idx, sizeof(size_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&group_end, timestamp_group_offsets + (dense_idx + 1), sizeof(size_t), cudaMemcpyDeviceToHost);
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(&group_start, timestamp_group_offsets + dense_idx, sizeof(size_t), cudaMemcpyDeviceToHost));
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(&group_end, timestamp_group_offsets + (dense_idx + 1), sizeof(size_t), cudaMemcpyDeviceToHost));
     if (group_start == group_end) return 0;
 
     int64_t* timestamps_ptr = graph->edge_data->timestamps;
@@ -780,6 +805,7 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_cuda(const Tempor
         {
             return ts < timestamps_ptr[edge_indices[group_pos]];
         });
+    CUDA_KERNEL_CHECK("After thrust upper_bound in count_node_timestamps_greater_than_cuda");
 
     return thrust::distance(it, thrust::device_pointer_cast(timestamp_group_indices) + static_cast<int>(group_end));
 }
@@ -1383,7 +1409,7 @@ DEVICE Edge temporal_graph::get_node_edge_at_device(
 HOST TemporalGraphStore* temporal_graph::to_device_ptr(const TemporalGraphStore* graph) {
     // Create a new TemporalGraph object on the device
     TemporalGraphStore* device_graph;
-    cudaMalloc(&device_graph, sizeof(TemporalGraphStore));
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&device_graph, sizeof(TemporalGraphStore)));
 
     // Create a temporary copy to modify
     TemporalGraphStore temp_graph = *graph;
@@ -1405,7 +1431,7 @@ HOST TemporalGraphStore* temporal_graph::to_device_ptr(const TemporalGraphStore*
     temp_graph.use_gpu = true;
 
     // Copy the updated struct to device
-    cudaMemcpy(device_graph, &temp_graph, sizeof(TemporalGraphStore), cudaMemcpyHostToDevice);
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_graph, &temp_graph, sizeof(TemporalGraphStore), cudaMemcpyHostToDevice));
 
     return device_graph;
 }

@@ -2,6 +2,7 @@
 #define EDGE_DATA_H
 
 #include "../stores/edge_data.cuh"
+#include "../common/error_handlers.cuh"
 
 #ifdef HAS_CUDA
 
@@ -27,9 +28,9 @@ public:
         #ifdef HAS_CUDA
         if (edge_data->use_gpu) {
             std::vector<int> result(edge_data->sources_size);
-            cudaMemcpy(result.data(), edge_data->sources,
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), edge_data->sources,
                       edge_data->sources_size * sizeof(int),
-                      cudaMemcpyDeviceToHost);
+                      cudaMemcpyDeviceToHost));
             return result;
         }
         else
@@ -44,9 +45,9 @@ public:
         #ifdef HAS_CUDA
         if (edge_data->use_gpu) {
             std::vector<int> result(edge_data->targets_size);
-            cudaMemcpy(result.data(), edge_data->targets,
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), edge_data->targets,
                       edge_data->targets_size * sizeof(int),
-                      cudaMemcpyDeviceToHost);
+                      cudaMemcpyDeviceToHost));
             return result;
         }
         else
@@ -61,9 +62,9 @@ public:
         #ifdef HAS_CUDA
         if (edge_data->use_gpu) {
             std::vector<int64_t> result(edge_data->timestamps_size);
-            cudaMemcpy(result.data(), edge_data->timestamps,
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), edge_data->timestamps,
                       edge_data->timestamps_size * sizeof(int64_t),
-                      cudaMemcpyDeviceToHost);
+                      cudaMemcpyDeviceToHost));
             return result;
         }
         else
@@ -78,9 +79,9 @@ public:
         #ifdef HAS_CUDA
         if (edge_data->use_gpu) {
             std::vector<size_t> result(edge_data->timestamp_group_offsets_size);
-            cudaMemcpy(result.data(), edge_data->timestamp_group_offsets,
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), edge_data->timestamp_group_offsets,
                       edge_data->timestamp_group_offsets_size * sizeof(size_t),
-                      cudaMemcpyDeviceToHost);
+                      cudaMemcpyDeviceToHost));
             return result;
         }
         else
@@ -95,9 +96,9 @@ public:
         #ifdef HAS_CUDA
         if (edge_data->use_gpu) {
             std::vector<int64_t> result(edge_data->unique_timestamps_size);
-            cudaMemcpy(result.data(), edge_data->unique_timestamps,
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), edge_data->unique_timestamps,
                       edge_data->unique_timestamps_size * sizeof(int64_t),
-                      cudaMemcpyDeviceToHost);
+                      cudaMemcpyDeviceToHost));
             return result;
         }
         else
@@ -116,9 +117,9 @@ public:
         #ifdef HAS_CUDA
         if (edge_data->use_gpu) {
             std::vector<double> result(edge_data->forward_cumulative_weights_exponential_size);
-            cudaMemcpy(result.data(), edge_data->forward_cumulative_weights_exponential,
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), edge_data->forward_cumulative_weights_exponential,
                       edge_data->forward_cumulative_weights_exponential_size * sizeof(double),
-                      cudaMemcpyDeviceToHost);
+                      cudaMemcpyDeviceToHost));
             return result;
         }
         else
@@ -138,9 +139,9 @@ public:
         #ifdef HAS_CUDA
         if (edge_data->use_gpu) {
             std::vector<double> result(edge_data->backward_cumulative_weights_exponential_size);
-            cudaMemcpy(result.data(), edge_data->backward_cumulative_weights_exponential,
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), edge_data->backward_cumulative_weights_exponential,
                       edge_data->backward_cumulative_weights_exponential_size * sizeof(double),
-                      cudaMemcpyDeviceToHost);
+                      cudaMemcpyDeviceToHost));
             return result;
         }
         else

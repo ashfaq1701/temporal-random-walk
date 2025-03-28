@@ -1,4 +1,5 @@
 #include "EdgeData.cuh"
+#include "../common/error_handlers.cuh"
 
 #ifdef HAS_CUDA
 
@@ -78,16 +79,17 @@ size_t EdgeData::size() const {
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
-        cudaMalloc(&d_result, sizeof(size_t));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(size_t)));
 
         EdgeDataStore* d_edge_data = edge_data::to_device_ptr(edge_data);
         size_kernel<<<1, 1>>>(d_result, d_edge_data);
+        CUDA_KERNEL_CHECK("After size_kernel execution");
 
         size_t host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_result);
-        cudaFree(d_edge_data);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_edge_data));
 
         return host_result;
     }
@@ -112,16 +114,17 @@ bool EdgeData::empty() const {
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         bool* d_result;
-        cudaMalloc(&d_result, sizeof(bool));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(bool)));
 
         EdgeDataStore* d_edge_data = edge_data::to_device_ptr(edge_data);
         empty_kernel<<<1, 1>>>(d_result, d_edge_data);
+        CUDA_KERNEL_CHECK("After empty_kernel execution");
 
         bool host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(bool), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(bool), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_result);
-        cudaFree(d_edge_data);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_edge_data));
 
         return host_result;
     }
@@ -132,6 +135,7 @@ bool EdgeData::empty() const {
         return edge_data::empty(edge_data);
     }
 }
+
 
 void EdgeData::add_edges(const std::vector<int>& sources, const std::vector<int>& targets, const std::vector<int64_t>& timestamps) const {
     if (sources.size() != targets.size() || sources.size() != timestamps.size()) {
@@ -151,22 +155,22 @@ void EdgeData::push_back(const int source, const int target, const int64_t times
         int* d_target = nullptr;
         int64_t* d_timestamp = nullptr;
 
-        cudaMalloc(&d_source, sizeof(int));
-        cudaMalloc(&d_target, sizeof(int));
-        cudaMalloc(&d_timestamp, sizeof(int64_t));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_source, sizeof(int)));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_target, sizeof(int)));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_timestamp, sizeof(int64_t)));
 
         // Copy data to GPU
-        cudaMemcpy(d_source, &source, sizeof(int), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_target, &target, sizeof(int), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_timestamp, &timestamp, sizeof(int64_t), cudaMemcpyHostToDevice);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_source, &source, sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_target, &target, sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_timestamp, &timestamp, sizeof(int64_t), cudaMemcpyHostToDevice));
 
         // Call add_edges with single element
         edge_data::add_edges(edge_data, d_source, d_target, d_timestamp, 1);
 
         // Free GPU memory
-        cudaFree(d_source);
-        cudaFree(d_target);
-        cudaFree(d_timestamp);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_source));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_target));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_timestamp));
     }
     else
     #endif
@@ -190,14 +194,14 @@ std::vector<Edge> EdgeData::get_edges() const {
     if (edge_data->use_gpu) {
         // For GPU data, need to copy from device to host
         const auto host_edges = new Edge[edges_block.size];
-        cudaMemcpy(host_edges, edges_block.data, edges_block.size * sizeof(Edge), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(host_edges, edges_block.data, edges_block.size * sizeof(Edge), cudaMemcpyDeviceToHost));
 
         result.assign(host_edges, host_edges + edges_block.size);
         delete[] host_edges;
 
         // Free device memory for DataBlock
         if (edges_block.data) {
-            cudaFree(edges_block.data);
+            CUDA_CHECK_AND_CLEAR(cudaFree(edges_block.data));
         }
     }
     else
@@ -212,6 +216,7 @@ std::vector<Edge> EdgeData::get_edges() const {
 
     return result;
 }
+
 
 void EdgeData::update_timestamp_groups() const {
     #ifdef HAS_CUDA
@@ -242,16 +247,17 @@ std::pair<size_t, size_t> EdgeData::get_timestamp_group_range(size_t group_idx) 
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         SizeRange* d_result;
-        cudaMalloc(&d_result, sizeof(SizeRange));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(SizeRange)));
 
         EdgeDataStore* d_edge_data = edge_data::to_device_ptr(edge_data);
         get_timestamp_group_range_kernel<<<1, 1>>>(d_result, d_edge_data, group_idx);
+        CUDA_KERNEL_CHECK("After get_timestamp_group_range_kernel execution");
 
         SizeRange host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(SizeRange), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(SizeRange), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_result);
-        cudaFree(d_edge_data);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_edge_data));
 
         return {host_result.from, host_result.to};
     }
@@ -269,16 +275,17 @@ size_t EdgeData::get_timestamp_group_count() const {
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
-        cudaMalloc(&d_result, sizeof(size_t));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(size_t)));
 
         EdgeDataStore* d_edge_data = edge_data::to_device_ptr(edge_data);
         get_timestamp_group_count_kernel<<<1, 1>>>(d_result, d_edge_data);
+        CUDA_KERNEL_CHECK("After get_timestamp_group_count_kernel execution");
 
         size_t host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_result);
-        cudaFree(d_edge_data);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_edge_data));
 
         return host_result;
     }
@@ -290,21 +297,23 @@ size_t EdgeData::get_timestamp_group_count() const {
     }
 }
 
+
 size_t EdgeData::find_group_after_timestamp(int64_t timestamp) const {
     #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
-        cudaMalloc(&d_result, sizeof(size_t));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(size_t)));
 
         EdgeDataStore* d_edge_data = edge_data::to_device_ptr(edge_data);
         find_group_after_timestamp_kernel<<<1, 1>>>(d_result, d_edge_data, timestamp);
+        CUDA_KERNEL_CHECK("After find_group_after_timestamp_kernel execution");
 
         size_t host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_result);
-        cudaFree(d_edge_data);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_edge_data));
 
         return host_result;
     }
@@ -321,16 +330,17 @@ size_t EdgeData::find_group_before_timestamp(int64_t timestamp) const {
     if (edge_data->use_gpu) {
         // Call via CUDA kernel for GPU implementation
         size_t* d_result;
-        cudaMalloc(&d_result, sizeof(size_t));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(size_t)));
 
         EdgeDataStore* d_edge_data = edge_data::to_device_ptr(edge_data);
         find_group_before_timestamp_kernel<<<1, 1>>>(d_result, d_edge_data, timestamp);
+        CUDA_KERNEL_CHECK("After find_group_before_timestamp_kernel execution");
 
         size_t host_result;
-        cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_result);
-        cudaFree(d_edge_data);
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_edge_data));
 
         return host_result;
     }

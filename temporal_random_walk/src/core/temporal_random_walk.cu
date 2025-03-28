@@ -408,12 +408,13 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
 
     // Shuffle node IDs for randomization
     shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
+    CUDA_KERNEL_CHECK("After shuffle_vector_device in get_random_walks_and_times_for_all_nodes_cuda");
 
     // Create and initialize the walk set on device
     WalkSet walk_set(repeated_node_ids.size, max_walk_len, true);
     WalkSet* d_walk_set;
-    cudaMalloc(&d_walk_set, sizeof(WalkSet));
-    cudaMemcpy(d_walk_set, &walk_set, sizeof(WalkSet), cudaMemcpyHostToDevice);
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_walk_set, sizeof(WalkSet)));
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_walk_set, &walk_set, sizeof(WalkSet), cudaMemcpyHostToDevice));
 
     // Create device pointer for the temporal graph
     TemporalGraphStore* d_temporal_graph = temporal_graph::to_device_ptr(temporal_random_walk->temporal_graph);
@@ -430,27 +431,16 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
         walk_direction,
         static_cast<int>(repeated_node_ids.size)
     );
-
-    // Check for launch errors
-    cudaError_t launchError = cudaGetLastError();
-    if (launchError != cudaSuccess) {
-        std::cerr << "Kernel launch error: " << cudaGetErrorString(launchError) << std::endl;
-    }
-
-    // Synchronize and check for runtime errors
-    cudaError_t syncError = cudaDeviceSynchronize();
-    if (syncError != cudaSuccess) {
-        std::cerr << "Kernel execution error: " << cudaGetErrorString(syncError) << std::endl;
-    }
+    CUDA_KERNEL_CHECK("After generate_random_walks_kernel in get_random_walks_and_times_for_all_nodes_cuda");
 
     // Copy walk set from device to host
     WalkSet host_walk_set(repeated_node_ids.size, max_walk_len, false);
     host_walk_set.copy_from_device(d_walk_set);
 
     // Free device memory
-    cudaFree(rand_states);
-    cudaFree(d_temporal_graph);
-    cudaFree(d_walk_set);
+    CUDA_CHECK_AND_CLEAR(cudaFree(rand_states));
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_temporal_graph));
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_walk_set));
 
     return host_walk_set;
 }
@@ -474,7 +464,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
 
     // Initialize all start node IDs to -1 (indicating random start)
     int* start_node_ids;
-    cudaMalloc(&start_node_ids, num_walks_total * sizeof(int));
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&start_node_ids, num_walks_total * sizeof(int)));
     fill_memory(start_node_ids, num_walks_total, -1, temporal_random_walk->use_gpu);
 
     // Initialize random states for CUDA threads
@@ -483,8 +473,8 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     // Create and initialize the walk set on device
     WalkSet walk_set(num_walks_total, max_walk_len, true);
     WalkSet* d_walk_set;
-    cudaMalloc(&d_walk_set, sizeof(WalkSet));
-    cudaMemcpy(d_walk_set, &walk_set, sizeof(WalkSet), cudaMemcpyHostToDevice);
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_walk_set, sizeof(WalkSet)));
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_walk_set, &walk_set, sizeof(WalkSet), cudaMemcpyHostToDevice));
 
     // Create device pointer for the temporal graph
     TemporalGraphStore* d_temporal_graph = temporal_graph::to_device_ptr(temporal_random_walk->temporal_graph);
@@ -502,28 +492,17 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
         walk_direction,
         num_walks_total
     );
-
-    // Check for launch errors
-    cudaError_t launchError = cudaGetLastError();
-    if (launchError != cudaSuccess) {
-        std::cerr << "Kernel launch error: " << cudaGetErrorString(launchError) << std::endl;
-    }
-
-    // Synchronize and check for runtime errors
-    cudaError_t syncError = cudaDeviceSynchronize();
-    if (syncError != cudaSuccess) {
-        std::cerr << "Kernel execution error: " << cudaGetErrorString(syncError) << std::endl;
-    }
+    CUDA_KERNEL_CHECK("After generate_random_walks_kernel in get_random_walks_and_times_cuda");
 
     // Copy walk set from device to host
     WalkSet host_walk_set(num_walks_total, max_walk_len, false);
     host_walk_set.copy_from_device(d_walk_set);
 
     // Free device memory
-    cudaFree(rand_states);
-    cudaFree(d_temporal_graph);
-    cudaFree(start_node_ids);
-    cudaFree(d_walk_set);
+    CUDA_CHECK_AND_CLEAR(cudaFree(rand_states));
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_temporal_graph));
+    CUDA_CHECK_AND_CLEAR(cudaFree(start_node_ids));
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_walk_set));
 
     return host_walk_set;
 }
@@ -531,7 +510,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
 HOST TemporalRandomWalkStore* temporal_random_walk::to_device_ptr(const TemporalRandomWalkStore* temporal_random_walk) {
     // Create a new TemporalRandomWalk object on the device
     TemporalRandomWalkStore* device_temporal_random_walk;
-    cudaMalloc(&device_temporal_random_walk, sizeof(TemporalRandomWalkStore));
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&device_temporal_random_walk, sizeof(TemporalRandomWalkStore)));
 
     // Create a temporary copy to modify for device pointers
     TemporalRandomWalkStore temp_temporal_random_walk = *temporal_random_walk;
@@ -549,7 +528,7 @@ HOST TemporalRandomWalkStore* temporal_random_walk::to_device_ptr(const Temporal
     temp_temporal_random_walk.use_gpu = true;
 
     // Copy the updated struct to device
-    cudaMemcpy(device_temporal_random_walk, &temp_temporal_random_walk, sizeof(TemporalRandomWalkStore), cudaMemcpyHostToDevice);
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_temporal_random_walk, &temp_temporal_random_walk, sizeof(TemporalRandomWalkStore), cudaMemcpyHostToDevice));
 
     return device_temporal_random_walk;
 }
