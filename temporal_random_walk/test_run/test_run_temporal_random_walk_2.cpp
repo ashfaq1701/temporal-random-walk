@@ -10,20 +10,32 @@ constexpr bool USE_GPU = true;
 constexpr bool USE_GPU = false;
 #endif
 
-constexpr int NUM_WALKS_PER_NODE = 500000;
+constexpr int NUM_WALKS_TOTAL = 1000000;
+constexpr int NODE_COUNT_MAX_BOUND = 1000000;
+
 
 int main(int argc, char* argv[]) {
     std::string file_path = "../../data/sample_data.csv";
+    char delimiter = ',';
+    int num_rows = 1000000;
 
     if (argc > 1) {
         file_path = argv[1];
     }
 
-    const auto edge_infos = read_edges_from_csv(file_path);
+    if (argc > 2) {
+        delimiter = argv[2][0];
+    }
+
+    if (argc > 3) {
+        num_rows = std::stoi(argv[3]);
+    }
+
+    const auto edge_infos = read_edges_from_csv(file_path, num_rows, delimiter);
     std::cout << edge_infos.size() << std::endl;
 
     auto start = std::chrono::high_resolution_clock::now();
-    TemporalRandomWalk temporal_random_walk(false, USE_GPU, -1, true, 34);
+    TemporalRandomWalk temporal_random_walk(false, USE_GPU, -1, true, 34, NODE_COUNT_MAX_BOUND);
     temporal_random_walk.add_multiple_edges(edge_infos);
     auto end = std::chrono::high_resolution_clock::now();
 
@@ -39,28 +51,28 @@ int main(int argc, char* argv[]) {
     const auto walks_backward_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
         80,
         &exponential_picker_type,
-        NUM_WALKS_PER_NODE,
+        NUM_WALKS_TOTAL,
         &uniform_picker_type,
         WalkDirection::Backward_In_Time);
 
     const auto walks_backward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
         80,
         &exponential_picker_type,
-        NUM_WALKS_PER_NODE,
+        NUM_WALKS_TOTAL,
         &uniform_picker_type,
         WalkDirection::Backward_In_Time);
 
     const auto walks_forward_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
         80,
         &exponential_picker_type,
-        NUM_WALKS_PER_NODE,
+        NUM_WALKS_TOTAL,
         &uniform_picker_type,
         WalkDirection::Forward_In_Time);
 
     const auto walks_forward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
         80,
         &exponential_picker_type,
-        NUM_WALKS_PER_NODE,
+        NUM_WALKS_TOTAL,
         &uniform_picker_type,
         WalkDirection::Forward_In_Time);
 

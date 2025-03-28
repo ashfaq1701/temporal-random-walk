@@ -515,7 +515,7 @@ HOST void node_mapping::update_cuda(NodeMappingStore *node_mapping, const EdgeDa
     // Add nodes to the hash table
     if (node_count > 0) {
         constexpr int block_size = 256;
-        int num_blocks = static_cast<int>(num_edges + block_size - 1) / block_size;
+        int num_blocks = static_cast<int>(node_count + block_size - 1) / block_size;
 
         // Call the device function to add nodes
         add_nodes_kernel<<<num_blocks, block_size>>>(
