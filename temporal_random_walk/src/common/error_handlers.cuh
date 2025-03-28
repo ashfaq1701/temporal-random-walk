@@ -1,6 +1,8 @@
 #ifndef CUDA_ERROR_HANDLERS
 #define CUDA_ERROR_HANDLERS
 
+#ifdef HAS_CUDA
+
 #include <cuda_runtime.h>
 #include <iostream>
 #include <string>
@@ -54,5 +56,7 @@
 inline void clearCudaErrorState() {
     cudaGetLastError(); // This clears the error state
 }
+
+#endif
 
 #endif // CUDA_ERROR_HANDLERS
