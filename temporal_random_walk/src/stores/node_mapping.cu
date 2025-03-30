@@ -517,13 +517,21 @@ HOST void node_mapping::update_cuda(NodeMappingStore *node_mapping, const EdgeDa
         constexpr int block_size = 256;
         int num_blocks = static_cast<int>(node_count + block_size - 1) / block_size;
 
+        size_t* d_node_size;
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_node_size, sizeof(size_t)));
+        CUDA_CHECK_AND_CLEAR(cudaMemset(d_node_size, 0, sizeof(size_t)));
+
         // Call the device function to add nodes
         add_nodes_kernel<<<num_blocks, block_size>>>(
             node_mapping->node_index,
             node_mapping->capacity,
-            d_node_ids, node_count,
-            &node_mapping->node_size);
+            d_node_ids,
+            node_count,
+            d_node_size);
         CUDA_KERNEL_CHECK("After add_nodes_kernel in update_cuda");
+
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&node_mapping->node_size, d_node_size, sizeof(size_t), cudaMemcpyDeviceToHost));
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_node_size));
 
         auto node_index = node_mapping->node_index;
         auto is_deleted = node_mapping->is_deleted;
