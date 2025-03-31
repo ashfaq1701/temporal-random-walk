@@ -1,5 +1,6 @@
 #include "node_mapping.cuh"
 
+#include <vector>
 #include "../common/memory.cuh"
 #include "../common/error_handlers.cuh"
 
