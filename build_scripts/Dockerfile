@@ -1,92 +1,67 @@
-FROM nvidia/cuda:12.6.1-devel-ubuntu20.04
+FROM nvidia/cuda:12.6.0-devel-rockylinux9
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-ARG USER_ID=1000
-ARG GROUP_ID=1000
-
-# Create non-root user with matching UID/GID
-RUN groupadd -g ${GROUP_ID} user && \
-    useradd -u ${USER_ID} -g ${GROUP_ID} -m user && \
-    usermod -aG sudo user
+ARG PYTHON_VERSIONS="3.8.18 3.9.18 3.10.13 3.11.7"
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    software-properties-common \
-    build-essential \
-    git wget curl \
-    sudo \
-    pkg-config \
-    apt-transport-https  \
-    ca-certificates  \
-    automake \
-    autoconf \
-    gnupg
+RUN dnf -y update && \
+    dnf -y --allowerasing install \
+        gcc gcc-c++ make automake autoconf \
+        git wget curl \
+        pkg-config cmake \
+        zlib-devel bzip2-devel xz-devel \
+        readline-devel libffi-devel sqlite-devel \
+        openssl-devel \
+        ca-certificates gnupg \
+        sudo which \
+        dnf-plugins-core epel-release && \
+    dnf clean all
 
-# Clone the patchelf repository (latest version)
-RUN git clone https://github.com/NixOS/patchelf.git /tmp/patchelf
+# Install Python 3.8–3.11 from source
+RUN for VERSION in ${PYTHON_VERSIONS}; do \
+        cd /usr/src && \
+        MAJOR=$(echo $VERSION | cut -d. -f1,2) && \
+        wget https://www.python.org/ftp/python/${VERSION}/Python-${VERSION}.tgz && \
+        tar xzf Python-${VERSION}.tgz && \
+        cd Python-${VERSION} && \
+        # Enable shared libraries and set rpath
+        ./configure --enable-optimizations --enable-shared \
+          LDFLAGS="-Wl,-rpath /usr/local/lib" && \
+        make -j$(nproc) && \
+        make altinstall && \
+        # Create symlinks for libraries
+        ln -sf /usr/local/lib/libpython${MAJOR}.so /usr/lib64/ && \
+        ldconfig && \
+        rm -rf /usr/src/Python-${VERSION}*; \
+    done
+
+# Install pip and common tools for all Python versions
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
+    for py in 3.8 3.9 3.10 3.11; do \
+        python${py} /tmp/get-pip.py && \
+        python${py} -m pip install --upgrade pip setuptools wheel; \
+    done && rm -f /tmp/get-pip.py
 
 # Build and install patchelf from source
-RUN cd /tmp/patchelf && \
+RUN git clone https://github.com/NixOS/patchelf.git /tmp/patchelf && \
+    cd /tmp/patchelf && \
     ./bootstrap.sh && \
     ./configure && \
     make && \
-    sudo make install
+    make install && \
+    rm -rf /tmp/patchelf
 
-# Clean up
-RUN rm -rf /tmp/patchelf
-
-# Add Kitware's APT repository for newer CMake
-RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null && \
-    echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null && \
-    apt-get update && \
-    apt-get install -y cmake
-
-# Add deadsnakes PPA for Python versions
-RUN add-apt-repository ppa:deadsnakes/ppa && apt-get update
-
-# Install Python versions and distutils
-RUN apt-get install -y \
-    python3.8-dev python3.8-distutils \
-    python3.9-dev python3.9-distutils \
-    python3.10-dev python3.10-distutils \
-    python3.11-dev python3.11-distutils \
-    python3-distutils
-
-# Note: Python 3.12 might not be available in the deadsnakes PPA for Ubuntu 20.04
-# Removed Python 3.12 installation
-
-# Install pip for all versions
-RUN wget https://bootstrap.pypa.io/get-pip.py && \
-    python3.8 get-pip.py && \
-    python3.9 get-pip.py && \
-    python3.10 get-pip.py && \
-    python3.11 get-pip.py
-
-# Install vcpkg as root
+# Install vcpkg and gtest
 RUN git clone https://github.com/microsoft/vcpkg.git /opt/vcpkg && \
-    cd /opt/vcpkg && \
-    ./bootstrap-vcpkg.sh -disableMetrics
+    /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics && \
+    /opt/vcpkg/vcpkg install gtest
 
-# Set up vcpkg environment
+# Environment setup
 ENV VCPKG_ROOT="/opt/vcpkg"
-ENV CMAKE_TOOLCHAIN_FILE="/opt/vcpkg/scripts/buildsystems/vcpkg.cmake"
-ENV PATH="${VCPKG_ROOT}:${PATH}"
+ENV CMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+ENV PATH="$VCPKG_ROOT:/root/.local/bin:$PATH"
 
-# Install gtest via vcpkg
-RUN /opt/vcpkg/vcpkg install gtest
-
-# Give ownership of /opt and /project to the non-root user
-RUN mkdir -p /project && \
-    chown -R ${USER_ID}:${GROUP_ID} /opt/vcpkg /project
-
-# Verify CMake version
-RUN cmake --version
-
-# Switch to the non-root user
-USER user
-
-ENV PATH="/home/user/.local/bin:${PATH}"
+# Create world-writable /project directory for mounting
+RUN mkdir -p /project && chmod -R 0777 /opt/vcpkg /project
 
 # Set working directory
 WORKDIR /project

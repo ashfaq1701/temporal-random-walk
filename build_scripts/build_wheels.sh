@@ -43,17 +43,20 @@ for PYVER in "${PYTHON_VERSIONS[@]}"; do
         PYTHON_VERSION=$($PYVER -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
         PYTHON_LIBDIR=$($PYVER -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
 
-        # Look for the Python library in various locations
+        # Look for the Python library in various locations (adjusted for Rocky Linux paths)
         PYTHON_LIBRARY=""
         POSSIBLE_LOCATIONS=(
             "$PYTHON_LIBDIR/libpython${PYTHON_VERSION}.so"
             "$PYTHON_LIBDIR/libpython${PYTHON_VERSION}m.so"
-            "/usr/lib/x86_64-linux-gnu/libpython${PYTHON_VERSION}.so"
-            "/usr/lib/x86_64-linux-gnu/libpython${PYTHON_VERSION}m.so"
+            "/usr/lib64/libpython${PYTHON_VERSION}.so"
+            "/usr/lib64/libpython${PYTHON_VERSION}m.so"
             "/usr/lib/libpython${PYTHON_VERSION}.so"
             "/usr/lib/libpython${PYTHON_VERSION}m.so"
             "/usr/local/lib/libpython${PYTHON_VERSION}.so"
+            "/usr/local/lib/libpython${PYTHON_VERSION}.so.1.0"  # Add this line
             "/usr/local/lib/libpython${PYTHON_VERSION}m.so"
+            "/usr/local/lib64/libpython${PYTHON_VERSION}.so"
+            "/usr/local/lib64/libpython${PYTHON_VERSION}m.so"
         )
 
         for loc in "${POSSIBLE_LOCATIONS[@]}"; do
@@ -105,8 +108,9 @@ for PYVER in "${PYTHON_VERSIONS[@]}"; do
             echo "Built wheel: $WHEEL"
 
             # Repair the wheel with the same Python version
+            # Rocky Linux 9 is based on RHEL 9, which corresponds to manylinux_2_34_x86_64
             echo "Repairing wheel..."
-            $PYVER -m auditwheel repair "$WHEEL" --plat manylinux_2_31_x86_64 -w /project/wheelhouse/
+            $PYVER -m auditwheel repair "$WHEEL" --plat manylinux_2_34_x86_64 -w /project/wheelhouse/
 
             echo "Wheel repair complete"
         else
@@ -128,7 +132,6 @@ if [ "$(ls -A /project/wheelhouse/*.whl 2>/dev/null)" ]; then
     echo "All wheels built successfully!"
     echo "Wheels are available in /project/wheelhouse"
     # List built wheels
-    echo "Built wheels:"
     ls -la /project/wheelhouse/*.whl
 else
     echo "No wheels were built or repair process failed."
