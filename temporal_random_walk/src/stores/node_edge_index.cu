@@ -1,5 +1,6 @@
 #include "node_edge_index.cuh"
 
+#include <cmath>
 #include <algorithm>
 #include "../common/cuda_config.cuh"
 #include "../common/error_handlers.cuh"

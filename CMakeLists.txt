@@ -1,5 +1,5 @@
 
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 3.24)
 project(temporal_random_walk)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_GLIBCXX_USE_CXX11_ABI=0")

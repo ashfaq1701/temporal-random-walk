@@ -1,5 +1,6 @@
 #include "edge_data.cuh"
 
+#include <cmath>
 #include <algorithm>
 #ifdef HAS_CUDA
 #include <thrust/device_vector.h>
