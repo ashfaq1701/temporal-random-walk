@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include "../src/proxies/EdgeData.cuh"
 #include "../src/proxies/NodeEdgeIndex.cuh"
 #include "../src/proxies/NodeMapping.cuh"

@@ -1,3 +1,4 @@
+#include <cmath>
 #include <gtest/gtest.h>
 #include "../src/proxies/RandomPicker.cuh"
 
