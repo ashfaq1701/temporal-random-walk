@@ -1,6 +1,7 @@
 #ifndef NODE_EDGE_INDEX_H
 #define NODE_EDGE_INDEX_H
 
+#include <vector>
 #include "../stores/node_edge_index.cuh"
 #include "../stores/edge_data.cuh"
 #include "../stores/node_mapping.cuh"

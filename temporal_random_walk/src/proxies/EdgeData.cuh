@@ -1,6 +1,7 @@
 #ifndef EDGE_DATA_H
 #define EDGE_DATA_H
 
+#include <vector>
 #include "../stores/edge_data.cuh"
 #include "../common/error_handlers.cuh"
 

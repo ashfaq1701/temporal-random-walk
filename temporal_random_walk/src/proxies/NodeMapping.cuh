@@ -1,6 +1,7 @@
 #ifndef NODE_MAPPING_H
 #define NODE_MAPPING_H
 
+#include <vector>
 #include "../stores/node_mapping.cuh"
 
 // Kernel declarations for device operations

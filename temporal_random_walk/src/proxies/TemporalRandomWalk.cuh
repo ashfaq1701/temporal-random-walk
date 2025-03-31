@@ -1,6 +1,7 @@
 #ifndef TEMPORAL_RANDOM_WALK_H
 #define TEMPORAL_RANDOM_WALK_H
 
+#include <vector>
 #include <thread>
 #include "../core/temporal_random_walk.cuh"
 #include "../data/structs.cuh"

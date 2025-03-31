@@ -1,6 +1,7 @@
 #ifndef TEMPORAL_GRAPH_H
 #define TEMPORAL_GRAPH_H
 
+#include <vector>
 #include "../stores/temporal_graph.cuh"
 #include "../data/structs.cuh"
 #include "../data/enums.cuh"
