@@ -530,6 +530,8 @@ HOST TemporalRandomWalkStore* temporal_random_walk::to_device_ptr(const Temporal
     // Copy the updated struct to device
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_temporal_random_walk, &temp_temporal_random_walk, sizeof(TemporalRandomWalkStore), cudaMemcpyHostToDevice));
 
+    temp_temporal_random_walk.owns_data = false;
+
     return device_temporal_random_walk;
 }
 

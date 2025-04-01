@@ -10,7 +10,7 @@ constexpr bool USE_GPU = true;
 constexpr bool USE_GPU = false;
 #endif
 
-constexpr int NUM_WALKS_TOTAL = 1000000;
+constexpr int NUM_WALKS_TOTAL = 100000;
 constexpr int NODE_COUNT_MAX_BOUND = 1000000;
 
 

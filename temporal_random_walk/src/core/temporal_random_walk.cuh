@@ -9,6 +9,7 @@
 struct TemporalRandomWalkStore {
     bool is_directed;
     bool use_gpu;
+    bool owns_data = true;
     int64_t max_time_capacity;
     bool enable_weight_computation;
     double timescale_bound;
@@ -53,18 +54,20 @@ struct TemporalRandomWalkStore {
     }
 
     ~TemporalRandomWalkStore() {
-        delete temporal_graph;
+        if (owns_data) {
+            delete temporal_graph;
 
-        #ifdef HAS_CUDA
-        if (use_gpu) {
-            clear_memory(&cuda_device_prop, use_gpu);
-        }
-        else
-        #endif
-        {
             #ifdef HAS_CUDA
-            delete cuda_device_prop;
+            if (use_gpu) {
+                clear_memory(&cuda_device_prop, use_gpu);
+            }
+            else
             #endif
+            {
+                #ifdef HAS_CUDA
+                delete cuda_device_prop;
+                #endif
+            }
         }
     }
 };
