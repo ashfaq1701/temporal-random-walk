@@ -27,6 +27,17 @@ struct TemporalGraphStore {
 
     int64_t latest_timestamp;
 
+    TemporalGraphStore(): is_directed(false), use_gpu(false), owns_data(true) {
+        max_time_capacity = 0;
+        enable_weight_computation = false;
+        timescale_bound = -1;
+        node_count_max_bound = 0;
+        edge_data = nullptr;
+        node_edge_index = nullptr;
+        node_mapping = nullptr;
+        latest_timestamp = 0;
+    }
+
     explicit TemporalGraphStore(
         const bool is_directed,
         const bool use_gpu,
@@ -45,19 +56,9 @@ struct TemporalGraphStore {
 
     ~TemporalGraphStore() {
         if (owns_data) {
-            #ifdef HAS_CUDA
-            if (use_gpu) {
-                if (edge_data) clear_memory(&edge_data, use_gpu);
-                if (node_mapping) clear_memory(&node_mapping, use_gpu);
-                if (node_edge_index) clear_memory(&node_edge_index, use_gpu);
-            }
-            else
-            #endif
-            {
-                delete edge_data;
-                delete node_mapping;
-                delete node_edge_index;
-            }
+            delete edge_data;
+            delete node_mapping;
+            delete node_edge_index;
         }
     }
 };
@@ -159,6 +160,8 @@ namespace temporal_graph {
         curandState* rand_state);
 
     HOST TemporalGraphStore* to_device_ptr(const TemporalGraphStore* graph);
+
+    HOST void free_device_pointers(TemporalGraphStore* d_graph);
 
     #endif
 

@@ -45,6 +45,8 @@ struct NodeEdgeIndexStore {
     double* inbound_backward_cumulative_weights_exponential = nullptr;
     size_t inbound_backward_cumulative_weights_exponential_size = 0;
 
+    NodeEdgeIndexStore(): use_gpu(false), owns_data(true) {}
+
     explicit NodeEdgeIndexStore(const bool use_gpu): use_gpu(use_gpu), owns_data(true) {}
 
     ~NodeEdgeIndexStore() {
@@ -191,9 +193,11 @@ namespace node_edge_index {
     HOST void update_temporal_weights_cuda(NodeEdgeIndexStore* node_edge_index, const EdgeDataStore* edge_data, double timescale_bound);
 
     HOST NodeEdgeIndexStore* to_device_ptr(const NodeEdgeIndexStore* node_edge_index);
+
     #endif
 
     HOST void rebuild(NodeEdgeIndexStore* node_edge_index, EdgeDataStore* edge_data, NodeMappingStore* node_mapping, bool is_directed);
+
 }
 
 #endif // NODE_EDGE_INDEX_STORE_H

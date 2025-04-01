@@ -439,7 +439,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
 
     // Free device memory
     CUDA_CHECK_AND_CLEAR(cudaFree(rand_states));
-    CUDA_CHECK_AND_CLEAR(cudaFree(d_temporal_graph));
+    temporal_graph::free_device_pointers(d_temporal_graph);
     CUDA_CHECK_AND_CLEAR(cudaFree(d_walk_set));
 
     return host_walk_set;
@@ -500,7 +500,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
 
     // Free device memory
     CUDA_CHECK_AND_CLEAR(cudaFree(rand_states));
-    CUDA_CHECK_AND_CLEAR(cudaFree(d_temporal_graph));
+    temporal_graph::free_device_pointers(d_temporal_graph);
     CUDA_CHECK_AND_CLEAR(cudaFree(start_node_ids));
     CUDA_CHECK_AND_CLEAR(cudaFree(d_walk_set));
 

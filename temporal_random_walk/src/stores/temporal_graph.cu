@@ -1438,4 +1438,19 @@ HOST TemporalGraphStore* temporal_graph::to_device_ptr(const TemporalGraphStore*
     return device_graph;
 }
 
+HOST void temporal_graph::free_device_pointers(TemporalGraphStore* d_graph) {
+    if (!d_graph) return;
+
+    // Copy the struct from device to host to access pointers
+    TemporalGraphStore h_graph;
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(&h_graph, d_graph, sizeof(TemporalGraphStore), cudaMemcpyDeviceToHost));
+
+    // Free only the nested device pointers (not their underlying data)
+    if (h_graph.edge_data) clear_memory(&h_graph.edge_data, true);
+    if (h_graph.node_edge_index) clear_memory(&h_graph.node_edge_index, true);
+    if (h_graph.node_mapping) clear_memory(&h_graph.node_mapping, true);
+
+    clear_memory(&d_graph, true);
+}
+
 #endif

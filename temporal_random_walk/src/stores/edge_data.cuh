@@ -30,6 +30,8 @@ struct EdgeDataStore {
     double* backward_cumulative_weights_exponential = nullptr;
     size_t backward_cumulative_weights_exponential_size = 0;
 
+    EdgeDataStore(): use_gpu(false), owns_data(true) {}
+
     explicit EdgeDataStore(const bool use_gpu): use_gpu(use_gpu), owns_data(true) {}
 
     ~EdgeDataStore() {
@@ -105,6 +107,7 @@ namespace edge_data {
     HOST EdgeDataStore* to_device_ptr(const EdgeDataStore* edge_data);
 
     #endif
+
 }
 
 #endif // EDGE_DATA_STORE_H

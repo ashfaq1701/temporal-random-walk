@@ -21,6 +21,8 @@ struct NodeMappingStore {
     int capacity;
     mutable size_t node_size;
 
+    NodeMappingStore(): node_count_max_bound(0), use_gpu(false), owns_data(true), capacity(0), node_size(0) {}
+
     explicit NodeMappingStore(
         const int node_count_max_bound,
         const bool use_gpu)
