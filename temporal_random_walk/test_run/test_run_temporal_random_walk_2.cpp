@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Walk generation time: " << duration.count() << " seconds" << std::endl;
 
     std::vector<std::vector<NodeWithTime>> first_100_walks_forward;
-    first_100_walks_forward.assign(walks_forward_for_all_nodes_2.begin(), walks_forward_for_all_nodes_2.begin() + min(NUM_WALKS_TOTAL, 100));
+    first_100_walks_forward.assign(walks_forward_for_all_nodes_2.begin(), walks_forward_for_all_nodes_2.begin() + std::min(NUM_WALKS_TOTAL, 100));
 
     print_temporal_random_walks_with_times(first_100_walks_forward);
 
