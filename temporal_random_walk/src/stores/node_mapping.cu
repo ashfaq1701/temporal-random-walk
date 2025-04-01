@@ -520,7 +520,7 @@ HOST void node_mapping::update_cuda(NodeMappingStore *node_mapping, const EdgeDa
 
         size_t* d_node_size;
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_node_size, sizeof(size_t)));
-        CUDA_CHECK_AND_CLEAR(cudaMemset(d_node_size, 0, sizeof(size_t)));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_node_size, &node_mapping->node_size, sizeof(size_t), cudaMemcpyHostToDevice));
 
         // Call the device function to add nodes
         add_nodes_kernel<<<num_blocks, block_size>>>(
