@@ -45,8 +45,6 @@ struct NodeEdgeIndexStore {
     double* inbound_backward_cumulative_weights_exponential = nullptr;
     size_t inbound_backward_cumulative_weights_exponential_size = 0;
 
-    NodeEdgeIndexStore(): use_gpu(false), owns_data(true) {}
-
     explicit NodeEdgeIndexStore(const bool use_gpu): use_gpu(use_gpu), owns_data(true) {}
 
     ~NodeEdgeIndexStore() {
