@@ -493,9 +493,7 @@ HOST EdgeDataStore* edge_data::to_device_ptr(const EdgeDataStore* edge_data) {
     temp_edge_data.owns_data = false;
 
     // If already using GPU, just copy the struct with its pointers
-    if (edge_data->use_gpu) {
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_edge_data, edge_data, sizeof(EdgeDataStore), cudaMemcpyHostToDevice));
-    } else {
+    if (!edge_data->use_gpu) {
         temp_edge_data.owns_data = true;
 
         // Copy each array to device if it exists
@@ -554,10 +552,9 @@ HOST EdgeDataStore* edge_data::to_device_ptr(const EdgeDataStore* edge_data) {
 
         // Make sure use_gpu is set to true
         temp_edge_data.use_gpu = true;
-
-        // Copy the updated struct to device
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_edge_data, &temp_edge_data, sizeof(EdgeDataStore), cudaMemcpyHostToDevice));
     }
+
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_edge_data, &temp_edge_data, sizeof(EdgeDataStore), cudaMemcpyHostToDevice));
 
     temp_edge_data.owns_data = false;
 

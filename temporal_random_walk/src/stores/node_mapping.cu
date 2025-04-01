@@ -596,9 +596,7 @@ HOST NodeMappingStore* node_mapping::to_device_ptr(const NodeMappingStore* node_
     temp_node_mapping.owns_data = false;
 
     // If already using GPU, just copy the struct with its pointers
-    if (node_mapping->use_gpu) {
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_node_mapping, node_mapping, sizeof(NodeMappingStore), cudaMemcpyHostToDevice));
-    } else {
+    if (!node_mapping->use_gpu) {
         temp_node_mapping.owns_data = true;
 
         // Copy each array to device if it exists
@@ -618,10 +616,9 @@ HOST NodeMappingStore* node_mapping::to_device_ptr(const NodeMappingStore* node_
 
         // Make sure use_gpu is set to true
         temp_node_mapping.use_gpu = true;
-
-        // Copy the updated struct to device
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_node_mapping, &temp_node_mapping, sizeof(NodeMappingStore), cudaMemcpyHostToDevice));
     }
+
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_node_mapping, &temp_node_mapping, sizeof(NodeMappingStore), cudaMemcpyHostToDevice));
 
     temp_node_mapping.owns_data = false;
 

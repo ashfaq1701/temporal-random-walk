@@ -1221,9 +1221,7 @@ HOST NodeEdgeIndexStore* node_edge_index::to_device_ptr(const NodeEdgeIndexStore
     temp_node_edge_index.owns_data = false;
 
     // If already using GPU, just copy the struct with its pointers
-    if (node_edge_index->use_gpu) {
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_node_edge_index, node_edge_index, sizeof(NodeEdgeIndexStore), cudaMemcpyHostToDevice));
-    } else {
+    if (!node_edge_index->use_gpu) {
         temp_node_edge_index.owns_data = true;
 
         // Copy each array to device if it exists
@@ -1313,10 +1311,9 @@ HOST NodeEdgeIndexStore* node_edge_index::to_device_ptr(const NodeEdgeIndexStore
 
         // Make sure use_gpu is set to true
         temp_node_edge_index.use_gpu = true;
-
-        // Copy the updated struct to device
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_node_edge_index, &temp_node_edge_index, sizeof(NodeEdgeIndexStore), cudaMemcpyHostToDevice));
     }
+
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_node_edge_index, &temp_node_edge_index, sizeof(NodeEdgeIndexStore), cudaMemcpyHostToDevice));
 
     temp_node_edge_index.owns_data = false;
 
