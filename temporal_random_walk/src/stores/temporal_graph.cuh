@@ -14,6 +14,7 @@
 struct TemporalGraphStore {
     bool is_directed;
     bool use_gpu;
+    bool owns_data;
 
     int64_t max_time_capacity;
     bool enable_weight_computation;
@@ -33,7 +34,7 @@ struct TemporalGraphStore {
         const bool enable_weight_computation,
         const double timescale_bound,
         const int node_count_max_bound):
-        is_directed(is_directed), use_gpu(use_gpu),
+        is_directed(is_directed), use_gpu(use_gpu), owns_data(true),
         max_time_capacity(max_time_capacity), enable_weight_computation(enable_weight_computation),
         timescale_bound(timescale_bound), node_count_max_bound(node_count_max_bound), latest_timestamp(0) {
 
@@ -43,18 +44,20 @@ struct TemporalGraphStore {
     }
 
     ~TemporalGraphStore() {
-        #ifdef HAS_CUDA
-        if (use_gpu) {
-            if (edge_data) clear_memory(&edge_data, use_gpu);
-            if (node_mapping) clear_memory(&node_mapping, use_gpu);
-            if (node_edge_index) clear_memory(&node_edge_index, use_gpu);
-        }
-        else
-        #endif
-        {
-            delete edge_data;
-            delete node_mapping;
-            delete node_edge_index;
+        if (owns_data) {
+            #ifdef HAS_CUDA
+            if (use_gpu) {
+                if (edge_data) clear_memory(&edge_data, use_gpu);
+                if (node_mapping) clear_memory(&node_mapping, use_gpu);
+                if (node_edge_index) clear_memory(&node_edge_index, use_gpu);
+            }
+            else
+            #endif
+            {
+                delete edge_data;
+                delete node_mapping;
+                delete node_edge_index;
+            }
         }
     }
 };

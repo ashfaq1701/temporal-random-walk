@@ -1105,7 +1105,7 @@ HOST Edge temporal_graph::get_node_edge_at_host(
 
 #ifdef HAS_CUDA
 DEVICE Edge temporal_graph::get_edge_at_device(
-    const TemporalGraphStore* graph,
+        const TemporalGraphStore* graph,
         const RandomPickerType picker_type,
         const int64_t timestamp,
         const bool forward,
@@ -1432,6 +1432,8 @@ HOST TemporalGraphStore* temporal_graph::to_device_ptr(const TemporalGraphStore*
 
     // Copy the updated struct to device
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_graph, &temp_graph, sizeof(TemporalGraphStore), cudaMemcpyHostToDevice));
+
+    temp_graph.owns_data = false;
 
     return device_graph;
 }
