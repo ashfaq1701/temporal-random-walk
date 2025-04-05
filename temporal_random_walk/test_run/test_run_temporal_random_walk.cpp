@@ -4,31 +4,30 @@
 #include "test_utils.h"
 
 #ifdef HAS_CUDA
-constexpr bool USE_GPU = true;
+constexpr bool USE_GPU = false;
 #else
 constexpr bool USE_GPU = false;
 #endif
 
 int main() {
     const std::vector<std::tuple<int, int, int64_t>> edges {
-        {4, 5, 71},
-        {3, 5, 82},
-        {1, 3, 19},
-        {4, 2, 34},
-        {4, 3, 79},
-        {2, 5, 19},
-        {2, 3, 70},
-        {5, 4, 97},
-        {4, 6, 57},
-        {6, 4, 27},
-        {2, 6, 80},
-        {6, 1, 42},
-        {4, 6, 98},
-        {1, 4, 17},
-        {5, 4, 32}
+        {10, 25, 100},
+        {10, 30, 100},
+        {30, 45, 100},
+        {25, 30, 200},
+        {45, 60, 200},
+        {25, 60, 200},
+        {10, 50, 200},
+        {30, 10, 300},
+        {60, 25, 300},
+        {10, 25, 300},
+        {50, 45, 400},
+        {25, 10, 400},
+        {60, 10, 400},
+        {60, 50, 400}
     };
 
-    TemporalRandomWalk temporal_random_walk(true, USE_GPU);
+    TemporalRandomWalk temporal_random_walk(true, USE_GPU, -1, false, DEFAULT_TIMESCALE_BOUND, 6);
     temporal_random_walk.add_multiple_edges(edges);
 
     constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;

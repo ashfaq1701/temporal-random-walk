@@ -103,6 +103,20 @@ HOST void temporal_graph::add_multiple_edges_std(TemporalGraphStore* graph, cons
         update_temporal_weights(graph);
     }
 
+    std::vector outbound_offsets_vec(graph->node_edge_index->outbound_offsets, graph->node_edge_index->outbound_offsets + graph->node_edge_index->outbound_offsets_size);
+    std::vector inbound_offsets_vec(graph->node_edge_index->inbound_offsets, graph->node_edge_index->inbound_offsets + graph->node_edge_index->inbound_offsets_size);
+
+    std::vector outbound_indices_vec(graph->node_edge_index->outbound_indices, graph->node_edge_index->outbound_indices + graph->node_edge_index->outbound_indices_size);
+    std::vector inbound_indices_vec(graph->node_edge_index->inbound_indices, graph->node_edge_index->inbound_indices + graph->node_edge_index->inbound_indices_size);
+
+    std::vector outbound_timestamp_group_offsets_vec(graph->node_edge_index->outbound_timestamp_group_offsets, graph->node_edge_index->outbound_timestamp_group_offsets + graph->node_edge_index->outbound_timestamp_group_offsets_size);
+    std::vector inbound_timestamp_group_offsets_vec(graph->node_edge_index->inbound_timestamp_group_offsets, graph->node_edge_index->inbound_timestamp_group_offsets + graph->node_edge_index->inbound_timestamp_group_offsets_size);
+
+    std::vector outbound_timestamp_group_indices_vec(graph->node_edge_index->outbound_timestamp_group_indices, graph->node_edge_index->outbound_timestamp_group_indices + graph->node_edge_index->outbound_timestamp_group_indices_size);
+    std::vector inbound_timestamp_group_indices_vec(graph->node_edge_index->inbound_timestamp_group_indices, graph->node_edge_index->inbound_timestamp_group_indices + graph->node_edge_index->inbound_timestamp_group_indices_size);
+
+    std::vector node_index_vec(graph->node_mapping->node_index, graph->node_mapping->node_index + graph->node_mapping->capacity);
+
     // Clean up
     delete[] sources;
     delete[] targets;
