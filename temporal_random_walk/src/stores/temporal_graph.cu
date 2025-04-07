@@ -865,6 +865,10 @@ HOST Edge temporal_graph::get_node_edge_at_host(
     const int64_t timestamp,
     const bool forward) {
 
+    if (!edge_data::is_node_active_host(graph->edge_data, node_id)) {
+        return Edge{-1, -1, -1};
+    }
+
     // Get appropriate node indices based on direction and graph type
     const size_t* timestamp_group_offsets = forward
         ? graph->node_edge_index->outbound_timestamp_group_offsets
@@ -1160,6 +1164,10 @@ DEVICE Edge temporal_graph::get_node_edge_at_device(
         const int64_t timestamp,
         const bool forward,
         curandState* rand_state) {
+
+    if (!edge_data::is_node_active_device(graph->edge_data, node_id)) {
+        return Edge{-1, -1, -1};
+    }
 
     // Get appropriate node indices based on direction and graph type
     const size_t* timestamp_group_offsets = forward

@@ -42,10 +42,12 @@ void TemporalRandomWalk::add_multiple_edges(const std::vector<std::tuple<int, in
 
         if (node_index.find(u) == node_index.end()) {
             node_index[u] = ++running_node_id;
+            reverse_node_index[running_node_id] = u;
         }
 
         if (node_index.find(i) == node_index.end()) {
             node_index[i] = ++running_node_id;
+            reverse_node_index[running_node_id] = i;
         }
 
         edge_array[idx] = Edge(node_index[u], node_index[i], ts);
@@ -97,7 +99,7 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_
             NodeWithTime node_time = walk_set.get_walk_hop(
                 static_cast<int>(walk_idx),
                 static_cast<int>(hop),
-                &node_index);
+                &reverse_node_index);
 
             walks[walk_idx].push_back(node_time);
         }
@@ -172,7 +174,7 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_
             NodeWithTime node_time = walk_set.get_walk_hop(
                 static_cast<int>(walk_idx),
                 static_cast<int>(hop),
-                &node_index);
+                &reverse_node_index);
 
             walks[walk_idx].push_back(node_time);
         }

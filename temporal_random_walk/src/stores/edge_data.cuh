@@ -9,9 +9,6 @@ struct EdgeDataStore {
     bool use_gpu;
     bool owns_data;
 
-    int* active_node_ids = nullptr;
-    size_t active_node_ids_size = 0;
-
     int* sources = nullptr;
     size_t sources_size = 0;
 
@@ -20,6 +17,9 @@ struct EdgeDataStore {
 
     int64_t* timestamps = nullptr;
     size_t timestamps_size = 0;
+
+    int* active_node_ids = nullptr;
+    size_t active_node_ids_size = 0;
 
     size_t* timestamp_group_offsets = nullptr;
     size_t timestamp_group_offsets_size = 0;
@@ -40,6 +40,7 @@ struct EdgeDataStore {
             clear_memory(&sources, use_gpu);
             clear_memory(&targets, use_gpu);
             clear_memory(&timestamps, use_gpu);
+            clear_memory(&active_node_ids, use_gpu);
             clear_memory(&timestamp_group_offsets, use_gpu);
             clear_memory(&unique_timestamps, use_gpu);
             clear_memory(&forward_cumulative_weights_exponential, use_gpu);
@@ -48,6 +49,7 @@ struct EdgeDataStore {
             sources = nullptr;
             targets = nullptr;
             timestamps = nullptr;
+            active_node_ids = nullptr;
             timestamp_group_offsets = nullptr;
             unique_timestamps = nullptr;
             forward_cumulative_weights_exponential = nullptr;

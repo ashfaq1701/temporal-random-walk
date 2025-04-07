@@ -639,6 +639,13 @@ HOST EdgeDataStore* edge_data::to_device_ptr(const EdgeDataStore* edge_data) {
             temp_edge_data.timestamps = d_timestamps;
         }
 
+        if (edge_data->active_node_ids) {
+            int* d_active_node_ids;
+            CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_active_node_ids, edge_data->active_node_ids_size * sizeof(int)));
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_active_node_ids, edge_data->active_node_ids, edge_data->active_node_ids_size * sizeof(int), cudaMemcpyHostToDevice));
+            temp_edge_data.active_node_ids = d_active_node_ids;
+        }
+
         if (edge_data->timestamp_group_offsets) {
             size_t* d_timestamp_group_offsets;
             CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_timestamp_group_offsets, edge_data->timestamp_group_offsets_size * sizeof(size_t)));
@@ -683,6 +690,11 @@ HOST EdgeDataStore* edge_data::to_device_ptr(const EdgeDataStore* edge_data) {
 }
 
 DEVICE bool edge_data::is_node_active_device(const EdgeDataStore* edge_data, int node_id) {
+    // Check bounds first to avoid out-of-bounds access
+    if (node_id < 0 || node_id >= edge_data->active_node_ids_size) {
+        return false;
+    }
+
     return edge_data->active_node_ids[node_id] == 1;
 }
 

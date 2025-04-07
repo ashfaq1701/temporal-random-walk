@@ -46,7 +46,7 @@ protected:
     }
 
     std::vector<Edge> test_edges;
-    int max_node_id = 1;
+    int max_node_id = 4;
 };
 
 #ifdef HAS_CUDA

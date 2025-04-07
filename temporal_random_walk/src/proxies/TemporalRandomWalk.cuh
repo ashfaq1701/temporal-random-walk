@@ -20,6 +20,7 @@ class TemporalRandomWalk {
 
     int running_node_id = -1;
     std::unordered_map<int, int> node_index;
+    std::unordered_map<int, int> reverse_node_index;
 
 public:
     explicit TemporalRandomWalk(
