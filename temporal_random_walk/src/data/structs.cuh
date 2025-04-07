@@ -562,7 +562,7 @@ struct WalkSet {
 
     #ifdef HAS_CUDA
 
-    HOST WalkSet* to_device_ptr() {
+    HOST WalkSet* to_device_ptr() const {
         WalkSet* device_walk_set;
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&device_walk_set, sizeof(WalkSet)));
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(device_walk_set, this, sizeof(WalkSet), cudaMemcpyHostToDevice));
@@ -613,14 +613,14 @@ struct WalkSet {
 
     #endif
 
-    HOST DEVICE void add_hop(const int walk_number, const int node, const int64_t timestamp) {
+    HOST DEVICE void add_hop(const int walk_number, const int node, const int64_t timestamp) const {
         const size_t offset = walk_number * max_len + walk_lens[walk_number];
         nodes[offset] = node;
         timestamps[offset] = timestamp;
         walk_lens[walk_number] += 1;
     }
 
-    HOST size_t get_walk_len(const int walk_number) {
+    HOST size_t get_walk_len(const int walk_number) const {
         #ifdef HAS_CUDA
         if (use_gpu) {
             // Need to copy from device to host
@@ -635,11 +635,11 @@ struct WalkSet {
         }
     }
 
-    DEVICE size_t get_walk_len_device(const int walk_number) {
+    DEVICE size_t get_walk_len_device(const int walk_number) const {
         return walk_lens[walk_number];
     }
 
-    HOST NodeWithTime get_walk_hop(const int walk_number, const int hop_number) {
+    HOST NodeWithTime get_walk_hop(const int walk_number, const int hop_number, const std::unordered_map<int, int>* node_index=nullptr) const {
         #ifdef HAS_CUDA
         if (use_gpu) {
             // Need to copy from device to host
@@ -656,7 +656,11 @@ struct WalkSet {
             CUDA_CHECK_AND_CLEAR(cudaMemcpy(&node, &nodes[offset], sizeof(int), cudaMemcpyDeviceToHost));
             CUDA_CHECK_AND_CLEAR(cudaMemcpy(&timestamp, &timestamps[offset], sizeof(int64_t), cudaMemcpyDeviceToHost));
 
-            return NodeWithTime{node, timestamp};
+            if (!node_index) {
+                return NodeWithTime{node, timestamp};
+            } else {
+                return NodeWithTime{node_index->at(node), timestamp};
+            }
         }
         else
         #endif
@@ -671,7 +675,7 @@ struct WalkSet {
         }
     }
 
-    HOST DEVICE void reverse_walk(const int walk_number) {
+    HOST DEVICE void reverse_walk(const int walk_number) const {
         const size_t walk_length = walk_lens[walk_number];
         if (walk_length <= 1) return; // No need to reverse if walk is empty or has one hop
 

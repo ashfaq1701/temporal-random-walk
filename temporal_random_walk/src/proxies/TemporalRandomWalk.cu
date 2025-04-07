@@ -21,7 +21,6 @@ TemporalRandomWalk::TemporalRandomWalk(
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
         const double timescale_bound,
-        const int node_count_max_bound,
         const size_t n_threads): use_gpu(use_gpu) {
     temporal_random_walk = new TemporalRandomWalkStore(
         is_directed,
@@ -29,7 +28,6 @@ TemporalRandomWalk::TemporalRandomWalk(
         max_time_capacity,
         enable_weight_computation,
         timescale_bound,
-        node_count_max_bound,
         n_threads);
 }
 
@@ -37,14 +35,23 @@ TemporalRandomWalk::~TemporalRandomWalk() {
     delete temporal_random_walk;
 }
 
-void TemporalRandomWalk::add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges) const {
-    Edge* edge_array = new Edge[edges.size()];
+void TemporalRandomWalk::add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges) {
+    const auto edge_array = new Edge[edges.size()];
     for (size_t idx = 0; idx < edges.size(); idx++) {
         const auto& [u, i, ts] = edges[idx];
-        edge_array[idx] = Edge(u, i, ts);
+
+        if (node_index.find(u) == node_index.end()) {
+            node_index[u] = ++running_node_id;
+        }
+
+        if (node_index.find(i) == node_index.end()) {
+            node_index[i] = ++running_node_id;
+        }
+
+        edge_array[idx] = Edge(node_index[u], node_index[i], ts);
     }
 
-    temporal_random_walk::add_multiple_edges(temporal_random_walk, edge_array, edges.size());
+    temporal_random_walk::add_multiple_edges(temporal_random_walk, edge_array, edges.size(), running_node_id);
 
     delete[] edge_array;
 }
@@ -87,7 +94,11 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_
         walks[walk_idx].reserve(walk_len);
 
         for (size_t hop = 0; hop < walk_len; hop++) {
-            NodeWithTime node_time = walk_set.get_walk_hop(static_cast<int>(walk_idx), static_cast<int>(hop));
+            NodeWithTime node_time = walk_set.get_walk_hop(
+                static_cast<int>(walk_idx),
+                static_cast<int>(hop),
+                &node_index);
+
             walks[walk_idx].push_back(node_time);
         }
     }
@@ -158,7 +169,11 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_
         walks[walk_idx].reserve(walk_len);
 
         for (size_t hop = 0; hop < walk_len; hop++) {
-            NodeWithTime node_time = walk_set.get_walk_hop(static_cast<int>(walk_idx), static_cast<int>(hop));
+            NodeWithTime node_time = walk_set.get_walk_hop(
+                static_cast<int>(walk_idx),
+                static_cast<int>(hop),
+                &node_index);
+
             walks[walk_idx].push_back(node_time);
         }
     }

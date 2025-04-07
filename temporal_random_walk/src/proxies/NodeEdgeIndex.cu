@@ -59,8 +59,8 @@ void NodeEdgeIndex::clear() const {
     node_edge_index::clear(node_edge_index);
 }
 
-void NodeEdgeIndex::rebuild(EdgeDataStore* edge_data, NodeMappingStore* node_mapping, bool is_directed) const {
-    node_edge_index::rebuild(node_edge_index, edge_data, node_mapping, is_directed);
+void NodeEdgeIndex::rebuild(EdgeDataStore* edge_data, bool is_directed) const {
+    node_edge_index::rebuild(node_edge_index, edge_data, is_directed);
 }
 
 std::pair<size_t, size_t> NodeEdgeIndex::get_edge_range(int dense_node_id, bool forward, bool is_directed) const {

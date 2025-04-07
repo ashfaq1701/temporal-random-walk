@@ -70,10 +70,6 @@ EdgeData& EdgeData::operator=(const EdgeData& other) {
     return *this;
 }
 
-void EdgeData::clear() const {
-    edge_data::clear(edge_data);
-}
-
 size_t EdgeData::size() const {
     #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
@@ -99,10 +95,6 @@ size_t EdgeData::size() const {
         // Direct call for CPU implementation
         return edge_data::size(edge_data);
     }
-}
-
-void EdgeData::resize(const size_t size) const {
-    edge_data::resize(edge_data, size);
 }
 
 void EdgeData::set_size(const size_t size) const {
@@ -227,6 +219,18 @@ void EdgeData::update_timestamp_groups() const {
     #endif
     {
         edge_data::update_timestamp_groups_std(edge_data);
+    }
+}
+
+void EdgeData::populate_active_nodes(const int max_node_id) const {
+    #ifdef HAS_CUDA
+    if (edge_data->use_gpu) {
+        edge_data::populate_active_nodes_cuda(edge_data, max_node_id);
+    }
+    else
+    #endif
+    {
+        edge_data::populate_active_nodes_std(edge_data, max_node_id);
     }
 }
 

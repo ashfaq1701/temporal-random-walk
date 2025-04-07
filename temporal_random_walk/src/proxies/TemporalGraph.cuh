@@ -25,8 +25,7 @@ public:
         bool use_gpu,
         int64_t max_time_capacity = -1,
         bool enable_weight_computation = false,
-        double timescale_bound = -1,
-        int node_count_max_bound = DEFAULT_NODE_COUNT_MAX_BOUND);
+        double timescale_bound = -1);
 
     explicit TemporalGraph(TemporalGraphStore* existing_graph);
 
@@ -46,7 +45,7 @@ public:
 
     [[nodiscard]] std::vector<Edge> get_edges() const;
 
-    void add_multiple_edges(const std::vector<Edge>& new_edges) const;
+    void add_multiple_edges(const std::vector<Edge>& new_edges, int max_node_id) const;
 
     void sort_and_merge_edges(size_t start_idx) const;
 

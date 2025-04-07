@@ -11,7 +11,6 @@ constexpr bool USE_GPU = false;
 #endif
 
 constexpr int NUM_WALKS_TOTAL = 100000;
-constexpr int NODE_COUNT_MAX_BOUND = 1000000;
 
 
 int main(int argc, char* argv[]) {
@@ -35,7 +34,7 @@ int main(int argc, char* argv[]) {
     std::cout << edge_infos.size() << std::endl;
 
     auto start = std::chrono::high_resolution_clock::now();
-    TemporalRandomWalk temporal_random_walk(false, USE_GPU, -1, true, 34, NODE_COUNT_MAX_BOUND);
+    TemporalRandomWalk temporal_random_walk(false, USE_GPU, -1, true, 34);
     temporal_random_walk.add_multiple_edges(edge_infos);
     auto end = std::chrono::high_resolution_clock::now();
 

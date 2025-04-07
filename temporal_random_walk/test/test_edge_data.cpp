@@ -128,17 +128,3 @@ TYPED_TEST(EdgeDataTest, TimestampGroupRangeTest) {
     EXPECT_EQ(invalid_start, 0);
     EXPECT_EQ(invalid_end, 0);
 }
-
-// Test resize
-TYPED_TEST(EdgeDataTest, ResizeTest) {
-    this->edges.push_back(100, 200, 100);
-    this->edges.push_back(200, 300, 200);
-
-    this->edges.resize(1);
-    EXPECT_EQ(this->edges.size(), 1);
-    this->verify_edge(0, 100, 200, 100);
-
-    this->edges.resize(3);
-    EXPECT_EQ(this->edges.size(), 3);
-    this->verify_edge(0, 100, 200, 100);
-}

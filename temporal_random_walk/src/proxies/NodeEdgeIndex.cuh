@@ -4,7 +4,6 @@
 #include <vector>
 #include "../stores/node_edge_index.cuh"
 #include "../stores/edge_data.cuh"
-#include "../stores/node_mapping.cuh"
 #include "../common/error_handlers.cuh"
 
 #ifdef HAS_CUDA
@@ -246,7 +245,7 @@ public:
 
     void clear() const;
 
-    void rebuild(EdgeDataStore* edge_data, NodeMappingStore* node_mapping, bool is_directed) const;
+    void rebuild(EdgeDataStore* edge_data, bool is_directed) const;
 
     [[nodiscard]] std::pair<size_t, size_t> get_edge_range(int dense_node_id, bool forward, bool is_directed) const;
 

@@ -45,7 +45,7 @@ TYPED_TEST(TemporalGraphTest, BasicEdgeAdditionTest) {
         Edge {3, 1, 300}
     };
 
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 3);
 
     auto graph_edges = this->graph->get_edges();
     EXPECT_EQ(graph_edges.size(), 3);
@@ -58,7 +58,7 @@ TYPED_TEST(TemporalGraphTest, MaintainSortedOrderTest) {
         Edge {10, 20, 200},  // Out of order timestamps
         Edge {20, 30, 100}
     };
-    this->graph->add_multiple_edges(edges1);
+    this->graph->add_multiple_edges(edges1, 30);
 
     // Check first addition is sorted
     auto sorted_edges = this->graph->get_edges();
@@ -70,7 +70,7 @@ TYPED_TEST(TemporalGraphTest, MaintainSortedOrderTest) {
         Edge {30, 40, 150},
         Edge {40, 50, 250}
     };
-    this->graph->add_multiple_edges(edges2);
+    this->graph->add_multiple_edges(edges2, 50);
 
     // Verify all timestamps are still sorted
     sorted_edges = this->graph->get_edges();
@@ -86,7 +86,7 @@ TYPED_TEST(TemporalGraphTest, MaintainSortedOrderTest) {
         Edge {60, 70, 200},
         Edge {70, 80, 175}
     };
-    this->graph->add_multiple_edges(edges3);
+    this->graph->add_multiple_edges(edges3, 80);
 
     // Verify order is maintained with duplicates
     sorted_edges = this->graph->get_edges();
@@ -117,7 +117,7 @@ TYPED_TEST(TemporalGraphTest, TimeWindowTest) {
         Edge {3, 4, 249}  // This should cause deletion of first edge
     };
 
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 4);
     const auto remaining_edges = this->graph->get_edges();
 
     EXPECT_EQ(remaining_edges.size(), 2);
@@ -128,12 +128,12 @@ TYPED_TEST(TemporalGraphTest, TimeWindowTest) {
 // Test edge cases and corner cases
 TYPED_TEST(TemporalGraphTest, EdgeAdditionEdgeCasesTest) {
     // Test empty edge list
-    this->graph->add_multiple_edges({});
+    this->graph->add_multiple_edges({}, -1);
     EXPECT_TRUE(this->graph->get_edges().empty());
 
     // Test single edge
     std::vector<Edge> single_edge = {Edge {1, 2, 100}};
-    this->graph->add_multiple_edges(single_edge);
+    this->graph->add_multiple_edges(single_edge, 2);
     EXPECT_EQ(this->graph->get_edges().size(), 1);
 
     // Test duplicate timestamps
@@ -142,14 +142,14 @@ TYPED_TEST(TemporalGraphTest, EdgeAdditionEdgeCasesTest) {
         Edge {2, 3, 100},
         Edge {3, 4, 100}
     };
-    this->graph->add_multiple_edges(dup_time_edges);
+    this->graph->add_multiple_edges(dup_time_edges, 4);
     EXPECT_EQ(this->graph->get_edges().size(), 4);
 
     // Test max int64 timestamp
     const std::vector<Edge> max_time_edge = {
         Edge {1, 2, INT64_MAX}
     };
-    this->graph->add_multiple_edges(max_time_edge);
+    this->graph->add_multiple_edges(max_time_edge, 4);
     EXPECT_EQ(this->graph->get_edges().size(), 5);
 }
 
@@ -163,14 +163,14 @@ TYPED_TEST(TemporalGraphTest, NodeDeletionTest) {
         Edge {2, 3, 100},
         Edge {3, 1, 100}
     };
-    this->graph->add_multiple_edges(edges1);
+    this->graph->add_multiple_edges(edges1, 3);
     EXPECT_EQ(this->graph->get_node_ids().size(), 3);
 
     // Add edge that causes old edges to be deleted
     std::vector<Edge> edges2 = {
         Edge {4, 5, 250}  // Should cause deletion of all previous edges
     };
-    this->graph->add_multiple_edges(edges2);
+    this->graph->add_multiple_edges(edges2, 5);
 
     auto remaining_nodes = this->graph->get_node_ids();
     EXPECT_EQ(remaining_nodes.size(), 2);  // Only nodes 4 and 5 should remain
@@ -187,7 +187,7 @@ TYPED_TEST(TemporalGraphTest, UndirectedGraphEdgeAdditionTest) {
         Edge {3, 1, 200},  // Should be stored as (1,3,200)
     };
 
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 3);
     const auto stored_edges = this->graph->get_edges();
 
     // Verify edges are stored with lower node ID as source
@@ -207,7 +207,7 @@ TYPED_TEST(TemporalGraphTest, CountTimestampsTest) {
        Edge {3, 4, 300},  // t2 duplicate
        Edge {4, 1, 400}   // t3
    };
-   this->graph->add_multiple_edges(edges);
+   this->graph->add_multiple_edges(edges, 4);
 
    // Test count_timestamps_less_than
    EXPECT_EQ(this->graph->count_timestamps_less_than(50), 0);   // Before first timestamp
@@ -243,7 +243,7 @@ TYPED_TEST(TemporalGraphTest, CountNodeTimestampsDirectedTest) {
         Edge {3, 1, 300},  // Node 3 out: t2  | Node 1 in: t2
         Edge {1, 4, 400}   // Node 1 out: t3  | Node 4 in: t3
     };
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 4);
 
     // Test outbound edges for node 1 (count_node_timestamps_greater_than)
     // Node 1's outbound edges are at: 100(x2), 300, 400
@@ -290,7 +290,7 @@ TYPED_TEST(TemporalGraphTest, CountNodeTimestampsUndirectedTest) {
        Edge {4, 1, 300},  // Will be stored as (1,4,300)
        Edge {1, 3, 300}   // Will be stored as (1,3,300)
    };
-   this->graph->add_multiple_edges(edges);
+   this->graph->add_multiple_edges(edges, 4);
 
    // Test timestamps for node 1
    EXPECT_EQ(this->graph->count_node_timestamps_greater_than(1, 50), 3);   // Before first
@@ -318,7 +318,7 @@ TYPED_TEST(TemporalGraphTest, CountNodeTimestampsDuplicatesTest) {
         Edge {2, 1, 200},  // t1 inbound to node 1
         Edge {3, 1, 200},  // t1 duplicate inbound to node 1
     };
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 4);
 
     // Test outbound timestamps for node 1
     // Node 1 has outbound edges only at t0 (100)
@@ -345,7 +345,7 @@ TYPED_TEST(TemporalGraphTest, GetEdgeAtTest) {
         Edge {90, 100, 300},
         Edge {110, 120, 400}  // Group 3: timestamp 400
     };
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 120);
 
     // Test forward direction (looking for timestamps > given)
 
@@ -395,7 +395,7 @@ TYPED_TEST(TemporalGraphTest, GetEdgeAtDuplicateTimestampsTest) {
         Edge {90, 100, 200},
         Edge {110, 120, 300}  // Group 2: single edge at 300
     };
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 120);
 
     // Test forward selection
     auto [src1, tgt1, ts1] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 50, true);
@@ -419,7 +419,7 @@ TYPED_TEST(TemporalGraphTest, GetEdgeAtBoundaryConditionsTest) {
         Edge {30, 40, 200},
         Edge {50, 60, 300}
     };
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 60);
 
     // Forward direction
     auto [src1, tgt1, ts1] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 100, true);
@@ -443,7 +443,7 @@ TYPED_TEST(TemporalGraphTest, GetEdgeAtRandomSelectionTest) {
         Edge {3, 4, 100},
         Edge {5, 6, 100}
     };
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 6);
 
     // Make multiple selections and verify we can get different edges
     std::set<std::pair<int, int>> seen_edges;

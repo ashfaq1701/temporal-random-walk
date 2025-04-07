@@ -18,6 +18,9 @@ class TemporalRandomWalk {
     bool use_gpu;
     TemporalRandomWalkStore* temporal_random_walk;
 
+    int running_node_id = -1;
+    std::unordered_map<int, int> node_index;
+
 public:
     explicit TemporalRandomWalk(
         bool is_directed,
@@ -25,12 +28,11 @@ public:
         int64_t max_time_capacity=-1,
         bool enable_weight_computation=false,
         double timescale_bound=DEFAULT_TIMESCALE_BOUND,
-        int node_count_max_bound=DEFAULT_NODE_COUNT_MAX_BOUND,
         size_t n_threads=std::thread::hardware_concurrency());
 
     ~TemporalRandomWalk();
 
-    void add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges) const;
+    void add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges);
 
     std::vector<std::vector<NodeWithTime>> get_random_walks_and_times_for_all_nodes(
         int max_walk_len,

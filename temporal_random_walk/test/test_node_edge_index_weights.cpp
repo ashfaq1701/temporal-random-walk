@@ -3,7 +3,6 @@
 #include <cmath>
 #include "../src/proxies/NodeEdgeIndex.cuh"
 #include "../src/proxies/EdgeData.cuh"
-#include "../src/proxies/NodeMapping.cuh"
 #include "../src/common/const.cuh"
 
 template<typename T>
@@ -65,12 +64,10 @@ protected:
         edges.push_back(2, 4, 30); // Different timestamp groups for node 2
         edges.push_back(3, 4, 40);
         edges.update_timestamp_groups();
-
-        const NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, T::value);  // CPU mode
-        mapping.update(edges.edge_data, 0, edges.size());
+        edges.populate_active_nodes(4);
 
         index = NodeEdgeIndex(T::value);  // CPU mode
-        index.rebuild(edges.edge_data, mapping.node_mapping, directed);
+        index.rebuild(edges.edge_data, directed);
         index.update_temporal_weights(edges.edge_data, -1);
     }
 
@@ -92,9 +89,8 @@ TYPED_TEST_SUITE(NodeEdgeIndexWeightTest, GPU_USAGE_TYPES);
 
 TYPED_TEST(NodeEdgeIndexWeightTest, EmptyGraph) {
     EdgeData empty_edges(TypeParam::value);
-    NodeMapping empty_mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
     this->index = NodeEdgeIndex(TypeParam::value);
-    this->index.rebuild(empty_edges.edge_data, empty_mapping.node_mapping, true);
+    this->index.rebuild(empty_edges.edge_data, true);
     this->index.update_temporal_weights(empty_edges.edge_data, -1);
 
     EXPECT_TRUE(this->index.outbound_forward_cumulative_weights_exponential().empty());
@@ -121,12 +117,10 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightBiasPerNode) {
     edges.push_back(1, 3, 200);
     edges.push_back(1, 4, 300);
     edges.update_timestamp_groups();
-
-    NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
-    mapping.update(edges.edge_data, 0, edges.size());
+    edges.populate_active_nodes(4);
 
     this->index = NodeEdgeIndex(TypeParam::value);
-    this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
+    this->index.rebuild(edges.edge_data, true);
     this->index.update_temporal_weights(edges.edge_data, -1); // No scaling
 
     // Forward weights: exp(-(t - t_min))
@@ -156,12 +150,10 @@ TYPED_TEST(NodeEdgeIndexWeightTest, ScaledWeightRatios) {
     edges.push_back(1, 3, 300);
     edges.push_back(1, 4, 500);
     edges.update_timestamp_groups();
-
-    NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
-    mapping.update(edges.edge_data, 0, edges.size());
+    edges.populate_active_nodes(4);
 
     this->index = NodeEdgeIndex(TypeParam::value);
-    this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
+    this->index.rebuild(edges.edge_data, true);
 
     constexpr double timescale_bound = 2.0;
     this->index.update_temporal_weights(edges.edge_data, timescale_bound);
@@ -217,11 +209,9 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightConsistencyAcrossUpdates) {
    edges.push_back(1, 2, 10);
    edges.push_back(1, 3, 10);
    edges.update_timestamp_groups();
+   edges.populate_active_nodes(3);
 
-   NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
-   mapping.update(edges.edge_data, 0, edges.size());
-
-   this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
+   this->index.rebuild(edges.edge_data, true);
    this->index.update_temporal_weights(edges.edge_data, -1);
 
    // Weights should be different but still normalized
@@ -237,11 +227,9 @@ TYPED_TEST(NodeEdgeIndexWeightTest, SingleTimestampGroupPerNode) {
    edges.push_back(1, 3, 10);
    edges.push_back(2, 3, 10);
    edges.update_timestamp_groups();
+   edges.populate_active_nodes(3);
 
-   NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
-   mapping.update(edges.edge_data, 0, edges.size());
-
-   this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
+   this->index.rebuild(edges.edge_data, true);
    this->index.update_temporal_weights(edges.edge_data, -1);
 
    // Each node should have single weight of 1.0
@@ -262,11 +250,9 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundZero) {
     edges.push_back(1, 3, 20);
     edges.push_back(1, 4, 30);
     edges.update_timestamp_groups();
+    edges.populate_active_nodes(4);
 
-    NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
-    mapping.update(edges.edge_data, 0, edges.size());
-
-    this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
+    this->index.rebuild(edges.edge_data, true);
     this->index.update_temporal_weights(edges.edge_data, 0);  // Should behave like -1
 
     this->verify_node_weights(this->index.outbound_timestamp_group_offsets(),
@@ -283,23 +269,17 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundWithSingleTimestamp) {
     edges.push_back(node_id, 3, 10);
     edges.push_back(node_id, 4, 10);
     edges.update_timestamp_groups();
+    edges.populate_active_nodes(4);
 
-    NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
-    mapping.update(edges.edge_data, 0, edges.size());
-
-    // Get the dense index for node_id
-    const int dense_idx = mapping.to_dense(node_id);
-    ASSERT_GE(dense_idx, 0) << "Node " << node_id << " not found in mapping";
-
-    this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
+    this->index.rebuild(edges.edge_data, true);
 
     // Test with different bounds
     for (const double bound : {-1.0, 0.0, 10.0, 50.0}) {
         this->index.update_temporal_weights(edges.edge_data, bound);
 
         // Node should have single group with weight 1.0
-        const size_t start = this->index.outbound_timestamp_group_offsets()[dense_idx];
-        const size_t end = this->index.outbound_timestamp_group_offsets()[dense_idx + 1];
+        const size_t start = this->index.outbound_timestamp_group_offsets()[node_id];
+        const size_t end = this->index.outbound_timestamp_group_offsets()[node_id + 1];
         ASSERT_EQ(end - start, 1) << "Node should have exactly one timestamp group";
         EXPECT_NEAR(this->index.outbound_forward_cumulative_weights_exponential()[start], 1.0, 1e-6);
         EXPECT_NEAR(this->index.outbound_backward_cumulative_weights_exponential()[start], 1.0, 1e-6);
@@ -312,10 +292,9 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightOrderPreservation) {
     edges.push_back(1, 3, 20);
     edges.push_back(1, 4, 30);
     edges.update_timestamp_groups();
+    edges.populate_active_nodes(4);
 
-    NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);
-    mapping.update(edges.edge_data, 0, edges.size());
-    this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
+    this->index.rebuild(edges.edge_data, true);
 
     // Get unscaled weights
     this->index.update_temporal_weights(edges.edge_data, -1);
@@ -346,12 +325,10 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleNormalizationTest) {
     edges.push_back(1, 4, 1000);      // 800 units
     edges.push_back(1, 5, 100000);    // Large gap
     edges.update_timestamp_groups();
-
-    NodeMapping mapping(DEFAULT_NODE_COUNT_MAX_BOUND, TypeParam::value);  // CPU mode
-    mapping.update(edges.edge_data, 0, edges.size());
+    edges.populate_active_nodes(5);
 
     this->index = NodeEdgeIndex(TypeParam::value);  // CPU mode
-    this->index.rebuild(edges.edge_data, mapping.node_mapping, true);
+    this->index.rebuild(edges.edge_data, true);
 
     constexpr double timescale_bound = 5.0;
     this->index.update_temporal_weights(edges.edge_data, timescale_bound);

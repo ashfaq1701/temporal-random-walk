@@ -6,51 +6,18 @@
 #include <thrust/device_vector.h>
 #include <cuda/std/__algorithm/lower_bound.h>
 #include <cuda/std/__algorithm/upper_bound.h>
+#include <thrust/count.h>
 #endif
 
 #include "../common/error_handlers.cuh"
 #include "../common/memory.cuh"
 #include "../common/cuda_config.cuh"
 
-HOST void edge_data::resize(EdgeDataStore *edge_data, const size_t size) {
-    resize_memory(&edge_data->sources, edge_data->sources_size, size, edge_data->use_gpu);
-    resize_memory(&edge_data->targets, edge_data->targets_size, size, edge_data->use_gpu);
-    resize_memory(&edge_data->timestamps, edge_data->timestamps_size, size, edge_data->use_gpu);
-
-    resize_memory(&edge_data->timestamp_group_offsets, edge_data->timestamp_group_offsets_size,  size, edge_data->use_gpu);
-    resize_memory(&edge_data->unique_timestamps, edge_data->unique_timestamps_size, size, edge_data->use_gpu);
-
-    set_size(edge_data, size);
-}
-
-HOST void edge_data::clear(EdgeDataStore *edge_data) {
-    clear_memory(&edge_data->sources, edge_data->use_gpu);
-    edge_data->sources_size = 0;
-
-    clear_memory(&edge_data->targets, edge_data->use_gpu);
-    edge_data->targets_size = 0;
-
-    clear_memory(&edge_data->timestamps, edge_data->use_gpu);
-    edge_data->timestamps_size = 0;
-
-    clear_memory(&edge_data->timestamp_group_offsets, edge_data->use_gpu);
-    edge_data->timestamp_group_offsets_size = 0;
-
-    clear_memory(&edge_data->unique_timestamps, edge_data->use_gpu);
-    edge_data->unique_timestamps_size = 0;
-
-    clear_memory(&edge_data->forward_cumulative_weights_exponential, edge_data->use_gpu);
-    edge_data->forward_cumulative_weights_exponential_size = 0;
-
-    clear_memory(&edge_data->backward_cumulative_weights_exponential, edge_data->use_gpu);
-    edge_data->backward_cumulative_weights_exponential_size = 0;
-}
-
 HOST DEVICE size_t edge_data::size(const EdgeDataStore* edge_data) {
     return edge_data->timestamps_size;
 }
 
-HOST void edge_data::set_size(EdgeDataStore* edge_data, size_t size) {
+HOST void edge_data::set_size(EdgeDataStore* edge_data, const size_t size) {
     edge_data->sources_size = size;
     edge_data->targets_size = size;
     edge_data->timestamps_size = size;
@@ -137,6 +104,112 @@ HOST size_t edge_data::find_group_before_timestamp(const EdgeDataStore *edge_dat
     return (it - begin) - 1;
 }
 
+HOST bool edge_data::is_node_active_host(const EdgeDataStore* edge_data, const int node_id) {
+    // Check bounds first to avoid out-of-bounds access
+    if (node_id < 0 || node_id >= edge_data->active_node_ids_size) {
+        return false;
+    }
+
+    #ifdef HAS_CUDA
+    if (edge_data->use_gpu) {
+        // For GPU implementation, need to copy value from device to host
+        int is_active;
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&is_active, edge_data->active_node_ids + node_id, sizeof(int), cudaMemcpyDeviceToHost));
+        return is_active == 1;
+    }
+    else
+    #endif
+    {
+        // For CPU implementation, direct access is sufficient
+        return edge_data->active_node_ids[node_id] == 1;
+    }
+}
+
+HOST DataBlock<int> edge_data::get_active_node_ids(const EdgeDataStore *edge_data) {
+    size_t active_count = 0;
+
+    #ifdef HAS_CUDA
+    if (edge_data->use_gpu) {
+        const thrust::device_ptr<int> d_active_nodes(edge_data->active_node_ids);
+        active_count = thrust::count(
+            DEVICE_EXECUTION_POLICY,
+            d_active_nodes,
+            d_active_nodes + static_cast<long>(edge_data->active_node_ids_size),
+            1
+        );
+        CUDA_KERNEL_CHECK("After thrust count in get_active_node_ids");
+    }
+    else
+    #endif
+    {
+        for (int i = 0; i < edge_data->active_node_ids_size; i++) {
+            if (edge_data->active_node_ids[i] == 1) {
+                active_count++;
+            }
+        }
+    }
+
+    DataBlock<int> result(active_count, edge_data->use_gpu);
+    if (active_count == 0) {
+        return result;
+    }
+
+    #ifdef HAS_CUDA
+    if (edge_data->use_gpu) {
+        const thrust::device_ptr<int> d_active_nodes(edge_data->active_node_ids);
+        const thrust::device_ptr<int> d_result(result.data);
+
+        thrust::copy_if(
+            DEVICE_EXECUTION_POLICY,
+            thrust::make_counting_iterator<int>(0),
+            thrust::make_counting_iterator<int>(static_cast<int>(edge_data->active_node_ids_size)),
+            d_active_nodes,
+            d_result,
+            [] __device__ (const int val) { return val == 1; }
+        );
+        CUDA_KERNEL_CHECK("After thrust copy_if in get_active_node_ids");
+    }
+    else
+    #endif
+    {
+        size_t index = 0;
+        for (int i = 0; i < edge_data->active_node_ids_size; i++) {
+            if (edge_data->active_node_ids[i] == 1) {
+                result.data[index++] = i;
+            }
+        }
+    }
+
+    return result;
+}
+
+HOST size_t edge_data::active_node_count(const EdgeDataStore* edge_data) {
+    size_t count = 0;
+
+    #ifdef HAS_CUDA
+    if (edge_data->use_gpu) {
+        thrust::device_ptr<int> d_active_nodes(edge_data->active_node_ids);
+        count = thrust::count(
+            DEVICE_EXECUTION_POLICY,
+            d_active_nodes,
+            d_active_nodes + static_cast<long>(edge_data->active_node_ids_size),
+            1
+        );
+        CUDA_KERNEL_CHECK("After thrust count in active_node_count");
+    }
+    else
+    #endif
+    {
+        for (size_t i = 0; i < edge_data->active_node_ids_size; i++) {
+            if (edge_data->active_node_ids[i] == 1) {
+                count++;
+            }
+        }
+    }
+
+    return count;
+}
+
 HOST void edge_data::update_timestamp_groups_std(EdgeDataStore *edge_data) {
     if (edge_data->timestamps_size == 0) {
         clear_memory(&edge_data->timestamp_group_offsets, edge_data->use_gpu);
@@ -176,6 +249,18 @@ HOST void edge_data::update_timestamp_groups_std(EdgeDataStore *edge_data) {
         edge_data->timestamps_size,
         edge_data->unique_timestamps_size,
         edge_data->use_gpu);
+}
+
+HOST void edge_data::populate_active_nodes_std(EdgeDataStore* edge_data, const int max_node_id) {
+    allocate_memory(&edge_data->active_node_ids, max_node_id + 1, edge_data->use_gpu);
+    edge_data->active_node_ids_size = max_node_id + 1;
+
+    fill_memory(edge_data->active_node_ids, max_node_id + 1, 0, edge_data->use_gpu);
+
+    for (size_t i = 0; i < size(edge_data); i++) {
+        edge_data->active_node_ids[edge_data->sources[i]] = 1;
+        edge_data->active_node_ids[edge_data->targets[i]] = 1;
+    }
 }
 
 HOST void edge_data::update_temporal_weights_std(EdgeDataStore *edge_data, const double timescale_bound) {
@@ -327,6 +412,42 @@ HOST void edge_data::update_timestamp_groups_cuda(EdgeDataStore *edge_data) {
 
     // Free temporary memory
     CUDA_CHECK_AND_CLEAR(cudaFree(d_flags));
+}
+
+HOST void edge_data::populate_active_nodes_cuda(EdgeDataStore* edge_data, const int max_node_id) {
+    allocate_memory(&edge_data->active_node_ids, max_node_id + 1, edge_data->use_gpu);
+    edge_data->active_node_ids_size = max_node_id + 1;
+
+    fill_memory(edge_data->active_node_ids, max_node_id + 1, 0, edge_data->use_gpu);
+
+    const size_t num_edges = size(edge_data);
+    if (num_edges == 0) {
+        return;
+    }
+
+    const thrust::device_ptr<int> d_sources(edge_data->sources);
+    const thrust::device_ptr<int> d_targets(edge_data->targets);
+    thrust::device_ptr<int> d_active_nodes(edge_data->active_node_ids);
+
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        d_sources,
+        d_sources + static_cast<long>(num_edges),
+        [d_active_nodes] __device__ (int source_id) {
+            d_active_nodes[source_id] = 1;
+        }
+    );
+    CUDA_KERNEL_CHECK("After thrust for_each sources in populate_active_nodes_cuda");
+
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        d_targets,
+        d_targets + static_cast<long>(num_edges),
+        [d_active_nodes] __device__ (int target_id) {
+            d_active_nodes[target_id] = 1;
+        }
+    );
+    CUDA_KERNEL_CHECK("After thrust for_each targets in populate_active_nodes_cuda");
 }
 
 HOST void edge_data::update_temporal_weights_cuda(EdgeDataStore *edge_data, double timescale_bound) {
@@ -559,6 +680,10 @@ HOST EdgeDataStore* edge_data::to_device_ptr(const EdgeDataStore* edge_data) {
     temp_edge_data.owns_data = false;
 
     return device_edge_data;
+}
+
+DEVICE bool edge_data::is_node_active_device(const EdgeDataStore* edge_data, int node_id) {
+    return edge_data->active_node_ids[node_id] == 1;
 }
 
 #endif

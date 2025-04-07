@@ -7,7 +7,6 @@
 
 #include "edge_data.cuh"
 #include "node_edge_index.cuh"
-#include "node_mapping.cuh"
 
 #include "../data/enums.cuh"
 
@@ -19,11 +18,9 @@ struct TemporalGraphStore {
     int64_t max_time_capacity;
     bool enable_weight_computation;
     double timescale_bound;
-    int node_count_max_bound;
 
     EdgeDataStore *edge_data;
     NodeEdgeIndexStore *node_edge_index;
-    NodeMappingStore *node_mapping;
 
     int64_t latest_timestamp;
 
@@ -31,10 +28,8 @@ struct TemporalGraphStore {
         max_time_capacity = 0;
         enable_weight_computation = false;
         timescale_bound = -1;
-        node_count_max_bound = 0;
         edge_data = nullptr;
         node_edge_index = nullptr;
-        node_mapping = nullptr;
         latest_timestamp = 0;
     }
 
@@ -43,21 +38,18 @@ struct TemporalGraphStore {
         const bool use_gpu,
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
-        const double timescale_bound,
-        const int node_count_max_bound):
+        const double timescale_bound):
         is_directed(is_directed), use_gpu(use_gpu), owns_data(true),
         max_time_capacity(max_time_capacity), enable_weight_computation(enable_weight_computation),
-        timescale_bound(timescale_bound), node_count_max_bound(node_count_max_bound), latest_timestamp(0) {
+        timescale_bound(timescale_bound), latest_timestamp(0) {
 
         edge_data = new EdgeDataStore(use_gpu);
         node_edge_index = new NodeEdgeIndexStore(use_gpu);
-        node_mapping = new NodeMappingStore(node_count_max_bound, use_gpu);
     }
 
     ~TemporalGraphStore() {
         if (owns_data) {
             delete edge_data;
-            delete node_mapping;
             delete node_edge_index;
         }
     }
@@ -85,7 +77,11 @@ namespace temporal_graph {
      * Std implementations
      */
 
-    HOST void add_multiple_edges_std(TemporalGraphStore* graph, const Edge* new_edges, size_t num_new_edges);
+    HOST void add_multiple_edges_std(
+        TemporalGraphStore* graph,
+        const Edge* new_edges,
+        size_t num_new_edges,
+        int max_node_id);
 
     HOST void sort_and_merge_edges_std(TemporalGraphStore* graph, size_t start_idx);
 
@@ -105,7 +101,11 @@ namespace temporal_graph {
 
     #ifdef HAS_CUDA
 
-    HOST void add_multiple_edges_cuda(TemporalGraphStore* graph, const Edge* new_edges, size_t num_new_edges);
+    HOST void add_multiple_edges_cuda(
+        TemporalGraphStore* graph,
+        const Edge* new_edges,
+        size_t num_new_edges,
+        int max_node_id);
 
     HOST void sort_and_merge_edges_cuda(TemporalGraphStore* graph, size_t start_idx);
 

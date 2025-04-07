@@ -42,7 +42,7 @@ TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, ForwardWalkTest) {
         Edge{20, 10, 101}, // Node 10 inbound (should be ignored for forward)
         Edge{30, 10, 103}  // Node 10 inbound (should be ignored for forward)
     };
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 50);
 
     // Test no timestamp constraint
     auto edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, -1, true);
@@ -74,7 +74,7 @@ TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, BackwardWalkTest) {
         Edge{10, 20, 101}, // Node 10 outbound (should be ignored for backward)
         Edge{10, 30, 102}  // Node 10 outbound (should be ignored for backward)
     };
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 50);
 
     // Test no timestamp constraint
     auto edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, -1, false);
@@ -123,7 +123,7 @@ TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, EdgeCasesTest) {
         Edge{10, 20, 100}, // Node 10 outbound: ts 100,101
         Edge{10, 30, 101}, // Node 10 -> Nodes 20,30
     };
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 30);
 
     // Test invalid node ID
     auto edge = this->graph->get_node_edge_at(-1, RandomPickerType::TEST_FIRST, -1, true);
@@ -155,7 +155,7 @@ TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, RandomSelectionTest) {
         Edge{10, 40, 100},
         Edge{10, 50, 101}  // Group 2: ts 101
     };
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 50);
 
     // Make multiple selections from first timestamp group
     std::set<int> seen_targets;
@@ -183,7 +183,7 @@ TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, ExactTimestampTest) {
         Edge{10, 60, 101},
         Edge{10, 70, 102}
     };
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 70);
 
     // Forward direction (node 10 to downstream)
     auto edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 100, true);
@@ -209,7 +209,7 @@ TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, ExactTimestampUndirectedTest) {
         Edge{70, 10, 102},
         Edge{20, 30, 104}
     };
-    this->graph->add_multiple_edges(edges);
+    this->graph->add_multiple_edges(edges, 70);
 
     // Forward direction should work same as backward
     auto edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 100, true);

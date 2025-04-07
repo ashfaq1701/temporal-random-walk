@@ -4,7 +4,6 @@
 #include <cstddef>
 
 #include "edge_data.cuh"
-#include "node_mapping.cuh"
 #include "../common/macros.cuh"
 #include "../data/structs.cuh"
 
@@ -104,27 +103,15 @@ namespace node_edge_index {
     /**
      * Std implementations
      */
-
-    HOST void populate_dense_ids_std(
-        EdgeDataStore* edge_data,
-        NodeMappingStore* node_mapping,
-        int* dense_sources,
-        int* dense_targets
-    );
-
     HOST void compute_node_edge_offsets_std(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
-        const int* dense_sources,
-        const int* dense_targets,
         bool is_directed
     );
 
     HOST void compute_node_edge_indices_std(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
-        const int* dense_sources,
-        const int* dense_targets,
         EdgeWithEndpointType* outbound_edge_indices_buffer,
         bool is_directed
     );
@@ -132,7 +119,7 @@ namespace node_edge_index {
     HOST void compute_node_timestamp_offsets_std(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
-        size_t node_index_capacity,
+        size_t node_count,
         bool is_directed
     );
 
@@ -148,28 +135,17 @@ namespace node_edge_index {
     /**
      * Cuda implementations
      */
-
     #ifdef HAS_CUDA
-    HOST void populate_dense_ids_cuda(
-        const EdgeDataStore* edge_data,
-        const NodeMappingStore* node_mapping,
-        int* dense_sources,
-        int* dense_targets
-    );
 
     HOST void compute_node_edge_offsets_cuda(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
-        int* dense_sources,
-        int* dense_targets,
         bool is_directed
     );
 
     HOST void compute_node_edge_indices_cuda(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
-        const int* dense_sources,
-        const int* dense_targets,
         EdgeWithEndpointType* outbound_edge_indices_buffer,
         bool is_directed
     );
@@ -177,7 +153,7 @@ namespace node_edge_index {
     HOST void compute_node_timestamp_offsets_cuda(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
-        size_t node_index_capacity,
+        size_t node_count,
         bool is_directed
     );
 
@@ -194,7 +170,7 @@ namespace node_edge_index {
 
     #endif
 
-    HOST void rebuild(NodeEdgeIndexStore* node_edge_index, EdgeDataStore* edge_data, NodeMappingStore* node_mapping, bool is_directed);
+    HOST void rebuild(NodeEdgeIndexStore* node_edge_index, const EdgeDataStore* edge_data, bool is_directed);
 
 }
 

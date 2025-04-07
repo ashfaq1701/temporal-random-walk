@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include "../src/proxies/NodeEdgeIndex.cuh"
 #include "../src/proxies/EdgeData.cuh"
-#include "../src/proxies/NodeMapping.cuh"
 #include "../src/common/const.cuh"
 
 template<typename  T>
@@ -9,9 +8,8 @@ class NodeEdgeIndexTest : public ::testing::Test {
 protected:
     NodeEdgeIndex index;
     EdgeData edges;
-    NodeMapping mapping;
 
-    NodeEdgeIndexTest(): index(T::value), edges(T::value), mapping(DEFAULT_NODE_COUNT_MAX_BOUND, T::value) {}
+    NodeEdgeIndexTest(): index(T::value), edges(T::value) {}
 
     // Helper function to set up a simple directed graph
     void setup_simple_directed_graph() {
@@ -22,12 +20,10 @@ protected:
         edges.push_back(20, 30, 300);  // Edge 3
         edges.push_back(20, 10, 300);  // Edge 4 - same timestamp as Edge 3
         edges.update_timestamp_groups();
-
-        // Update node mapping
-        mapping.update(edges.edge_data, 0, edges.size());
+        edges.populate_active_nodes(30);
 
         // Rebuild index
-        index.rebuild(edges.edge_data, mapping.node_mapping, true);
+        index.rebuild(edges.edge_data, true);
     }
 
     // Helper function to set up a simple undirected graph
@@ -38,12 +34,10 @@ protected:
         edges.push_back(100, 200, 2000);  // Edge 2 - new timestamp
         edges.push_back(200, 300, 3000);  // Edge 3
         edges.update_timestamp_groups();
-
-        // Update node mapping
-        mapping.update(edges.edge_data, 0, edges.size());
+        edges.populate_active_nodes(300);
 
         // Rebuild index
-        index.rebuild(edges.edge_data, mapping.node_mapping, false);
+        index.rebuild(edges.edge_data, false);
     }
 };
 
@@ -77,8 +71,7 @@ TYPED_TEST(NodeEdgeIndexTest, DirectedEdgeRangeTest) {
     this->setup_simple_directed_graph();
 
     // Check outbound edges for node 10
-    const int dense_node10 = this->mapping.to_dense(10);
-    auto [out_start10, out_end10] = this->index.get_edge_range(dense_node10, true, true);
+    auto [out_start10, out_end10] = this->index.get_edge_range(10, true, true);
     EXPECT_EQ(out_end10 - out_start10, 3);  // Node 10 has 3 outbound edges (to 20,30,20)
 
     // Verify each outbound edge
@@ -88,8 +81,7 @@ TYPED_TEST(NodeEdgeIndexTest, DirectedEdgeRangeTest) {
     }
 
     // Check inbound edges for node 20
-    const int dense_node20 = this->mapping.to_dense(20);
-    auto [in_start20, in_end20] = this->index.get_edge_range(dense_node20, false, true);
+    auto [in_start20, in_end20] = this->index.get_edge_range(20, false, true);
     EXPECT_EQ(in_end20 - in_start20, 2);  // Node 20 has 2 inbound edges from node 10
 
     // Verify each inbound edge
@@ -108,13 +100,11 @@ TYPED_TEST(NodeEdgeIndexTest, DirectedEdgeRangeTest) {
 TYPED_TEST(NodeEdgeIndexTest, DirectedTimestampGroupTest) {
     this->setup_simple_directed_graph();
 
-    const int dense_node10 = this->mapping.to_dense(10);
-
     // Check outbound groups for node 10
-    EXPECT_EQ(this->index.get_timestamp_group_count(dense_node10, true, true), 2);  // Two groups: 100, 200
+    EXPECT_EQ(this->index.get_timestamp_group_count(10, true, true), 2);  // Two groups: 100, 200
 
     // Check first group range (timestamp 100)
-    auto [group1_start, group1_end] = this->index.get_timestamp_group_range(dense_node10, 0, true, true);
+    auto [group1_start, group1_end] = this->index.get_timestamp_group_range(10, 0, true, true);
     EXPECT_EQ(group1_end - group1_start, 2);  // Two edges in timestamp 100
 
     // Verify all edges in first group
@@ -126,7 +116,7 @@ TYPED_TEST(NodeEdgeIndexTest, DirectedTimestampGroupTest) {
     }
 
     // Check second group range (timestamp 200)
-    auto [group2_start, group2_end] = this->index.get_timestamp_group_range(dense_node10, 1, true, true);
+    auto [group2_start, group2_end] = this->index.get_timestamp_group_range(10, 1, true, true);
     EXPECT_EQ(group2_end - group2_start, 1);  // One edge in timestamp 200
 
     // Verify edge in second group
@@ -141,8 +131,7 @@ TYPED_TEST(NodeEdgeIndexTest, UndirectedEdgeRangeTest) {
     this->setup_simple_undirected_graph();
 
     // In undirected graph, all edges are stored as outbound
-    const int dense_node100 = this->mapping.to_dense(100);
-    auto [out_start100, out_end100] = this->index.get_edge_range(dense_node100, true, false);
+    auto [out_start100, out_end100] = this->index.get_edge_range(100, true, false);
     EXPECT_EQ(out_end100 - out_start100, 3);  // Node 100 has 3 edges (to 200,300,200)
 
     // Verify each edge for node 100
@@ -154,8 +143,7 @@ TYPED_TEST(NodeEdgeIndexTest, UndirectedEdgeRangeTest) {
         );
     }
 
-    const int dense_node200 = this->mapping.to_dense(200);
-    auto [out_start200, out_end200] = this->index.get_edge_range(dense_node200, true, false);
+    auto [out_start200, out_end200] = this->index.get_edge_range(200, true, false);
     EXPECT_EQ(out_end200 - out_start200, 3);  // Node 200 has 3 edges (with 100,100,300)
 }
 
@@ -163,13 +151,11 @@ TYPED_TEST(NodeEdgeIndexTest, UndirectedEdgeRangeTest) {
 TYPED_TEST(NodeEdgeIndexTest, UndirectedTimestampGroupTest) {
     this->setup_simple_undirected_graph();
 
-    const int dense_node100 = this->mapping.to_dense(100);
-
     // Check timestamp groups for node 100
-    EXPECT_EQ(this->index.get_timestamp_group_count(dense_node100, true, false), 2);  // Two timestamp groups (1000,2000)
+    EXPECT_EQ(this->index.get_timestamp_group_count(100, true, false), 2);  // Two timestamp groups (1000,2000)
 
     // Check first group (timestamp 1000)
-    auto [group1_start, group1_end] = this->index.get_timestamp_group_range(dense_node100, 0, true, false);
+    auto [group1_start, group1_end] = this->index.get_timestamp_group_range(100, 0, true, false);
     EXPECT_EQ(this->edges.timestamps()[this->index.outbound_indices()[group1_start]], 1000);
     EXPECT_EQ(group1_end - group1_start, 2);  // Two edges in timestamp 1000 group
 
@@ -184,7 +170,7 @@ TYPED_TEST(NodeEdgeIndexTest, UndirectedTimestampGroupTest) {
     }
 
     // Check second group (timestamp 2000)
-    auto [group2_start, group2_end] = this->index.get_timestamp_group_range(dense_node100, 1, true, false);
+    auto [group2_start, group2_end] = this->index.get_timestamp_group_range(100, 1, true, false);
     EXPECT_EQ(this->edges.timestamps()[this->index.outbound_indices()[group2_start]], 2000);
     EXPECT_EQ(group2_end - group2_start, 1);  // One edge in timestamp 2000 group
 
@@ -205,16 +191,16 @@ TYPED_TEST(NodeEdgeIndexTest, EdgeCasesTest) {
     EXPECT_EQ(this->index.get_timestamp_group_count(-1, true, true), 0);
 
     // Test invalid group index
-    auto [inv_start, inv_end] = this->index.get_timestamp_group_range(this->mapping.to_dense(1), 999, true, true);
+    auto [inv_start, inv_end] = this->index.get_timestamp_group_range(1, 999, true, true);
     EXPECT_EQ(inv_start, 0);
     EXPECT_EQ(inv_end, 0);
 
     // Test node with no edges
     this->edges.push_back(4, 5, 400);  // Add isolated node
     this->edges.update_timestamp_groups();
-    this->mapping.update(this->edges.edge_data, this->edges.size()-1, this->edges.size());
-    this->index.rebuild(this->edges.edge_data, this->mapping.node_mapping, true);
+    this->edges.populate_active_nodes(30);
 
-    int isolated_node = this->mapping.to_dense(4);
-    EXPECT_EQ(this->index.get_timestamp_group_count(isolated_node, false, true), 0);
+    this->index.rebuild(this->edges.edge_data, true);
+
+    EXPECT_EQ(this->index.get_timestamp_group_count(4, false, true), 0);
 }

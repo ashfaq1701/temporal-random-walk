@@ -9,6 +9,9 @@ struct EdgeDataStore {
     bool use_gpu;
     bool owns_data;
 
+    int* active_node_ids = nullptr;
+    size_t active_node_ids_size = 0;
+
     int* sources = nullptr;
     size_t sources_size = 0;
 
@@ -79,10 +82,18 @@ namespace edge_data {
 
     HOST size_t find_group_before_timestamp(const EdgeDataStore *edge_data, int64_t timestamp);
 
+    HOST bool is_node_active_host(const EdgeDataStore* edge_data, const int node_id);
+
+    HOST DataBlock<int> get_active_node_ids(const EdgeDataStore* edge_data);
+
+    HOST size_t active_node_count(const EdgeDataStore* edge_data);
+
     /**
      * Std implementations
      */
     HOST void update_timestamp_groups_std(EdgeDataStore *edge_data);
+
+    HOST void populate_active_nodes_std(EdgeDataStore* edge_data, int max_node_id);
 
     HOST void update_temporal_weights_std(EdgeDataStore *edge_data, double timescale_bound);
 
@@ -93,6 +104,8 @@ namespace edge_data {
      */
     HOST void update_timestamp_groups_cuda(EdgeDataStore *edge_data);
 
+    HOST void populate_active_nodes_cuda(EdgeDataStore* edge_data, int max_node_id);
+
     HOST void update_temporal_weights_cuda(EdgeDataStore *edge_data, double timescale_bound);
 
     /**
@@ -101,6 +114,8 @@ namespace edge_data {
     DEVICE size_t find_group_after_timestamp_device(const EdgeDataStore *edge_data, int64_t timestamp);
 
     DEVICE size_t find_group_before_timestamp_device(const EdgeDataStore *edge_data, int64_t timestamp);
+
+    DEVICE bool is_node_active_device(const EdgeDataStore* edge_data, int node_id);
 
     HOST EdgeDataStore* to_device_ptr(const EdgeDataStore* edge_data);
 

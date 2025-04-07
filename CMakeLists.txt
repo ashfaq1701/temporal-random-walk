@@ -52,14 +52,12 @@ set(SRC_FILES
 
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/edge_data.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/node_edge_index.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/node_mapping.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/temporal_graph.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/random/pickers.cu
 
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/core/temporal_random_walk.cu
 
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/EdgeData.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/NodeMapping.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/NodeEdgeIndex.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/TemporalGraph.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/RandomPicker.cu

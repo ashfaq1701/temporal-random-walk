@@ -3,15 +3,28 @@
 #include "../utils/random.cuh"
 #include "../common/setup.cuh"
 
-HOST void temporal_random_walk::add_multiple_edges(const TemporalRandomWalkStore* temporal_random_walk, const Edge* edge_infos, const size_t num_edges) {
+HOST void temporal_random_walk::add_multiple_edges(
+    const TemporalRandomWalkStore* temporal_random_walk,
+    const Edge* edge_infos,
+    const size_t num_edges,
+    const int max_node_id) {
+
     #ifdef HAS_CUDA
     if (temporal_random_walk->use_gpu) {
-        temporal_graph::add_multiple_edges_cuda(temporal_random_walk->temporal_graph, edge_infos, num_edges);
+        temporal_graph::add_multiple_edges_cuda(
+            temporal_random_walk->temporal_graph,
+            edge_infos,
+            num_edges,
+            max_node_id);
     }
     else
     #endif
     {
-        temporal_graph::add_multiple_edges_std(temporal_random_walk->temporal_graph, edge_infos, num_edges);
+        temporal_graph::add_multiple_edges_std(
+            temporal_random_walk->temporal_graph,
+            edge_infos,
+            num_edges,
+            max_node_id);
     }
 }
 
@@ -41,8 +54,7 @@ HOST void temporal_random_walk::clear(TemporalRandomWalkStore* temporal_random_w
        temporal_random_walk->use_gpu,
        temporal_random_walk->max_time_capacity,
        temporal_random_walk->enable_weight_computation,
-       temporal_random_walk->timescale_bound,
-       temporal_random_walk->node_count_max_bound);
+       temporal_random_walk->timescale_bound);
 }
 
 HOST DEVICE bool temporal_random_walk::get_should_walk_forward(const WalkDirection walk_direction) {

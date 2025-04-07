@@ -180,6 +180,8 @@ public:
 
     void update_timestamp_groups() const;
 
+    void populate_active_nodes(int max_node_id) const;
+
     void update_temporal_weights(double timescale_bound) const;
 
     [[nodiscard]] std::pair<size_t, size_t> get_timestamp_group_range(size_t group_idx) const;
