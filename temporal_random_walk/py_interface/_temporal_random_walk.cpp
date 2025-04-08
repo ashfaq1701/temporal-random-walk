@@ -389,7 +389,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 nx_graph (networkx.Graph): NetworkX graph with timestamp edge attributes.
             )"
         )
-        .def("to_networkx", [](const TemporalRandomWalk& tw)
+        .def("to_networkx", [](TemporalRandomWalk& tw)
              {
                  const auto edges = tw.get_edges();
 
