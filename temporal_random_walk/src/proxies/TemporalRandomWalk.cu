@@ -264,7 +264,7 @@ std::vector<int> TemporalRandomWalk::get_node_ids() const {
     return result;
 }
 
-std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() const {
+std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() {
     const DataBlock<Edge> edges = temporal_random_walk::get_edges(temporal_random_walk);
     std::vector<std::tuple<int, int, int64_t>> result;
     result.reserve(edges.size);
@@ -277,7 +277,10 @@ std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() const
                                     cudaMemcpyDeviceToHost));
 
         for (size_t i = 0; i < edges.size; i++) {
-            result.emplace_back(host_edges[i].u, host_edges[i].i, host_edges[i].ts);
+            result.emplace_back(
+                reverse_node_index[host_edges[i].u],
+                reverse_node_index[host_edges[i].i],
+                host_edges[i].ts);
         }
 
         delete[] host_edges;
@@ -286,7 +289,10 @@ std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() const
     #endif
     {
         for (size_t i = 0; i < edges.size; i++) {
-            result.emplace_back(edges.data[i].u, edges.data[i].i, edges.data[i].ts);
+            result.emplace_back(
+                reverse_node_index[edges.data[i].u],
+                reverse_node_index[edges.data[i].i],
+                edges.data[i].ts);
         }
     }
 

@@ -47,7 +47,7 @@ protected:
         // Calculate individual weights
         std::vector<double> weights;
         weights.push_back(cumulative[start]);
-        for (size_t i = start; i < end; i++) {
+        for (size_t i = start + 1; i < end; i++) {
             weights.push_back(cumulative[i] - cumulative[i - 1]);
         }
 
@@ -113,9 +113,9 @@ TYPED_TEST(NodeEdgeIndexWeightTest, DirectedWeightNormalization) {
 TYPED_TEST(NodeEdgeIndexWeightTest, WeightBiasPerNode) {
 
     EdgeData edges(TypeParam::value);
-    edges.push_back(1, 2, 100);  // Known timestamps for precise verification
-    edges.push_back(1, 3, 200);
-    edges.push_back(1, 4, 300);
+    edges.push_back(1, 2, 10);  // Known timestamps for precise verification
+    edges.push_back(1, 3, 20);
+    edges.push_back(1, 4, 30);
     edges.update_timestamp_groups();
     edges.populate_active_nodes(4);
 
@@ -129,7 +129,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightBiasPerNode) {
         this->index.outbound_timestamp_group_offsets(), 1);
 
     for (size_t i = 0; i < forward.size() - 1; i++) {
-        double expected_ratio = exp(-100); // Time diff between groups is 100
+        double expected_ratio = exp(-10); // Time diff between groups is 100
         EXPECT_NEAR(forward[i+1]/forward[i], expected_ratio, 1e-6);
     }
 
@@ -139,8 +139,8 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightBiasPerNode) {
         this->index.outbound_timestamp_group_offsets(), 1);
 
     for (size_t i = 0; i < backward.size() - 1; i++) {
-        double expected_ratio = exp(100); // Time diff between groups is 100
-        EXPECT_NEAR(backward[i+1]/backward[i], expected_ratio, 1e-6);
+        double expected_ratio = exp(10); // Time diff between groups is 100
+        EXPECT_NEAR(backward[i + 1]/backward[i], expected_ratio, 1e-6);
     }
 }
 
@@ -352,7 +352,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleNormalizationTest) {
             }
         }
     }
-    EXPECT_LE(max_weight_ratio, timescale_bound)
+    EXPECT_NEAR(max_weight_ratio, timescale_bound, 1e-6)
         << "Maximum weight ratio exceeds timescale bound";
 
     // Get timestamps for node from EdgeData
