@@ -1,5 +1,5 @@
 pybind11_add_module(_temporal_random_walk
-        _temporal_random_walk.cpp
+        _temporal_random_walk.cu
         ${SRC_FILES}
 )
 
