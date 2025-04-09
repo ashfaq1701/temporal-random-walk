@@ -3,7 +3,7 @@ pybind11_add_module(_temporal_random_walk
         ${SRC_FILES}
 )
 
-set(MODULE_SRC_FILES ${SRC_FILES} _temporal_random_walk.cpp)
+set(MODULE_SRC_FILES ${SRC_FILES} _temporal_random_walk.cu)
 
 target_compile_features(_temporal_random_walk PRIVATE cxx_std_17)
 set_target_properties(_temporal_random_walk PROPERTIES
@@ -24,7 +24,7 @@ if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
 
     set_target_properties(_temporal_random_walk PROPERTIES
             CUDA_SEPARABLE_COMPILATION ON
-            CUDA_ARCHITECTURES 89
+            CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
     )
 
     target_include_directories(_temporal_random_walk PRIVATE
