@@ -26,8 +26,8 @@ walker = TemporalRandomWalk(is_directed=True, use_gpu=True, node_count_max_bound
 
 # Add edges: (source, target, timestamp)
 edges = [
-    (4, 5, 71), (3, 5, 82), (1, 3, 19),
-    (4, 2, 34), (4, 3, 79), (2, 5, 19)
+    (3, 4, 71), (2, 4, 82), (0, 2, 19),
+    (3, 1, 34), (3, 2, 79), (1, 4, 19)
 ]
 walker.add_multiple_edges(edges)
 
