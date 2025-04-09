@@ -50,6 +50,17 @@ WalkDirection walk_direction_from_string(const std::string& walk_direction_str)
     }
 }
 
+inline const RandomPickerType* get_picker_ptr_from_optional_string(
+    const std::optional<std::string>& picker_str,
+    std::optional<RandomPickerType>& picker_enum_storage) {
+
+    if (picker_str.has_value()) {
+        picker_enum_storage = picker_type_from_string(*picker_str);
+        return &(*picker_enum_storage);
+    }
+    return nullptr;
+}
+
 PYBIND11_MODULE(_temporal_random_walk, m)
 {
     py::class_<TemporalRandomWalk>(m, "TemporalRandomWalk")
@@ -102,12 +113,9 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                                                   const std::string& walk_direction = "Forward_In_Time")
              {
                  const RandomPickerType walk_bias_enum = picker_type_from_string(walk_bias);
-                 const RandomPickerType* initial_edge_bias_enum_ptr = nullptr;
-                 if (initial_edge_bias.has_value())
-                 {
-                     static const RandomPickerType edge_bias_enum = picker_type_from_string(*initial_edge_bias);
-                     initial_edge_bias_enum_ptr = &edge_bias_enum;
-                 }
+                 std::optional<RandomPickerType> edge_bias_enum_opt;
+                 const RandomPickerType* initial_edge_bias_enum_ptr = get_picker_ptr_from_optional_string(
+                    initial_edge_bias, edge_bias_enum_opt);
 
                  const WalkDirection walk_direction_enum = walk_direction_from_string(walk_direction);
 
@@ -152,12 +160,9 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                                                 const std::string& walk_direction = "Forward_In_Time")
             {
                 const RandomPickerType walk_bias_enum = picker_type_from_string(walk_bias);
-                const RandomPickerType* initial_edge_bias_enum_ptr = nullptr;
-                if (initial_edge_bias.has_value())
-                {
-                    static const RandomPickerType edge_bias_enum = picker_type_from_string(*initial_edge_bias);
-                    initial_edge_bias_enum_ptr = &edge_bias_enum;
-                }
+                std::optional<RandomPickerType> edge_bias_enum_opt;
+                const RandomPickerType* initial_edge_bias_enum_ptr = get_picker_ptr_from_optional_string(
+                    initial_edge_bias, edge_bias_enum_opt);
 
                 const WalkDirection walk_direction_enum = walk_direction_from_string(walk_direction);
 
@@ -168,17 +173,27 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     initial_edge_bias_enum_ptr,
                     walk_direction_enum);
 
-                py::array_t nodes_array(static_cast<long>(walk_set.total_len), walk_set.nodes);
-                py::array_t timestamps_array(static_cast<long>(walk_set.total_len), walk_set.timestamps);
-                py::array_t walk_lens_array(static_cast<long>(walk_set.num_walks), walk_set.walk_lens);
+                const py::capsule nodes_capsule(walk_set.nodes, [](void* p) {
+                    if (p) {
+                        free(p);
+                    }
+                });
+                py::array_t nodes_array(static_cast<long>(walk_set.total_len), walk_set.nodes, nodes_capsule);
 
-                py::capsule nodes_capsule(walk_set.nodes, [](void* p) { free(p); });
-                py::capsule timestamps_capsule(walk_set.timestamps, [](void* p) { free(p); });
-                py::capsule walk_lens_capsule(walk_set.walk_lens, [](void* p) { free(p); });
+                const py::capsule timestamps_capsule(walk_set.timestamps, [](void* p) {
+                    if (p) {
+                        free(p);
+                    }
+                });
+                py::array_t timestamps_array(static_cast<long>(walk_set.total_len), walk_set.timestamps, timestamps_capsule);
 
-                nodes_array.attr("_capsule") = nodes_capsule;
-                timestamps_array.attr("_capsule") = timestamps_capsule;
-                walk_lens_array.attr("_capsule") = walk_lens_capsule;
+                const py::capsule walk_lens_capsule(walk_set.walk_lens, [](void* p) {
+                    if (p) {
+                        free(p);
+                    }
+                });
+                py::array_t walk_lens_array(static_cast<long>(walk_set.num_walks), walk_set.walk_lens, walk_lens_capsule);
+
 
                 walk_set.owns_data = false;
 
@@ -241,12 +256,9 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                                                const std::string& walk_direction = "Forward_In_Time")
              {
                  const RandomPickerType walk_bias_enum = picker_type_from_string(walk_bias);
-                 const RandomPickerType* initial_edge_bias_enum_ptr = nullptr;
-                 if (initial_edge_bias.has_value())
-                 {
-                     static const RandomPickerType edge_bias_enum = picker_type_from_string(*initial_edge_bias);
-                     initial_edge_bias_enum_ptr = &edge_bias_enum;
-                 }
+                 std::optional<RandomPickerType> edge_bias_enum_opt;
+                 const RandomPickerType* initial_edge_bias_enum_ptr = get_picker_ptr_from_optional_string(
+                     initial_edge_bias, edge_bias_enum_opt);
 
                  const WalkDirection walk_direction_enum = walk_direction_from_string(walk_direction);
 
@@ -307,12 +319,9 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                                     const std::string& walk_direction = "Forward_In_Time")
              {
                  const RandomPickerType walk_bias_enum = picker_type_from_string(walk_bias);
-                 const RandomPickerType* initial_edge_bias_enum_ptr = nullptr;
-                 if (initial_edge_bias.has_value())
-                 {
-                     static const RandomPickerType edge_bias_enum = picker_type_from_string(*initial_edge_bias);
-                     initial_edge_bias_enum_ptr = &edge_bias_enum;
-                 }
+                 std::optional<RandomPickerType> edge_bias_enum_opt;
+                 const RandomPickerType* initial_edge_bias_enum_ptr = get_picker_ptr_from_optional_string(
+                     initial_edge_bias, edge_bias_enum_opt);
 
                  WalkDirection walk_direction_enum = walk_direction_from_string(walk_direction);
 
@@ -358,12 +367,9 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                                         const std::string& walk_direction = "Forward_In_Time")
             {
                 const RandomPickerType walk_bias_enum = picker_type_from_string(walk_bias);
-                const RandomPickerType* initial_edge_bias_enum_ptr = nullptr;
-                if (initial_edge_bias.has_value())
-                {
-                    static const RandomPickerType edge_bias_enum = picker_type_from_string(*initial_edge_bias);
-                    initial_edge_bias_enum_ptr = &edge_bias_enum;
-                }
+                std::optional<RandomPickerType> edge_bias_enum_opt;
+                const RandomPickerType* initial_edge_bias_enum_ptr = get_picker_ptr_from_optional_string(
+                    initial_edge_bias, edge_bias_enum_opt);
 
                 const WalkDirection walk_direction_enum = walk_direction_from_string(walk_direction);
 
@@ -374,17 +380,26 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     initial_edge_bias_enum_ptr,
                     walk_direction_enum);
 
-                py::array_t nodes_array(static_cast<long>(walk_set.total_len), walk_set.nodes);
-                py::array_t timestamps_array(static_cast<long>(walk_set.total_len), walk_set.timestamps);
-                py::array_t walk_lens_array(static_cast<long>(walk_set.num_walks), walk_set.walk_lens);
+                const py::capsule nodes_capsule(walk_set.nodes, [](void* p) {
+                    if (p) {
+                        free(p);
+                    }
+                });
+                py::array_t nodes_array(static_cast<long>(walk_set.total_len), walk_set.nodes, nodes_capsule);
 
-                py::capsule nodes_capsule(walk_set.nodes, [](void* p) { free(p); });
-                py::capsule timestamps_capsule(walk_set.timestamps, [](void* p) { free(p); });
-                py::capsule walk_lens_capsule(walk_set.walk_lens, [](void* p) { free(p); });
+                const py::capsule timestamps_capsule(walk_set.timestamps, [](void* p) {
+                    if (p) {
+                        free(p);
+                    }
+                });
+                py::array_t timestamps_array(static_cast<long>(walk_set.total_len), walk_set.timestamps, timestamps_capsule);
 
-                nodes_array.attr("_capsule") = nodes_capsule;
-                timestamps_array.attr("_capsule") = timestamps_capsule;
-                walk_lens_array.attr("_capsule") = walk_lens_capsule;
+                const py::capsule walk_lens_capsule(walk_set.walk_lens, [](void* p) {
+                    if (p) {
+                        free(p);
+                    }
+                });
+                py::array_t walk_lens_array(static_cast<long>(walk_set.num_walks), walk_set.walk_lens, walk_lens_capsule);
 
                 walk_set.owns_data = false;
 
@@ -446,12 +461,9 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                                                const std::string& walk_direction = "Forward_In_Time")
              {
                  const RandomPickerType walk_bias_enum = picker_type_from_string(walk_bias);
-                 const RandomPickerType* initial_edge_bias_enum_ptr = nullptr;
-                 if (initial_edge_bias.has_value())
-                 {
-                     static const RandomPickerType edge_bias_enum = picker_type_from_string(*initial_edge_bias);
-                     initial_edge_bias_enum_ptr = &edge_bias_enum;
-                 }
+                 std::optional<RandomPickerType> edge_bias_enum_opt;
+                 const RandomPickerType* initial_edge_bias_enum_ptr = get_picker_ptr_from_optional_string(
+                     initial_edge_bias, edge_bias_enum_opt);
 
                  WalkDirection walk_direction_enum = walk_direction_from_string(walk_direction);
 
