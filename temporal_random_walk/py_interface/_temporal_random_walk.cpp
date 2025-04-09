@@ -88,6 +88,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
 
              Args:
                 edge_infos (List[Tuple[int, int, int]]): List of (source, target, timestamp) tuples.
+                    Node ids (source, target) should be dense integer numbers (0 - n). Please use some label encoding beforehand.
             )",
             py::arg("edge_infos")
         )
