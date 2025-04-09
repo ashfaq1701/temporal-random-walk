@@ -425,6 +425,7 @@ struct WalkSet {
     size_t walk_lens_size = 0;
 
     size_t total_len = 0;
+    bool owns_data = true;
 
     HOST WalkSet(): num_walks(0), max_len(0), use_gpu(false) {}
 
@@ -555,9 +556,15 @@ struct WalkSet {
 
     // Destructor
     HOST ~WalkSet() {
-        clear_memory(&nodes, use_gpu);
-        clear_memory(&timestamps, use_gpu);
-        clear_memory(&walk_lens, use_gpu);
+        if (owns_data) {
+            clear_memory(&nodes, use_gpu);
+            clear_memory(&timestamps, use_gpu);
+            clear_memory(&walk_lens, use_gpu);
+        } else {
+            nodes = nullptr;
+            timestamps = nullptr;
+            walk_lens = nullptr;
+        }
     }
 
     #ifdef HAS_CUDA

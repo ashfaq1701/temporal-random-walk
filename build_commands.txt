@@ -1,3 +1,5 @@
+compute-sanitizer --tool memcheck cmake-build-debug/bin/test_run_temporal_random_walk_2
+
 pip install -r requirements.txt
 python setup.py bdist_wheel
 

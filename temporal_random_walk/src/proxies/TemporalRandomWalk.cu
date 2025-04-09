@@ -35,7 +35,7 @@ TemporalRandomWalk::~TemporalRandomWalk() {
     delete temporal_random_walk;
 }
 
-void TemporalRandomWalk::add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges) {
+void TemporalRandomWalk::add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges) const {
     const auto edge_array = new Edge[edges.size()];
     for (size_t idx = 0; idx < edges.size(); idx++) {
         const auto& [u, i, ts] = edges[idx];
@@ -47,13 +47,12 @@ void TemporalRandomWalk::add_multiple_edges(const std::vector<std::tuple<int, in
     delete[] edge_array;
 }
 
-std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
+WalkSet TemporalRandomWalk::get_random_walks_and_times_for_all_nodes_raw(
         const int max_walk_len,
         const RandomPickerType* walk_bias,
         const int num_walks_per_node,
         const RandomPickerType* initial_edge_bias,
         const WalkDirection walk_direction) const {
-
     WalkSet walk_set;
 
     #ifdef HAS_CUDA
@@ -78,6 +77,23 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_
             walk_direction);
     }
 
+    return walk_set;
+}
+
+std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_times_for_all_nodes_formatted(
+        const int max_walk_len,
+        const RandomPickerType* walk_bias,
+        const int num_walks_per_node,
+        const RandomPickerType* initial_edge_bias,
+        const WalkDirection walk_direction) const {
+
+    const WalkSet walk_set = get_random_walks_and_times_for_all_nodes_raw(
+        max_walk_len,
+        walk_bias,
+        num_walks_per_node,
+        initial_edge_bias,
+        walk_direction);
+
     std::vector<std::vector<NodeWithTime>> walks(walk_set.num_walks);
     for (size_t walk_idx = 0; walk_idx < walk_set.num_walks; walk_idx++) {
         const size_t walk_len = walk_set.get_walk_len(static_cast<int>(walk_idx));
@@ -100,14 +116,14 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_
     return non_empty_walks;
 }
 
-std::vector<std::vector<int>> TemporalRandomWalk::get_random_walks_for_all_nodes(
+std::vector<std::vector<int>> TemporalRandomWalk::get_random_walks_for_all_nodes_formatted(
         const int max_walk_len,
         const RandomPickerType* walk_bias,
         const int num_walks_per_node,
         const RandomPickerType* initial_edge_bias,
         const WalkDirection walk_direction) const {
 
-    auto walks_with_times = get_random_walks_and_times_for_all_nodes(
+    auto walks_with_times = get_random_walks_and_times_for_all_nodes_formatted(
         max_walk_len, walk_bias, num_walks_per_node, initial_edge_bias, walk_direction);
 
     std::vector<std::vector<int>> result(walks_with_times.size());
@@ -121,7 +137,7 @@ std::vector<std::vector<int>> TemporalRandomWalk::get_random_walks_for_all_nodes
     return result;
 }
 
-std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_times(
+WalkSet TemporalRandomWalk::get_random_walks_and_times_raw(
         const int max_walk_len,
         const RandomPickerType* walk_bias,
         const int num_walks_total,
@@ -152,6 +168,23 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_
             walk_direction);
     }
 
+    return walk_set;
+}
+
+std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_times_formatted(
+        const int max_walk_len,
+        const RandomPickerType* walk_bias,
+        const int num_walks_total,
+        const RandomPickerType* initial_edge_bias,
+        const WalkDirection walk_direction) const {
+
+    const WalkSet walk_set = get_random_walks_and_times_raw(
+        max_walk_len,
+        walk_bias,
+        num_walks_total,
+        initial_edge_bias,
+        walk_direction);
+
     std::vector<std::vector<NodeWithTime>> walks(walk_set.num_walks);
     for (size_t walk_idx = 0; walk_idx < walk_set.num_walks; walk_idx++) {
         const size_t walk_len = walk_set.get_walk_len(static_cast<int>(walk_idx));
@@ -174,14 +207,14 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_
     return non_empty_walks;
 }
 
-std::vector<std::vector<int>> TemporalRandomWalk::get_random_walks(
+std::vector<std::vector<int>> TemporalRandomWalk::get_random_walks_formatted(
         const int max_walk_len,
         const RandomPickerType* walk_bias,
         const int num_walks_total,
         const RandomPickerType* initial_edge_bias,
         const WalkDirection walk_direction) const {
 
-    auto walks_with_times = get_random_walks_and_times(
+    auto walks_with_times = get_random_walks_and_times_formatted(
         max_walk_len, walk_bias, num_walks_total, initial_edge_bias, walk_direction);
 
     std::vector<std::vector<int>> result(walks_with_times.size());

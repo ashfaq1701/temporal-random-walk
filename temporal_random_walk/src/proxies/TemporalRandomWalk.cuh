@@ -29,30 +29,44 @@ public:
 
     ~TemporalRandomWalk();
 
-    void add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges);
+    void add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges) const;
 
-    std::vector<std::vector<NodeWithTime>> get_random_walks_and_times_for_all_nodes(
+    WalkSet get_random_walks_and_times_for_all_nodes_raw(
+        int max_walk_len,
+        const RandomPickerType* walk_bias,
+        int num_walks_per_node,
+        const RandomPickerType* initial_edge_bias,
+        WalkDirection walk_direction) const;
+
+    std::vector<std::vector<NodeWithTime>> get_random_walks_and_times_for_all_nodes_formatted(
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias=nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time) const;
 
-    std::vector<std::vector<int>> get_random_walks_for_all_nodes(
+    std::vector<std::vector<int>> get_random_walks_for_all_nodes_formatted(
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias=nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time) const;
 
-    std::vector<std::vector<NodeWithTime>> get_random_walks_and_times(
+    WalkSet get_random_walks_and_times_raw(
+        int max_walk_len,
+        const RandomPickerType* walk_bias,
+        int num_walks_total,
+        const RandomPickerType* initial_edge_bias,
+        WalkDirection walk_direction) const;
+
+    std::vector<std::vector<NodeWithTime>> get_random_walks_and_times_formatted(
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_total,
         const RandomPickerType* initial_edge_bias=nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time) const;
 
-    std::vector<std::vector<int>> get_random_walks(
+    std::vector<std::vector<int>> get_random_walks_formatted(
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_total,
