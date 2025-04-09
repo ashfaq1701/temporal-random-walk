@@ -6,16 +6,14 @@
 HOST void temporal_random_walk::add_multiple_edges(
     const TemporalRandomWalkStore* temporal_random_walk,
     const Edge* edge_infos,
-    const size_t num_edges,
-    const int max_node_id) {
+    const size_t num_edges) {
 
     #ifdef HAS_CUDA
     if (temporal_random_walk->use_gpu) {
         temporal_graph::add_multiple_edges_cuda(
             temporal_random_walk->temporal_graph,
             edge_infos,
-            num_edges,
-            max_node_id);
+            num_edges);
     }
     else
     #endif
@@ -23,8 +21,7 @@ HOST void temporal_random_walk::add_multiple_edges(
         temporal_graph::add_multiple_edges_std(
             temporal_random_walk->temporal_graph,
             edge_infos,
-            num_edges,
-            max_node_id);
+            num_edges);
     }
 }
 

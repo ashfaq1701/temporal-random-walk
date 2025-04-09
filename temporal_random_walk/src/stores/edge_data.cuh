@@ -95,7 +95,7 @@ namespace edge_data {
      */
     HOST void update_timestamp_groups_std(EdgeDataStore *edge_data);
 
-    HOST void populate_active_nodes_std(EdgeDataStore* edge_data, int max_node_id);
+    HOST void populate_active_nodes_std(EdgeDataStore* edge_data);
 
     HOST void update_temporal_weights_std(EdgeDataStore *edge_data, double timescale_bound);
 
@@ -106,7 +106,7 @@ namespace edge_data {
      */
     HOST void update_timestamp_groups_cuda(EdgeDataStore *edge_data);
 
-    HOST void populate_active_nodes_cuda(EdgeDataStore* edge_data, int max_node_id);
+    HOST void populate_active_nodes_cuda(EdgeDataStore* edge_data);
 
     HOST void update_temporal_weights_cuda(EdgeDataStore *edge_data, double timescale_bound);
 

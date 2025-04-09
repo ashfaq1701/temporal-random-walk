@@ -12,7 +12,7 @@ protected:
     NodeEdgeIndexTest(): index(T::value), edges(T::value) {}
 
     // Helper function to set up a simple directed graph
-    void setup_simple_directed_graph() {
+    void setup_simple_directed_graph() const {
         // Add edges with timestamps
         edges.push_back(10, 20, 100);  // Edge 0
         edges.push_back(10, 30, 100);  // Edge 1 - same timestamp as Edge 0
@@ -20,21 +20,19 @@ protected:
         edges.push_back(20, 30, 300);  // Edge 3
         edges.push_back(20, 10, 300);  // Edge 4 - same timestamp as Edge 3
         edges.update_timestamp_groups();
-        edges.populate_active_nodes(30);
 
         // Rebuild index
         index.rebuild(edges.edge_data, true);
     }
 
     // Helper function to set up a simple undirected graph
-    void setup_simple_undirected_graph() {
+    void setup_simple_undirected_graph() const {
         // Add edges with timestamps
         edges.push_back(100, 200, 1000);  // Edge 0
         edges.push_back(100, 300, 1000);  // Edge 1 - same timestamp as Edge 0
         edges.push_back(100, 200, 2000);  // Edge 2 - new timestamp
         edges.push_back(200, 300, 3000);  // Edge 3
         edges.update_timestamp_groups();
-        edges.populate_active_nodes(300);
 
         // Rebuild index
         index.rebuild(edges.edge_data, false);
@@ -198,7 +196,6 @@ TYPED_TEST(NodeEdgeIndexTest, EdgeCasesTest) {
     // Test node with no edges
     this->edges.push_back(4, 5, 400);  // Add isolated node
     this->edges.update_timestamp_groups();
-    this->edges.populate_active_nodes(30);
 
     this->index.rebuild(this->edges.edge_data, true);
 

@@ -64,7 +64,6 @@ protected:
         edges.push_back(2, 4, 30); // Different timestamp groups for node 2
         edges.push_back(3, 4, 40);
         edges.update_timestamp_groups();
-        edges.populate_active_nodes(4);
 
         index = NodeEdgeIndex(T::value);  // CPU mode
         index.rebuild(edges.edge_data, directed);
@@ -117,7 +116,6 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightBiasPerNode) {
     edges.push_back(1, 3, 20);
     edges.push_back(1, 4, 30);
     edges.update_timestamp_groups();
-    edges.populate_active_nodes(4);
 
     this->index = NodeEdgeIndex(TypeParam::value);
     this->index.rebuild(edges.edge_data, true);
@@ -150,7 +148,6 @@ TYPED_TEST(NodeEdgeIndexWeightTest, ScaledWeightRatios) {
     edges.push_back(1, 3, 300);
     edges.push_back(1, 4, 500);
     edges.update_timestamp_groups();
-    edges.populate_active_nodes(4);
 
     this->index = NodeEdgeIndex(TypeParam::value);
     this->index.rebuild(edges.edge_data, true);
@@ -209,7 +206,6 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightConsistencyAcrossUpdates) {
    edges.push_back(1, 2, 10);
    edges.push_back(1, 3, 10);
    edges.update_timestamp_groups();
-   edges.populate_active_nodes(3);
 
    this->index.rebuild(edges.edge_data, true);
    this->index.update_temporal_weights(edges.edge_data, -1);
@@ -227,7 +223,6 @@ TYPED_TEST(NodeEdgeIndexWeightTest, SingleTimestampGroupPerNode) {
    edges.push_back(1, 3, 10);
    edges.push_back(2, 3, 10);
    edges.update_timestamp_groups();
-   edges.populate_active_nodes(3);
 
    this->index.rebuild(edges.edge_data, true);
    this->index.update_temporal_weights(edges.edge_data, -1);
@@ -250,7 +245,6 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundZero) {
     edges.push_back(1, 3, 20);
     edges.push_back(1, 4, 30);
     edges.update_timestamp_groups();
-    edges.populate_active_nodes(4);
 
     this->index.rebuild(edges.edge_data, true);
     this->index.update_temporal_weights(edges.edge_data, 0);  // Should behave like -1
@@ -269,7 +263,6 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundWithSingleTimestamp) {
     edges.push_back(node_id, 3, 10);
     edges.push_back(node_id, 4, 10);
     edges.update_timestamp_groups();
-    edges.populate_active_nodes(4);
 
     this->index.rebuild(edges.edge_data, true);
 
@@ -292,7 +285,6 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightOrderPreservation) {
     edges.push_back(1, 3, 20);
     edges.push_back(1, 4, 30);
     edges.update_timestamp_groups();
-    edges.populate_active_nodes(4);
 
     this->index.rebuild(edges.edge_data, true);
 
@@ -325,7 +317,6 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleNormalizationTest) {
     edges.push_back(1, 4, 1000);      // 800 units
     edges.push_back(1, 5, 100000);    // Large gap
     edges.update_timestamp_groups();
-    edges.populate_active_nodes(5);
 
     this->index = NodeEdgeIndex(TypeParam::value);  // CPU mode
     this->index.rebuild(edges.edge_data, true);

@@ -1,4 +1,3 @@
-
 cmake_minimum_required(VERSION 3.24)
 project(temporal_random_walk)
 
@@ -21,14 +20,24 @@ endif()
 
 # Get pybind11 include path using the correct Python executable
 execute_process(
-        COMMAND ${Python3_EXECUTABLE} -m pybind11 --includes
-        OUTPUT_VARIABLE PYBIND11_INCLUDES
+        COMMAND ${Python3_EXECUTABLE} -c "import pybind11; print(f'{pybind11.get_include()}/../share/cmake/pybind11')"
+        OUTPUT_VARIABLE PYBIND11_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH};${PYBIND11_DIR}")
+
+# Get Python version dynamically
+execute_process(
+        COMMAND ${Python3_EXECUTABLE} -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+        OUTPUT_VARIABLE DETECTED_PYTHON_VERSION
         OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-# Extract only the include paths from the result
-string(REGEX MATCHALL "-I[^ ]+" PYBIND11_INCLUDE_FLAGS "${PYBIND11_INCLUDES}")
-string(REPLACE "-I" "" PYBIND11_INCLUDE_DIRS "${PYBIND11_INCLUDE_FLAGS}")
+# Set pybind11 Python version to match detected version
+set(PYBIND11_PYTHON_VERSION ${DETECTED_PYTHON_VERSION} CACHE STRING "Python version used for pybind11")
+message(STATUS "Setting pybind11 Python version to: ${PYBIND11_PYTHON_VERSION}")
+
+find_package(pybind11 REQUIRED)
 
 option(HAS_CUDA "Enable CUDA support" ON)
 

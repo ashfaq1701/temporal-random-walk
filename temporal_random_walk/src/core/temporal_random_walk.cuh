@@ -76,8 +76,7 @@ namespace temporal_random_walk {
     HOST void add_multiple_edges(
         const TemporalRandomWalkStore* temporal_random_walk,
         const Edge* edge_infos,
-        size_t num_edges,
-        int max_node_id);
+        size_t num_edges);
 
     HOST size_t get_node_count(const TemporalRandomWalkStore* temporal_random_walk);
 

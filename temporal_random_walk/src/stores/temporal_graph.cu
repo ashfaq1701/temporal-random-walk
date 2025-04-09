@@ -54,8 +54,7 @@ HOST DataBlock<Edge> temporal_graph::get_edges(const TemporalGraphStore* graph) 
 HOST void temporal_graph::add_multiple_edges_std(
     TemporalGraphStore* graph,
     const Edge* new_edges,
-    const size_t num_new_edges,
-    const int max_node_id) {
+    const size_t num_new_edges) {
 
     if (num_new_edges == 0) return;
 
@@ -94,7 +93,7 @@ HOST void temporal_graph::add_multiple_edges_std(
     }
 
     // Populate active node ids
-    edge_data::populate_active_nodes_std(graph->edge_data, max_node_id);
+    edge_data::populate_active_nodes_std(graph->edge_data);
 
     // Update timestamp groups
     edge_data::update_timestamp_groups_std(graph->edge_data);
@@ -338,8 +337,7 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_std(TemporalGraph
 HOST void temporal_graph::add_multiple_edges_cuda(
     TemporalGraphStore* graph,
     const Edge* new_edges,
-    const size_t num_new_edges,
-    const int max_node_id) {
+    const size_t num_new_edges) {
 
     if (num_new_edges == 0) return;
 
@@ -407,7 +405,7 @@ HOST void temporal_graph::add_multiple_edges_cuda(
     }
 
     // Populate active node ids
-    edge_data::populate_active_nodes_cuda(graph->edge_data, max_node_id);
+    edge_data::populate_active_nodes_cuda(graph->edge_data);
 
     // Update timestamp groups
     edge_data::update_timestamp_groups_cuda(graph->edge_data);

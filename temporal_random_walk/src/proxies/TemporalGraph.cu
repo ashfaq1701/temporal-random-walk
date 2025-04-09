@@ -151,7 +151,7 @@ std::vector<Edge> TemporalGraph::get_edges() const {
     return result;
 }
 
-void TemporalGraph::add_multiple_edges(const std::vector<Edge>& new_edges, const int max_node_id) const {
+void TemporalGraph::add_multiple_edges(const std::vector<Edge>& new_edges) const {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         // Allocate device memory for edges
@@ -162,7 +162,7 @@ void TemporalGraph::add_multiple_edges(const std::vector<Edge>& new_edges, const
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_edges, new_edges.data(), new_edges.size() * sizeof(Edge), cudaMemcpyHostToDevice));
 
         // Call CUDA implementation
-        temporal_graph::add_multiple_edges_cuda(graph, d_edges, new_edges.size(), max_node_id);
+        temporal_graph::add_multiple_edges_cuda(graph, d_edges, new_edges.size());
 
         // Clean up
         CUDA_CHECK_AND_CLEAR(cudaFree(d_edges));
@@ -171,7 +171,7 @@ void TemporalGraph::add_multiple_edges(const std::vector<Edge>& new_edges, const
     #endif
     {
         // Call CPU implementation directly
-        temporal_graph::add_multiple_edges_std(graph, new_edges.data(), new_edges.size(), max_node_id);
+        temporal_graph::add_multiple_edges_std(graph, new_edges.data(), new_edges.size());
     }
 }
 

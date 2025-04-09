@@ -39,21 +39,10 @@ void TemporalRandomWalk::add_multiple_edges(const std::vector<std::tuple<int, in
     const auto edge_array = new Edge[edges.size()];
     for (size_t idx = 0; idx < edges.size(); idx++) {
         const auto& [u, i, ts] = edges[idx];
-
-        if (node_index.find(u) == node_index.end()) {
-            node_index[u] = ++running_node_id;
-            reverse_node_index[running_node_id] = u;
-        }
-
-        if (node_index.find(i) == node_index.end()) {
-            node_index[i] = ++running_node_id;
-            reverse_node_index[running_node_id] = i;
-        }
-
-        edge_array[idx] = Edge(node_index[u], node_index[i], ts);
+        edge_array[idx] = Edge(u, i, ts);
     }
 
-    temporal_random_walk::add_multiple_edges(temporal_random_walk, edge_array, edges.size(), running_node_id);
+    temporal_random_walk::add_multiple_edges(temporal_random_walk, edge_array, edges.size());
 
     delete[] edge_array;
 }
@@ -98,8 +87,7 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_
         for (size_t hop = 0; hop < walk_len; hop++) {
             NodeWithTime node_time = walk_set.get_walk_hop(
                 static_cast<int>(walk_idx),
-                static_cast<int>(hop),
-                &reverse_node_index);
+                static_cast<int>(hop));
 
             walks[walk_idx].push_back(node_time);
         }
@@ -173,8 +161,7 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_
         for (size_t hop = 0; hop < walk_len; hop++) {
             NodeWithTime node_time = walk_set.get_walk_hop(
                 static_cast<int>(walk_idx),
-                static_cast<int>(hop),
-                &reverse_node_index);
+                static_cast<int>(hop));
 
             walks[walk_idx].push_back(node_time);
         }
@@ -278,8 +265,8 @@ std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() {
 
         for (size_t i = 0; i < edges.size; i++) {
             result.emplace_back(
-                reverse_node_index[host_edges[i].u],
-                reverse_node_index[host_edges[i].i],
+                host_edges[i].u,
+                host_edges[i].i,
                 host_edges[i].ts);
         }
 
@@ -290,8 +277,8 @@ std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() {
     {
         for (size_t i = 0; i < edges.size; i++) {
             result.emplace_back(
-                reverse_node_index[edges.data[i].u],
-                reverse_node_index[edges.data[i].i],
+                edges.data[i].u,
+                edges.data[i].i,
                 edges.data[i].ts);
         }
     }

@@ -80,8 +80,7 @@ namespace temporal_graph {
     HOST void add_multiple_edges_std(
         TemporalGraphStore* graph,
         const Edge* new_edges,
-        size_t num_new_edges,
-        int max_node_id);
+        size_t num_new_edges);
 
     HOST void sort_and_merge_edges_std(TemporalGraphStore* graph, size_t start_idx);
 
@@ -104,8 +103,7 @@ namespace temporal_graph {
     HOST void add_multiple_edges_cuda(
         TemporalGraphStore* graph,
         const Edge* new_edges,
-        size_t num_new_edges,
-        int max_node_id);
+        size_t num_new_edges);
 
     HOST void sort_and_merge_edges_cuda(TemporalGraphStore* graph, size_t start_idx);
 

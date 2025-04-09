@@ -45,7 +45,7 @@ public:
 
     [[nodiscard]] std::vector<Edge> get_edges() const;
 
-    void add_multiple_edges(const std::vector<Edge>& new_edges, int max_node_id) const;
+    void add_multiple_edges(const std::vector<Edge>& new_edges) const;
 
     void sort_and_merge_edges(size_t start_idx) const;
 

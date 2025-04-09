@@ -162,10 +162,6 @@ public:
 
     EdgeData& operator=(const EdgeData& other);
 
-    void resize(size_t size) const;
-
-    void clear() const;
-
     [[nodiscard]] size_t size() const;
 
     void set_size(size_t size) const;
@@ -179,8 +175,6 @@ public:
     [[nodiscard]] std::vector<Edge> get_edges() const;
 
     void update_timestamp_groups() const;
-
-    void populate_active_nodes(int max_node_id) const;
 
     void update_temporal_weights(double timescale_bound) const;
 

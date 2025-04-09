@@ -222,18 +222,6 @@ void EdgeData::update_timestamp_groups() const {
     }
 }
 
-void EdgeData::populate_active_nodes(const int max_node_id) const {
-    #ifdef HAS_CUDA
-    if (edge_data->use_gpu) {
-        edge_data::populate_active_nodes_cuda(edge_data, max_node_id);
-    }
-    else
-    #endif
-    {
-        edge_data::populate_active_nodes_std(edge_data, max_node_id);
-    }
-}
-
 void EdgeData::update_temporal_weights(double timescale_bound) const {
     #ifdef HAS_CUDA
     if (edge_data->use_gpu) {

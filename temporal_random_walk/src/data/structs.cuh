@@ -639,7 +639,7 @@ struct WalkSet {
         return walk_lens[walk_number];
     }
 
-    HOST NodeWithTime get_walk_hop(const int walk_number, const int hop_number, const std::unordered_map<int, int>* reverse_node_index=nullptr) const {
+    HOST NodeWithTime get_walk_hop(const int walk_number, const int hop_number) const {
         #ifdef HAS_CUDA
         if (use_gpu) {
             // Need to copy from device to host
@@ -656,11 +656,7 @@ struct WalkSet {
             CUDA_CHECK_AND_CLEAR(cudaMemcpy(&node, &nodes[offset], sizeof(int), cudaMemcpyDeviceToHost));
             CUDA_CHECK_AND_CLEAR(cudaMemcpy(&timestamp, &timestamps[offset], sizeof(int64_t), cudaMemcpyDeviceToHost));
 
-            if (!reverse_node_index) {
-                return NodeWithTime{node, timestamp};
-            } else {
-                return NodeWithTime{reverse_node_index->at(node), timestamp};
-            }
+            return NodeWithTime{node, timestamp};
         }
         else
         #endif
@@ -672,11 +668,7 @@ struct WalkSet {
 
             const size_t offset = walk_number * max_len + hop_number;
 
-            if (!reverse_node_index) {
-                return NodeWithTime{nodes[offset], timestamps[offset]};
-            } else {
-                return NodeWithTime{reverse_node_index->at(nodes[offset]), timestamps[offset]};
-            }
+            return NodeWithTime{nodes[offset], timestamps[offset]};
         }
     }
 

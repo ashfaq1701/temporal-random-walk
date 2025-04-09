@@ -210,6 +210,31 @@ HOST size_t edge_data::active_node_count(const EdgeDataStore* edge_data) {
     return count;
 }
 
+HOST void edge_data::populate_active_nodes_std(EdgeDataStore* edge_data) {
+    const size_t num_edges = size(edge_data);
+    if (num_edges == 0) {
+        return;
+    }
+
+    int max_node_id = -1;
+    for (size_t i = 0; i < edge_data->sources_size; i++) {
+        int src_node = edge_data->sources[i];
+        int tgt_node = edge_data->targets[i];
+
+        max_node_id = std::max(std::max(max_node_id, src_node), tgt_node);
+    }
+
+    allocate_memory(&edge_data->active_node_ids, max_node_id + 1, edge_data->use_gpu);
+    edge_data->active_node_ids_size = max_node_id + 1;
+
+    fill_memory(edge_data->active_node_ids, max_node_id + 1, 0, edge_data->use_gpu);
+
+    for (size_t i = 0; i < size(edge_data); i++) {
+        edge_data->active_node_ids[edge_data->sources[i]] = 1;
+        edge_data->active_node_ids[edge_data->targets[i]] = 1;
+    }
+}
+
 HOST void edge_data::update_timestamp_groups_std(EdgeDataStore *edge_data) {
     if (edge_data->timestamps_size == 0) {
         clear_memory(&edge_data->timestamp_group_offsets, edge_data->use_gpu);
@@ -249,18 +274,8 @@ HOST void edge_data::update_timestamp_groups_std(EdgeDataStore *edge_data) {
         edge_data->timestamps_size,
         edge_data->unique_timestamps_size,
         edge_data->use_gpu);
-}
 
-HOST void edge_data::populate_active_nodes_std(EdgeDataStore* edge_data, const int max_node_id) {
-    allocate_memory(&edge_data->active_node_ids, max_node_id + 1, edge_data->use_gpu);
-    edge_data->active_node_ids_size = max_node_id + 1;
-
-    fill_memory(edge_data->active_node_ids, max_node_id + 1, 0, edge_data->use_gpu);
-
-    for (size_t i = 0; i < size(edge_data); i++) {
-        edge_data->active_node_ids[edge_data->sources[i]] = 1;
-        edge_data->active_node_ids[edge_data->targets[i]] = 1;
-    }
+    populate_active_nodes_std(edge_data);
 }
 
 HOST void edge_data::update_temporal_weights_std(EdgeDataStore *edge_data, const double timescale_bound) {
@@ -327,6 +342,61 @@ HOST void edge_data::update_temporal_weights_std(EdgeDataStore *edge_data, const
 }
 
 #ifdef HAS_CUDA
+
+HOST void edge_data::populate_active_nodes_cuda(EdgeDataStore* edge_data) {
+    const size_t num_edges = size(edge_data);
+    if (num_edges == 0) {
+        return;
+    }
+
+    const thrust::device_ptr<int> d_sources(edge_data->sources);
+    const thrust::device_ptr<int> d_targets(edge_data->targets);
+
+    const int max_source = thrust::reduce(
+        DEVICE_EXECUTION_POLICY,
+        d_sources,
+        d_sources + static_cast<long>(num_edges),
+        0,
+        thrust::maximum<int>()
+    );
+
+    const int max_target = thrust::reduce(
+        DEVICE_EXECUTION_POLICY,
+        d_targets,
+        d_targets + static_cast<long>(num_edges),
+        0,
+        thrust::maximum<int>()
+    );
+
+    int max_node_id = std::max(max_source, max_target);
+
+    allocate_memory(&edge_data->active_node_ids, max_node_id + 1, edge_data->use_gpu);
+    edge_data->active_node_ids_size = max_node_id + 1;
+
+    fill_memory(edge_data->active_node_ids, max_node_id + 1, 0, edge_data->use_gpu);
+
+    thrust::device_ptr<int> d_active_nodes(edge_data->active_node_ids);
+
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        d_sources,
+        d_sources + static_cast<long>(num_edges),
+        [d_active_nodes] __device__ (int source_id) {
+            d_active_nodes[source_id] = 1;
+        }
+    );
+    CUDA_KERNEL_CHECK("After thrust for_each sources in populate_active_nodes_cuda");
+
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        d_targets,
+        d_targets + static_cast<long>(num_edges),
+        [d_active_nodes] __device__ (int target_id) {
+            d_active_nodes[target_id] = 1;
+        }
+    );
+    CUDA_KERNEL_CHECK("After thrust for_each targets in populate_active_nodes_cuda");
+}
 
 HOST void edge_data::update_timestamp_groups_cuda(EdgeDataStore *edge_data) {
     if (edge_data->timestamps_size == 0) {
@@ -412,42 +482,8 @@ HOST void edge_data::update_timestamp_groups_cuda(EdgeDataStore *edge_data) {
 
     // Free temporary memory
     CUDA_CHECK_AND_CLEAR(cudaFree(d_flags));
-}
 
-HOST void edge_data::populate_active_nodes_cuda(EdgeDataStore* edge_data, const int max_node_id) {
-    allocate_memory(&edge_data->active_node_ids, max_node_id + 1, edge_data->use_gpu);
-    edge_data->active_node_ids_size = max_node_id + 1;
-
-    fill_memory(edge_data->active_node_ids, max_node_id + 1, 0, edge_data->use_gpu);
-
-    const size_t num_edges = size(edge_data);
-    if (num_edges == 0) {
-        return;
-    }
-
-    const thrust::device_ptr<int> d_sources(edge_data->sources);
-    const thrust::device_ptr<int> d_targets(edge_data->targets);
-    thrust::device_ptr<int> d_active_nodes(edge_data->active_node_ids);
-
-    thrust::for_each(
-        DEVICE_EXECUTION_POLICY,
-        d_sources,
-        d_sources + static_cast<long>(num_edges),
-        [d_active_nodes] __device__ (int source_id) {
-            d_active_nodes[source_id] = 1;
-        }
-    );
-    CUDA_KERNEL_CHECK("After thrust for_each sources in populate_active_nodes_cuda");
-
-    thrust::for_each(
-        DEVICE_EXECUTION_POLICY,
-        d_targets,
-        d_targets + static_cast<long>(num_edges),
-        [d_active_nodes] __device__ (int target_id) {
-            d_active_nodes[target_id] = 1;
-        }
-    );
-    CUDA_KERNEL_CHECK("After thrust for_each targets in populate_active_nodes_cuda");
+    populate_active_nodes_cuda(edge_data);
 }
 
 HOST void edge_data::update_temporal_weights_cuda(EdgeDataStore *edge_data, double timescale_bound) {
