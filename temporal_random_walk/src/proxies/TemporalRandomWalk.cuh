@@ -38,14 +38,7 @@ public:
         const RandomPickerType* initial_edge_bias,
         WalkDirection walk_direction) const;
 
-    std::vector<std::vector<NodeWithTime>> get_random_walks_and_times_for_all_nodes_formatted(
-        int max_walk_len,
-        const RandomPickerType* walk_bias,
-        int num_walks_per_node,
-        const RandomPickerType* initial_edge_bias=nullptr,
-        WalkDirection walk_direction=WalkDirection::Forward_In_Time) const;
-
-    std::vector<std::vector<int>> get_random_walks_for_all_nodes_formatted(
+    std::vector<std::tuple<std::vector<int>, std::vector<int64_t>>> get_random_walks_and_times_for_all_nodes(
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_per_node,
@@ -59,14 +52,7 @@ public:
         const RandomPickerType* initial_edge_bias,
         WalkDirection walk_direction) const;
 
-    std::vector<std::vector<NodeWithTime>> get_random_walks_and_times_formatted(
-        int max_walk_len,
-        const RandomPickerType* walk_bias,
-        int num_walks_total,
-        const RandomPickerType* initial_edge_bias=nullptr,
-        WalkDirection walk_direction=WalkDirection::Forward_In_Time) const;
-
-    std::vector<std::vector<int>> get_random_walks_formatted(
+    std::vector<std::tuple<std::vector<int>, std::vector<int64_t>>> get_random_walks_and_times(
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_total,

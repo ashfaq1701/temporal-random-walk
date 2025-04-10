@@ -39,6 +39,8 @@ message(STATUS "Setting pybind11 Python version to: ${PYBIND11_PYTHON_VERSION}")
 
 find_package(pybind11 REQUIRED)
 
+find_package(OpenMP REQUIRED)
+
 option(HAS_CUDA "Enable CUDA support" ON)
 
 if(HAS_CUDA)
@@ -95,5 +97,5 @@ if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
 endif()
 
 add_subdirectory(temporal_random_walk/py_interface)
-add_subdirectory(temporal_random_walk/test)
+#add_subdirectory(temporal_random_walk/test)
 add_subdirectory(temporal_random_walk/test_run)

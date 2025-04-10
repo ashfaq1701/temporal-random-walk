@@ -80,7 +80,7 @@ WalkSet TemporalRandomWalk::get_random_walks_and_times_for_all_nodes_raw(
     return walk_set;
 }
 
-std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_times_for_all_nodes_formatted(
+std::vector<std::tuple<std::vector<int>, std::vector<int64_t>>> TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
         const int max_walk_len,
         const RandomPickerType* walk_bias,
         const int num_walks_per_node,
@@ -94,44 +94,26 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_
         initial_edge_bias,
         walk_direction);
 
-    std::vector<std::vector<NodeWithTime>> walks(walk_set.num_walks);
+    std::vector<std::tuple<std::vector<int>, std::vector<int64_t>>> result;
+
+    std::mutex result_mutex;
+
+    #pragma omp parallel for default(none) shared(walk_set, max_walk_len, result, result_mutex)
     for (size_t walk_idx = 0; walk_idx < walk_set.num_walks; walk_idx++) {
-        const size_t walk_len = walk_set.get_walk_len(static_cast<int>(walk_idx));
+        const size_t walk_len = walk_set.walk_lens[walk_idx];
 
-        walks[walk_idx].reserve(walk_len);
+        // Skip empty walks
+        if (walk_len == 0) continue;
 
-        for (size_t hop = 0; hop < walk_len; hop++) {
-            NodeWithTime node_time = walk_set.get_walk_hop(
-                static_cast<int>(walk_idx),
-                static_cast<int>(hop));
+        // Calculate base pointers for this walk
+        const int* nodes_ptr = walk_set.nodes + (walk_idx * max_walk_len);
+        const int64_t* timestamps_ptr = walk_set.timestamps + (walk_idx * max_walk_len);
 
-            walks[walk_idx].push_back(node_time);
-        }
-    }
+        std::vector<int> nodes(nodes_ptr, nodes_ptr + walk_len);
+        std::vector<int64_t> timestamps(timestamps_ptr, timestamps_ptr + walk_len);
 
-    std::vector<std::vector<NodeWithTime>> non_empty_walks;
-    std::copy_if(walks.begin(), walks.end(), std::back_inserter(non_empty_walks),
-                 [](const std::vector<NodeWithTime>& v) { return !v.empty(); });
-
-    return non_empty_walks;
-}
-
-std::vector<std::vector<int>> TemporalRandomWalk::get_random_walks_for_all_nodes_formatted(
-        const int max_walk_len,
-        const RandomPickerType* walk_bias,
-        const int num_walks_per_node,
-        const RandomPickerType* initial_edge_bias,
-        const WalkDirection walk_direction) const {
-
-    auto walks_with_times = get_random_walks_and_times_for_all_nodes_formatted(
-        max_walk_len, walk_bias, num_walks_per_node, initial_edge_bias, walk_direction);
-
-    std::vector<std::vector<int>> result(walks_with_times.size());
-    for (size_t i = 0; i < walks_with_times.size(); i++) {
-        result[i].reserve(walks_with_times[i].size());
-        for (const auto& node_time : walks_with_times[i]) {
-            result[i].push_back(node_time.node);
-        }
+        std::lock_guard<std::mutex> lock(result_mutex);
+        result.emplace_back(std::move(nodes), std::move(timestamps));
     }
 
     return result;
@@ -171,7 +153,7 @@ WalkSet TemporalRandomWalk::get_random_walks_and_times_raw(
     return walk_set;
 }
 
-std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_times_formatted(
+std::vector<std::tuple<std::vector<int>, std::vector<int64_t>>> TemporalRandomWalk::get_random_walks_and_times(
         const int max_walk_len,
         const RandomPickerType* walk_bias,
         const int num_walks_total,
@@ -185,44 +167,26 @@ std::vector<std::vector<NodeWithTime>> TemporalRandomWalk::get_random_walks_and_
         initial_edge_bias,
         walk_direction);
 
-    std::vector<std::vector<NodeWithTime>> walks(walk_set.num_walks);
+    std::vector<std::tuple<std::vector<int>, std::vector<int64_t>>> result;
+
+    std::mutex result_mutex;
+
+    #pragma omp parallel for default(none) shared(walk_set, max_walk_len, result, result_mutex)
     for (size_t walk_idx = 0; walk_idx < walk_set.num_walks; walk_idx++) {
-        const size_t walk_len = walk_set.get_walk_len(static_cast<int>(walk_idx));
+        const size_t walk_len = walk_set.walk_lens[walk_idx];
 
-        walks[walk_idx].reserve(walk_len);
+        // Skip empty walks
+        if (walk_len == 0) continue;
 
-        for (size_t hop = 0; hop < walk_len; hop++) {
-            NodeWithTime node_time = walk_set.get_walk_hop(
-                static_cast<int>(walk_idx),
-                static_cast<int>(hop));
+        // Calculate base pointers for this walk
+        const int* nodes_ptr = walk_set.nodes + (walk_idx * max_walk_len);
+        const int64_t* timestamps_ptr = walk_set.timestamps + (walk_idx * max_walk_len);
 
-            walks[walk_idx].push_back(node_time);
-        }
-    }
+        std::vector<int> nodes(nodes_ptr, nodes_ptr + walk_len);
+        std::vector<int64_t> timestamps(timestamps_ptr, timestamps_ptr + walk_len);
 
-    std::vector<std::vector<NodeWithTime>> non_empty_walks;
-    std::copy_if(walks.begin(), walks.end(), std::back_inserter(non_empty_walks),
-                 [](const std::vector<NodeWithTime>& v) { return !v.empty(); });
-
-    return non_empty_walks;
-}
-
-std::vector<std::vector<int>> TemporalRandomWalk::get_random_walks_formatted(
-        const int max_walk_len,
-        const RandomPickerType* walk_bias,
-        const int num_walks_total,
-        const RandomPickerType* initial_edge_bias,
-        const WalkDirection walk_direction) const {
-
-    auto walks_with_times = get_random_walks_and_times_formatted(
-        max_walk_len, walk_bias, num_walks_total, initial_edge_bias, walk_direction);
-
-    std::vector<std::vector<int>> result(walks_with_times.size());
-    for (size_t i = 0; i < walks_with_times.size(); i++) {
-        result[i].reserve(walks_with_times[i].size());
-        for (const auto& node_time : walks_with_times[i]) {
-            result[i].push_back(node_time.node);
-        }
+        std::lock_guard<std::mutex> lock(result_mutex);
+        result.emplace_back(std::move(nodes), std::move(timestamps));
     }
 
     return result;

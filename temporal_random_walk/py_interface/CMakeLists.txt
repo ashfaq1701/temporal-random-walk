@@ -10,12 +10,17 @@ set_target_properties(_temporal_random_walk PROPERTIES
         POSITION_INDEPENDENT_CODE ON
 )
 
+target_link_libraries(_temporal_random_walk PRIVATE OpenMP::OpenMP_CXX)
+
 if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
     set_source_files_properties(
             ${MODULE_SRC_FILES}
             PROPERTIES
             LANGUAGE CUDA
     )
+
+    set_property(TARGET _temporal_random_walk PROPERTY
+            CUDA_HOST_COMPILER_OPTIONS "${OpenMP_CXX_FLAGS}")
 
     target_link_libraries(_temporal_random_walk PRIVATE
             CUDA::cudart

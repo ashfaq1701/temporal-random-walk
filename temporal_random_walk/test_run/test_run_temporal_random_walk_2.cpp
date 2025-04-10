@@ -47,28 +47,28 @@ int main(int argc, char* argv[]) {
 
     start = std::chrono::high_resolution_clock::now();
 
-    const auto walks_backward_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times_formatted(
+    const auto walks_backward_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
         80,
         &exponential_picker_type,
         NUM_WALKS_TOTAL,
         &uniform_picker_type,
         WalkDirection::Backward_In_Time);
 
-    const auto walks_backward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times_formatted(
+    const auto walks_backward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
         80,
         &exponential_picker_type,
         NUM_WALKS_TOTAL,
         &uniform_picker_type,
         WalkDirection::Backward_In_Time);
 
-    const auto walks_forward_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times_formatted(
+    const auto walks_forward_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
         80,
         &exponential_picker_type,
         NUM_WALKS_TOTAL,
         &uniform_picker_type,
         WalkDirection::Forward_In_Time);
 
-    const auto walks_forward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times_formatted(
+    const auto walks_forward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
         80,
         &exponential_picker_type,
         NUM_WALKS_TOTAL,
@@ -83,10 +83,7 @@ int main(int argc, char* argv[]) {
     duration = end - start;
     std::cout << "Walk generation time: " << duration.count() << " seconds" << std::endl;
 
-    std::vector<std::vector<NodeWithTime>> first_100_walks_forward;
-    first_100_walks_forward.assign(walks_forward_for_all_nodes_2.begin(), walks_forward_for_all_nodes_2.begin() + std::min(NUM_WALKS_TOTAL, 100));
-
-    print_temporal_random_walks_with_times(first_100_walks_forward);
+    print_temporal_random_walks_with_times(walks_backward_for_all_nodes_1, 100);
 
     return 0;
 }

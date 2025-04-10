@@ -5,6 +5,8 @@ function(add_test_executable target_name source_file)
 
     target_compile_features(${target_name} PRIVATE cxx_std_17)
 
+    target_link_libraries(${target_name} PRIVATE OpenMP::OpenMP_CXX)
+
     if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
         set_source_files_properties(
                 ${MOD_SRC_FILES}
@@ -17,7 +19,11 @@ function(add_test_executable target_name source_file)
                 CUDA_RESOLVE_DEVICE_SYMBOLS ON
         )
 
+        set_property(TARGET ${target_name} PROPERTY
+                CUDA_HOST_COMPILER_OPTIONS "${OpenMP_CXX_FLAGS}")
+
         target_link_libraries(${target_name} PRIVATE
+                OpenMP::OpenMP_CXX
                 CUDA::cudart
                 CUDA::cuda_driver
                 cuda
