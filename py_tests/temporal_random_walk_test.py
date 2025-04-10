@@ -8,7 +8,8 @@ GPU_USAGE_MODE = False
 
 def print_walks_for_nodes(walks):
     for idx, walk in enumerate(walks):
-        print(f"Walk {idx}: {','.join(map(str, walk))}")
+        nodes, timestamps = walk
+        print(f"Walk {idx}: {','.join(map(str, nodes))}, Timestamps: {','.join(map(str, timestamps))}")
 
 if __name__ == '__main__':
     temporal_random_walk_obj = TemporalRandomWalk(
