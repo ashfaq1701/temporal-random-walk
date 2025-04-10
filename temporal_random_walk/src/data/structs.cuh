@@ -2,6 +2,8 @@
 #define STRUCTS_H
 
 #include <cstddef>
+
+#include "../common/const.cuh"
 #include "../common/memory.cuh"
 #include "../common/macros.cuh"
 
@@ -435,16 +437,16 @@ struct WalkSet {
         total_len = num_walks * max_len;
 
         allocate_memory(&nodes, total_len, use_gpu);
+        fill_memory(nodes, total_len, EMPTY_NODE_VALUE, use_gpu);
         nodes_size = total_len;
 
         allocate_memory(&timestamps, total_len, use_gpu);
+        fill_memory(timestamps, total_len, EMPTY_TIMESTAMP_VALUE, use_gpu);
         timestamps_size = total_len;
 
         allocate_memory(&walk_lens, num_walks, use_gpu);
-        walk_lens_size = num_walks;
-
-        // Initialize walk_lens to zero
         fill_memory(walk_lens, num_walks, static_cast<size_t>(0), use_gpu);
+        walk_lens_size = num_walks;
     }
 
     // Copy constructor
