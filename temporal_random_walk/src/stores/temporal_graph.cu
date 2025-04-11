@@ -434,6 +434,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
         [d_timestamps] __device__ (size_t i, size_t j) {
             return d_timestamps[i] < d_timestamps[j];
         });
+    CUDA_KERNEL_CHECK("After thrust sort in sort_and_merge_edges_cuda");
 
     // === Step 3: Allocate temp arrays for sorted edges ===
     int *d_sorted_sources = nullptr, *d_sorted_targets = nullptr;
@@ -447,12 +448,18 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     thrust::gather(thrust::device,
                    d_indices, d_indices + new_edges_count,
                    d_sources, d_sorted_sources);
+    CUDA_KERNEL_CHECK("After thrust gather sources in sort_and_merge_edges_cuda");
+
     thrust::gather(thrust::device,
                    d_indices, d_indices + new_edges_count,
                    d_targets, d_sorted_targets);
+    CUDA_KERNEL_CHECK("After thrust gather targets in sort_and_merge_edges_cuda");
+
     thrust::gather(thrust::device,
                    d_indices, d_indices + new_edges_count,
                    d_timestamps, d_sorted_timestamps);
+    CUDA_KERNEL_CHECK("After thrust gather timestamps in sort_and_merge_edges_cuda");
+
     clear_memory(&d_indices, true);
 
     // === Step 5: Allocate merge output arrays ===
@@ -483,6 +490,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
                                  const thrust::tuple<int, int, int64_t>& b) {
                       return thrust::get<2>(a) < thrust::get<2>(b);
                   });
+    CUDA_KERNEL_CHECK("After thrust merge in sort_and_merge_edges_cuda");
 
     // === Step 7: Copy merged arrays back to graph ===
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_sources, d_merged_sources, total_size * sizeof(int), cudaMemcpyDeviceToDevice));
