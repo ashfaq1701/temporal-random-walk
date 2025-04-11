@@ -27,6 +27,10 @@
     } \
 } while(0)
 
+/**
+ * Macro that log CUDA errors and clears the error state, then continue.
+ * This prevents errors from "sticking" around and causing false positives later
+ */
 #define CUDA_LOG_ERROR_AND_CONTINUE(call) do { \
     cudaError_t err = call; \
     \
