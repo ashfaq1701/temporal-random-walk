@@ -146,18 +146,31 @@ HOST void append_memory(T** data_ptr, size_t& size, const T* new_data, const siz
 
 template <typename T>
 HOST void clear_memory(T** data_ptr, const bool use_gpu) {
-    if (!data_ptr || !(*data_ptr)) return;
-
-    #ifdef HAS_CUDA
-    if (use_gpu) {
-        CUDA_LOG_ERROR_AND_CONTINUE(cudaFree(*data_ptr));
-    } else
-    #endif
-    {
-        free(*data_ptr);
+    if (!data_ptr) {
+        return;
     }
 
-    *data_ptr = nullptr;
+    if (*data_ptr) {
+        #ifdef HAS_CUDA
+        if (use_gpu) {
+            cudaPointerAttributes attributes;
+            cudaError_t check_error = cudaPointerGetAttributes(&attributes, *data_ptr);
+
+            if (check_error == cudaSuccess &&
+                (attributes.type == cudaMemoryTypeDevice || attributes.type == cudaMemoryTypeManaged)) {
+                    CUDA_LOG_ERROR_AND_CONTINUE(cudaFree(*data_ptr));
+                } else {
+                    clearCudaErrorState();
+                }
+        }
+        else
+        #endif
+        {
+            free(*data_ptr);
+        }
+
+        *data_ptr = nullptr;
+    }
 }
 
 template <typename T>
