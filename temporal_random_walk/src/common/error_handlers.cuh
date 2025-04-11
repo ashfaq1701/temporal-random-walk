@@ -8,7 +8,7 @@
 #include <string>
 
 /**
- * Macro that checks for CUDA errors and clears the error state
+ * Macro that checks for CUDA errors and clears the error state, then exits.
  * This prevents errors from "sticking" around and causing false positives later
  */
 #define CUDA_CHECK_AND_CLEAR(call) do { \
@@ -24,6 +24,17 @@
         std::cerr << "  Code: " << err << " (" << cudaGetErrorString(err) << ")\n"; \
         std::cerr << "  Call: " << #call << "\n"; \
         std::exit(EXIT_FAILURE); \
+    } \
+} while(0)
+
+#define CUDA_LOG_ERROR_AND_CONTINUE(call) do { \
+    cudaError_t err = call; \
+    \
+    if (err != cudaSuccess) { \
+        std::cerr << "CUDA error in " << __FILE__ << ":" << __LINE__ << "\n"; \
+        std::cerr << "  Code: " << static_cast<int>(err) << " (" << cudaGetErrorString(err) << ")\n"; \
+        std::cerr << "  Call: " << #call << "\n"; \
+        cudaGetLastError(); /* Clear sticky error */ \
     } \
 } while(0)
 

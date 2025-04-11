@@ -150,28 +150,10 @@ HOST void clear_memory(T** data_ptr, const bool use_gpu) {
 
     #ifdef HAS_CUDA
     if (use_gpu) {
-        // Safe check: only call cudaPointerGetAttributes if pointer looks valid
-        cudaPointerAttributes attributes;
-        cudaError_t attr_status = cudaPointerGetAttributes(&attributes, *data_ptr);
-
-        if (attr_status == cudaSuccess &&
-            (attributes.type == cudaMemoryTypeDevice || attributes.type == cudaMemoryTypeManaged))
-        {
-            // Attempt cudaFree with error logging, not crashing
-            cudaError_t err = cudaFree(*data_ptr);
-            if (err != cudaSuccess) {
-                std::cerr << "[clear_memory] cudaFree failed at " << *data_ptr
-                          << ": " << cudaGetErrorString(err) << std::endl;
-            }
-        } else {
-            std::cerr << "[clear_memory] Skipped cudaFree: invalid or host pointer (or already freed?)\n";
-            // Optional: clear lingering CUDA error
-            cudaGetLastError();
-        }
+        CUDA_LOG_ERROR_AND_CONTINUE(cudaFree(*data_ptr));
     } else
     #endif
     {
-        // Free host memory
         free(*data_ptr);
     }
 
