@@ -28,21 +28,6 @@
 } while(0)
 
 /**
- * Macro that log CUDA errors and clears the error state, then continue.
- * This prevents errors from "sticking" around and causing false positives later
- */
-#define CUDA_LOG_ERROR_AND_CONTINUE(call) do { \
-    cudaError_t err = call; \
-    \
-    if (err != cudaSuccess) { \
-        std::cerr << "CUDA error in " << __FILE__ << ":" << __LINE__ << "\n"; \
-        std::cerr << "  Code: " << static_cast<int>(err) << " (" << cudaGetErrorString(err) << ")\n"; \
-        std::cerr << "  Call: " << #call << "\n"; \
-        cudaGetLastError(); /* Clear sticky error */ \
-    } \
-} while(0)
-
-/**
  * Macro to check for errors after asynchronous operations like kernel launches
  * Clears error state before and after checking
  */

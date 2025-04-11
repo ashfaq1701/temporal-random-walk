@@ -158,7 +158,7 @@ HOST void clear_memory(T** data_ptr, const bool use_gpu) {
 
             if (check_error == cudaSuccess &&
                 (attributes.type == cudaMemoryTypeDevice || attributes.type == cudaMemoryTypeManaged)) {
-                    CUDA_LOG_ERROR_AND_CONTINUE(cudaFree(*data_ptr));
+                    CUDA_CHECK_AND_CLEAR(cudaFree(*data_ptr));
                 } else {
                     clearCudaErrorState();
                 }
