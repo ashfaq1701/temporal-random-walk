@@ -139,7 +139,7 @@ HOST void temporal_graph::sort_and_merge_edges_std(TemporalGraphStore* graph, si
     auto* sorted_timestamps = new int64_t[new_edges_count];
 
     for (size_t i = 0; i < new_edges_count; ++i) {
-        size_t idx = indices[i];
+        const size_t idx = indices[i];
         sorted_sources[i] = sources[idx];
         sorted_targets[i] = targets[idx];
         sorted_timestamps[i] = timestamps[idx];
@@ -464,16 +464,16 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_merged_timestamps, total_size * sizeof(int64_t)));
 
     // === Step 6: Merge old and new sorted edges ===
-    auto first1 = thrust::make_zip_iterator(thrust::make_tuple(
-        d_sources, d_targets, d_timestamps));
-    auto last1 = first1 + start_idx;
+    const auto first1 = thrust::make_zip_iterator(
+        thrust::make_tuple(d_sources, d_targets, d_timestamps));
+    const auto last1 = first1 + start_idx;
 
-    auto first2 = thrust::make_zip_iterator(thrust::make_tuple(
-        d_sorted_sources, d_sorted_targets, d_sorted_timestamps));
-    auto last2 = first2 + new_edges_count;
+    const auto first2 = thrust::make_zip_iterator(
+        thrust::make_tuple(d_sorted_sources, d_sorted_targets, d_sorted_timestamps));
+    const auto last2 = first2 + new_edges_count;
 
-    auto result = thrust::make_zip_iterator(thrust::make_tuple(
-        d_merged_sources, d_merged_targets, d_merged_timestamps));
+    const auto result = thrust::make_zip_iterator(
+        thrust::make_tuple(d_merged_sources, d_merged_targets, d_merged_timestamps));
 
     thrust::merge(thrust::device,
                   first1, last1,
