@@ -13,9 +13,8 @@ RUN dnf -y update && \
         openssl-devel \
         ca-certificates gnupg \
         sudo which \
-        dnf-plugins-core epel-release && \
-        libomp-devel
-
+        dnf-plugins-core epel-release \
+        libomp-devel &&  \
     dnf clean all
 
 # Install Python 3.8–3.11 from source
