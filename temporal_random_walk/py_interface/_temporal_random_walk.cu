@@ -118,7 +118,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     initial_edge_bias, edge_bias_enum_opt);
                 const WalkDirection walk_direction_enum = walk_direction_from_string(walk_direction);
 
-                WalkSet walk_set = tw.get_random_walks_and_times_for_all_nodes_raw(
+                WalkSet walk_set = tw.get_random_walks_and_times_for_all_nodes(
                     max_walk_len,
                     &walk_bias_enum,
                     num_walks_per_node,
@@ -191,7 +191,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
 
                 const WalkDirection walk_direction_enum = walk_direction_from_string(walk_direction);
 
-                WalkSet walk_set = tw.get_random_walks_and_times_for_all_nodes_raw(
+                WalkSet walk_set = tw.get_random_walks_and_times_for_all_nodes(
                     max_walk_len,
                     &walk_bias_enum,
                     num_walks_total,

@@ -4,6 +4,7 @@
 #include "../stores/temporal_graph.cuh"
 #include "../common/macros.cuh"
 #include "../data/structs.cuh"
+#include "../data/WalkSet.cuh"
 #include "../../libs/thread-pool/ThreadPool.h"
 
 struct TemporalRandomWalkStore {

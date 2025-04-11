@@ -4,35 +4,33 @@
 #include <iostream>
 
 inline void print_temporal_random_walks_with_times(
-    const std::vector<std::tuple<std::vector<int>, std::vector<int64_t>>>& walks_with_times,
-    size_t n = 10)
+    const WalkSet& walk_set,
+    const size_t n = 10)
 {
     size_t count = 0;
-    for (const auto& walk : walks_with_times) {
-        if (count++ >= n) break;
+    for (auto it = walk_set.walks_begin(); it != walk_set.walks_end() && count < n; ++it, ++count) {
+        const auto& walk = *it;
 
-        const auto& nodes = std::get<0>(walk);
-        const auto& timestamps = std::get<1>(walk);
-
-        std::cout << "Length: " << nodes.size() << ", Walk: ";
-        for (size_t i = 0; i < nodes.size(); ++i) {
-            std::cout << "(" << nodes[i] << ", " << timestamps[i] << "), ";
+        std::cout << "Length: " << walk.size() << ", Walk: ";
+        for (const auto& step : walk) {
+            std::cout << "(" << step.node << ", " << step.timestamp << "), ";
         }
         std::cout << std::endl;
     }
 }
 
-inline double get_average_walk_length(const std::vector<std::tuple<std::vector<int>, std::vector<int64_t>>>& walks) {
-    if (walks.empty()) return 0.0;
-
+inline double get_average_walk_length(const WalkSet& walk_set) {
+    size_t total_walks = 0;
     size_t total_length = 0;
 
-    for (const auto& walk : walks) {
-        const auto& nodes = std::get<0>(walk);
-        total_length += nodes.size();
+    for (auto it = walk_set.walks_begin(); it != walk_set.walks_end(); ++it) {
+        const auto& walk = *it;
+        total_length += walk.size();
+        total_walks++;
     }
 
-    return static_cast<double>(total_length) / static_cast<double>(walks.size());
+    return total_walks > 0 ?
+        static_cast<double>(total_length) / static_cast<double>(total_walks) : 0.0;
 }
 
 #endif //TEST_RUN_UTILS_H
