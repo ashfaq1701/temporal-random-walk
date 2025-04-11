@@ -62,6 +62,10 @@ public:
     // Direct access
     const int* nodes() const;
     const int64_t* timestamps() const;
+
+    HOST Step back() const;
+
+    HOST Step front() const;
 };
 
 // Iterator for all non-empty walks in the WalkSet

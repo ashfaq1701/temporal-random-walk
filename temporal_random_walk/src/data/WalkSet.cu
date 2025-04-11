@@ -69,6 +69,20 @@ HOST const int64_t* Walk::timestamps() const {
     return timestamps_;
 }
 
+HOST Step Walk::back() const {
+    if (length_ == 0) {
+        throw std::out_of_range("Walk is empty");
+    }
+    return {nodes_[length_ - 1], timestamps_[length_ - 1]};
+}
+
+HOST Step Walk::front() const {
+    if (length_ == 0) {
+        throw std::out_of_range("Walk is empty");
+    }
+    return {nodes_[0], timestamps_[0]};
+}
+
 // WalksIterator implementation
 HOST void WalksIterator::find_next_non_empty() {
     while (walk_index_ < max_walks_ && walk_set_->walk_lens[walk_index_] == 0) {

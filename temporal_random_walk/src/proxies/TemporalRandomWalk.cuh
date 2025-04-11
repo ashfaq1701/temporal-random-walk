@@ -35,15 +35,15 @@ public:
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_per_node,
-        const RandomPickerType* initial_edge_bias,
-        WalkDirection walk_direction) const;
+        const RandomPickerType* initial_edge_bias=nullptr,
+        WalkDirection walk_direction=WalkDirection::Forward_In_Time) const;
 
     WalkSet get_random_walks_and_times(
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_total,
-        const RandomPickerType* initial_edge_bias,
-        WalkDirection walk_direction) const;
+        const RandomPickerType* initial_edge_bias=nullptr,
+        WalkDirection walk_direction=WalkDirection::Forward_In_Time) const;
 
     [[nodiscard]] size_t get_node_count() const;
 

@@ -182,70 +182,75 @@ TYPED_TEST(FilledDirectedTemporalRandomWalkTest, TestNodeFoundTest) {
 // Test that the number of random walks generated matches the expected count and checks that no walk exceeds its length.
 // Also test that the system can sample walks of length more than 1.
 TYPED_TEST(FilledDirectedTemporalRandomWalkTest, WalkCountAndLensTest) {
-    const auto walks = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &linear_picker_type, 10);
 
     int total_walk_lens = 0;
 
-    for (const auto& [nodes, timestamps] : walks) {
-        EXPECT_LE(nodes.size(), MAX_WALK_LEN) << "A walk exceeds the maximum length of " << MAX_WALK_LEN;
-        EXPECT_GT(nodes.size(), 0);
+    for (auto it = walk_set.walks_begin(); it != walk_set.walks_end(); ++it) {
+        const auto& walk = *it;
+        EXPECT_LE(walk.size(), MAX_WALK_LEN) << "A walk exceeds the maximum length of " << MAX_WALK_LEN;
+        EXPECT_GT(walk.size(), 0);
 
-        total_walk_lens += static_cast<int>(nodes.size());
+        total_walk_lens += static_cast<int>(walk.size());
     }
 
-    auto average_walk_len = static_cast<float>(total_walk_lens) / static_cast<float>(walks.size());
+    auto average_walk_len = static_cast<float>(total_walk_lens) / static_cast<float>(walk_set.size());
     EXPECT_GT(average_walk_len, 1) << "System could not sample any walk of length more than 1";
 }
 
 // Test to verify that the timestamps in each walk are strictly increasing in directed graphs.
 TYPED_TEST(FilledDirectedTemporalRandomWalkTest, WalkIncreasingTimestampTest) {
-    const auto walks_forward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_forward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &linear_picker_type, 10);
 
-    for (const auto& [nodes, timestamps] : walks_forward) {
-        for (size_t i = 1; i < timestamps.size(); ++i) {
-            EXPECT_GT(timestamps[i], timestamps[i - 1])
+    for (auto it = walk_set_forward.walks_begin(); it != walk_set_forward.walks_end(); ++it) {
+        const auto& walk = *it;
+        for (size_t i = 1; i < walk.size(); ++i) {
+            EXPECT_GT(walk[i].timestamp, walk[i - 1].timestamp)
                 << "Timestamps are not strictly increasing in walk: "
-                << i << " with node: " << nodes[i]
-                << ", previous node: " << nodes[i - 1];
+                << i << " with node: " << walk[i].node
+                << ", previous node: " << walk[i - 1].node;
         }
     }
 
-    const auto walks_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &linear_picker_type, 10, nullptr, WalkDirection::Backward_In_Time);
-    for (const auto& [nodes, timestamps] : walks_backward) {
-        for (size_t i = 1; i < timestamps.size(); ++i) {
-            EXPECT_GT(timestamps[i], timestamps[i - 1])
+    for (auto it = walk_set_backward.walks_begin(); it != walk_set_backward.walks_end(); ++it) {
+        const auto& walk = *it;
+        for (size_t i = 1; i < walk.size(); ++i) {
+            EXPECT_GT(walk[i].timestamp, walk[i - 1].timestamp)
                 << "Timestamps are not strictly increasing in walk: "
-                << i << " with node: " << nodes[i]
-                << ", previous node: " << nodes[i - 1];
+                << i << " with node: " << walk[i].node
+                << ", previous node: " << walk[i - 1].node;
         }
     }
 }
 
 // Test to verify that the timestamps in each walk are strictly increasing in undirected graphs.
 TYPED_TEST(FilledUndirectedTemporalRandomWalkTest, WalkIncreasingTimestampTest) {
-    const auto walks = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_forward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &linear_picker_type, 10);
 
-    for (const auto& [nodes, timestamps] : walks) {
-        for (size_t i = 1; i < timestamps.size(); ++i) {
-            EXPECT_GT(timestamps[i], timestamps[i - 1])
+    for (auto it = walk_set_forward.walks_begin(); it != walk_set_forward.walks_end(); ++it) {
+        const auto& walk = *it;
+        for (size_t i = 1; i < walk.size(); ++i) {
+            EXPECT_GT(walk[i].timestamp, walk[i - 1].timestamp)
                 << "Timestamps are not strictly increasing in walk: "
-                << i << " with node: " << nodes[i]
-                << ", previous node: " << nodes[i - 1];
+                << i << " with node: " << walk[i].node
+                << ", previous node: " << walk[i - 1].node;
         }
     }
 
-    const auto walks_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &linear_picker_type, 10, nullptr, WalkDirection::Backward_In_Time);
-    for (const auto& [nodes, timestamps] : walks_backward) {
-        for (size_t i = 1; i < timestamps.size(); ++i) {
-            EXPECT_GT(timestamps[i], timestamps[i - 1])
+    for (auto it = walk_set_backward.walks_begin(); it != walk_set_backward.walks_end(); ++it) {
+        const auto& walk = *it;
+        for (size_t i = 1; i < walk.size(); ++i) {
+            EXPECT_GT(walk[i].timestamp, walk[i - 1].timestamp)
                 << "Timestamps are not strictly increasing in walk: "
-                << i << " with node: " << nodes[i]
-                << ", previous node: " << nodes[i - 1];
+                << i << " with node: " << walk[i].node
+                << ", previous node: " << walk[i - 1].node;
         }
     }
 }
@@ -259,16 +264,17 @@ TYPED_TEST(FilledDirectedTemporalRandomWalkTest, WalkValidEdgesTest) {
     }
 
     // Check forward walks
-    const auto walks_forward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_forward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &linear_picker_type, 10, nullptr, WalkDirection::Forward_In_Time);
 
-    for (const auto& [nodes, timestamps] : walks_forward) {
-        if (nodes.size() <= 1) continue;
+    for (auto it = walk_set_forward.walks_begin(); it != walk_set_forward.walks_end(); ++it) {
+        const auto& walk = *it;
+        if (walk.size() <= 1) continue;
 
-        for (size_t i = 0; i < nodes.size() - 1; i++) {
-            int src = nodes[i];
-            int dst = nodes[i + 1];
-            int64_t ts = timestamps[i + 1];
+        for (size_t i = 0; i < walk.size() - 1; i++) {
+            int src = walk[i].node;
+            int dst = walk[i + 1].node;
+            int64_t ts = walk[i + 1].timestamp;
 
             bool edge_exists = valid_edges.count({src, dst, ts}) > 0;
             EXPECT_TRUE(edge_exists)
@@ -277,16 +283,17 @@ TYPED_TEST(FilledDirectedTemporalRandomWalkTest, WalkValidEdgesTest) {
     }
 
     // Check backward walks
-    const auto walks_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &linear_picker_type, 10, nullptr, WalkDirection::Backward_In_Time);
 
-    for (const auto& [nodes, timestamps] : walks_backward) {
-        if (nodes.size() <= 1) continue;
+    for (auto it = walk_set_backward.walks_begin(); it != walk_set_backward.walks_end(); ++it) {
+        const auto& walk = *it;
+        if (walk.size() <= 1) continue;
 
-        for (size_t i = 1; i < nodes.size(); i++) {
-            int src = nodes[i - 1];
-            int dst = nodes[i];
-            int64_t ts = timestamps[i - 1];
+        for (size_t i = 1; i < walk.size(); i++) {
+            int src = walk[i - 1].node;
+            int dst = walk[i].node;
+            int64_t ts = walk[i - 1].timestamp;
 
             bool edge_exists = valid_edges.count({src, dst, ts}) > 0;
             EXPECT_TRUE(edge_exists)
@@ -314,17 +321,18 @@ TYPED_TEST(FilledDirectedTemporalRandomWalkTest, WalkTerminalEdgesTest) {
     }
 
     // Check forward walks
-    const auto walks_forward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_forward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &linear_picker_type, 10, nullptr, WalkDirection::Forward_In_Time);
 
-    for (const auto& [nodes, timestamps] : walks_forward) {
-        if (nodes.empty()) continue;
+    for (auto it = walk_set_forward.walks_begin(); it != walk_set_forward.walks_end(); ++it) {
+        const auto& walk = *it;
+        if (walk.empty()) continue;
 
         // MAX_WALK_LEN approached. No need to check such walks, because they might have finished immaturely.
-        if (nodes.size() == MAX_WALK_LEN) continue;
+        if (walk.size() == MAX_WALK_LEN) continue;
 
-        int last_node = nodes.back();
-        const int64_t last_ts = timestamps.back();
+        int last_node = walk.back().node;
+        const int64_t last_ts = walk.back().timestamp;
 
         // Skip if node has no outgoing edges
         if (!max_outgoing_timestamps.count(last_node)) continue;
@@ -346,17 +354,18 @@ TYPED_TEST(FilledDirectedTemporalRandomWalkTest, WalkTerminalEdgesTest) {
     }
 
     // Check backward walks
-    const auto walks_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &linear_picker_type, 10, nullptr, WalkDirection::Backward_In_Time);
 
-    for (const auto& [nodes, timestamps] : walks_backward) {
-        if (nodes.empty()) continue;
+    for (auto it = walk_set_backward.walks_begin(); it != walk_set_backward.walks_end(); ++it) {
+        const auto& walk = *it;
+        if (walk.empty()) continue;
 
         // MAX_WALK_LEN approached. No need to check such walks, because they might have finished immaturely.
-        if (nodes.size() == MAX_WALK_LEN) continue;
+        if (walk.size() == MAX_WALK_LEN) continue;
 
-        int first_node = nodes.front();
-        const int64_t first_ts = timestamps.front();
+        int first_node = walk.front().node;
+        const int64_t first_ts = walk.front().timestamp;
 
         // Skip if node has no incoming edges
         if (!min_incoming_timestamps.count(first_node)) continue;
@@ -381,27 +390,29 @@ TYPED_TEST(FilledDirectedTemporalRandomWalkTest, WalkTerminalEdgesTest) {
 // Test timestamps and valid edges with WeightBasedRandomPicker
 TYPED_TEST(FilledDirectedTemporalRandomWalkTest, WalkIncreasingTimestampWithExponentialWeightTest) {
     constexpr RandomPickerType exponential_weight_picker = RandomPickerType::ExponentialWeight;
-    const auto walks = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_forward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &exponential_weight_picker, 10);
 
-    for (const auto& [nodes, timestamps] : walks) {
-        for (size_t i = 1; i < nodes.size(); ++i) {
-            EXPECT_GT(timestamps[i], timestamps[i - 1])
+    for (auto it = walk_set_forward.walks_begin(); it != walk_set_forward.walks_end(); ++it) {
+        const auto& walk = *it;
+        for (size_t i = 1; i < walk.size(); ++i) {
+            EXPECT_GT(walk[i].timestamp, walk[i - 1].timestamp)
                 << "Timestamps not increasing at index " << i
-                << " with node: " << nodes[i]
-                << ", previous node: " << nodes[i - 1];
+                << " with node: " << walk[i].node
+                << ", previous node: " << walk[i - 1].node;
         }
     }
 
-    const auto walks_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &exponential_weight_picker, 10, nullptr, WalkDirection::Backward_In_Time);
 
-    for (const auto& [nodes, timestamps] : walks_backward) {
-        for (size_t i = 1; i < nodes.size(); ++i) {
-            EXPECT_GT(timestamps[i], timestamps[i - 1])
+    for (auto it = walk_set_backward.walks_begin(); it != walk_set_backward.walks_end(); ++it) {
+        const auto& walk = *it;
+        for (size_t i = 1; i < walk.size(); ++i) {
+            EXPECT_GT(walk[i].timestamp, walk[i - 1].timestamp)
                 << "Timestamps not increasing in backward walk at index " << i
-                << " with node: " << nodes[i]
-                << ", previous node: " << nodes[i - 1];
+                << " with node: " << walk[i].node
+                << ", previous node: " << walk[i - 1].node;
         }
     }
 }
@@ -416,16 +427,17 @@ TYPED_TEST(FilledDirectedTemporalRandomWalkTest, WalkValidEdgesWithExponentialWe
     }
 
     // Test forward walks
-    const auto walks_forward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_forward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &exponential_weight_picker, 10, nullptr, WalkDirection::Forward_In_Time);
 
-    for (const auto& [nodes, timestamps] : walks_forward) {
-        if (nodes.size() <= 1) continue;
+    for (auto it = walk_set_forward.walks_begin(); it != walk_set_forward.walks_end(); ++it) {
+        const auto& walk = *it;
+        if (walk.size() <= 1) continue;
 
-        for (size_t i = 0; i < nodes.size() - 1; i++) {
-            int src = nodes[i];
-            int dst = nodes[i+1];
-            int64_t ts = timestamps[i+1];
+        for (size_t i = 0; i < walk.size() - 1; i++) {
+            int src = walk[i].node;
+            int dst = walk[i+1].node;
+            int64_t ts = walk[i+1].timestamp;
 
             bool edge_exists = valid_edges.count({src, dst, ts}) > 0;
             EXPECT_TRUE(edge_exists)
@@ -435,16 +447,17 @@ TYPED_TEST(FilledDirectedTemporalRandomWalkTest, WalkValidEdgesWithExponentialWe
     }
 
     // Test backward walks
-    const auto walks_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &exponential_weight_picker, 10, nullptr, WalkDirection::Backward_In_Time);
 
-    for (const auto& [nodes, timestamps] : walks_backward) {
-        if (nodes.size() <= 1) continue;
+    for (auto it = walk_set_backward.walks_begin(); it != walk_set_backward.walks_end(); ++it) {
+        const auto& walk = *it;
+        if (walk.size() <= 1) continue;
 
-        for (size_t i = 1; i < nodes.size(); i++) {
-            int src = nodes[i - 1];
-            int dst = nodes[i];
-            int64_t ts = timestamps[i - 1];
+        for (size_t i = 1; i < walk.size(); i++) {
+            int src = walk[i - 1].node;
+            int dst = walk[i].node;
+            int64_t ts = walk[i - 1].timestamp;
 
             bool edge_exists = valid_edges.count({src, dst, ts}) > 0;
             EXPECT_TRUE(edge_exists)
@@ -468,19 +481,20 @@ TYPED_TEST(FilledDirectedTemporalRandomWalkTest, WalkTerminalEdgesWithExponentia
         std::sort(timestamps.begin(), timestamps.end());
     }
 
-    const auto walks_forward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_forward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &exponential_weight_picker, 100);
 
-    for (const auto& [nodes, timestamps] : walks_forward) {
-        if (nodes.empty() || nodes.size() == MAX_WALK_LEN) continue;
+    for (auto it = walk_set_forward.walks_begin(); it != walk_set_forward.walks_end(); ++it) {
+        const auto& walk = *it;
+        if (walk.empty() || walk.size() == MAX_WALK_LEN) continue;
 
-        const int last_node = nodes.back();
-        const int64_t last_ts = timestamps.back();
+        const int last_node = walk.back().node;
+        const int64_t last_ts = walk.back().timestamp;
 
-        auto it = next_valid_timestamps.find(last_node);
-        if (it == next_valid_timestamps.end()) continue;
+        auto next_ts = next_valid_timestamps.find(last_node);
+        if (next_ts == next_valid_timestamps.end()) continue;
 
-        const auto& next_timestamps = it->second;
+        const auto& next_timestamps = next_ts->second;
         auto next_ts_it = std::upper_bound(next_timestamps.begin(), next_timestamps.end(), last_ts);
 
         EXPECT_EQ(next_ts_it, next_timestamps.end())
@@ -493,20 +507,21 @@ TYPED_TEST(FilledDirectedTemporalRandomWalkTest, WalkTerminalEdgesWithExponentia
         prev_valid_timestamps[dst].push_back(ts);
     }
 
-    const auto walks_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &exponential_weight_picker, 100, nullptr, WalkDirection::Backward_In_Time);
 
-    for (const auto& [nodes, timestamps] : walks_backward) {
-        if (nodes.empty() || nodes.size() == MAX_WALK_LEN) continue;
-        if (timestamps.back() == INT64_MAX) continue;  // Skip last sentinel value
+    for (auto it = walk_set_backward.walks_begin(); it != walk_set_backward.walks_end(); ++it) {
+        const auto& walk = *it;
+        if (walk.empty() || walk.size() == MAX_WALK_LEN) continue;
+        if (walk.back().timestamp == INT64_MAX) continue;  // Skip last sentinel value
 
-        const int first_node = nodes.front();
-        const int64_t first_ts = timestamps.front();
+        const int first_node = walk.front().node;
+        const int64_t first_ts = walk.front().timestamp;
 
-        auto it = prev_valid_timestamps.find(first_node);
-        if (it == prev_valid_timestamps.end()) continue;
+        auto prev_ts = prev_valid_timestamps.find(first_node);
+        if (prev_ts == prev_valid_timestamps.end()) continue;
 
-        const auto& prev_timestamps = it->second;
+        const auto& prev_timestamps = prev_ts->second;
         auto prev_ts_it = std::lower_bound(prev_timestamps.begin(), prev_timestamps.end(), first_ts);
 
         EXPECT_GT(prev_ts_it, prev_timestamps.begin())
@@ -523,17 +538,18 @@ TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, ValidEdgesWithScaling) {
         valid_edges[edge] = true;
     }
 
-    const auto walks = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &exponential_weight_picker, 1000);
 
-    for (const auto& [nodes, timestamps] : walks) {
-        if (nodes.size() <= 1) continue;
+    for (auto it = walk_set.walks_begin(); it != walk_set.walks_end(); ++it) {
+        const auto& walk = *it;
+        if (walk.size() <= 1) continue;
 
-        for (size_t i = 0; i < nodes.size() - 1; i++) {
+        for (size_t i = 0; i < walk.size() - 1; i++) {
             const auto edge = std::make_tuple(
-                nodes[i],
-                nodes[i+1],
-                timestamps[i+1]
+                walk[i].node,
+                walk[i+1].node,
+                walk[i+1].timestamp
             );
             EXPECT_TRUE(valid_edges[edge])
                 << "Invalid edge in timescale bounded walk: ("
@@ -563,20 +579,21 @@ TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, TerminalEdgeValidation) {
     }
 
     // Test forward walks
-    const auto walks_forward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_forward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &exponential_weight_picker, 100, nullptr, WalkDirection::Forward_In_Time);
 
-    for (const auto& [nodes, timestamps] : walks_forward) {
-        if (nodes.empty() || nodes.size() == MAX_WALK_LEN) continue;
-        if (timestamps[0] == INT64_MIN) continue;  // Skip first sentinel value
+    for (auto it = walk_set_forward.walks_begin(); it != walk_set_forward.walks_end(); ++it) {
+        const auto& walk = *it;
+        if (walk.empty() || walk.size() == MAX_WALK_LEN) continue;
+        if (walk[0].timestamp == INT64_MIN) continue;  // Skip first sentinel value
 
-        const int last_node = nodes.back();
-        const int64_t last_ts = timestamps.back();
+        const int last_node = walk.back().node;
+        const int64_t last_ts = walk.back().timestamp;
 
-        auto it = next_valid_timestamps.find(last_node);
-        if (it == next_valid_timestamps.end()) continue;
+        auto next_ts = next_valid_timestamps.find(last_node);
+        if (next_ts == next_valid_timestamps.end()) continue;
 
-        const auto& next_timestamps = it->second;
+        const auto& next_timestamps = next_ts->second;
         auto next_ts_it = std::upper_bound(next_timestamps.begin(), next_timestamps.end(), last_ts);
 
         EXPECT_EQ(next_ts_it, next_timestamps.end())
@@ -585,20 +602,21 @@ TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, TerminalEdgeValidation) {
     }
 
     // Test backward walks
-    const auto walks_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+    const auto walk_set_backward = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &exponential_weight_picker, 100, nullptr, WalkDirection::Backward_In_Time);
 
-    for (const auto& [nodes, timestamps] : walks_backward) {
-        if (nodes.empty() || nodes.size() == MAX_WALK_LEN) continue;
-        if (timestamps.back() == INT64_MAX) continue;  // Skip last sentinel value
+    for (auto it = walk_set_backward.walks_begin(); it != walk_set_backward.walks_end(); ++it) {
+        const auto& walk = *it;
+        if (walk.empty() || walk.size() == MAX_WALK_LEN) continue;
+        if (walk.back().timestamp == INT64_MAX) continue;  // Skip last sentinel value
 
-        const int first_node = nodes.front();
-        const int64_t first_ts = timestamps.front();
+        const int first_node = walk.front().node;
+        const int64_t first_ts = walk.front().timestamp;
 
-        auto it = prev_valid_timestamps.find(first_node);
-        if (it == prev_valid_timestamps.end()) continue;
+        auto prev_ts = prev_valid_timestamps.find(first_node);
+        if (prev_ts == prev_valid_timestamps.end()) continue;
 
-        const auto& prev_timestamps = it->second;
+        const auto& prev_timestamps = prev_ts->second;
         auto prev_ts_it = std::lower_bound(prev_timestamps.begin(), prev_timestamps.end(), first_ts);
 
         EXPECT_GT(prev_ts_it, prev_timestamps.begin())
