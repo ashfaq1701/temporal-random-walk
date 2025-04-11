@@ -6,10 +6,11 @@ from temporal_random_walk import TemporalRandomWalk
 
 GPU_USAGE_MODE = False
 
-def print_walks_for_nodes(walks):
-    for idx, walk in enumerate(walks):
-        nodes, timestamps = walk
-        print(f"Walk {idx}: {','.join(map(str, nodes))}, Timestamps: {','.join(map(str, timestamps))}")
+def print_walks_for_nodes(nodes, timestamps, lens, limit=100):
+    for idx in range(min(len(lens), limit)):
+        walk_nodes = nodes[idx, :lens[idx]]
+        walk_timestamps = timestamps[idx, :lens[idx]]
+        print(f"Walk {idx}: {','.join(map(str, walk_nodes))}, Timestamps: {','.join(map(str, walk_timestamps))}")
 
 if __name__ == '__main__':
     temporal_random_walk_obj = TemporalRandomWalk(
@@ -59,5 +60,5 @@ if __name__ == '__main__':
     )
     print(f"--- Walk generation time : {time.time() - start_time}---")
 
-    print(f"Number of walks {len(walks_2)}")
-    print_walks_for_nodes(walks_2[:100])
+    print(f"Number of walks {len(walks_2[0])}")
+    print_walks_for_nodes(walks_2[0][:100], walks_2[1][:100], walks_2[2][:100])
