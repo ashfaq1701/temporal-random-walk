@@ -1,7 +1,9 @@
 #include "WalkSet.cuh"
 
+#ifdef HAS_CUDA
 #include <thrust/count.h>
 #include <thrust/device_ptr.h>
+#endif
 
 #include "../common/cuda_config.cuh"
 #include "../common/const.cuh"
