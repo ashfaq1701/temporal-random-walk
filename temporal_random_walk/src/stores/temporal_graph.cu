@@ -430,23 +430,51 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_sorted_targets, new_edges_count * sizeof(int)));
     CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_sorted_timestamps, new_edges_count * sizeof(int64_t)));
 
-    // === Step 2: Create index array for new edges and sort ===
-    thrust::device_vector<size_t> d_indices(new_edges_count);
-    thrust::sequence(d_indices.begin(), d_indices.end(), start_idx);
+    // === Step 2: Create index array and sort it by timestamp ===
+    size_t* d_indices = nullptr;
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_indices, new_edges_count * sizeof(size_t)));
 
+    // Fill indices with [start_idx, start_idx + 1, ..., total_size)
+    thrust::sequence(
+        thrust::device,
+        thrust::device_pointer_cast(d_indices),
+        thrust::device_pointer_cast(d_indices + new_edges_count),
+        start_idx
+    );
+
+    // Sort indices based on d_timestamps
     thrust::sort(
-        d_indices.begin(),
-        d_indices.end(),
+        thrust::device_pointer_cast(d_indices),
+        thrust::device_pointer_cast(d_indices + new_edges_count),
         [d_timestamps] __device__ (size_t a, size_t b) {
             return d_timestamps[a] < d_timestamps[b];
         });
 
-    // === Step 3: Gather sorted new edges ===
-    thrust::gather(d_indices.begin(), d_indices.end(), d_sources, d_sorted_sources);
-    thrust::gather(d_indices.begin(), d_indices.end(), d_targets, d_sorted_targets);
-    thrust::gather(d_indices.begin(), d_indices.end(), d_timestamps, d_sorted_timestamps);
+    // === Step 3: Gather sorted new edge data ===
+    thrust::gather(
+        thrust::device_pointer_cast(d_indices),
+        thrust::device_pointer_cast(d_indices + new_edges_count),
+        thrust::device_pointer_cast(d_sources),
+        d_sorted_sources
+    );
 
-    // === Step 4: Allocate merge output arrays ===
+    thrust::gather(
+        thrust::device_pointer_cast(d_indices),
+        thrust::device_pointer_cast(d_indices + new_edges_count),
+        thrust::device_pointer_cast(d_targets),
+        d_sorted_targets
+    );
+
+    thrust::gather(
+        thrust::device_pointer_cast(d_indices),
+        thrust::device_pointer_cast(d_indices + new_edges_count),
+        thrust::device_pointer_cast(d_timestamps),
+        d_sorted_timestamps
+    );
+
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_indices));
+
+    // === Step 4: Allocate merged output arrays ===
     int* d_merged_sources = nullptr;
     int* d_merged_targets = nullptr;
     int64_t* d_merged_timestamps = nullptr;
@@ -458,25 +486,32 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     // === Step 5: Merge timestamps + sources ===
     thrust::merge_by_key(
         thrust::device,
-        d_timestamps, d_timestamps + start_idx,               // keys1
-        d_sorted_timestamps, d_sorted_timestamps + new_edges_count,  // keys2
-        d_sources, d_sorted_sources,                         // values
-        d_merged_timestamps, d_merged_sources,
-        thrust::less<int64_t>()  // comparator
-    );
-
-    // === Step 6: Merge timestamps + targets (reuse keys from above) ===
-    thrust::merge_by_key(
-        thrust::device,
-        d_timestamps, d_timestamps + start_idx,
-        d_sorted_timestamps, d_sorted_timestamps + new_edges_count,
-        d_targets, d_sorted_targets,
-        /* out keys */ thrust::make_discard_iterator(),  // don't need keys again
-        d_merged_targets,
+        thrust::device_pointer_cast(d_timestamps),
+        thrust::device_pointer_cast(d_timestamps + start_idx),
+        thrust::device_pointer_cast(d_sorted_timestamps),
+        thrust::device_pointer_cast(d_sorted_timestamps + new_edges_count),
+        thrust::device_pointer_cast(d_sources),
+        thrust::device_pointer_cast(d_sorted_sources),
+        thrust::device_pointer_cast(d_merged_timestamps),
+        thrust::device_pointer_cast(d_merged_sources),
         thrust::less<int64_t>()
     );
 
-    // === Step 7: Copy merged results back ===
+    // === Step 6: Merge timestamps + targets (reuse merged keys or discard) ===
+    thrust::merge_by_key(
+        thrust::device,
+        thrust::device_pointer_cast(d_timestamps),
+        thrust::device_pointer_cast(d_timestamps + start_idx),
+        thrust::device_pointer_cast(d_sorted_timestamps),
+        thrust::device_pointer_cast(d_sorted_timestamps + new_edges_count),
+        thrust::device_pointer_cast(d_targets),
+        thrust::device_pointer_cast(d_sorted_targets),
+        thrust::make_discard_iterator(),
+        thrust::device_pointer_cast(d_merged_targets),
+        thrust::less<int64_t>()
+    );
+
+    // === Step 7: Copy merged arrays back ===
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_sources, d_merged_sources, total_size * sizeof(int), cudaMemcpyDeviceToDevice));
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_targets, d_merged_targets, total_size * sizeof(int), cudaMemcpyDeviceToDevice));
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_timestamps, d_merged_timestamps, total_size * sizeof(int64_t), cudaMemcpyDeviceToDevice));
