@@ -473,29 +473,22 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     // === Step 5: Merge timestamps + sources ===
     thrust::merge_by_key(
         thrust::device,
-        thrust::device_pointer_cast(d_timestamps),
-        thrust::device_pointer_cast(d_timestamps + start_idx),
-        thrust::device_pointer_cast(d_sorted_timestamps),
-        thrust::device_pointer_cast(d_sorted_timestamps + new_edges_count),
-        thrust::device_pointer_cast(d_sources),
-        thrust::device_pointer_cast(d_sorted_sources),
-        thrust::device_pointer_cast(d_merged_timestamps),
-        thrust::device_pointer_cast(d_merged_sources),
-        thrust::less<int64_t>()
+        d_timestamps, d_timestamps + start_idx,               // keys1
+        d_sorted_timestamps, d_sorted_timestamps + new_edges_count,  // keys2
+        d_sources, d_sorted_sources,                         // values
+        d_merged_timestamps, d_merged_sources,
+        thrust::less<int64_t>()  // comparator
     );
     CUDA_KERNEL_CHECK("After first thrust merge_by_key in sort_and_merge_edges_cuda");
 
     // === Step 6: Merge timestamps + targets (reuse merged keys or discard) ===
     thrust::merge_by_key(
         thrust::device,
-        thrust::device_pointer_cast(d_timestamps),
-        thrust::device_pointer_cast(d_timestamps + start_idx),
-        thrust::device_pointer_cast(d_sorted_timestamps),
-        thrust::device_pointer_cast(d_sorted_timestamps + new_edges_count),
-        thrust::device_pointer_cast(d_targets),
-        thrust::device_pointer_cast(d_sorted_targets),
-        thrust::make_discard_iterator(),
-        thrust::device_pointer_cast(d_merged_targets),
+        d_timestamps, d_timestamps + start_idx,
+        d_sorted_timestamps, d_sorted_timestamps + new_edges_count,
+        d_targets, d_sorted_targets,
+        /* out keys */ thrust::make_discard_iterator(),  // don't need keys again
+        d_merged_targets,
         thrust::less<int64_t>()
     );
     CUDA_KERNEL_CHECK("After second thrust merge_by_key in sort_and_merge_edges_cuda");
