@@ -421,62 +421,49 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     int* d_targets = graph->edge_data->targets;
     int64_t* d_timestamps = graph->edge_data->timestamps;
 
-    // === Step 1: Allocate temp arrays for sorted new edges ===
-    int* d_sorted_sources = nullptr;
-    int* d_sorted_targets = nullptr;
-    int64_t* d_sorted_timestamps = nullptr;
+    // === Step 1: Create index array for new edges ===
+    size_t* d_indices = nullptr;
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_indices, new_edges_count * sizeof(size_t)));
+    thrust::sequence(thrust::device, d_indices, d_indices + new_edges_count, start_idx);
+
+    // === Step 2: Sort new edge indices by timestamp ===
+    thrust::sort(
+        thrust::device,
+        d_indices,
+        d_indices + new_edges_count,
+        [d_timestamps] __device__ (size_t i, size_t j) {
+            return d_timestamps[i] < d_timestamps[j];
+        });
+    CUDA_KERNEL_CHECK("After thrust sort in sort_and_merge_edges_cuda");
+
+    // === Step 3: Allocate temp arrays for sorted edges ===
+    int *d_sorted_sources = nullptr, *d_sorted_targets = nullptr;
+    int64_t *d_sorted_timestamps = nullptr;
 
     CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_sorted_sources, new_edges_count * sizeof(int)));
     CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_sorted_targets, new_edges_count * sizeof(int)));
     CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_sorted_timestamps, new_edges_count * sizeof(int64_t)));
 
-    // === Step 2: Create index array and sort it by timestamp ===
-    size_t* d_indices = nullptr;
-    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_indices, new_edges_count * sizeof(size_t)));
+    // === Step 4: Gather sorted new edge data ===
+    thrust::gather(thrust::device,
+                   d_indices, d_indices + new_edges_count,
+                   d_sources, d_sorted_sources);
+    CUDA_KERNEL_CHECK("After thrust gather sources in sort_and_merge_edges_cuda");
 
-    // Fill indices with [start_idx, start_idx + 1, ..., total_size)
-    thrust::sequence(
-        thrust::device,
-        thrust::device_pointer_cast(d_indices),
-        thrust::device_pointer_cast(d_indices + new_edges_count),
-        start_idx
-    );
+    thrust::gather(thrust::device,
+                   d_indices, d_indices + new_edges_count,
+                   d_targets, d_sorted_targets);
+    CUDA_KERNEL_CHECK("After thrust gather targets in sort_and_merge_edges_cuda");
 
-    // Sort indices based on d_timestamps
-    thrust::sort(
-        thrust::device_pointer_cast(d_indices),
-        thrust::device_pointer_cast(d_indices + new_edges_count),
-        [d_timestamps] __device__ (size_t a, size_t b) {
-            return d_timestamps[a] < d_timestamps[b];
-        });
+    thrust::gather(thrust::device,
+                   d_indices, d_indices + new_edges_count,
+                   d_timestamps, d_sorted_timestamps);
+    CUDA_KERNEL_CHECK("After thrust gather timestamps in sort_and_merge_edges_cuda");
 
-    // === Step 3: Gather sorted new edge data ===
-    thrust::gather(
-        thrust::device_pointer_cast(d_indices),
-        thrust::device_pointer_cast(d_indices + new_edges_count),
-        thrust::device_pointer_cast(d_sources),
-        d_sorted_sources
-    );
+    clear_memory(&d_indices, true);
 
-    thrust::gather(
-        thrust::device_pointer_cast(d_indices),
-        thrust::device_pointer_cast(d_indices + new_edges_count),
-        thrust::device_pointer_cast(d_targets),
-        d_sorted_targets
-    );
-
-    thrust::gather(
-        thrust::device_pointer_cast(d_indices),
-        thrust::device_pointer_cast(d_indices + new_edges_count),
-        thrust::device_pointer_cast(d_timestamps),
-        d_sorted_timestamps
-    );
-
-    CUDA_CHECK_AND_CLEAR(cudaFree(d_indices));
-
-    // === Step 4: Allocate merged output arrays ===
-    int* d_merged_sources = nullptr;
-    int* d_merged_targets = nullptr;
+    // === Step 5: Allocate merge output arrays ===
+    int* d_merged_sources = nullptr, *d_merged_targets = nullptr;
     int64_t* d_merged_timestamps = nullptr;
 
     CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_merged_sources, total_size * sizeof(int)));
@@ -496,6 +483,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
         thrust::device_pointer_cast(d_merged_sources),
         thrust::less<int64_t>()
     );
+    CUDA_KERNEL_CHECK("After first thrust merge_by_key in sort_and_merge_edges_cuda");
 
     // === Step 6: Merge timestamps + targets (reuse merged keys or discard) ===
     thrust::merge_by_key(
@@ -510,19 +498,20 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
         thrust::device_pointer_cast(d_merged_targets),
         thrust::less<int64_t>()
     );
+    CUDA_KERNEL_CHECK("After second thrust merge_by_key in sort_and_merge_edges_cuda");
 
-    // === Step 7: Copy merged arrays back ===
+    // === Step 7: Copy merged arrays back to graph ===
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_sources, d_merged_sources, total_size * sizeof(int), cudaMemcpyDeviceToDevice));
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_targets, d_merged_targets, total_size * sizeof(int), cudaMemcpyDeviceToDevice));
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_timestamps, d_merged_timestamps, total_size * sizeof(int64_t), cudaMemcpyDeviceToDevice));
 
     // === Step 8: Cleanup ===
-    CUDA_CHECK_AND_CLEAR(cudaFree(d_sorted_sources));
-    CUDA_CHECK_AND_CLEAR(cudaFree(d_sorted_targets));
-    CUDA_CHECK_AND_CLEAR(cudaFree(d_sorted_timestamps));
-    CUDA_CHECK_AND_CLEAR(cudaFree(d_merged_sources));
-    CUDA_CHECK_AND_CLEAR(cudaFree(d_merged_targets));
-    CUDA_CHECK_AND_CLEAR(cudaFree(d_merged_timestamps));
+    clear_memory(&d_sorted_sources, true);
+    clear_memory(&d_sorted_targets, true);
+    clear_memory(&d_sorted_timestamps, true);
+    clear_memory(&d_merged_sources, true);
+    clear_memory(&d_merged_targets, true);
+    clear_memory(&d_merged_timestamps, true);
 }
 
 HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore* graph) {
