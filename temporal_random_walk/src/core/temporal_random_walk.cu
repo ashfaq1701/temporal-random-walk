@@ -410,7 +410,8 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
     // Calculate optimal kernel launch parameters
     auto [grid_dim, block_dim] = get_optimal_launch_params(
         repeated_node_ids.size,
-        temporal_random_walk->cuda_device_prop);
+        temporal_random_walk->cuda_device_prop,
+        BLOCK_DIM_GENERATING_RANDOM_WALKS);
 
     // Initialize random states for CUDA threads
     curandState* rand_states = get_cuda_rand_states(grid_dim, block_dim);
@@ -469,7 +470,8 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     // Calculate optimal kernel launch parameters
     auto [grid_dim, block_dim] = get_optimal_launch_params(
         num_walks_total,
-        temporal_random_walk->cuda_device_prop);
+        temporal_random_walk->cuda_device_prop,
+        BLOCK_DIM_GENERATING_RANDOM_WALKS);
 
     // Initialize all start node IDs to -1 (indicating random start)
     int* start_node_ids;

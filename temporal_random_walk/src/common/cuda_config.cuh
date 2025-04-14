@@ -6,7 +6,8 @@
 #include <thrust/execution_policy.h>
 
 constexpr auto DEVICE_EXECUTION_POLICY = thrust::device;
-constexpr size_t BLOCK_DIM = 512;
+constexpr size_t BLOCK_DIM = 256;
+constexpr size_t BLOCK_DIM_GENERATING_RANDOM_WALKS = 128;
 
 #endif
 
