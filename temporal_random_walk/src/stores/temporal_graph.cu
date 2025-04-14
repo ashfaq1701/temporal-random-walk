@@ -424,11 +424,11 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     // === Step 1: Create index array for new edges ===
     size_t* d_indices = nullptr;
     CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_indices, new_edges_count * sizeof(size_t)));
-    thrust::sequence(thrust::device, d_indices, d_indices + new_edges_count, start_idx);
+    thrust::sequence(DEVICE_EXECUTION_POLICY, d_indices, d_indices + new_edges_count, start_idx);
 
     // === Step 2: Sort new edge indices by timestamp ===
     thrust::sort(
-        thrust::device,
+        DEVICE_EXECUTION_POLICY,
         d_indices,
         d_indices + new_edges_count,
         [d_timestamps] __device__ (size_t i, size_t j) {
@@ -445,17 +445,17 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_sorted_timestamps, new_edges_count * sizeof(int64_t)));
 
     // === Step 4: Gather sorted new edge data ===
-    thrust::gather(thrust::device,
+    thrust::gather(DEVICE_EXECUTION_POLICY,
                    d_indices, d_indices + new_edges_count,
                    d_sources, d_sorted_sources);
     CUDA_KERNEL_CHECK("After thrust gather sources in sort_and_merge_edges_cuda");
 
-    thrust::gather(thrust::device,
+    thrust::gather(DEVICE_EXECUTION_POLICY,
                    d_indices, d_indices + new_edges_count,
                    d_targets, d_sorted_targets);
     CUDA_KERNEL_CHECK("After thrust gather targets in sort_and_merge_edges_cuda");
 
-    thrust::gather(thrust::device,
+    thrust::gather(DEVICE_EXECUTION_POLICY,
                    d_indices, d_indices + new_edges_count,
                    d_timestamps, d_sorted_timestamps);
     CUDA_KERNEL_CHECK("After thrust gather timestamps in sort_and_merge_edges_cuda");
@@ -472,7 +472,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
 
     // === Step 5: Merge timestamps + sources ===
     thrust::merge_by_key(
-        thrust::device,
+        DEVICE_EXECUTION_POLICY,
         d_timestamps, d_timestamps + start_idx,               // keys1
         d_sorted_timestamps, d_sorted_timestamps + new_edges_count,  // keys2
         d_sources, d_sorted_sources,                         // values
@@ -483,7 +483,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
 
     // === Step 6: Merge timestamps + targets (reuse merged keys or discard) ===
     thrust::merge_by_key(
-        thrust::device,
+        DEVICE_EXECUTION_POLICY,
         d_timestamps, d_timestamps + start_idx,
         d_sorted_timestamps, d_sorted_timestamps + new_edges_count,
         d_targets, d_sorted_targets,

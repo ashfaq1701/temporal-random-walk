@@ -16,3 +16,7 @@ twine upload wheelhouse/*
 #Doc generation command
 doxygen
 python -m pdoc _temporal_random_walk -o docs --force
+
+
+# Nsight Compute
+sudo /usr/local/cuda/bin/ncu --export report-ncp.rep cmake-build-debug/bin/test_run_temporal_random_walk_2 data/sx-stackoverflow.csv
