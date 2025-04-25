@@ -682,7 +682,7 @@ HOST Edge temporal_graph::get_edge_at_host(
             if (available_groups == 0) return Edge{-1, -1, -1};
 
             if (random_pickers::is_index_based_picker(picker_type)) {
-                const auto index = random_pickers::pick_using_index_based_picker_host(
+                const auto index = random_pickers::pick_using_index_based_picker(
                     picker_type, 0, static_cast<int>(available_groups), false);
                 if (index == -1) return Edge{-1, -1, -1};
 
@@ -704,7 +704,7 @@ HOST Edge temporal_graph::get_edge_at_host(
 
             const size_t available_groups = last_group + 1;
             if (random_pickers::is_index_based_picker(picker_type)) {
-                const auto index = random_pickers::pick_using_index_based_picker_host(
+                const auto index = random_pickers::pick_using_index_based_picker(
                     picker_type, 0, static_cast<int>(available_groups), true);
                 if (index == -1) return Edge{-1, -1, -1};
 
@@ -724,7 +724,7 @@ HOST Edge temporal_graph::get_edge_at_host(
     } else {
         // No timestamp constraint - select from all groups
         if (random_pickers::is_index_based_picker(picker_type)) {
-            const auto index = random_pickers::pick_using_index_based_picker_host(
+            const auto index = random_pickers::pick_using_index_based_picker(
                 picker_type, 0, static_cast<int>(num_groups), !forward);
             if (index == -1) return Edge{-1, -1, -1};
 
@@ -760,7 +760,7 @@ HOST Edge temporal_graph::get_edge_at_host(
 
     // Random selection from the chosen group
     const size_t random_idx = group_range.from +
-        generate_random_number_bounded_by_host(static_cast<int>(group_range.to - group_range.from));
+        generate_random_number_bounded_by(static_cast<int>(group_range.to - group_range.from));
 
     return Edge {
         graph->edge_data->sources[random_idx],
@@ -818,7 +818,7 @@ HOST Edge temporal_graph::get_node_edge_at_host(
 
             const size_t start_pos = it - timestamp_group_indices;
             if (random_pickers::is_index_based_picker(picker_type)) {
-                const auto index = random_pickers::pick_using_index_based_picker_host(
+                const auto index = random_pickers::pick_using_index_based_picker(
                     picker_type, 0, static_cast<int>(available), false);
                 if (index == -1) return Edge{-1, -1, -1};
 
@@ -850,7 +850,7 @@ HOST Edge temporal_graph::get_node_edge_at_host(
             if (available == 0) return Edge{-1, -1, -1};
 
             if (random_pickers::is_index_based_picker(picker_type)) {
-                const auto index = random_pickers::pick_using_index_based_picker_host(
+                const auto index = random_pickers::pick_using_index_based_picker(
                     picker_type, 0, static_cast<int>(available), true);
                 if (index == -1) return Edge{-1, -1, -1};
 
@@ -882,7 +882,7 @@ HOST Edge temporal_graph::get_node_edge_at_host(
         if (num_groups == 0) return Edge{-1, -1, -1};
 
         if (random_pickers::is_index_based_picker(picker_type)) {
-            const auto index = random_pickers::pick_using_index_based_picker_host(
+            const auto index = random_pickers::pick_using_index_based_picker(
                 picker_type, 0, static_cast<int>(num_groups), !forward);
             if (index == -1) return Edge{-1, -1, -1};
 
@@ -947,7 +947,7 @@ HOST Edge temporal_graph::get_node_edge_at_host(
     }
 
     // Random selection from group
-    const size_t edge_idx = edge_indices[edge_start + generate_random_number_bounded_by_host(static_cast<int>(edge_end - edge_start))];
+    const size_t edge_idx = edge_indices[edge_start + generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start))];
 
     return Edge {
         graph->edge_data->sources[edge_idx],
@@ -977,7 +977,7 @@ DEVICE Edge temporal_graph::get_edge_at_device(
             if (available_groups == 0) return Edge{-1, -1, -1};
 
             if (random_pickers::is_index_based_picker(picker_type)) {
-                const auto index = random_pickers::pick_using_index_based_picker_device(
+                const auto index = random_pickers::pick_using_index_based_picker(
                     picker_type, 0, static_cast<int>(available_groups), false, rand_state);
                 if (index == -1) return Edge{-1, -1, -1};
 
@@ -1000,7 +1000,7 @@ DEVICE Edge temporal_graph::get_edge_at_device(
 
             const size_t available_groups = last_group + 1;
             if (random_pickers::is_index_based_picker(picker_type)) {
-                const auto index = random_pickers::pick_using_index_based_picker_device(
+                const auto index = random_pickers::pick_using_index_based_picker(
                     picker_type, 0, static_cast<int>(available_groups), true, rand_state);
                 if (index == -1) return Edge{-1, -1, -1};
 
@@ -1021,7 +1021,7 @@ DEVICE Edge temporal_graph::get_edge_at_device(
     } else {
         // No timestamp constraint - select from all groups
         if (random_pickers::is_index_based_picker(picker_type)) {
-            const auto index = random_pickers::pick_using_index_based_picker_device(
+            const auto index = random_pickers::pick_using_index_based_picker(
                 picker_type, 0, static_cast<int>(num_groups), !forward, rand_state);
             if (index == -1) return Edge{-1, -1, -1};
 
@@ -1059,7 +1059,7 @@ DEVICE Edge temporal_graph::get_edge_at_device(
 
     // Random selection from the chosen group
     const size_t random_idx = group_range.from +
-        generate_random_number_bounded_by_device(static_cast<int>(group_range.to - group_range.from), rand_state);
+        generate_random_number_bounded_by(static_cast<int>(group_range.to - group_range.from), rand_state);
 
     return Edge {
         graph->edge_data->sources[random_idx],
@@ -1118,7 +1118,7 @@ DEVICE Edge temporal_graph::get_node_edge_at_device(
 
             const size_t start_pos = it - timestamp_group_indices;
             if (random_pickers::is_index_based_picker(picker_type)) {
-                const auto index = random_pickers::pick_using_index_based_picker_device(
+                const auto index = random_pickers::pick_using_index_based_picker(
                     picker_type, 0, static_cast<int>(available), false, rand_state);
                 if (index == -1) return Edge{-1, -1, -1};
 
@@ -1151,7 +1151,7 @@ DEVICE Edge temporal_graph::get_node_edge_at_device(
             if (available == 0) return Edge{-1, -1, -1};
 
             if (random_pickers::is_index_based_picker(picker_type)) {
-                const auto index = random_pickers::pick_using_index_based_picker_device(
+                const auto index = random_pickers::pick_using_index_based_picker(
                     picker_type, 0, static_cast<int>(available), true, rand_state);
                 if (index == -1) return Edge{-1, -1, -1};
 
@@ -1184,7 +1184,7 @@ DEVICE Edge temporal_graph::get_node_edge_at_device(
         if (num_groups == 0) return Edge{-1, -1, -1};
 
         if (random_pickers::is_index_based_picker(picker_type)) {
-            const auto index = random_pickers::pick_using_index_based_picker_device(
+            const auto index = random_pickers::pick_using_index_based_picker(
                 picker_type, 0, static_cast<int>(num_groups), !forward, rand_state);
             if (index == -1) return Edge{-1, -1, -1};
 
@@ -1251,7 +1251,7 @@ DEVICE Edge temporal_graph::get_node_edge_at_device(
     }
 
     // Random selection from group
-    const size_t edge_idx = edge_indices[edge_start + generate_random_number_bounded_by_device(static_cast<int>(edge_end - edge_start), rand_state)];
+    const size_t edge_idx = edge_indices[edge_start + generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), rand_state)];
 
     return Edge {
         graph->edge_data->sources[edge_idx],

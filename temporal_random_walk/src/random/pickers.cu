@@ -24,7 +24,7 @@ HOST DEVICE int random_pickers::pick_random_linear(const int start, const int en
                                    (static_cast<double>(len_seq) + 1.0) / 2.0;
 
     // Generate random value in [0, total_weight)
-    const double scaled_random_value = rand_number * rand_number;
+    const double scaled_random_value = total_weight * rand_number;
 
     // For both cases, we solve quadratic equation i² + i - 2r = 0
     // where r is our random value (or transformed random value)

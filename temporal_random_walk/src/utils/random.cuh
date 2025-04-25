@@ -29,8 +29,8 @@ HOST inline int generate_random_int_host(const int start, const int end) {
     return dist(thread_local_gen);
 }
 
-HOST inline int generate_random_number_bounded_by_host(const int max_bound) {
-    return generate_random_int_host(0, max_bound - 1);
+HOST DEVICE inline int generate_random_number_bounded_by(const int max_bound, const int rand_number) {
+    return static_cast<int>(static_cast<double>(rand_number) * max_bound);
 }
 
 HOST inline bool generate_random_boolean_host() {
@@ -58,10 +58,6 @@ DEVICE T generate_random_value_device(T start, T end, curandState* state) {
 DEVICE inline int generate_random_int_device(const int start, const int end, curandState* state) {
     const int rand_val = start + static_cast<int>(curand_uniform(state) * (end - start + 1));
     return rand_val;
-}
-
-DEVICE inline int generate_random_number_bounded_by_device(const int max_bound, curandState* state) {
-    return generate_random_int_device(0, max_bound - 1, state);
 }
 
 DEVICE inline bool generate_random_boolean_device(curandState* state) {
