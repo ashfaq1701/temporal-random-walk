@@ -9,7 +9,6 @@
 #ifdef HAS_CUDA
 #include <thrust/device_ptr.h>
 #include <thrust/shuffle.h>
-#include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #endif
 
@@ -18,27 +17,16 @@
 
 thread_local static std::mt19937 thread_local_gen{std::random_device{}()};
 
-template <typename T>
-HOST T generate_random_value_host(T start, T end) {
-    std::uniform_real_distribution<T> dist(start, end);
-    return dist(thread_local_gen);
-}
-
-HOST inline int generate_random_int_host(const int start, const int end) {
-    std::uniform_int_distribution<> dist(start, end);
-    return dist(thread_local_gen);
-}
-
 HOST DEVICE inline int generate_random_number_bounded_by(const int max_bound, const int rand_number) {
     return static_cast<int>(static_cast<double>(rand_number) * max_bound);
 }
 
-HOST inline bool generate_random_boolean_host() {
-    return generate_random_int_host(0, 1) == 1;
+HOST DEVICE inline bool generate_random_boolean(const int rand_number) {
+    return rand_number >= 0.5;
 }
 
-HOST inline int pick_random_number_host(const int a, const int b) {
-    return generate_random_boolean_host() ? a : b;
+HOST DEVICE inline int pick_random_number(const int a, const int b, const int rand_number) {
+    return generate_random_boolean(rand_number) ? a : b;
 }
 
 template <typename T>
@@ -49,24 +37,6 @@ HOST void shuffle_vector_host(T* vec, size_t size) {
 }
 
 #ifdef HAS_CUDA
-
-template <typename T>
-DEVICE T generate_random_value_device(T start, T end, curandState* state) {
-    return start + (end - start) * curand_uniform(state);
-}
-
-DEVICE inline int generate_random_int_device(const int start, const int end, curandState* state) {
-    const int rand_val = start + static_cast<int>(curand_uniform(state) * (end - start + 1));
-    return rand_val;
-}
-
-DEVICE inline bool generate_random_boolean_device(curandState* state) {
-    return curand_uniform(state) > 0.5f;
-}
-
-DEVICE inline int pick_random_number_device(const int a, const int b, curandState* state) {
-    return generate_random_boolean_device(state) ? a : b;
-}
 
 template <typename T>
 HOST void shuffle_vector_device(T* data, size_t size) {
