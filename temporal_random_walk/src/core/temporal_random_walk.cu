@@ -78,13 +78,13 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
 
     Edge start_edge;
     if (start_node_id == -1) {
-        start_edge = temporal_graph::get_edge_at_host(
+        start_edge = temporal_graph::get_edge_at(
             temporal_random_walk->temporal_graph,
             *start_picker_type,
             -1,
             should_walk_forward);
     } else {
-        start_edge = temporal_graph::get_node_edge_at_host(
+        start_edge = temporal_graph::get_node_edge_at(
             temporal_random_walk->temporal_graph,
             start_node_id,
             *start_picker_type,
@@ -115,7 +115,7 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
         }
     } else {
         // For undirected graphs, use the specified start node or pick a random one
-        const int picked_node = (start_node_id != -1) ? start_node_id : pick_random_number_host(start_src, start_dst);
+        const int picked_node = (start_node_id != -1) ? start_node_id : pick_random_number(start_src, start_dst);
         walk_set->add_hop(walk_idx, picked_node, current_timestamp);
         current_node = pick_other_number(start_src, start_dst, picked_node);
     }
@@ -126,7 +126,7 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
     while (walk_set->get_walk_len(walk_idx) < max_walk_len && current_node != -1) {
         walk_set->add_hop(walk_idx, current_node, current_timestamp);
 
-        Edge next_edge = temporal_graph::get_node_edge_at_host(
+        Edge next_edge = temporal_graph::get_node_edge_at(
             temporal_random_walk->temporal_graph,
             current_node,
             *edge_picker_type,
@@ -293,7 +293,6 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
     const int* start_node_ids,
     const RandomPickerType edge_picker_type,
     const RandomPickerType start_picker_type,
-    curandState* rand_states,
     const int max_walk_len,
     const bool is_directed,
     const WalkDirection walk_direction,
@@ -304,26 +303,20 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
 
     bool should_walk_forward = get_should_walk_forward(walk_direction);
 
-    // Get thread-specific random state
-    curandState* local_state = rand_states + walk_idx;
-
     Edge start_edge;
     if (start_node_ids[walk_idx] == -1) {
-        start_edge = temporal_graph::get_edge_at_device(
+        start_edge = temporal_graph::get_edge_at(
             temporal_graph,
             start_picker_type,
             -1,
-            should_walk_forward,
-            local_state);
+            should_walk_forward);
     } else {
-        start_edge = temporal_graph::get_node_edge_at_device(
+        start_edge = temporal_graph::get_node_edge_at(
             temporal_graph,
             start_node_ids[walk_idx],
             start_picker_type,
             -1,
-            should_walk_forward,
-            local_state
-        );
+            should_walk_forward);
     }
 
     if (start_edge.i == -1) {
@@ -348,7 +341,7 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
         // For undirected graphs, use specified start node or pick a random node
         const int picked_node = (start_node_ids[walk_idx] != -1) ?
             start_node_ids[walk_idx] :
-            pick_random_number_device(start_src, start_dst, local_state);
+            pick_random_number(start_src, start_dst);
 
         walk_set->add_hop(walk_idx, picked_node, current_timestamp);
         current_node = pick_other_number(start_src, start_dst, picked_node);
@@ -359,14 +352,12 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
     while (walk_set->get_walk_len_device(walk_idx) < max_walk_len && current_node != -1) {
         walk_set->add_hop(walk_idx, current_node, current_timestamp);
 
-        Edge next_edge = temporal_graph::get_node_edge_at_device(
+        Edge next_edge = temporal_graph::get_node_edge_at(
             temporal_graph,
             current_node,
             edge_picker_type,
             current_timestamp,
-            should_walk_forward,
-            local_state
-        );
+            should_walk_forward);
 
         if (next_edge.ts == -1) {
             current_node = -1;

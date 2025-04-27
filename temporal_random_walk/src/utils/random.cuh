@@ -17,8 +17,8 @@
 
 thread_local static std::mt19937 thread_local_gen{std::random_device{}()};
 
-HOST DEVICE inline int generate_random_number_bounded_by(const int max_bound, const int rand_number) {
-    return static_cast<int>(static_cast<double>(rand_number) * max_bound);
+HOST DEVICE inline int generate_random_number_bounded_by(const int max_bound, const double rand_number) {
+    return static_cast<int>(rand_number * max_bound);
 }
 
 HOST DEVICE inline bool generate_random_boolean(const int rand_number) {
