@@ -50,6 +50,17 @@
 } while(0)
 
 /**
+ * Macro to check for errors in CURAND
+ * Clears error state before and after checking
+ */
+#define CHECK_CURAND(call) do { \
+    curandStatus_t status = call; \
+    if (status != CURAND_STATUS_SUCCESS) { \
+        std::cerr << "cuRAND error" << std::endl; exit(EXIT_FAILURE); \
+    } \
+} while(0)
+
+/**
  * Function to reset CUDA error state
  * Call this if you want to explicitly clear error state without checking
  */

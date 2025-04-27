@@ -10,7 +10,7 @@ set_target_properties(_temporal_random_walk PROPERTIES
         POSITION_INDEPENDENT_CODE ON
 )
 
-target_link_libraries(_temporal_random_walk PRIVATE OpenMP::OpenMP_CXX)
+target_link_libraries(_temporal_random_walk PRIVATE curand OpenMP::OpenMP_CXX)
 
 if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
     set_source_files_properties(

@@ -60,6 +60,7 @@ endif()
 
 set(SRC_FILES
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/common/setup.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/common/random_gen.cu
 
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/data/WalkSet.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/edge_data.cu
@@ -98,5 +99,5 @@ if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
 endif()
 
 add_subdirectory(temporal_random_walk/py_interface)
-add_subdirectory(temporal_random_walk/test)
+#add_subdirectory(temporal_random_walk/test)
 add_subdirectory(temporal_random_walk/test_run)

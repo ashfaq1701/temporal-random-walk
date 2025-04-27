@@ -24,6 +24,7 @@ function(add_test_executable target_name source_file)
 
         target_link_libraries(${target_name} PRIVATE
                 OpenMP::OpenMP_CXX
+                curand
                 CUDA::cudart
                 CUDA::cuda_driver
                 cuda
