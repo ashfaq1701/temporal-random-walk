@@ -11,7 +11,7 @@
 
 HOST DEVICE int random_pickers::pick_random_linear(const int start, const int end, const bool prioritize_end, const double rand_number) {
     if (start >= end) {
-        throw std::invalid_argument("Start must be less than end.");
+        return -1;
     }
 
     const int len_seq = end - start;
@@ -46,7 +46,7 @@ HOST DEVICE int random_pickers::pick_random_linear(const int start, const int en
 
 HOST DEVICE int random_pickers::pick_random_exponential_index(const int start, const int end, const bool prioritize_end, const double rand_number) {
     if (start >= end) {
-        throw std::invalid_argument("Start must be less than end.");
+        return -1;
     }
 
     const int len_seq = end - start;
@@ -76,7 +76,7 @@ HOST DEVICE int random_pickers::pick_random_exponential_index(const int start, c
 
 HOST DEVICE int random_pickers::pick_random_uniform(const int start, const int end, const double rand_number) {
     if (start >= end) {
-        throw std::invalid_argument("Start must be less than end.");
+        return -1;
     }
 
     return start + static_cast<int>(rand_number * (end - start));

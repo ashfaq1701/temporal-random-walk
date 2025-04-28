@@ -39,7 +39,7 @@ double* generate_n_random_numbers_cpu(const size_t n, const unsigned long long s
 
 #ifdef HAS_CUDA
 double* generate_n_random_numbers_gpu(const size_t n) {
-    double* d_random_numbers;
+    double* d_random_numbers = nullptr;
     allocate_memory(&d_random_numbers, n, true);
 
     // Create and configure the cuRAND generator

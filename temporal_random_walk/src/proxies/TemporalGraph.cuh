@@ -5,13 +5,12 @@
 #include "../stores/temporal_graph.cuh"
 #include "../data/structs.cuh"
 #include "../data/enums.cuh"
-#include "../common/const.cuh"
 
 #ifdef HAS_CUDA
 
 __global__ void get_total_edges_kernel(size_t* result, const TemporalGraphStore* graph);
-__global__ void get_edge_at_kernel(Edge* result, const TemporalGraphStore* graph, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state);
-__global__ void get_node_edge_at_kernel(Edge* result, TemporalGraphStore* graph, int node_id, RandomPickerType picker_type, int64_t timestamp, bool forward, curandState* rand_state);
+__global__ void get_edge_at_kernel(Edge* result, const TemporalGraphStore* graph, RandomPickerType picker_type, int64_t timestamp, bool forward, const double* rand_nums);
+__global__ void get_node_edge_at_kernel(Edge* result, TemporalGraphStore* graph, int node_id, RandomPickerType picker_type, int64_t timestamp, bool forward, const double* rand_nums);
 
 #endif
 

@@ -83,7 +83,7 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
 
     Edge start_edge;
     if (start_node_id == -1) {
-        start_edge = temporal_graph::get_edge_at(
+        start_edge = temporal_graph::get_edge_at_host(
             temporal_random_walk->temporal_graph,
             *start_picker_type,
             -1,
@@ -91,7 +91,7 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
             rand_nums[rand_nums_start_idx_for_walk],
             rand_nums[rand_nums_start_idx_for_walk + 1]);
     } else {
-        start_edge = temporal_graph::get_node_edge_at(
+        start_edge = temporal_graph::get_node_edge_at_host(
             temporal_random_walk->temporal_graph,
             start_node_id,
             *start_picker_type,
@@ -143,7 +143,7 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
 
         walk_set->add_hop(walk_idx, current_node, current_timestamp);
 
-        Edge next_edge = temporal_graph::get_node_edge_at(
+        Edge next_edge = temporal_graph::get_node_edge_at_host(
             temporal_random_walk->temporal_graph,
             current_node,
             *edge_picker_type,
@@ -335,7 +335,7 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
 
     Edge start_edge;
     if (start_node_ids[walk_idx] == -1) {
-        start_edge = temporal_graph::get_edge_at(
+        start_edge = temporal_graph::get_edge_at_device(
             temporal_graph,
             start_picker_type,
             -1,
@@ -343,7 +343,7 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
             rand_nums[rand_nums_start_idx_for_walk],
             rand_nums[rand_nums_start_idx_for_walk + 1]);
     } else {
-        start_edge = temporal_graph::get_node_edge_at(
+        start_edge = temporal_graph::get_node_edge_at_device(
             temporal_graph,
             start_node_ids[walk_idx],
             start_picker_type,
@@ -384,14 +384,14 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
     current_timestamp = start_ts;
 
     while (walk_set->get_walk_len_device(walk_idx) < max_walk_len && current_node != -1) {
-        const auto walk_len = walk_set->get_walk_len(walk_idx);
+        const auto walk_len = walk_set->get_walk_len_device(walk_idx);
         const auto step_start_idx = rand_nums_start_idx_for_walk + walk_len * 3;
         const auto group_selector_rand_num = rand_nums[step_start_idx];
         const auto edge_selector_rand_num = rand_nums[step_start_idx + 1];
 
         walk_set->add_hop(walk_idx, current_node, current_timestamp);
 
-        Edge next_edge = temporal_graph::get_node_edge_at(
+        Edge next_edge = temporal_graph::get_node_edge_at_device(
             temporal_graph,
             current_node,
             edge_picker_type,

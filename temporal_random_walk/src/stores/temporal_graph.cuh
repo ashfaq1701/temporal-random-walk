@@ -123,7 +123,7 @@ namespace temporal_graph {
      * Host functions
      */
 
-    HOST Edge get_edge_at(
+    HOST Edge get_edge_at_host(
         const TemporalGraphStore* graph,
         RandomPickerType picker_type,
         int64_t timestamp,
@@ -131,7 +131,7 @@ namespace temporal_graph {
         double group_selector_rand_num,
         double edge_selector_rand_num);
 
-    HOST Edge get_node_edge_at(
+    HOST Edge get_node_edge_at_host(
         TemporalGraphStore* graph,
         int node_id,
         RandomPickerType picker_type,
@@ -145,6 +145,23 @@ namespace temporal_graph {
      */
 
     #ifdef HAS_CUDA
+
+    DEVICE Edge get_edge_at_device(
+        const TemporalGraphStore* graph,
+        RandomPickerType picker_type,
+        int64_t timestamp,
+        bool forward,
+        double group_selector_rand_num,
+        double edge_selector_rand_num);
+
+    DEVICE Edge get_node_edge_at_device(
+        TemporalGraphStore* graph,
+        int node_id,
+        RandomPickerType picker_type,
+        int64_t timestamp,
+        bool forward,
+        double group_selector_rand_num,
+        double edge_selector_rand_num);
 
     HOST TemporalGraphStore* to_device_ptr(const TemporalGraphStore* graph);
 

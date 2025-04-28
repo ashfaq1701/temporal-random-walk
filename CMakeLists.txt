@@ -99,5 +99,5 @@ if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
 endif()
 
 add_subdirectory(temporal_random_walk/py_interface)
-#add_subdirectory(temporal_random_walk/test)
+add_subdirectory(temporal_random_walk/test)
 add_subdirectory(temporal_random_walk/test_run)
