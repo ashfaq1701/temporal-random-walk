@@ -250,7 +250,7 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
 }
 
 Edge TemporalGraph::get_edge_at(RandomPickerType picker_type, int64_t timestamp, bool forward) const {
-    double* rand_nums = generate_n_random_numbers(1, graph->use_gpu);
+    double* rand_nums = generate_n_random_numbers(2, graph->use_gpu);
     Edge result;
 
     #ifdef HAS_CUDA
@@ -285,7 +285,7 @@ Edge TemporalGraph::get_edge_at(RandomPickerType picker_type, int64_t timestamp,
 }
 
 Edge TemporalGraph::get_node_edge_at(int node_id, RandomPickerType picker_type, int64_t timestamp, bool forward) const {
-    double* rand_nums = generate_n_random_numbers(1, graph->use_gpu);
+    double* rand_nums = generate_n_random_numbers(2, graph->use_gpu);
     Edge result;
 
     #ifdef HAS_CUDA
