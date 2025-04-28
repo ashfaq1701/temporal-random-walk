@@ -197,7 +197,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
         temporal_random_walk->use_gpu);
 
     WalkSet walk_set(repeated_node_ids.size, max_walk_len, temporal_random_walk->use_gpu);
-    double* rand_nums = generate_n_random_numbers_cpu(repeated_node_ids.size * max_walk_len * 3);
+    double* rand_nums = generate_n_random_numbers(repeated_node_ids.size * max_walk_len * 3, false);
 
     // Lambda for generating walks in each thread
     auto generate_walks_thread = [temporal_random_walk, &walk_set, walk_bias, initial_edge_bias,
@@ -259,7 +259,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
     }
 
     WalkSet walk_set(num_walks_total, max_walk_len, temporal_random_walk->use_gpu);
-    double* rand_nums = generate_n_random_numbers_cpu(num_walks_total * max_walk_len * 3);
+    double* rand_nums = generate_n_random_numbers(num_walks_total * max_walk_len * 3, false);
 
     auto generate_walks_thread = [temporal_random_walk, &walk_set, walk_bias, initial_edge_bias,
                                   max_walk_len, walk_direction, rand_nums] (
@@ -331,7 +331,7 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
 
     const size_t rand_nums_start_idx_for_walk = walk_idx * max_walk_len * 3;
 
-    bool should_walk_forward = get_should_walk_forward(walk_direction);
+    const bool should_walk_forward = get_should_walk_forward(walk_direction);
 
     Edge start_edge;
     if (start_node_ids[walk_idx] == -1) {
@@ -446,7 +446,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
         BLOCK_DIM_GENERATING_RANDOM_WALKS);
 
     // Initialize random numbers between [0.0, 1.0)
-    double* rand_nums = generate_n_random_numbers_cpu(repeated_node_ids.size * max_walk_len * 3);
+    double* rand_nums = generate_n_random_numbers(repeated_node_ids.size * max_walk_len * 3, true);
 
     // Shuffle node IDs for randomization
     shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
@@ -511,7 +511,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     fill_memory(start_node_ids, num_walks_total, -1, temporal_random_walk->use_gpu);
 
     // Initialize random numbers between [0.0, 1.0)
-    double* rand_nums = generate_n_random_numbers_cpu(num_walks_total * max_walk_len * 3);
+    double* rand_nums = generate_n_random_numbers(num_walks_total * max_walk_len * 3, true);
 
     // Create and initialize the walk set on device
     WalkSet walk_set(num_walks_total, max_walk_len, true);

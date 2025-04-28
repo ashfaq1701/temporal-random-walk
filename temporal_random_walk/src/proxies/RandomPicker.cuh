@@ -11,7 +11,7 @@ __global__ void pick_exponential_random_number_cuda_kernel(
     int start,
     int end,
     bool prioritize_end,
-    curandState* rand_states);
+    const double* rand_nums);
 
 #endif
 
@@ -32,7 +32,7 @@ __global__ void pick_linear_random_number_cuda_kernel(
     int start,
     int end,
     bool prioritize_end,
-    curandState* rand_states);
+    const double* rand_nums);
 
 #endif
 
@@ -53,7 +53,7 @@ __global__ void pick_uniform_random_number_cuda_kernel(
     int* result,
     int start,
     int end,
-    curandState* rand_states);
+    const double* rand_nums);
 
 #endif
 
@@ -74,7 +74,7 @@ __global__ void pick_weighted_random_number_cuda_kernel(
     size_t weights_size,
     size_t group_start,
     size_t group_end,
-    curandState* rand_states);
+    const double* rand_nums);
 
 #endif
 

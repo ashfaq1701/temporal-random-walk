@@ -1,5 +1,8 @@
 #include "RandomPicker.cuh"
 
+#include <common/memory.cuh>
+#include <common/random_gen.cuh>
+
 #include "../common/error_handlers.cuh"
 #include "../src/random/pickers.cuh"
 #include "../src/common/setup.cuh"
@@ -11,13 +14,13 @@ __global__ void pick_exponential_random_number_cuda_kernel(
     const int start,
     const int end,
     const bool prioritize_end,
-    curandState* rand_states) {
+    const double* rand_nums) {
     // Each thread picks a random number
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Only the first thread computes the result
     if (idx == 0) {
-        *result = random_pickers::pick_random_exponential_index_device(start, end, prioritize_end, &rand_states[idx]);
+        *result = random_pickers::pick_random_exponential_index(start, end, prioritize_end, rand_nums[idx]);
     }
 }
 
@@ -26,34 +29,34 @@ __global__ void pick_exponential_random_number_cuda_kernel(
 ExponentialIndexRandomPicker::ExponentialIndexRandomPicker(const bool use_gpu) : use_gpu(use_gpu) {}
 
 int ExponentialIndexRandomPicker::pick_random(const int start, const int end, const bool prioritize_end) const {
+    // Initialize rand nums between [0, 1)
+    double* rand_nums = generate_n_random_numbers(1, use_gpu);
+    int result;
+
     #ifdef HAS_CUDA
     if (use_gpu) {
-        // Initialize CUDA random states (1 thread is enough since we only need 1 random number)
-        curandState* rand_states = get_cuda_rand_states(1, 1);
-
         // Allocate device memory for the result
         int* d_result;
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(int)));
 
         // Launch kernel with a single thread
-        pick_exponential_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, prioritize_end, rand_states);
+        pick_exponential_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, prioritize_end, rand_nums);
         CUDA_KERNEL_CHECK("After pick_exponential_random_number_cuda_kernel execution");
 
         // Copy result back to host
-        int h_result;
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&result, d_result, sizeof(int), cudaMemcpyDeviceToHost));
 
         // Clean up
         CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
-        CUDA_CHECK_AND_CLEAR(cudaFree(rand_states));
-
-        return h_result;
     }
     else
     #endif
     {
-        return random_pickers::pick_random_exponential_index_host(start, end, prioritize_end);
+        result = random_pickers::pick_random_exponential_index(start, end, prioritize_end, rand_nums[0]);
     }
+
+    clear_memory(&rand_nums, use_gpu);
+    return result;
 }
 
 #ifdef HAS_CUDA
@@ -63,13 +66,13 @@ __global__ void pick_linear_random_number_cuda_kernel(
     const int start,
     const int end,
     const bool prioritize_end,
-    curandState* rand_states) {
+    const double* rand_nums) {
     // Each thread picks a random number
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Only the first thread computes the result
     if (idx == 0) {
-        *result = random_pickers::pick_random_linear_device(start, end, prioritize_end, &rand_states[idx]);
+        *result = random_pickers::pick_random_linear(start, end, prioritize_end, rand_nums[idx]);
     }
 }
 
@@ -78,34 +81,34 @@ __global__ void pick_linear_random_number_cuda_kernel(
 LinearRandomPicker::LinearRandomPicker(const bool use_gpu) : use_gpu(use_gpu) {}
 
 int LinearRandomPicker::pick_random(const int start, const int end, const bool prioritize_end) const {
+    // Initialize rand nums between [0, 1)
+    double* rand_nums = generate_n_random_numbers(1, use_gpu);
+    int result;
+
     #ifdef HAS_CUDA
     if (use_gpu) {
-        // Initialize CUDA random states (1 thread is enough since we only need 1 random number)
-        curandState* rand_states = get_cuda_rand_states(1, 1);
-
         // Allocate device memory for the result
         int* d_result;
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(int)));
 
         // Launch kernel with a single thread
-        pick_linear_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, prioritize_end, rand_states);
+        pick_linear_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, prioritize_end, rand_nums);
         CUDA_KERNEL_CHECK("After pick_linear_random_number_cuda_kernel execution");
 
         // Copy result back to host
-        int h_result;
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&result, d_result, sizeof(int), cudaMemcpyDeviceToHost));
 
         // Clean up
         CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
-        CUDA_CHECK_AND_CLEAR(cudaFree(rand_states));
-
-        return h_result;
     }
     else
     #endif
     {
-        return random_pickers::pick_random_linear_host(start, end, prioritize_end);
+        result = random_pickers::pick_random_linear(start, end, prioritize_end, rand_nums[0]);
     }
+
+    clear_memory(&rand_nums, use_gpu);
+    return result;
 }
 
 #ifdef HAS_CUDA
@@ -113,13 +116,13 @@ __global__ void pick_uniform_random_number_cuda_kernel(
     int* result,
     const int start,
     const int end,
-    curandState* rand_states) {
+    const double* rand_nums) {
     // Each thread picks a random number
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Only the first thread computes the result
     if (idx == 0) {
-        *result = random_pickers::pick_random_uniform_device(start, end, &rand_states[idx]);
+        *result = random_pickers::pick_random_uniform(start, end, rand_nums[idx]);
     }
 }
 #endif
@@ -127,34 +130,34 @@ __global__ void pick_uniform_random_number_cuda_kernel(
 UniformRandomPicker::UniformRandomPicker(const bool use_gpu) : use_gpu(use_gpu) {}
 
 int UniformRandomPicker::pick_random(const int start, const int end, const bool /* prioritize_end */) const {
+    // Initialize rand nums between [0, 1)
+    double* rand_nums = generate_n_random_numbers(1, use_gpu);
+    int result;
+
     #ifdef HAS_CUDA
     if (use_gpu) {
-        // Initialize CUDA random states (1 thread is enough since we only need 1 random number)
-        curandState* rand_states = get_cuda_rand_states(1, 1);
-
         // Allocate device memory for the result
         int* d_result;
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(int)));
 
         // Launch kernel with a single thread
-        pick_uniform_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, rand_states);
+        pick_uniform_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, rand_nums);
         CUDA_KERNEL_CHECK("After pick_uniform_random_number_cuda_kernel execution");
 
         // Copy result back to host
-        int h_result;
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&result, d_result, sizeof(int), cudaMemcpyDeviceToHost));
 
         // Clean up
         CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
-        CUDA_CHECK_AND_CLEAR(cudaFree(rand_states));
-
-        return h_result;
     }
     else
     #endif
     {
-        return random_pickers::pick_random_uniform_host(start, end);
+        result = random_pickers::pick_random_uniform(start, end, rand_nums[0]);
     }
+
+    clear_memory(&rand_nums, use_gpu);
+    return result;
 }
 
 
@@ -165,13 +168,18 @@ __global__ void pick_weighted_random_number_cuda_kernel(
     const size_t weights_size,
     const size_t group_start,
     const size_t group_end,
-    curandState* rand_states) {
+    const double* rand_nums) {
     // Each thread picks a random number
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Only the first thread computes the result
     if (idx == 0) {
-        *result = random_pickers::pick_random_exponential_weights_device(weights, weights_size, group_start, group_end, &rand_states[idx]);
+        *result = random_pickers::pick_random_exponential_weights_device(
+            weights,
+            weights_size,
+            group_start,
+            group_end,
+            rand_nums[idx]);
     }
 }
 #endif
@@ -179,11 +187,12 @@ __global__ void pick_weighted_random_number_cuda_kernel(
 WeightBasedRandomPicker::WeightBasedRandomPicker(const bool use_gpu) : use_gpu(use_gpu) {}
 
 int WeightBasedRandomPicker::pick_random(const double* weights, const size_t weights_size, const size_t group_start, const size_t group_end) const {
+    // Initialize rand nums between [0, 1)
+    double* rand_nums = generate_n_random_numbers(1, use_gpu);
+    int result;
+
     #ifdef HAS_CUDA
     if (use_gpu) {
-        // Initialize CUDA random states
-        curandState* rand_states = get_cuda_rand_states(1, 1);
-
         // Allocate device memory for weights
         double* d_weights;
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_weights, weights_size * sizeof(double)));
@@ -196,26 +205,29 @@ int WeightBasedRandomPicker::pick_random(const double* weights, const size_t wei
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(int)));
 
         // Launch kernel with a single thread
-        pick_weighted_random_number_cuda_kernel<<<1, 1>>>(d_result, d_weights, weights_size, group_start, group_end, rand_states);
+        pick_weighted_random_number_cuda_kernel<<<1, 1>>>(d_result, d_weights, weights_size, group_start, group_end, rand_nums);
         CUDA_KERNEL_CHECK("After pick_weighted_random_number_cuda_kernel execution");
 
         // Copy result back to host
-        int h_result;
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&result, d_result, sizeof(int), cudaMemcpyDeviceToHost));
 
         // Clean up
         CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
         CUDA_CHECK_AND_CLEAR(cudaFree(d_weights));
-        CUDA_CHECK_AND_CLEAR(cudaFree(rand_states));
-
-        return h_result;
     }
     else
     #endif
     {
-        return random_pickers::pick_random_exponential_weights_host(
-            const_cast<double*>(weights), weights_size, group_start, group_end);
+        result = random_pickers::pick_random_exponential_weights_host(
+            const_cast<double*>(weights),
+            weights_size,
+            group_start,
+            group_end,
+            rand_nums[0]);
     }
+
+    clear_memory(&rand_nums, use_gpu);
+    return result;
 }
 
 int WeightBasedRandomPicker::pick_random(const std::vector<double>& cumulative_weights, const int group_start, const int group_end) const {

@@ -12,7 +12,7 @@
 #include "error_handlers.cuh"
 #include "memory.cuh"
 
-double* generate_n_random_numbers_cpu(const size_t n, const unsigned long long seed = 1234ULL) {
+double* generate_n_random_numbers_cpu(const size_t n, const unsigned long long seed) {
 
     double* random_numbers = nullptr;
     allocate_memory(&random_numbers, n, false);
@@ -56,3 +56,15 @@ double* generate_n_random_numbers_gpu(const size_t n) {
     return d_random_numbers;
 }
 #endif
+
+double* generate_n_random_numbers(const size_t n, const bool use_gpu) {
+    #ifdef HAS_CUDA
+    if (use_gpu) {
+        return generate_n_random_numbers_gpu(n);
+    }
+    else
+    #endif
+    {
+        return generate_n_random_numbers_cpu(n);
+    }
+}
