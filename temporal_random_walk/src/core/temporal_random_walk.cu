@@ -190,54 +190,25 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
         num_walks_per_node,
         temporal_random_walk->use_gpu);
     shuffle_vector_host<int>(repeated_node_ids.data, repeated_node_ids.size);
-    auto distributed_node_ids = divide_vector(
-        repeated_node_ids.data,
-        repeated_node_ids.size,
-        static_cast<int>(temporal_random_walk->n_threads),
-        temporal_random_walk->use_gpu);
 
     WalkSet walk_set(repeated_node_ids.size, max_walk_len, temporal_random_walk->use_gpu);
     double* rand_nums = generate_n_random_numbers(repeated_node_ids.size * max_walk_len * 3, false);
 
-    // Lambda for generating walks in each thread
-    auto generate_walks_thread = [temporal_random_walk, &walk_set, walk_bias, initial_edge_bias,
-                                  max_walk_len, walk_direction, rand_nums](
-        const IndexValuePair<int, int>* group_begin,
-        const IndexValuePair<int, int>* group_end) {
+    #pragma omp parallel for schedule(dynamic)
+    for (int walk_idx = 0; walk_idx < repeated_node_ids.size; ++walk_idx) {
+        const int start_node_id = repeated_node_ids.data[walk_idx];
+        const bool should_walk_forward = get_should_walk_forward(walk_direction);
 
-        for (auto ptr = group_begin; ptr != group_end; ++ptr) {
-            const int walk_idx = ptr->index;
-            const int start_node_id = ptr->value;
-            const bool should_walk_forward = get_should_walk_forward(walk_direction);
-
-            generate_random_walk_and_time_std(
-                temporal_random_walk,
-                walk_idx,
-                &walk_set,
-                walk_bias,
-                initial_edge_bias,
-                max_walk_len,
-                should_walk_forward,
-                start_node_id,
-                rand_nums);
-        }
-    };
-
-    // Create and execute thread pool tasks
-    std::vector<std::future<void>> futures;
-    futures.reserve(distributed_node_ids.num_groups);
-
-    for (size_t i = 0; i < distributed_node_ids.num_groups; i++) {
-        auto group_begin = distributed_node_ids.group_begin(i);
-        auto group_end = distributed_node_ids.group_end(i);
-
-        futures.push_back(temporal_random_walk->thread_pool->enqueue(
-            generate_walks_thread, group_begin, group_end));
-    }
-
-    // Wait for all threads to complete
-    for (auto& future : futures) {
-        future.wait();
+        generate_random_walk_and_time_std(
+            temporal_random_walk,
+            walk_idx,
+            &walk_set,
+            walk_bias,
+            initial_edge_bias,
+            max_walk_len,
+            should_walk_forward,
+            start_node_id,
+            rand_nums);
     }
 
     // Clean up
@@ -261,53 +232,24 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
     WalkSet walk_set(num_walks_total, max_walk_len, temporal_random_walk->use_gpu);
     double* rand_nums = generate_n_random_numbers(num_walks_total * max_walk_len * 3, false);
 
-    auto generate_walks_thread = [temporal_random_walk, &walk_set, walk_bias, initial_edge_bias,
-                                  max_walk_len, walk_direction, rand_nums] (
-        const int start_idx, const int num_walks) {
+    #pragma omp parallel for schedule(dynamic)
+    for (int walk_idx = 0; walk_idx < num_walks_total; ++walk_idx) {
+        const bool should_walk_forward = get_should_walk_forward(walk_direction);
 
-        for (int i = 0; i < num_walks; ++i) {
-            const int walk_idx = start_idx + i;
-            const bool should_walk_forward = get_should_walk_forward(walk_direction);
-
-            generate_random_walk_and_time_std(
-                temporal_random_walk,
-                walk_idx,
-                &walk_set,
-                walk_bias,
-                initial_edge_bias,
-                max_walk_len,
-                should_walk_forward,
-                -1,
-                rand_nums);
-        }
-    };
-
-    // Divide the work across threads
-    std::vector<std::future<void>> futures;
-    futures.reserve(temporal_random_walk->n_threads);
-
-    auto walks_per_thread = divide_number(
-        num_walks_total,
-        static_cast<int>(temporal_random_walk->n_threads),
-        temporal_random_walk->use_gpu);
-
-    // Create and execute thread pool tasks
-    int start_idx = 0;
-    for (int i = 0; i < walks_per_thread.size; i++) {
-        int num_walks = walks_per_thread.data[i];
-        futures.push_back(temporal_random_walk->thread_pool->enqueue(
-            generate_walks_thread, start_idx, num_walks));
-        start_idx += num_walks;
-    }
-
-    // Wait for all threads to complete
-    for (auto& future : futures) {
-        future.wait();
+        generate_random_walk_and_time_std(
+            temporal_random_walk,
+            walk_idx,
+            &walk_set,
+            walk_bias,
+            initial_edge_bias,
+            max_walk_len,
+            should_walk_forward,
+            -1,
+            rand_nums);
     }
 
     // Clean up
     clear_memory(&rand_nums, false);
-    clear_memory(&walks_per_thread.data, temporal_random_walk->use_gpu);
 
     return walk_set;
 }

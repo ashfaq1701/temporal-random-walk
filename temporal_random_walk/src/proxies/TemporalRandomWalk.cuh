@@ -24,8 +24,7 @@ public:
         bool use_gpu,
         int64_t max_time_capacity=-1,
         bool enable_weight_computation=false,
-        double timescale_bound=DEFAULT_TIMESCALE_BOUND,
-        size_t n_threads=std::thread::hardware_concurrency());
+        double timescale_bound=DEFAULT_TIMESCALE_BOUND);
 
     ~TemporalRandomWalk();
 

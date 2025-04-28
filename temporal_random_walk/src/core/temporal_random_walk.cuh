@@ -5,7 +5,6 @@
 #include "../common/macros.cuh"
 #include "../data/structs.cuh"
 #include "../data/WalkSet.cuh"
-#include "../../libs/thread-pool/ThreadPool.h"
 
 struct TemporalRandomWalkStore {
     bool is_directed;
@@ -14,8 +13,6 @@ struct TemporalRandomWalkStore {
     int64_t max_time_capacity;
     bool enable_weight_computation;
     double timescale_bound;
-    size_t n_threads;
-    ThreadPool* thread_pool;
 
     #ifdef HAS_CUDA
     cudaDeviceProp* cuda_device_prop;
@@ -27,15 +24,13 @@ struct TemporalRandomWalkStore {
         const bool use_gpu,
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
-        const double timescale_bound,
-        const size_t n_threads): thread_pool(new ThreadPool(n_threads)) {
+        const double timescale_bound) {
 
         this->is_directed = is_directed;
         this->use_gpu = use_gpu;
         this->max_time_capacity = max_time_capacity;
         this->enable_weight_computation = enable_weight_computation;
         this->timescale_bound = timescale_bound;
-        this->n_threads = n_threads;
 
         this->temporal_graph = new TemporalGraphStore(
             is_directed,
