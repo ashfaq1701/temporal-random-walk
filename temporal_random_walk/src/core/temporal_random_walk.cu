@@ -1,5 +1,7 @@
 #include "temporal_random_walk.cuh"
 
+#include <omp.h>
+
 #include "../utils/utils.cuh"
 #include "../utils/random.cuh"
 #include "../common/setup.cuh"
@@ -194,7 +196,10 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
     WalkSet walk_set(repeated_node_ids.size, max_walk_len, temporal_random_walk->use_gpu);
     double* rand_nums = generate_n_random_numbers(repeated_node_ids.size * max_walk_len * 3, false);
 
-    #pragma omp parallel for schedule(dynamic)
+    const int num_threads = omp_get_max_threads();
+    omp_set_num_threads(num_threads);
+
+    #pragma omp parallel for schedule(guided)
     for (int walk_idx = 0; walk_idx < repeated_node_ids.size; ++walk_idx) {
         const int start_node_id = repeated_node_ids.data[walk_idx];
         const bool should_walk_forward = get_should_walk_forward(walk_direction);
@@ -232,7 +237,10 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
     WalkSet walk_set(num_walks_total, max_walk_len, temporal_random_walk->use_gpu);
     double* rand_nums = generate_n_random_numbers(num_walks_total * max_walk_len * 3, false);
 
-    #pragma omp parallel for schedule(dynamic)
+    const int num_threads = omp_get_max_threads();
+    omp_set_num_threads(num_threads);
+
+    #pragma omp parallel for schedule(guided)
     for (int walk_idx = 0; walk_idx < num_walks_total; ++walk_idx) {
         const bool should_walk_forward = get_should_walk_forward(walk_direction);
 
@@ -505,8 +513,7 @@ HOST TemporalRandomWalkStore* temporal_random_walk::to_device_ptr(const Temporal
         temp_temporal_random_walk.temporal_graph = temporal_graph::to_device_ptr(temporal_random_walk->temporal_graph);
     }
 
-    // ThreadPool and cudaDeviceProp aren't needed on device, set to nullptr
-    temp_temporal_random_walk.thread_pool = nullptr;
+    // cudaDeviceProp aren't needed on device, set to nullptr
     temp_temporal_random_walk.cuda_device_prop = nullptr;
 
     // Make sure use_gpu is set to true
