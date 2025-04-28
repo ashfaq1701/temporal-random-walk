@@ -21,11 +21,11 @@ HOST DEVICE inline int generate_random_number_bounded_by(const int max_bound, co
     return static_cast<int>(rand_number * max_bound);
 }
 
-HOST DEVICE inline bool generate_random_boolean(const int rand_number) {
+HOST DEVICE inline bool generate_random_boolean(const double rand_number) {
     return rand_number >= 0.5;
 }
 
-HOST DEVICE inline int pick_random_number(const int a, const int b, const int rand_number) {
+HOST DEVICE inline int pick_random_number(const int a, const int b, const double rand_number) {
     return generate_random_boolean(rand_number) ? a : b;
 }
 

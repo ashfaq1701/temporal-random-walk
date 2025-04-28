@@ -1,7 +1,9 @@
 #include "temporal_random_walk.cuh"
+
 #include "../utils/utils.cuh"
 #include "../utils/random.cuh"
 #include "../common/setup.cuh"
+#include "../common/random_gen.cuh"
 
 HOST void temporal_random_walk::add_multiple_edges(
     const TemporalRandomWalkStore* temporal_random_walk,
@@ -69,12 +71,15 @@ HOST DEVICE bool temporal_random_walk::get_should_walk_forward(const WalkDirecti
 HOST void temporal_random_walk::generate_random_walk_and_time_std(
     const TemporalRandomWalkStore* temporal_random_walk,
     const int walk_idx,
-    WalkSet* walk_set,
+    const WalkSet* walk_set,
     const RandomPickerType* edge_picker_type,
     const RandomPickerType* start_picker_type,
     const int max_walk_len,
     const bool should_walk_forward,
-    const int start_node_id) {
+    const int start_node_id,
+    const double* rand_nums) {
+
+    const size_t rand_nums_start_idx_for_walk = walk_idx * max_walk_len * 3;
 
     Edge start_edge;
     if (start_node_id == -1) {
@@ -82,14 +87,18 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
             temporal_random_walk->temporal_graph,
             *start_picker_type,
             -1,
-            should_walk_forward);
+            should_walk_forward,
+            rand_nums[rand_nums_start_idx_for_walk],
+            rand_nums[rand_nums_start_idx_for_walk + 1]);
     } else {
         start_edge = temporal_graph::get_node_edge_at(
             temporal_random_walk->temporal_graph,
             start_node_id,
             *start_picker_type,
             -1,
-            should_walk_forward
+            should_walk_forward,
+            rand_nums[rand_nums_start_idx_for_walk],
+            rand_nums[rand_nums_start_idx_for_walk + 1]
         );
     }
 
@@ -115,7 +124,9 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
         }
     } else {
         // For undirected graphs, use the specified start node or pick a random one
-        const int picked_node = (start_node_id != -1) ? start_node_id : pick_random_number(start_src, start_dst);
+        const int picked_node = (start_node_id != -1)
+            ? start_node_id
+            : pick_random_number(start_src, start_dst, rand_nums[rand_nums_start_idx_for_walk + 2]);
         walk_set->add_hop(walk_idx, picked_node, current_timestamp);
         current_node = pick_other_number(start_src, start_dst, picked_node);
     }
@@ -124,6 +135,12 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
 
     // Perform the walk
     while (walk_set->get_walk_len(walk_idx) < max_walk_len && current_node != -1) {
+        const auto walk_len = walk_set->get_walk_len(walk_idx);
+        const auto step_start_idx = rand_nums_start_idx_for_walk + walk_len * 3;
+        const auto group_selector_rand_num = rand_nums[step_start_idx];
+        const auto edge_selector_rand_num = rand_nums[step_start_idx + 1];
+
+
         walk_set->add_hop(walk_idx, current_node, current_timestamp);
 
         Edge next_edge = temporal_graph::get_node_edge_at(
@@ -131,7 +148,9 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
             current_node,
             *edge_picker_type,
             current_timestamp,
-            should_walk_forward
+            should_walk_forward,
+            group_selector_rand_num,
+            edge_selector_rand_num
         );
 
         if (next_edge.ts == -1) {
@@ -178,10 +197,11 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
         temporal_random_walk->use_gpu);
 
     WalkSet walk_set(repeated_node_ids.size, max_walk_len, temporal_random_walk->use_gpu);
+    double* rand_nums = generate_n_random_numbers_cpu(repeated_node_ids.size * max_walk_len * 3);
 
     // Lambda for generating walks in each thread
     auto generate_walks_thread = [temporal_random_walk, &walk_set, walk_bias, initial_edge_bias,
-                                  max_walk_len, walk_direction](
+                                  max_walk_len, walk_direction, rand_nums](
         const IndexValuePair<int, int>* group_begin,
         const IndexValuePair<int, int>* group_end) {
 
@@ -198,7 +218,8 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
                 initial_edge_bias,
                 max_walk_len,
                 should_walk_forward,
-                start_node_id);
+                start_node_id,
+                rand_nums);
         }
     };
 
@@ -219,6 +240,9 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
         future.wait();
     }
 
+    // Clean up
+    clear_memory(&rand_nums, false);
+
     return walk_set;
 }
 
@@ -235,9 +259,10 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
     }
 
     WalkSet walk_set(num_walks_total, max_walk_len, temporal_random_walk->use_gpu);
+    double* rand_nums = generate_n_random_numbers_cpu(num_walks_total * max_walk_len * 3);
 
     auto generate_walks_thread = [temporal_random_walk, &walk_set, walk_bias, initial_edge_bias,
-                                  max_walk_len, walk_direction](
+                                  max_walk_len, walk_direction, rand_nums] (
         const int start_idx, const int num_walks) {
 
         for (int i = 0; i < num_walks; ++i) {
@@ -252,7 +277,8 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
                 initial_edge_bias,
                 max_walk_len,
                 should_walk_forward,
-                -1);
+                -1,
+                rand_nums);
         }
     };
 
@@ -280,6 +306,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
     }
 
     // Clean up
+    clear_memory(&rand_nums, false);
     clear_memory(&walks_per_thread.data, temporal_random_walk->use_gpu);
 
     return walk_set;
@@ -288,7 +315,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
 #ifdef HAS_CUDA
 
 __global__ void temporal_random_walk::generate_random_walks_kernel(
-    WalkSet* walk_set,
+    const WalkSet* walk_set,
     TemporalGraphStore* temporal_graph,
     const int* start_node_ids,
     const RandomPickerType edge_picker_type,
@@ -296,10 +323,13 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
     const int max_walk_len,
     const bool is_directed,
     const WalkDirection walk_direction,
-    const int num_walks) {
+    const int num_walks,
+    const double* rand_nums) {
 
     const int walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (walk_idx >= num_walks) return;
+
+    const size_t rand_nums_start_idx_for_walk = walk_idx * max_walk_len * 3;
 
     bool should_walk_forward = get_should_walk_forward(walk_direction);
 
@@ -309,14 +339,18 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
             temporal_graph,
             start_picker_type,
             -1,
-            should_walk_forward);
+            should_walk_forward,
+            rand_nums[rand_nums_start_idx_for_walk],
+            rand_nums[rand_nums_start_idx_for_walk + 1]);
     } else {
         start_edge = temporal_graph::get_node_edge_at(
             temporal_graph,
             start_node_ids[walk_idx],
             start_picker_type,
             -1,
-            should_walk_forward);
+            should_walk_forward,
+            rand_nums[rand_nums_start_idx_for_walk],
+            rand_nums[rand_nums_start_idx_for_walk + 1]);
     }
 
     if (start_edge.i == -1) {
@@ -339,9 +373,9 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
         }
     } else {
         // For undirected graphs, use specified start node or pick a random node
-        const int picked_node = (start_node_ids[walk_idx] != -1) ?
-            start_node_ids[walk_idx] :
-            pick_random_number(start_src, start_dst);
+        const int picked_node = (start_node_ids[walk_idx] != -1)
+            ? start_node_ids[walk_idx]
+            : pick_random_number(start_src, start_dst, rand_nums[rand_nums_start_idx_for_walk + 2]);
 
         walk_set->add_hop(walk_idx, picked_node, current_timestamp);
         current_node = pick_other_number(start_src, start_dst, picked_node);
@@ -350,6 +384,11 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
     current_timestamp = start_ts;
 
     while (walk_set->get_walk_len_device(walk_idx) < max_walk_len && current_node != -1) {
+        const auto walk_len = walk_set->get_walk_len(walk_idx);
+        const auto step_start_idx = rand_nums_start_idx_for_walk + walk_len * 3;
+        const auto group_selector_rand_num = rand_nums[step_start_idx];
+        const auto edge_selector_rand_num = rand_nums[step_start_idx + 1];
+
         walk_set->add_hop(walk_idx, current_node, current_timestamp);
 
         Edge next_edge = temporal_graph::get_node_edge_at(
@@ -357,7 +396,9 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
             current_node,
             edge_picker_type,
             current_timestamp,
-            should_walk_forward);
+            should_walk_forward,
+            group_selector_rand_num,
+            edge_selector_rand_num);
 
         if (next_edge.ts == -1) {
             current_node = -1;
@@ -404,8 +445,8 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
         temporal_random_walk->cuda_device_prop,
         BLOCK_DIM_GENERATING_RANDOM_WALKS);
 
-    // Initialize random states for CUDA threads
-    curandState* rand_states = get_cuda_rand_states(grid_dim, block_dim);
+    // Initialize random numbers between [0.0, 1.0)
+    double* rand_nums = generate_n_random_numbers_cpu(repeated_node_ids.size * max_walk_len * 3);
 
     // Shuffle node IDs for randomization
     shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
@@ -426,11 +467,11 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
         repeated_node_ids.data,
         *walk_bias,
         *initial_edge_bias,
-        rand_states,
         max_walk_len,
         temporal_random_walk->is_directed,
         walk_direction,
-        static_cast<int>(repeated_node_ids.size)
+        static_cast<int>(repeated_node_ids.size),
+        rand_nums
     );
     CUDA_KERNEL_CHECK("After generate_random_walks_kernel in get_random_walks_and_times_for_all_nodes_cuda");
 
@@ -439,7 +480,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
     host_walk_set.copy_from_device(d_walk_set);
 
     // Free device memory
-    CUDA_CHECK_AND_CLEAR(cudaFree(rand_states));
+    clear_memory(&rand_nums, true);
     temporal_graph::free_device_pointers(d_temporal_graph);
     CUDA_CHECK_AND_CLEAR(cudaFree(d_walk_set));
 
@@ -469,8 +510,8 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     CUDA_CHECK_AND_CLEAR(cudaMalloc(&start_node_ids, num_walks_total * sizeof(int)));
     fill_memory(start_node_ids, num_walks_total, -1, temporal_random_walk->use_gpu);
 
-    // Initialize random states for CUDA threads
-    curandState* rand_states = get_cuda_rand_states(grid_dim, block_dim);
+    // Initialize random numbers between [0.0, 1.0)
+    double* rand_nums = generate_n_random_numbers_cpu(num_walks_total * max_walk_len * 3);
 
     // Create and initialize the walk set on device
     WalkSet walk_set(num_walks_total, max_walk_len, true);
@@ -488,11 +529,11 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
         start_node_ids,
         *walk_bias,
         *initial_edge_bias,
-        rand_states,
         max_walk_len,
         temporal_random_walk->is_directed,
         walk_direction,
-        num_walks_total
+        num_walks_total,
+        rand_nums
     );
     CUDA_KERNEL_CHECK("After generate_random_walks_kernel in get_random_walks_and_times_cuda");
 
@@ -501,7 +542,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     host_walk_set.copy_from_device(d_walk_set);
 
     // Free device memory
-    CUDA_CHECK_AND_CLEAR(cudaFree(rand_states));
+    clear_memory(&rand_nums, true);
     temporal_graph::free_device_pointers(d_temporal_graph);
     CUDA_CHECK_AND_CLEAR(cudaFree(start_node_ids));
     CUDA_CHECK_AND_CLEAR(cudaFree(d_walk_set));

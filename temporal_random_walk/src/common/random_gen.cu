@@ -10,9 +10,12 @@
 #endif
 
 #include "error_handlers.cuh"
+#include "memory.cuh"
 
 double* generate_n_random_numbers_cpu(const size_t n, const unsigned long long seed = 1234ULL) {
-    auto* random_numbers = new double[n];
+
+    double* random_numbers = nullptr;
+    allocate_memory(&random_numbers, n, false);
 
     // Parallelize with OpenMP
     #pragma omp parallel
@@ -37,7 +40,7 @@ double* generate_n_random_numbers_cpu(const size_t n, const unsigned long long s
 #ifdef HAS_CUDA
 double* generate_n_random_numbers_gpu(const size_t n) {
     double* d_random_numbers;
-    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_random_numbers, n * sizeof(double)));
+    allocate_memory(&d_random_numbers, n, true);
 
     // Create and configure the cuRAND generator
     curandGenerator_t gen;
