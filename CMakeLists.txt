@@ -83,6 +83,7 @@ if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
             $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
             $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
             $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-fPIC>
+            $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-fopenmp>
     )
 
     set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}
@@ -90,12 +91,15 @@ if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
             --default-stream per-thread # Better stream handling
             --ptxas-options=-v         # Verbose PTX assembly
             -Xptxas -dlcm=ca          # Cache all operations
+            -Xcompiler=-fopenmp
     )
 
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --extended-lambda --expt-relaxed-constexpr -rdc=true")
     # For debug builds
     set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -G")
-
+else()
+    # If CUDA is not enabled, ensure OpenMP is still activated for C++
+    add_compile_options(-fopenmp)
 endif()
 
 add_subdirectory(temporal_random_walk/py_interface)
