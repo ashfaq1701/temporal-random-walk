@@ -1,5 +1,6 @@
 #include "TemporalGraph.cuh"
 
+#include "../stores/edge_selectors.cuh"
 #include "../common/random_gen.cuh"
 #include "../common/setup.cuh"
 #include "../common/error_handlers.cuh"
