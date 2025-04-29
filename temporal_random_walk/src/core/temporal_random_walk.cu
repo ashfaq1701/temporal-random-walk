@@ -82,7 +82,7 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
     const int start_node_id,
     const double* rand_nums) {
 
-    const size_t rand_nums_start_idx_for_walk = walk_idx * max_walk_len * 3;
+    const size_t rand_nums_start_idx_for_walk = walk_idx + walk_idx * max_walk_len * 2;
 
     Edge start_edge;
     if (start_node_id == -1) {
@@ -139,7 +139,7 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
     // Perform the walk
     while (walk_set->get_walk_len(walk_idx) < max_walk_len && current_node != -1) {
         const auto walk_len = walk_set->get_walk_len(walk_idx);
-        const auto step_start_idx = rand_nums_start_idx_for_walk + walk_len * 3;
+        const auto step_start_idx = rand_nums_start_idx_for_walk + walk_len * 2 + 1;
         const auto group_selector_rand_num = rand_nums[step_start_idx];
         const auto edge_selector_rand_num = rand_nums[step_start_idx + 1];
 
@@ -195,7 +195,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
     shuffle_vector_host<int>(repeated_node_ids.data, repeated_node_ids.size);
 
     WalkSet walk_set(repeated_node_ids.size, max_walk_len, temporal_random_walk->use_gpu);
-    double* rand_nums = generate_n_random_numbers(repeated_node_ids.size * max_walk_len * 3, false);
+    double* rand_nums = generate_n_random_numbers(repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, false);
 
     #pragma omp parallel for schedule(dynamic)
     for (int walk_idx = 0; walk_idx < repeated_node_ids.size; ++walk_idx) {
@@ -233,7 +233,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
     }
 
     WalkSet walk_set(num_walks_total, max_walk_len, temporal_random_walk->use_gpu);
-    double* rand_nums = generate_n_random_numbers(num_walks_total * max_walk_len * 3, false);
+    double* rand_nums = generate_n_random_numbers(num_walks_total + num_walks_total * max_walk_len * 2, false);
 
     #pragma omp parallel for schedule(dynamic)
     for (int walk_idx = 0; walk_idx < num_walks_total; ++walk_idx) {
@@ -285,7 +285,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
         BLOCK_DIM_GENERATING_RANDOM_WALKS);
 
     // Initialize random numbers between [0.0, 1.0)
-    double* rand_nums = generate_n_random_numbers(repeated_node_ids.size * max_walk_len * 3, true);
+    double* rand_nums = generate_n_random_numbers(repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, true);
 
     // Shuffle node IDs for randomization
     shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
@@ -350,7 +350,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     fill_memory(start_node_ids, num_walks_total, -1, temporal_random_walk->use_gpu);
 
     // Initialize random numbers between [0.0, 1.0)
-    double* rand_nums = generate_n_random_numbers(num_walks_total * max_walk_len * 3, true);
+    double* rand_nums = generate_n_random_numbers(num_walks_total + num_walks_total * max_walk_len * 2, true);
 
     // Create and initialize the walk set on device
     WalkSet walk_set(num_walks_total, max_walk_len, true);

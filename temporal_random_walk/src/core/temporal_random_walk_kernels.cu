@@ -22,7 +22,7 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
     const int walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (walk_idx >= num_walks) return;
 
-    const size_t rand_nums_start_idx_for_walk = walk_idx * max_walk_len * 3;
+    const size_t rand_nums_start_idx_for_walk = walk_idx + walk_idx * max_walk_len * 2;
 
     const bool should_walk_forward = get_should_walk_forward(walk_direction);
 
@@ -78,7 +78,7 @@ __global__ void temporal_random_walk::generate_random_walks_kernel(
 
     while (walk_set->get_walk_len_device(walk_idx) < max_walk_len && current_node != -1) {
         const auto walk_len = walk_set->get_walk_len_device(walk_idx);
-        const auto step_start_idx = rand_nums_start_idx_for_walk + walk_len * 3;
+        const auto step_start_idx = rand_nums_start_idx_for_walk + walk_len * 2 + 1;
         const auto group_selector_rand_num = rand_nums[step_start_idx];
         const auto edge_selector_rand_num = rand_nums[step_start_idx + 1];
 
