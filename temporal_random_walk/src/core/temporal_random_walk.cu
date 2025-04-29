@@ -176,12 +176,12 @@ HOST void temporal_random_walk::generate_random_walk_and_time_std(
 }
 
 HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
-    TemporalRandomWalkStore* temporal_random_walk,
-    int max_walk_len,
+    const TemporalRandomWalkStore* temporal_random_walk,
+    const int max_walk_len,
     const RandomPickerType* walk_bias,
     const int num_walks_per_node,
     const RandomPickerType* initial_edge_bias,
-    WalkDirection walk_direction) {
+    const WalkDirection walk_direction) {
 
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
@@ -196,26 +196,21 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
     WalkSet walk_set(repeated_node_ids.size, max_walk_len, temporal_random_walk->use_gpu);
     double* rand_nums = generate_n_random_numbers(repeated_node_ids.size * max_walk_len * 3, false);
 
-    #pragma omp parallel
-    {
-        int thread_id = omp_get_thread_num();
-        int num_threads = omp_get_num_threads();
+    #pragma omp parallel for schedule(dynamic)
+    for (int walk_idx = 0; walk_idx < repeated_node_ids.size; ++walk_idx) {
+        const int start_node_id = repeated_node_ids.data[walk_idx];
+        const bool should_walk_forward = get_should_walk_forward(walk_direction);
 
-        for (int walk_idx = thread_id; walk_idx < repeated_node_ids.size; walk_idx += num_threads) {
-            const int start_node_id = repeated_node_ids.data[walk_idx];
-            const bool should_walk_forward = get_should_walk_forward(walk_direction);
-
-            generate_random_walk_and_time_std(
-                temporal_random_walk,
-                walk_idx,
-                &walk_set,
-                walk_bias,
-                initial_edge_bias,
-                max_walk_len,
-                should_walk_forward,
-                start_node_id,
-                rand_nums);
-        }
+        generate_random_walk_and_time_std(
+            temporal_random_walk,
+            walk_idx,
+            &walk_set,
+            walk_bias,
+            initial_edge_bias,
+            max_walk_len,
+            should_walk_forward,
+            start_node_id,
+            rand_nums);
     }
 
     // Clean up
@@ -225,12 +220,12 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
 }
 
 HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
-    TemporalRandomWalkStore* temporal_random_walk,
-    int max_walk_len,
+    const TemporalRandomWalkStore* temporal_random_walk,
+    const int max_walk_len,
     const RandomPickerType* walk_bias,
     const int num_walks_total,
     const RandomPickerType* initial_edge_bias,
-    WalkDirection walk_direction) {
+    const WalkDirection walk_direction) {
 
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
@@ -239,24 +234,20 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
     WalkSet walk_set(num_walks_total, max_walk_len, temporal_random_walk->use_gpu);
     double* rand_nums = generate_n_random_numbers(num_walks_total * max_walk_len * 3, false);
 
-    #pragma omp parallel
-    {
-        const int thread_id = omp_get_thread_num();
-        const int num_threads = omp_get_num_threads();
+    #pragma omp parallel for schedule(dynamic)
+    for (int walk_idx = 0; walk_idx < num_walks_total; ++walk_idx) {
         const bool should_walk_forward = get_should_walk_forward(walk_direction);
 
-        for (int walk_idx = thread_id; walk_idx < num_walks_total; walk_idx += num_threads) {
-            generate_random_walk_and_time_std(
-                temporal_random_walk,
-                walk_idx,
-                &walk_set,
-                walk_bias,
-                initial_edge_bias,
-                max_walk_len,
-                should_walk_forward,
-                -1,
-                rand_nums);
-        }
+        generate_random_walk_and_time_std(
+            temporal_random_walk,
+            walk_idx,
+            &walk_set,
+            walk_bias,
+            initial_edge_bias,
+            max_walk_len,
+            should_walk_forward,
+            -1,
+            rand_nums);
     }
 
     // Clean up
