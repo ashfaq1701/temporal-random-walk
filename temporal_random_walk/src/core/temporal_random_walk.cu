@@ -197,7 +197,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
     WalkSet walk_set(repeated_node_ids.size, max_walk_len, temporal_random_walk->use_gpu);
     double* rand_nums = generate_n_random_numbers(repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, false);
 
-    #pragma omp parallel for schedule(dynamic)
+    #pragma omp parallel for
     for (int walk_idx = 0; walk_idx < repeated_node_ids.size; ++walk_idx) {
         const int start_node_id = repeated_node_ids.data[walk_idx];
         const bool should_walk_forward = get_should_walk_forward(walk_direction);
@@ -235,7 +235,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
     WalkSet walk_set(num_walks_total, max_walk_len, temporal_random_walk->use_gpu);
     double* rand_nums = generate_n_random_numbers(num_walks_total + num_walks_total * max_walk_len * 2, false);
 
-    #pragma omp parallel for schedule(dynamic)
+    #pragma omp parallel for
     for (int walk_idx = 0; walk_idx < num_walks_total; ++walk_idx) {
         const bool should_walk_forward = get_should_walk_forward(walk_direction);
 
