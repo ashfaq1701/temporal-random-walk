@@ -1,7 +1,7 @@
 #ifndef TEMPORAL_RANDOM_WALK_KERNELS_CUH
 #define TEMPORAL_RANDOM_WALK_KERNELS_CUH
 
-#include "../data/walk_set.cuh"
+#include "../data/walk_set/walk_set.cuh"
 #include "../stores/temporal_graph.cuh"
 #include "../utils/random.cuh"
 #include "../utils/utils.cuh"

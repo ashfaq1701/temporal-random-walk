@@ -3,7 +3,7 @@
 
 #include "../common/macros.cuh"
 #include "../data/structs.cuh"
-#include "../data/walk_set.cuh"
+#include "../data/walk_set/walk_set.cuh"
 #include "../stores/temporal_graph.cuh"
 #include "../utils/utils.cuh"
 #include "../utils/random.cuh"

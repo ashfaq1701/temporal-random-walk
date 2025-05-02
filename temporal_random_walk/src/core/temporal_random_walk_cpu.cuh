@@ -2,7 +2,7 @@
 #define TEMPORAL_RANDOM_WALK_CPU_CUH
 
 #include "../common/macros.cuh"
-#include "../data/walk_set.cuh"
+#include "../data/walk_set/walk_set.cuh"
 #include "helpers.cuh"
 #include "../stores/temporal_graph.cuh"
 #include "../stores/edge_selectors.cuh"

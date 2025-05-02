@@ -4,7 +4,7 @@
 #include <vector>
 #include <thread>
 #include "../core/temporal_random_walk.cuh"
-#include "../data/walk_set.cuh"
+#include "../data/walk_set/walk_set.cuh"
 #include "../data/enums.cuh"
 #include "../common/const.cuh"
 
