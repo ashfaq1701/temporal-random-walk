@@ -58,26 +58,7 @@ if(HAS_CUDA)
     endif()
 endif()
 
-set(SRC_FILES
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/common/setup.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/common/random_gen.cu
-
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/data/WalkSet.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/edge_data.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/node_edge_index.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/temporal_graph.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/edge_selectors.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/random/pickers.cu
-
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/core/temporal_random_walk_kernels.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/core/temporal_random_walk.cu
-
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/EdgeData.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/NodeEdgeIndex.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/TemporalGraph.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/RandomPicker.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/TemporalRandomWalk.cu
-)
+set(SRC_FILES )
 
 if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
     add_compile_options(
@@ -97,6 +78,7 @@ if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
     )
 
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --extended-lambda --expt-relaxed-constexpr -rdc=true")
+
     # For debug builds
     set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -G")
 else()

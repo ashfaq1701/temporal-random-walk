@@ -29,6 +29,7 @@ if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
 
     set_target_properties(_temporal_random_walk PROPERTIES
             CUDA_SEPARABLE_COMPILATION ON
+            CUDA_RESOLVE_DEVICE_SYMBOLS ON
             CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
     )
 
