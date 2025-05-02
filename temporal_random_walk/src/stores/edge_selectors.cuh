@@ -19,9 +19,9 @@ namespace temporal_graph {
     template<bool Forward, RandomPickerType PickerType>
     HOST Edge get_edge_at_host(
         const TemporalGraphStore *graph,
-        int64_t timestamp,
-        double group_selector_rand_num,
-        double edge_selector_rand_num) {
+        const int64_t timestamp,
+        const double group_selector_rand_num,
+        const double edge_selector_rand_num) {
         if (edge_data::empty(graph->edge_data)) return Edge{-1, -1, -1};
 
         const size_t num_groups = edge_data::get_timestamp_group_count(graph->edge_data);
@@ -123,10 +123,10 @@ namespace temporal_graph {
     template<bool Forward, RandomPickerType PickerType, bool IsDirected>
     HOST Edge get_node_edge_at_host(
         const TemporalGraphStore *graph,
-        int node_id,
-        int64_t timestamp,
-        double group_selector_rand_num,
-        double edge_selector_rand_num) {
+        const int node_id,
+        const int64_t timestamp,
+        const double group_selector_rand_num,
+        const double edge_selector_rand_num) {
         if (!edge_data::is_node_active_host(graph->edge_data, node_id)) {
             return Edge{-1, -1, -1};
         }
@@ -329,9 +329,9 @@ namespace temporal_graph {
     template<bool Forward, RandomPickerType PickerType>
     DEVICE Edge get_edge_at_device(
         const TemporalGraphStore *graph,
-        int64_t timestamp,
-        double group_selector_rand_num,
-        double edge_selector_rand_num) {
+        const int64_t timestamp,
+        const double group_selector_rand_num,
+        const double edge_selector_rand_num) {
         if (edge_data::empty(graph->edge_data)) return Edge{-1, -1, -1};
 
         const size_t num_groups = edge_data::get_timestamp_group_count(graph->edge_data);
@@ -433,10 +433,10 @@ namespace temporal_graph {
     template<bool Forward, RandomPickerType PickerType, bool IsDirected>
     DEVICE Edge get_node_edge_at_device(
         const TemporalGraphStore *graph,
-        int node_id,
+        const int node_id,
         int64_t timestamp,
-        double group_selector_rand_num,
-        double edge_selector_rand_num) {
+        const double group_selector_rand_num,
+        const double edge_selector_rand_num) {
         if (!edge_data::is_node_active_device(graph->edge_data, node_id)) {
             return Edge{-1, -1, -1};
         }

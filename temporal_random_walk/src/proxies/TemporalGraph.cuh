@@ -2,45 +2,27 @@
 #define TEMPORAL_GRAPH_H
 
 #include <vector>
-#include <common/random_gen.cuh>
-#include <stores/edge_selectors.cuh>
 #include "../stores/temporal_graph.cuh"
 #include "../data/structs.cuh"
 #include "../data/enums.cuh"
 
 #ifdef HAS_CUDA
 
-__global__ inline void get_total_edges_kernel(size_t* result, const TemporalGraphStore* graph) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = temporal_graph::get_total_edges(graph);
-    }
-}
+__global__ void get_total_edges_kernel(size_t* result, const TemporalGraphStore* graph);
 
 template <bool Forward, RandomPickerType PickerType>
 __global__ void get_edge_at_kernel(
-    Edge* __restrict__ result,
-    const TemporalGraphStore* __restrict__ graph,
-    int64_t timestamp,
-    const double* __restrict__ rand_nums) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = temporal_graph::get_edge_at_device<Forward, PickerType>(
-            graph, timestamp, rand_nums[0], rand_nums[1]);
-    }
-}
-
+    Edge* result,
+    const TemporalGraphStore* graph, int64_t timestamp,
+    const double* rand_nums);
 
 template <bool IsDirected, bool Forward, RandomPickerType PickerType>
 __global__ void get_node_edge_at_kernel(
-    Edge* __restrict__ result,
-    TemporalGraphStore* __restrict__ graph,
-    const int node_id,
-    const int64_t timestamp,
-    const double* __restrict__ rand_nums) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = temporal_graph::get_node_edge_at_device<Forward, PickerType, IsDirected>(
-            graph, node_id, timestamp, rand_nums[0], rand_nums[1]);
-    }
-}
+    Edge* result,
+    TemporalGraphStore* graph,
+    int node_id, int64_t timestamp,
+    const double* rand_nums);
+
 
 #endif
 
@@ -50,405 +32,49 @@ public:
     bool owns_graph;
 
     explicit TemporalGraph(
-        const bool is_directed,
-        const bool use_gpu,
-        const int64_t max_time_capacity = -1,
-        const bool enable_weight_computation = false,
-        const double timescale_bound = -1): owns_graph(true) {
+        bool is_directed,
+        bool use_gpu,
+        int64_t max_time_capacity = -1,
+        bool enable_weight_computation = false,
+        double timescale_bound = -1);
 
-        graph = new TemporalGraphStore(
-            is_directed,
-            use_gpu,
-            max_time_capacity,
-            enable_weight_computation,
-            timescale_bound);
-    }
+    explicit TemporalGraph(TemporalGraphStore* existing_graph);
 
-    explicit TemporalGraph(TemporalGraphStore* existing_graph): graph(existing_graph), owns_graph(false) {}
+    ~TemporalGraph();
 
-    ~TemporalGraph() {
-        if (owns_graph && graph) {
-            delete graph;
-        }
-    }
+    TemporalGraph& operator=(const TemporalGraph& other);
 
-    TemporalGraph& operator=(const TemporalGraph& other) {
-        if (this != &other) {
-            if (owns_graph && graph) {
-                delete graph;
-            }
+    void update_temporal_weights() const;
 
-            owns_graph = other.owns_graph;
-            if (other.owns_graph) {
-                graph = new TemporalGraphStore(
-                    other.graph->is_directed,
-                    other.graph->use_gpu,
-                    other.graph->max_time_capacity,
-                    other.graph->enable_weight_computation,
-                    other.graph->timescale_bound);
-            } else {
-                graph = other.graph;
-            }
-        }
-        return *this;
-    }
+    [[nodiscard]] size_t get_total_edges() const;
 
-    void update_temporal_weights() const {
-        temporal_graph::update_temporal_weights(graph);
-    }
+    [[nodiscard]] size_t get_node_count() const;
 
-    [[nodiscard]] size_t get_total_edges() const {
-        #ifdef HAS_CUDA
-        if (graph->use_gpu) {
-            // Call via CUDA kernel for GPU implementation
-            size_t* d_result;
-            CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(size_t)));
+    [[nodiscard]] int64_t get_latest_timestamp() const;
 
-            TemporalGraphStore* d_graph = temporal_graph::to_device_ptr(graph);
-            get_total_edges_kernel<<<1, 1>>>(d_result, d_graph);
-            CUDA_KERNEL_CHECK("After get_total_edges_kernel execution");
+    [[nodiscard]] std::vector<int> get_node_ids() const;
 
-            size_t host_result;
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost));
+    [[nodiscard]] std::vector<Edge> get_edges() const;
 
-            CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
-            CUDA_CHECK_AND_CLEAR(cudaFree(d_graph));
+    void add_multiple_edges(const std::vector<Edge>& new_edges) const;
 
-            return host_result;
-        }
-        else
-        #endif
-        {
-            // Direct call for CPU implementation
-            return temporal_graph::get_total_edges(graph);
-        }
-    }
+    void sort_and_merge_edges(size_t start_idx) const;
 
-    [[nodiscard]] size_t get_node_count() const {
-        return temporal_graph::get_node_count(graph);
-    }
+    void delete_old_edges() const;
 
-    [[nodiscard]] int64_t get_latest_timestamp() const {
-        return temporal_graph::get_latest_timestamp(graph);
-    }
+    [[nodiscard]] size_t count_timestamps_less_than(int64_t timestamp) const;
 
-    [[nodiscard]] std::vector<int> get_node_ids() const {
-        const DataBlock<int> node_ids = temporal_graph::get_node_ids(graph);
-        std::vector<int> result;
+    [[nodiscard]] size_t count_timestamps_greater_than(int64_t timestamp) const;
 
-        #ifdef HAS_CUDA
-        if (graph->use_gpu) {
-            // For GPU data, need to copy from device to host
-            const auto host_ids = new int[node_ids.size];
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(host_ids, node_ids.data, node_ids.size * sizeof(int), cudaMemcpyDeviceToHost));
+    [[nodiscard]] size_t count_node_timestamps_less_than(int node_id, int64_t timestamp) const;
 
-            result.assign(host_ids, host_ids + node_ids.size);
-            delete[] host_ids;
-        }
-        else
-        #endif
-        {
-            // For CPU data, can directly copy
-            result.assign(node_ids.data, node_ids.data + node_ids.size);
-        }
+    [[nodiscard]] size_t count_node_timestamps_greater_than(int node_id, int64_t timestamp) const;
 
-        return result;
-    }
+    [[nodiscard]] Edge get_edge_at(RandomPickerType picker_type, int64_t timestamp = -1, bool forward = true) const;
 
-    [[nodiscard]] std::vector<Edge> get_edges() const {
-        const DataBlock<Edge> edges = temporal_graph::get_edges(graph);
-        std::vector<Edge> result;
+    [[nodiscard]] Edge get_node_edge_at(int node_id, RandomPickerType picker_type, int64_t timestamp = -1, bool forward = true) const;
 
-        #ifdef HAS_CUDA
-        if (graph->use_gpu) {
-            // For GPU data, need to copy from device to host
-            const auto host_edges = new Edge[edges.size];
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(host_edges, edges.data, edges.size * sizeof(Edge), cudaMemcpyDeviceToHost));
-
-            result.assign(host_edges, host_edges + edges.size);
-            delete[] host_edges;
-        }
-        else
-        #endif
-        {
-            // For CPU data, can directly copy
-            result.assign(edges.data, edges.data + edges.size);
-        }
-
-        return result;
-    }
-
-    void add_multiple_edges(const std::vector<Edge>& new_edges) const {
-        #ifdef HAS_CUDA
-        if (graph->use_gpu) {
-            // Allocate device memory for edges
-            Edge* d_edges = nullptr;
-            CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_edges, new_edges.size() * sizeof(Edge)));
-
-            // Copy edges to device
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_edges, new_edges.data(), new_edges.size() * sizeof(Edge), cudaMemcpyHostToDevice));
-
-            // Call CUDA implementation
-            temporal_graph::add_multiple_edges_cuda(graph, d_edges, new_edges.size());
-
-            // Clean up
-            CUDA_CHECK_AND_CLEAR(cudaFree(d_edges));
-        }
-        else
-        #endif
-        {
-            // Call CPU implementation directly
-            temporal_graph::add_multiple_edges_std(graph, new_edges.data(), new_edges.size());
-        }
-    }
-
-    void sort_and_merge_edges(const size_t start_idx) const {
-        #ifdef HAS_CUDA
-        if (graph->use_gpu) {
-            temporal_graph::sort_and_merge_edges_cuda(graph, start_idx);
-        }
-        else
-        #endif
-        {
-            temporal_graph::sort_and_merge_edges_std(graph, start_idx);
-        }
-    }
-
-    void delete_old_edges() const {
-        #ifdef HAS_CUDA
-        if (graph->use_gpu) {
-            temporal_graph::delete_old_edges_cuda(graph);
-        }
-        else
-        #endif
-        {
-            temporal_graph::delete_old_edges_std(graph);
-        }
-    }
-
-    [[nodiscard]] size_t count_timestamps_less_than(const int64_t timestamp) const {
-        #ifdef HAS_CUDA
-        if (graph->use_gpu) {
-            return temporal_graph::count_timestamps_less_than_cuda(graph, timestamp);
-        }
-        else
-        #endif
-        {
-            return temporal_graph::count_timestamps_less_than_std(graph, timestamp);
-        }
-    }
-
-    [[nodiscard]] size_t count_timestamps_greater_than(const int64_t timestamp) const {
-        #ifdef HAS_CUDA
-        if (graph->use_gpu) {
-            return temporal_graph::count_timestamps_greater_than_cuda(graph, timestamp);
-        }
-        else
-        #endif
-        {
-            return temporal_graph::count_timestamps_greater_than_std(graph, timestamp);
-        }
-    }
-
-    [[nodiscard]] size_t count_node_timestamps_less_than(const int node_id, const int64_t timestamp) const {
-        #ifdef HAS_CUDA
-        if (graph->use_gpu) {
-            return temporal_graph::count_node_timestamps_less_than_cuda(graph, node_id, timestamp);
-        }
-        else
-        #endif
-        {
-            return temporal_graph::count_node_timestamps_less_than_std(graph, node_id, timestamp);
-        }
-    }
-
-    [[nodiscard]] size_t count_node_timestamps_greater_than(const int node_id, const int64_t timestamp) const {
-        #ifdef HAS_CUDA
-        if (graph->use_gpu) {
-            return temporal_graph::count_node_timestamps_greater_than_cuda(graph, node_id, timestamp);
-        }
-        else
-        #endif
-        {
-            return temporal_graph::count_node_timestamps_greater_than_std(graph, node_id, timestamp);
-        }
-    }
-
-    [[nodiscard]] Edge get_edge_at(const RandomPickerType picker_type, const int64_t timestamp = -1, const bool forward = true) const {
-        double *rand_nums = generate_n_random_numbers(2, graph->use_gpu);
-        Edge result;
-
-        #define DISPATCH_HOST(FWD, PICKER) \
-        result = temporal_graph::get_edge_at_host<FWD, RandomPickerType::PICKER>( \
-            graph, timestamp, rand_nums[0], rand_nums[1]); \
-        break;
-
-        #define DISPATCH_DEVICE(FWD, PICKER) \
-        get_edge_at_kernel<FWD, RandomPickerType::PICKER><<<1, 1>>>( \
-            d_result, d_graph, timestamp, rand_nums); \
-        break;
-
-        #define HANDLE_PICKER_HOST(FWD) \
-        switch (picker_type) { \
-            case RandomPickerType::Uniform: DISPATCH_HOST(FWD, Uniform) \
-            case RandomPickerType::Linear: DISPATCH_HOST(FWD, Linear) \
-            case RandomPickerType::ExponentialIndex: DISPATCH_HOST(FWD, ExponentialIndex) \
-            case RandomPickerType::ExponentialWeight: DISPATCH_HOST(FWD, ExponentialWeight) \
-            case RandomPickerType::TEST_FIRST: DISPATCH_HOST(FWD, TEST_FIRST) \
-            case RandomPickerType::TEST_LAST: DISPATCH_HOST(FWD, TEST_LAST) \
-        }
-
-        #define HANDLE_PICKER_DEVICE(FWD) \
-        switch (picker_type) { \
-            case RandomPickerType::Uniform: DISPATCH_DEVICE(FWD, Uniform) \
-            case RandomPickerType::Linear: DISPATCH_DEVICE(FWD, Linear) \
-            case RandomPickerType::ExponentialIndex: DISPATCH_DEVICE(FWD, ExponentialIndex) \
-            case RandomPickerType::ExponentialWeight: DISPATCH_DEVICE(FWD, ExponentialWeight) \
-            case RandomPickerType::TEST_FIRST: DISPATCH_DEVICE(FWD, TEST_FIRST) \
-            case RandomPickerType::TEST_LAST: DISPATCH_DEVICE(FWD, TEST_LAST) \
-        }
-
-        #ifdef HAS_CUDA
-        if (graph->use_gpu) {
-            // Allocate memory for the result
-            Edge *d_result;
-            CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(Edge)));
-
-            // Copy graph to device
-            TemporalGraphStore *d_graph = temporal_graph::to_device_ptr(graph);
-
-            // Dispatch to appropriate template specialization
-            if (forward) {
-                HANDLE_PICKER_DEVICE(true)
-            } else {
-                HANDLE_PICKER_DEVICE(false)
-            }
-            CUDA_KERNEL_CHECK("After get_edge_at_kernel execution");
-
-            // Copy result back to host
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(&result, d_result, sizeof(Edge), cudaMemcpyDeviceToHost));
-
-            // Clean up
-            CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
-            temporal_graph::free_device_pointers(d_graph);
-        } else
-        #endif
-        {
-            // Dispatch to appropriate host template specialization
-            if (forward) {
-                HANDLE_PICKER_HOST(true)
-            } else {
-                HANDLE_PICKER_HOST(false)
-            }
-        }
-
-        #undef DISPATCH_HOST
-        #undef DISPATCH_DEVICE
-        #undef HANDLE_PICKER_HOST
-        #undef HANDLE_PICKER_DEVICE
-
-        clear_memory(&rand_nums, graph->use_gpu);
-        return result;
-    }
-
-    [[nodiscard]] Edge get_node_edge_at(const int node_id, const RandomPickerType picker_type, const int64_t timestamp = -1, const bool forward = true) const {
-        double* rand_nums = generate_n_random_numbers(2, graph->use_gpu);
-        Edge result;
-        const bool is_directed = graph->is_directed;
-
-        #define DISPATCH_HOST(FWD, PICKER, DIR) \
-        result = temporal_graph::get_node_edge_at_host<FWD, RandomPickerType::PICKER, DIR>( \
-            graph, node_id, timestamp, rand_nums[0], rand_nums[1]); \
-        break;
-
-        #define DISPATCH_DEVICE(FWD, PICKER, DIR) \
-        get_node_edge_at_kernel<DIR, FWD, RandomPickerType::PICKER><<<1, 1>>>( \
-            d_result, d_graph, node_id, timestamp, rand_nums); \
-        break;
-
-        #define HANDLE_PICKER_HOST(FWD, DIR) \
-        switch (picker_type) { \
-            case RandomPickerType::Uniform: DISPATCH_HOST(FWD, Uniform, DIR) \
-            case RandomPickerType::Linear: DISPATCH_HOST(FWD, Linear, DIR) \
-            case RandomPickerType::ExponentialIndex: DISPATCH_HOST(FWD, ExponentialIndex, DIR) \
-            case RandomPickerType::ExponentialWeight: DISPATCH_HOST(FWD, ExponentialWeight, DIR) \
-            case RandomPickerType::TEST_FIRST: DISPATCH_HOST(FWD, TEST_FIRST, DIR) \
-            case RandomPickerType::TEST_LAST: DISPATCH_HOST(FWD, TEST_LAST, DIR) \
-        }
-
-        #define HANDLE_PICKER_DEVICE(FWD, DIR) \
-        switch (picker_type) { \
-            case RandomPickerType::Uniform: DISPATCH_DEVICE(FWD, Uniform, DIR) \
-            case RandomPickerType::Linear: DISPATCH_DEVICE(FWD, Linear, DIR) \
-            case RandomPickerType::ExponentialIndex: DISPATCH_DEVICE(FWD, ExponentialIndex, DIR) \
-            case RandomPickerType::ExponentialWeight: DISPATCH_DEVICE(FWD, ExponentialWeight, DIR) \
-            case RandomPickerType::TEST_FIRST: DISPATCH_DEVICE(FWD, TEST_FIRST, DIR) \
-            case RandomPickerType::TEST_LAST: DISPATCH_DEVICE(FWD, TEST_LAST, DIR) \
-        }
-
-        #ifdef HAS_CUDA
-        if (graph->use_gpu) {
-            // Allocate memory for the result
-            Edge* d_result;
-            CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(Edge)));
-
-            // Copy graph to device
-            TemporalGraphStore* d_graph = temporal_graph::to_device_ptr(graph);
-
-            // Dispatch to appropriate template specialization
-            if (is_directed) {
-                if (forward) {
-                    HANDLE_PICKER_DEVICE(true, true)
-                } else {
-                    HANDLE_PICKER_DEVICE(false, true)
-                }
-            } else {
-                if (forward) {
-                    HANDLE_PICKER_DEVICE(true, false)
-                } else {
-                    HANDLE_PICKER_DEVICE(false, false)
-                }
-            }
-            CUDA_KERNEL_CHECK("After get_node_edge_at_kernel execution");
-
-            // Copy result back to host
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(&result, d_result, sizeof(Edge), cudaMemcpyDeviceToHost));
-
-            // Clean up
-            CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
-            temporal_graph::free_device_pointers(d_graph);
-        }
-        else
-        #endif
-        {
-            // Dispatch to appropriate host template specialization
-            if (is_directed) {
-                if (forward) {
-                    HANDLE_PICKER_HOST(true, true)
-                } else {
-                    HANDLE_PICKER_HOST(false, true)
-                }
-            } else {
-                if (forward) {
-                    HANDLE_PICKER_HOST(true, false)
-                } else {
-                    HANDLE_PICKER_HOST(false, false)
-                }
-            }
-        }
-
-        #undef DISPATCH_HOST
-        #undef DISPATCH_DEVICE
-        #undef HANDLE_PICKER_HOST
-        #undef HANDLE_PICKER_DEVICE
-
-        clear_memory(&rand_nums, graph->use_gpu);
-        return result;
-    }
-
-    [[nodiscard]] TemporalGraphStore* get_graph() const {
-        return graph;
-    }
+    [[nodiscard]] TemporalGraphStore* get_graph() const;
 };
 
 #endif // TEMPORAL_GRAPH_H

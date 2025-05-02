@@ -58,7 +58,13 @@ if(HAS_CUDA)
     endif()
 endif()
 
-set(SRC_FILES )
+set(SRC_FILES
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/EdgeData.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/NodeEdgeIndex.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/TemporalGraph.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/RandomPicker.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/TemporalRandomWalk.cu
+)
 
 if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
     add_compile_options(

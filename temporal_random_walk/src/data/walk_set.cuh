@@ -456,41 +456,41 @@ struct WalkSet {
     }
 };
 
-HOST void WalksIterator::find_next_non_empty() {
+HOST inline void WalksIterator::find_next_non_empty() {
 	while (walk_index_ < max_walks_ && walk_set_->walk_lens[walk_index_] == 0) {
     	++walk_index_;
     }
 }
 
-WalksIterator::WalksIterator(const WalkSet* walk_set, const size_t start_index)
+inline WalksIterator::WalksIterator(const WalkSet* walk_set, const size_t start_index)
     : walk_set_(walk_set), walk_index_(start_index), max_walks_(walk_set->num_walks) {
   	find_next_non_empty();
 }
 
 // Iterator operations
-Walk WalksIterator::operator*() const {
+inline Walk WalksIterator::operator*() const {
   	size_t len = walk_set_->walk_lens[walk_index_];
     const size_t offset = walk_index_ * walk_set_->max_len;
     return {walk_set_->nodes + offset, walk_set_->timestamps + offset, len};
 }
 
-WalksIterator& WalksIterator::operator++() {
+inline WalksIterator& WalksIterator::operator++() {
 	++walk_index_;
     find_next_non_empty();
     return *this;
 }
 
-WalksIterator WalksIterator::operator++(int) {
+inline WalksIterator WalksIterator::operator++(int) {
 	const WalksIterator temp = *this;
     ++(*this);
     return temp;
 }
 
-bool WalksIterator::operator==(const WalksIterator& other) const {
+inline bool WalksIterator::operator==(const WalksIterator& other) const {
 	return walk_index_ == other.walk_index_;
 }
 
-HOST bool WalksIterator::operator!=(const WalksIterator& other) const {
+HOST inline bool WalksIterator::operator!=(const WalksIterator& other) const {
 	return walk_index_ != other.walk_index_;
 }
 

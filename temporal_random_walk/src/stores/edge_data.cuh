@@ -303,7 +303,7 @@ namespace edge_data {
         }
     }
 
-    HOST void update_timestamp_groups_std(EdgeDataStore *edge_data) {
+    HOST inline void update_timestamp_groups_std(EdgeDataStore *edge_data) {
         if (edge_data->timestamps_size == 0) {
             clear_memory(&edge_data->timestamp_group_offsets, edge_data->use_gpu);
             clear_memory(&edge_data->unique_timestamps, edge_data->use_gpu);
