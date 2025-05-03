@@ -5,23 +5,31 @@
 #include "../stores/temporal_graph.cuh"
 #include "../data/structs.cuh"
 #include "../data/enums.cuh"
+#include "../stores/edge_selectors.cuh"
 
 #ifdef HAS_CUDA
 
-__global__ void get_total_edges_kernel(size_t* result, const TemporalGraphStore* graph);
+__global__ inline void get_total_edges_kernel(size_t* result, const TemporalGraphStore* graph) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        *result = temporal_graph::get_total_edges(graph);
+    }
+}
 
 template <bool Forward, RandomPickerType PickerType>
-__global__ void get_edge_at_kernel(
-    Edge* result,
-    const TemporalGraphStore* graph, int64_t timestamp,
-    const double* rand_nums);
+__global__ void get_edge_at_kernel(Edge* result, const TemporalGraphStore* graph, const int64_t timestamp, const double* rand_nums) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        *result = temporal_graph::get_edge_at_device<Forward, PickerType>(
+            graph, timestamp, rand_nums[0], rand_nums[1]);
+    }
+}
 
 template <bool IsDirected, bool Forward, RandomPickerType PickerType>
-__global__ void get_node_edge_at_kernel(
-    Edge* result,
-    TemporalGraphStore* graph,
-    int node_id, int64_t timestamp,
-    const double* rand_nums);
+__global__ void get_node_edge_at_kernel(Edge* result, TemporalGraphStore* graph, const int node_id, const int64_t timestamp, const double* rand_nums) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        *result = temporal_graph::get_node_edge_at_device<Forward, PickerType, IsDirected>(
+            graph, node_id, timestamp, rand_nums[0], rand_nums[1]);
+    }
+}
 
 
 #endif
