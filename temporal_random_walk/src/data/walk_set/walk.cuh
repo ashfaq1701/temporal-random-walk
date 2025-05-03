@@ -1,6 +1,7 @@
 #ifndef WALK_CUH
 #define WALK_CUH
 
+#include <stdexcept>
 #include "step.cuh"
 #include "walk_iterator.cuh"
 

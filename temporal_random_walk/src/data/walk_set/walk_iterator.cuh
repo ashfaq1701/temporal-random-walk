@@ -3,7 +3,6 @@
 
 #include "step.cuh"
 
-// Iterator for a single walk
 class WalkIterator {
 private:
     const int* nodes_;
@@ -14,7 +13,7 @@ private:
 public:
     // Constructor
     HOST WalkIterator(const int* nodes, const int64_t* timestamps, const size_t index, const size_t length)
-    : nodes_(nodes), timestamps_(timestamps), index_(index), length_(length) {}
+        : nodes_(nodes), timestamps_(timestamps), index_(index), length_(length) {}
 
     // Iterator operations
     Step operator*() const {

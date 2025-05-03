@@ -1,7 +1,7 @@
-#ifndef WALK_SET_STEP_CUH
-#define WALK_SET_STEP_CUH
+#ifndef STEP_CUH
+#define STEP_CUH
 
-#include "common.cuh"
+#include <cstdint>
 
 // Step representation for a node and timestamp pair
 struct Step {
@@ -9,4 +9,4 @@ struct Step {
     int64_t timestamp;
 };
 
-#endif // WALK_SET_STEP_CUH
+#endif // STEP_CUH

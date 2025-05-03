@@ -1,10 +1,9 @@
 #ifndef WALKS_ITERATOR_CUH
 #define WALKS_ITERATOR_CUH
 
-#include "common.cuh"
 #include "walk.cuh"
 
-// Forward declaration - defined in walk_set.cuh
+// Forward declaration
 struct WalkSet;
 
 // Iterator for all non-empty walks in the WalkSet
@@ -23,9 +22,13 @@ public:
 
     // Iterator operations
     Walk operator*() const;
+
     WalksIterator& operator++();
+
     WalksIterator operator++(int);
+
     bool operator==(const WalksIterator& other) const;
+
     HOST bool operator!=(const WalksIterator& other) const;
 };
 
