@@ -4,6 +4,12 @@
 #include "../common/setup.cuh"
 #include "../common/error_handlers.cuh"
 
+__global__ void get_total_edges_kernel(size_t* result, const TemporalGraphStore* graph) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        *result = temporal_graph::get_total_edges(graph);
+    }
+}
+
 TemporalGraph::TemporalGraph(
     const bool is_directed,
     const bool use_gpu,

@@ -9,11 +9,7 @@
 
 #ifdef HAS_CUDA
 
-__global__ inline void get_total_edges_kernel(size_t* result, const TemporalGraphStore* graph) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = temporal_graph::get_total_edges(graph);
-    }
-}
+__global__ void get_total_edges_kernel(size_t* result, const TemporalGraphStore* graph);
 
 template <bool Forward, RandomPickerType PickerType>
 __global__ void get_edge_at_kernel(Edge* result, const TemporalGraphStore* graph, const int64_t timestamp, const double* rand_nums) {
