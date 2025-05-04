@@ -4,7 +4,6 @@ import os
 import subprocess
 import sys
 import pybind11
-import argparse
 
 
 def find_cmake():
@@ -28,8 +27,8 @@ class CMakeBuild(build_ext):
     def build_extension(self, ext):
         extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
 
-        # Determine if we're building for debug
-        is_debug = getattr(self, 'debug', False)
+        # Check for debug mode via environment variable
+        is_debug = os.environ.get('DEBUG_BUILD', '0').lower() in ('1', 'true', 'yes')
         build_type = 'Debug' if is_debug else 'Release'
 
         print(f"Building in {build_type} mode")
@@ -124,38 +123,23 @@ def read_version_number():
     return version_number.strip()
 
 
-if __name__ == "__main__":
-    # Parse extra arguments for debug
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--debug', action='store_true', help='Build in debug mode')
-    args, unknown = parser.parse_known_args()
-
-    # Remove our custom argument
-    sys.argv = [sys.argv[0]] + unknown
-
-    # Create custom build command
-    class DebugCMakeBuild(CMakeBuild):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.debug = args.debug
-
-    setup(
-        name="temporal_random_walk",
-        version=read_version_number(),
-        author="Ashfaq Salehin",
-        author_email="ashfaq.salehin1701@gmail.com",
-        description="A library to sample temporal random walks from in-memory temporal graphs",
-        long_description=open('README.md').read(),
-        packages=find_packages(),
-        package_data={
-            'temporal_random_walk': ['*.so'],
-        },
-        include_package_data=True,
-        long_description_content_type="text/markdown",
-        url="https://github.com/ashfaq1701/temporal-random-walk",
-        ext_modules=[CMakeExtension('_temporal_random_walk')],
-        cmdclass={"build_ext": DebugCMakeBuild},
-        zip_safe=False,
-        python_requires=">=3.8",
-        install_requires=["pybind11>=2.6.0", "numpy", "networkx"],
-    )
+setup(
+    name="temporal_random_walk",
+    version=read_version_number(),
+    author="Ashfaq Salehin",
+    author_email="ashfaq.salehin1701@gmail.com",
+    description="A library to sample temporal random walks from in-memory temporal graphs",
+    long_description=open('README.md').read(),
+    packages=find_packages(),
+    package_data={
+        'temporal_random_walk': ['*.so'],
+    },
+    include_package_data=True,
+    long_description_content_type="text/markdown",
+    url="https://github.com/ashfaq1701/temporal-random-walk",
+    ext_modules=[CMakeExtension('_temporal_random_walk')],
+    cmdclass={"build_ext": CMakeBuild},
+    zip_safe=False,
+    python_requires=">=3.8",
+    install_requires=["pybind11>=2.6.0", "numpy", "networkx"],
+)
