@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import pybind11
+import argparse
 
 
 def find_cmake():
@@ -27,9 +28,16 @@ class CMakeBuild(build_ext):
     def build_extension(self, ext):
         extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
 
+        # Determine if we're building for debug
+        is_debug = getattr(self, 'debug', False)
+        build_type = 'Debug' if is_debug else 'Release'
+
+        print(f"Building in {build_type} mode")
+
         # Initialize cmake args with the standard options
         cmake_args = [
             f'-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}',
+            f'-DCMAKE_BUILD_TYPE={build_type}',
         ]
 
         # Find compilers - Use environment variables or defaults
@@ -66,15 +74,44 @@ class CMakeBuild(build_ext):
             print(f"Python library: {python_library}")
         print(f"CMake arguments: {cmake_args}")
 
-        if "CXXFLAGS" not in os.environ:
-            os.environ["CXXFLAGS"] = "-D_GLIBCXX_USE_CXX11_ABI=0"
+        # Set up compilation flags based on build type
+        if is_debug:
+            # Debug flags for C++
+            base_cxxflags = "-D_GLIBCXX_USE_CXX11_ABI=0 -g -O0 -fno-omit-frame-pointer"
+            # CUDA debug flags
+            base_cudaflags = "-g -G -O0"
+            print("Using debug compilation flags")
+        else:
+            # Release flags
+            base_cxxflags = "-D_GLIBCXX_USE_CXX11_ABI=0"
+            base_cudaflags = ""
+            print("Using release compilation flags")
 
-        build_args = ['--config', 'Release']
+        # Merge with existing flags if any
+        if "CXXFLAGS" in os.environ:
+            os.environ["CXXFLAGS"] += " " + base_cxxflags
+        else:
+            os.environ["CXXFLAGS"] = base_cxxflags
+
+        if "CUDAFLAGS" in os.environ:
+            os.environ["CUDAFLAGS"] += " " + base_cudaflags
+        else:
+            os.environ["CUDAFLAGS"] = base_cudaflags
+
+        # NVCC flags need to be passed through CMake
+        if is_debug:
+            cmake_args.append('-DCMAKE_CUDA_FLAGS=-g -G -O0')
+
+        build_args = ['--config', build_type]
         os.makedirs(self.build_temp, exist_ok=True)
 
         try:
             # Pass environment variables to CMAKE
             env = os.environ.copy()
+            print(f"Environment variables during build:")
+            print(f"  CXXFLAGS: {env.get('CXXFLAGS', 'not set')}")
+            print(f"  CUDAFLAGS: {env.get('CUDAFLAGS', 'not set')}")
+
             subprocess.check_call(['cmake', os.path.abspath('.')] + cmake_args, cwd=self.build_temp, env=env)
             subprocess.check_call(['cmake', '--build', '.'] + build_args, cwd=self.build_temp, env=env)
         except subprocess.CalledProcessError as e:
@@ -87,23 +124,38 @@ def read_version_number():
     return version_number.strip()
 
 
-setup(
-    name="temporal_random_walk",
-    version=read_version_number(),
-    author="Ashfaq Salehin",
-    author_email="ashfaq.salehin1701@gmail.com",
-    description="A library to sample temporal random walks from in-memory temporal graphs",
-    long_description=open('README.md').read(),
-    packages=find_packages(),
-    package_data={
-        'temporal_random_walk': ['*.so'],
-    },
-    include_package_data=True,
-    long_description_content_type="text/markdown",
-    url="https://github.com/ashfaq1701/temporal-random-walk",
-    ext_modules=[CMakeExtension('_temporal_random_walk')],
-    cmdclass={"build_ext": CMakeBuild},
-    zip_safe=False,
-    python_requires=">=3.8",
-    install_requires=["pybind11>=2.6.0", "numpy", "networkx"],
-)
+if __name__ == "__main__":
+    # Parse extra arguments for debug
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--debug', action='store_true', help='Build in debug mode')
+    args, unknown = parser.parse_known_args()
+
+    # Remove our custom argument
+    sys.argv = [sys.argv[0]] + unknown
+
+    # Create custom build command
+    class DebugCMakeBuild(CMakeBuild):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.debug = args.debug
+
+    setup(
+        name="temporal_random_walk",
+        version=read_version_number(),
+        author="Ashfaq Salehin",
+        author_email="ashfaq.salehin1701@gmail.com",
+        description="A library to sample temporal random walks from in-memory temporal graphs",
+        long_description=open('README.md').read(),
+        packages=find_packages(),
+        package_data={
+            'temporal_random_walk': ['*.so'],
+        },
+        include_package_data=True,
+        long_description_content_type="text/markdown",
+        url="https://github.com/ashfaq1701/temporal-random-walk",
+        ext_modules=[CMakeExtension('_temporal_random_walk')],
+        cmdclass={"build_ext": DebugCMakeBuild},
+        zip_safe=False,
+        python_requires=">=3.8",
+        install_requires=["pybind11>=2.6.0", "numpy", "networkx"],
+    )
