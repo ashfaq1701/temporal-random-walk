@@ -31,30 +31,38 @@ int main(int argc, char* argv[]) {
     }
 
     const auto edge_infos = read_edges_from_csv(file_path, num_rows, delimiter);
-    std::cout << edge_infos.size() << std::endl;
+    std::cout << "Total edges loaded: " << edge_infos.size() << std::endl;
 
+    // Split edges into two equal parts
+    size_t mid_point = edge_infos.size() / 2;
+    auto first_half_begin = edge_infos.begin();
+    auto first_half_end = edge_infos.begin() + mid_point;
+    auto second_half_begin = edge_infos.begin() + mid_point;
+    auto second_half_end = edge_infos.end();
+
+    std::cout << "First half: " << mid_point << " edges" << std::endl;
+    std::cout << "Second half: " << (edge_infos.size() - mid_point) << " edges" << std::endl;
+
+    // Start timing for the entire process
     auto start = std::chrono::high_resolution_clock::now();
     TemporalRandomWalk temporal_random_walk(false, USE_GPU, -1, true, 34);
-    temporal_random_walk.add_multiple_edges(edge_infos);
-    auto end = std::chrono::high_resolution_clock::now();
 
-    std::chrono::duration<double> duration = end - start;
-    std::cout << "Edge addition time: " << duration.count() << " seconds" << std::endl;
+    // Add first half of edges
+    auto first_half_start = std::chrono::high_resolution_clock::now();
+    std::vector<typename decltype(edge_infos)::value_type> first_half(first_half_begin, first_half_end);
+    temporal_random_walk.add_multiple_edges(first_half);
+    auto first_half_end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> first_half_duration = first_half_end_time - first_half_start;
+    std::cout << "First half edge addition time: " << first_half_duration.count() << " seconds" << std::endl;
 
     constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;
     constexpr RandomPickerType exponential_picker_type = RandomPickerType::ExponentialIndex;
     constexpr RandomPickerType uniform_picker_type = RandomPickerType::Uniform;
 
-    start = std::chrono::high_resolution_clock::now();
+    // Generate walks with first half
+    auto first_half_walks_start = std::chrono::high_resolution_clock::now();
 
     const auto walks_backward_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
-        80,
-        &exponential_picker_type,
-        NUM_WALKS_TOTAL,
-        &uniform_picker_type,
-        WalkDirection::Backward_In_Time);
-
-    const auto walks_backward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
         80,
         &exponential_picker_type,
         NUM_WALKS_TOTAL,
@@ -68,6 +76,28 @@ int main(int argc, char* argv[]) {
         &uniform_picker_type,
         WalkDirection::Forward_In_Time);
 
+    auto first_half_walks_end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> first_half_walks_duration = first_half_walks_end - first_half_walks_start;
+    std::cout << "First half walk generation time: " << first_half_walks_duration.count() << " seconds" << std::endl;
+
+    // Add second half of edges to the same object
+    auto second_half_start = std::chrono::high_resolution_clock::now();
+    std::vector<typename decltype(edge_infos)::value_type> second_half(second_half_begin, second_half_end);
+    temporal_random_walk.add_multiple_edges(second_half);
+    auto second_half_end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> second_half_duration = second_half_end_time - second_half_start;
+    std::cout << "Second half edge addition time: " << second_half_duration.count() << " seconds" << std::endl;
+
+    // Generate walks with all edges
+    auto second_half_walks_start = std::chrono::high_resolution_clock::now();
+
+    const auto walks_backward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
+        80,
+        &exponential_picker_type,
+        NUM_WALKS_TOTAL,
+        &uniform_picker_type,
+        WalkDirection::Backward_In_Time);
+
     const auto walks_forward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
         80,
         &exponential_picker_type,
@@ -75,15 +105,23 @@ int main(int argc, char* argv[]) {
         &uniform_picker_type,
         WalkDirection::Forward_In_Time);
 
-    std::cout << "Walks forward: " << walks_forward_for_all_nodes_2.size() << ", average length " << get_average_walk_length(walks_forward_for_all_nodes_2) << std::endl;
+    auto second_half_walks_end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> second_half_walks_duration = second_half_walks_end - second_half_walks_start;
+    std::cout << "Second half walk generation time: " << second_half_walks_duration.count() << " seconds" << std::endl;
 
-    std::cout << "Walks backward: " << walks_backward_for_all_nodes_2.size() << ", average length " << get_average_walk_length(walks_backward_for_all_nodes_2) << std::endl;
+    std::cout << "\nWalks with first half edges:" << std::endl;
+    std::cout << "  Forward walks: " << walks_forward_for_all_nodes_1.size() << ", average length " << get_average_walk_length(walks_forward_for_all_nodes_1) << std::endl;
+    std::cout << "  Backward walks: " << walks_backward_for_all_nodes_1.size() << ", average length " << get_average_walk_length(walks_backward_for_all_nodes_1) << std::endl;
 
-    end = std::chrono::high_resolution_clock::now();
-    duration = end - start;
-    std::cout << "Walk generation time: " << duration.count() << " seconds" << std::endl;
+    std::cout << "\nWalks with all edges:" << std::endl;
+    std::cout << "  Forward walks: " << walks_forward_for_all_nodes_2.size() << ", average length " << get_average_walk_length(walks_forward_for_all_nodes_2) << std::endl;
+    std::cout << "  Backward walks: " << walks_backward_for_all_nodes_2.size() << ", average length " << get_average_walk_length(walks_backward_for_all_nodes_2) << std::endl;
 
-    print_temporal_random_walks_with_times(walks_backward_for_all_nodes_1, 100);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> total_duration = end - start;
+    std::cout << "\nTotal execution time: " << total_duration.count() << " seconds" << std::endl;
+
+    print_temporal_random_walks_with_times(walks_backward_for_all_nodes_2, 100);
 
     return 0;
 }
