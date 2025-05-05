@@ -75,7 +75,7 @@ size_t TemporalGraph::get_total_edges() const {
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost));
 
         CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
-        CUDA_CHECK_AND_CLEAR(cudaFree(d_graph));
+        temporal_graph::free_device_pointers(d_graph);
 
         return host_result;
     }

@@ -759,6 +759,7 @@ namespace temporal_graph {
         // Copy the struct from device to host to access pointers
         TemporalGraphStore h_graph;
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(&h_graph, d_graph, sizeof(TemporalGraphStore), cudaMemcpyDeviceToHost));
+        h_graph.owns_data = false;
 
         // Free only the nested device pointers (not their underlying data)
         if (h_graph.edge_data) clear_memory(&h_graph.edge_data, true);

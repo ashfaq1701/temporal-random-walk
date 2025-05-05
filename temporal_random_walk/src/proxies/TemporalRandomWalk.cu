@@ -131,7 +131,7 @@ size_t TemporalRandomWalk::get_edge_count() const {
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost));
 
         CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
-        CUDA_CHECK_AND_CLEAR(cudaFree(d_temporal_random_walk));
+        temporal_random_walk::free_device_pointers(d_temporal_random_walk);
 
         return host_result;
     }

@@ -50,6 +50,11 @@ struct TemporalRandomWalkStore {
         #endif
     }
 
+    TemporalRandomWalkStore()
+        : is_directed(false), use_gpu(false), max_time_capacity(-1),
+          enable_weight_computation(false), timescale_bound(-1),
+          cuda_device_prop(nullptr), temporal_graph(nullptr) {}
+
     ~TemporalRandomWalkStore() {
         if (owns_data) {
             delete temporal_graph;
@@ -371,6 +376,21 @@ namespace temporal_random_walk {
         temp_temporal_random_walk.owns_data = false;
 
         return device_temporal_random_walk;
+    }
+
+    HOST inline void free_device_pointers(TemporalRandomWalkStore* d_temporal_random_walk) {
+        if (!d_temporal_random_walk) return;
+
+        // Copy the struct from device to host to access pointers
+        TemporalRandomWalkStore h_temporal_random_walk;
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&h_temporal_random_walk, d_temporal_random_walk, sizeof(TemporalRandomWalkStore), cudaMemcpyDeviceToHost));
+        h_temporal_random_walk.owns_data = false;
+
+        // Free only the nested device pointers (not their underlying data)
+        if (h_temporal_random_walk.temporal_graph) temporal_graph::free_device_pointers(h_temporal_random_walk.temporal_graph);
+        if (h_temporal_random_walk.cuda_device_prop) clear_memory(&h_temporal_random_walk.cuda_device_prop, true);
+
+        clear_memory(&d_temporal_random_walk, true);
     }
 
     #endif
