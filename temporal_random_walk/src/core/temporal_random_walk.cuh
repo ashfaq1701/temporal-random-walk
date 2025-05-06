@@ -53,7 +53,11 @@ struct TemporalRandomWalkStore {
     TemporalRandomWalkStore()
         : is_directed(false), use_gpu(false), max_time_capacity(-1),
           enable_weight_computation(false), timescale_bound(-1),
-          cuda_device_prop(nullptr), temporal_graph(nullptr) {}
+          temporal_graph(nullptr) {
+        #ifdef HAS_CUDA
+        cuda_device_prop = nullptr;
+        #endif
+    }
 
     ~TemporalRandomWalkStore() {
         if (owns_data) {

@@ -8,7 +8,7 @@
 
 #include <chrono>
 #include <omp.h>
-#include <bits/random.h>
+#include <random>
 
 #include "error_handlers.cuh"
 #include "memory.cuh"

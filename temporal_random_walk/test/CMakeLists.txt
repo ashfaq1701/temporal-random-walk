@@ -30,6 +30,7 @@ if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
             CUDA::cuda_driver
             CUDA::cublas
             CUDA::nvrtc
+            CUDA::curand
             cuda
             cudart
     )
@@ -65,7 +66,6 @@ target_compile_features(test_temporal_random_walk PRIVATE cxx_std_17)
 target_compile_options(test_temporal_random_walk PRIVATE ${CUDA_OPTIONS})
 
 target_link_libraries(test_temporal_random_walk PRIVATE
-        curand
         GTest::gtest
         GTest::gtest_main
         GTest::gmock

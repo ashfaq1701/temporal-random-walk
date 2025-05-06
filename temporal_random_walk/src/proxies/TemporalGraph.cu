@@ -4,11 +4,13 @@
 #include "../common/setup.cuh"
 #include "../common/error_handlers.cuh"
 
+#ifdef HAS_CUDA
 __global__ void get_total_edges_kernel(size_t* result, const TemporalGraphStore* graph) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = temporal_graph::get_total_edges(graph);
     }
 }
+#endif
 
 TemporalGraph::TemporalGraph(
     const bool is_directed,
