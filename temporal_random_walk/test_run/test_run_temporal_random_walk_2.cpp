@@ -36,8 +36,8 @@ int main(int argc, char* argv[]) {
     // Split edges into two equal parts
     size_t mid_point = edge_infos.size() / 2;
     auto first_half_begin = edge_infos.begin();
-    auto first_half_end = edge_infos.begin() + mid_point;
-    auto second_half_begin = edge_infos.begin() + mid_point;
+    auto first_half_end = edge_infos.begin() + static_cast<long>(mid_point);
+    auto second_half_begin = edge_infos.begin() + static_cast<long>(mid_point);
     auto second_half_end = edge_infos.end();
 
     std::cout << "First half: " << mid_point << " edges" << std::endl;
@@ -53,7 +53,12 @@ int main(int argc, char* argv[]) {
         convert_edge_tuples_to_components(first_half);
 
     auto first_half_start = std::chrono::high_resolution_clock::now();
-    temporal_random_walk.add_multiple_edges(sources_first_half, targets_first_half, timestamps_first_half);
+    temporal_random_walk.add_multiple_edges(
+        sources_first_half.data(),
+        targets_first_half.data(),
+        timestamps_first_half.data(),
+        timestamps_first_half.size());
+
     auto first_half_end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> first_half_duration = first_half_end_time - first_half_start;
     std::cout << "First half edge addition time: " << first_half_duration.count() << " seconds" << std::endl;
@@ -90,7 +95,12 @@ int main(int argc, char* argv[]) {
 
     // Add second half of edges to the same object
     auto second_half_start = std::chrono::high_resolution_clock::now();
-    temporal_random_walk.add_multiple_edges(sources_second_half, targets_second_half, timestamps_second_half);
+    temporal_random_walk.add_multiple_edges(
+        sources_second_half.data(),
+        targets_second_half.data(),
+        timestamps_second_half.data(),
+        timestamps_second_half.size());
+
     auto second_half_end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> second_half_duration = second_half_end_time - second_half_start;
     std::cout << "Second half edge addition time: " << second_half_duration.count() << " seconds" << std::endl;

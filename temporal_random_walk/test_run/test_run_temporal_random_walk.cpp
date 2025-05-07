@@ -31,7 +31,11 @@ int main() {
     auto [sources, targets, timestamps] = convert_edge_tuples_to_components(edges);
 
     const TemporalRandomWalk temporal_random_walk(true, USE_GPU);
-    temporal_random_walk.add_multiple_edges(edges);
+    temporal_random_walk.add_multiple_edges(
+        sources.data(),
+        targets.data(),
+        timestamps.data(),
+        timestamps.size());
 
     constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;
     constexpr RandomPickerType exponential_picker_type = RandomPickerType::ExponentialIndex;

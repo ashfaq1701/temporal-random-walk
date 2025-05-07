@@ -29,9 +29,10 @@ public:
     ~TemporalRandomWalk();
 
     void add_multiple_edges(
-        const std::vector<int>& sources,
-        const std::vector<int>& targets,
-        const std::vector<int64_t>& timestamps) const;
+        const int* sources,
+        const int* targets,
+        const int64_t* timestamps,
+        size_t edges_size) const;
 
     void add_multiple_edges(
         const std::vector<std::tuple<int, int, int64_t>>& edges) const;

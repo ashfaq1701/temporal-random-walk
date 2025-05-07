@@ -34,15 +34,16 @@ TemporalRandomWalk::~TemporalRandomWalk() {
 }
 
 void TemporalRandomWalk::add_multiple_edges(
-    const std::vector<int>& sources,
-    const std::vector<int>& targets,
-    const std::vector<int64_t>& timestamps) const {
+    const int* sources,
+    const int* targets,
+    const int64_t* timestamps,
+    const size_t edges_size) const {
     temporal_random_walk::add_multiple_edges(
         temporal_random_walk,
-        sources.data(),
-        targets.data(),
-        timestamps.data(),
-        timestamps.size());
+        sources,
+        targets,
+        timestamps,
+        edges_size);
 }
 
 void TemporalRandomWalk::add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges) const {
@@ -60,7 +61,7 @@ void TemporalRandomWalk::add_multiple_edges(const std::vector<std::tuple<int, in
         timestamps.push_back(std::get<2>(edge));
     }
 
-    add_multiple_edges(sources, targets, timestamps);
+    add_multiple_edges(sources.data(), targets.data(), timestamps.data(), timestamps.size());
 }
 
 WalkSet TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(

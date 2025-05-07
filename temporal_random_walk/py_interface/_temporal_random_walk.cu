@@ -91,23 +91,55 @@ PYBIND11_MODULE(_temporal_random_walk, m)
              py::arg("enable_weight_computation") = py::none(),
              py::arg("timescale_bound") = py::none())
 
-        .def("add_multiple_edges", [](TemporalRandomWalk& tw, const std::vector<int>& sources, const std::vector<int>& targets, const std::vector<int64_t>& timestamps)
-             {
-                 tw.add_multiple_edges(sources, targets, timestamps);
-             },
-             R"(
-             Add multiple directed edges to the temporal graph.
+        .def("add_multiple_edges", [](TemporalRandomWalk& tw,
+                             const py::array_t<int>& sources,
+                             const py::array_t<int>& targets,
+                             const py::array_t<int64_t>& timestamps)
+        {
+            // Request buffer access to numpy arrays
+            auto sources_info = sources.request();
+            auto targets_info = targets.request();
+            auto timestamps_info = timestamps.request();
 
-             Args:
-                sources: List of sources (or first node in undirected graphs).
-                targets: List of targets (or second node in undirected graph).
-                timestamps: List of timestamps of interactions.
-            )",
-            py::arg("sources"),
-            py::arg("targets"),
-            py::arg("timestamps")
+            // Check dimensions and sizes
+            if (sources_info.ndim != 1 || targets_info.ndim != 1 || timestamps_info.ndim != 1)
+                throw std::runtime_error("Arrays must be 1-dimensional");
+
+            // Check that all arrays have the same length
+            size_t num_edges = sources_info.shape[0];
+            if (targets_info.shape[0] != num_edges || timestamps_info.shape[0] != num_edges)
+                throw std::runtime_error("All arrays must have the same length");
+
+            // Get pointers to the data
+            auto sources_ptr = static_cast<int*>(sources_info.ptr);
+            auto targets_ptr = static_cast<int*>(targets_info.ptr);
+            auto* timestamps_ptr = static_cast<int64_t*>(timestamps_info.ptr);
+
+            // Call the C++ function with raw pointers and size
+            tw.add_multiple_edges(sources_ptr, targets_ptr, timestamps_ptr, num_edges);
+        },
+        R"(
+        Add multiple directed edges to the temporal graph.
+
+        This function efficiently handles both Python lists and NumPy arrays without
+        unnecessary data copying. The implementation automatically converts the input
+        data to the appropriate C++ types.
+
+        Args:
+            sources: List or NumPy array of source node IDs (or first node in undirected graphs).
+            targets: List or NumPy array of target node IDs (or second node in undirected graph).
+            timestamps: List or NumPy array of timestamps representing when interactions occurred.
+
+        Raises:
+            RuntimeError: If arrays are not 1-dimensional or have different lengths.
+
+        Note:
+            For large datasets, NumPy arrays will provide better performance than Python lists.
+        )",
+        py::arg("sources"),
+        py::arg("targets"),
+        py::arg("timestamps")
         )
-
         .def("get_random_walks_and_times_for_all_nodes", [](TemporalRandomWalk& tw,
                                                const int max_walk_len,
                                                const std::string& walk_bias,
