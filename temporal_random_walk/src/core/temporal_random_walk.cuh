@@ -83,20 +83,26 @@ namespace temporal_random_walk {
      */
     HOST inline void add_multiple_edges(
         const TemporalRandomWalkStore *temporal_random_walk,
-        const Edge *edge_infos,
+        const int* sources,
+        const int* targets,
+        const int64_t* timestamps,
         const size_t num_edges) {
         #ifdef HAS_CUDA
         if (temporal_random_walk->use_gpu) {
             temporal_graph::add_multiple_edges_cuda(
                 temporal_random_walk->temporal_graph,
-                edge_infos,
+                sources,
+                targets,
+                timestamps,
                 num_edges);
         } else
         #endif
         {
             temporal_graph::add_multiple_edges_std(
                 temporal_random_walk->temporal_graph,
-                edge_infos,
+                sources,
+                targets,
+                timestamps,
                 num_edges);
         }
     }

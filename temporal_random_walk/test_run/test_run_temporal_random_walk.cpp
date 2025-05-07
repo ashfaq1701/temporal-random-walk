@@ -28,7 +28,9 @@ int main() {
         {5, 4, 32}
     };
 
-    TemporalRandomWalk temporal_random_walk(true, USE_GPU);
+    auto [sources, targets, timestamps] = convert_edge_tuples_to_components(edges);
+
+    const TemporalRandomWalk temporal_random_walk(true, USE_GPU);
     temporal_random_walk.add_multiple_edges(edges);
 
     constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;

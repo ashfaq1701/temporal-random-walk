@@ -139,7 +139,10 @@ std::vector<Edge> TemporalGraph::get_edges() const {
     return result;
 }
 
-void TemporalGraph::add_multiple_edges(const std::vector<Edge>& new_edges) const {
+void TemporalGraph::add_multiple_edges(
+    const std::vector<int>& sources,
+    const std::vector<int>& targets,
+    const std::vector<int64_t>& timestamps) const {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         // Allocate device memory for edges
@@ -150,7 +153,12 @@ void TemporalGraph::add_multiple_edges(const std::vector<Edge>& new_edges) const
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_edges, new_edges.data(), new_edges.size() * sizeof(Edge), cudaMemcpyHostToDevice));
 
         // Call CUDA implementation
-        temporal_graph::add_multiple_edges_cuda(graph, d_edges, new_edges.size());
+        temporal_graph::add_multiple_edges_cuda(
+            graph,
+            sources.data(),
+            targets.data(),
+            timestamps.data(),
+            timestamps.size());
 
         // Clean up
         CUDA_CHECK_AND_CLEAR(cudaFree(d_edges));
@@ -159,8 +167,31 @@ void TemporalGraph::add_multiple_edges(const std::vector<Edge>& new_edges) const
     #endif
     {
         // Call CPU implementation directly
-        temporal_graph::add_multiple_edges_std(graph, new_edges.data(), new_edges.size());
+        temporal_graph::add_multiple_edges_std(
+            graph,
+            sources.data(),
+            targets.data(),
+            timestamps.data(),
+            timestamps.size());
     }
+}
+
+void TemporalGraph::add_multiple_edges(const std::vector<Edge>& edges) const {
+    std::vector<int> sources;
+    std::vector<int> targets;
+    std::vector<int64_t> timestamps;
+
+    sources.reserve(edges.size());
+    targets.reserve(edges.size());
+    timestamps.reserve(edges.size());
+
+    for (const auto& edge : edges) {
+        sources.push_back(edge.u);
+        targets.push_back(edge.i);
+        timestamps.push_back(edge.ts);
+    }
+
+    add_multiple_edges(sources, targets, timestamps);
 }
 
 void TemporalGraph::sort_and_merge_edges(size_t start_idx) const {

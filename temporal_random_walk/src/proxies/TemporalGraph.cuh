@@ -60,7 +60,12 @@ public:
 
     [[nodiscard]] std::vector<Edge> get_edges() const;
 
-    void add_multiple_edges(const std::vector<Edge>& new_edges) const;
+    void add_multiple_edges(
+        const std::vector<int>& sources,
+        const std::vector<int>& targets,
+        const std::vector<int64_t>& timestamps) const;
+
+    void add_multiple_edges(const std::vector<Edge>& edges) const;
 
     void sort_and_merge_edges(size_t start_idx) const;
 

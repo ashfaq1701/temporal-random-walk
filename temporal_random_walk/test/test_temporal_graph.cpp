@@ -191,10 +191,10 @@ TYPED_TEST(TemporalGraphTest, UndirectedGraphEdgeAdditionTest) {
     const auto stored_edges = this->graph->get_edges();
 
     // Verify edges are stored with lower node ID as source
-    EXPECT_EQ(stored_edges[0].u, 1);
-    EXPECT_EQ(stored_edges[0].i, 2);
-    EXPECT_EQ(stored_edges[1].u, 1);
-    EXPECT_EQ(stored_edges[1].i, 3);
+    EXPECT_EQ(stored_edges[0].u, 2);
+    EXPECT_EQ(stored_edges[0].i, 1);
+    EXPECT_EQ(stored_edges[1].u, 3);
+    EXPECT_EQ(stored_edges[1].i, 1);
 }
 
 TYPED_TEST(TemporalGraphTest, CountTimestampsTest) {

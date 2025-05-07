@@ -33,16 +33,34 @@ TemporalRandomWalk::~TemporalRandomWalk() {
     delete temporal_random_walk;
 }
 
+void TemporalRandomWalk::add_multiple_edges(
+    const std::vector<int>& sources,
+    const std::vector<int>& targets,
+    const std::vector<int64_t>& timestamps) const {
+    temporal_random_walk::add_multiple_edges(
+        temporal_random_walk,
+        sources.data(),
+        targets.data(),
+        timestamps.data(),
+        timestamps.size());
+}
+
 void TemporalRandomWalk::add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges) const {
-    const auto edge_array = new Edge[edges.size()];
-    for (size_t idx = 0; idx < edges.size(); idx++) {
-        const auto& [u, i, ts] = edges[idx];
-        edge_array[idx] = Edge(u, i, ts);
+    std::vector<int> sources;
+    std::vector<int> targets;
+    std::vector<int64_t> timestamps;
+
+    sources.reserve(edges.size());
+    targets.reserve(edges.size());
+    timestamps.reserve(edges.size());
+
+    for (const auto& edge : edges) {
+        sources.push_back(std::get<0>(edge));
+        targets.push_back(std::get<1>(edge));
+        timestamps.push_back(std::get<2>(edge));
     }
 
-    temporal_random_walk::add_multiple_edges(temporal_random_walk, edge_array, edges.size());
-
-    delete[] edge_array;
+    add_multiple_edges(sources, targets, timestamps);
 }
 
 WalkSet TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(

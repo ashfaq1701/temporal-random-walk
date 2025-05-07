@@ -91,18 +91,21 @@ PYBIND11_MODULE(_temporal_random_walk, m)
              py::arg("enable_weight_computation") = py::none(),
              py::arg("timescale_bound") = py::none())
 
-        .def("add_multiple_edges", [](TemporalRandomWalk& tw, const std::vector<std::tuple<int, int, int64_t>>& edge_infos)
+        .def("add_multiple_edges", [](TemporalRandomWalk& tw, const std::vector<int>& sources, const std::vector<int>& targets, const std::vector<int64_t>& timestamps)
              {
-                 tw.add_multiple_edges(edge_infos);
+                 tw.add_multiple_edges(sources, targets, timestamps);
              },
              R"(
              Add multiple directed edges to the temporal graph.
 
              Args:
-                edge_infos (List[Tuple[int, int, int]]): List of (source, target, timestamp) tuples.
-                    Node ids (source, target) should be dense integer numbers (0 - n). Please use some label encoding beforehand.
+                sources: List of sources (or first node in undirected graphs).
+                targets: List of targets (or second node in undirected graph).
+                timestamps: List of timestamps of interactions.
             )",
-            py::arg("edge_infos")
+            py::arg("sources"),
+            py::arg("targets"),
+            py::arg("timestamps")
         )
 
         .def("get_random_walks_and_times_for_all_nodes", [](TemporalRandomWalk& tw,

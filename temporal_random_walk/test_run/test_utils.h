@@ -33,4 +33,25 @@ inline double get_average_walk_length(const WalkSet& walk_set) {
         static_cast<double>(total_length) / static_cast<double>(total_walks) : 0.0;
 }
 
+inline std::tuple<std::vector<int>, std::vector<int>, std::vector<int64_t>>
+convert_edge_tuples_to_components(const std::vector<std::tuple<int, int, int64_t>>& edges) {
+    std::vector<int> sources;
+    std::vector<int> targets;
+    std::vector<int64_t> timestamps;
+
+    // Reserve space to avoid reallocations
+    sources.reserve(edges.size());
+    targets.reserve(edges.size());
+    timestamps.reserve(edges.size());
+
+    // Extract components from each tuple
+    for (const auto& edge : edges) {
+        sources.push_back(std::get<0>(edge));
+        targets.push_back(std::get<1>(edge));
+        timestamps.push_back(std::get<2>(edge));
+    }
+
+    return std::make_tuple(sources, targets, timestamps);
+}
+
 #endif //TEST_RUN_UTILS_H

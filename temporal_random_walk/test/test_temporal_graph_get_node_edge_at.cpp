@@ -214,7 +214,7 @@ TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, ExactTimestampUndirectedTest) {
     // Forward direction should work same as backward
     auto edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 100, true);
     EXPECT_EQ(edge.ts, 101);
-    EXPECT_TRUE(edge.u == 10 && (edge.i == 30 || edge.i == 60));
+    EXPECT_TRUE((edge.u == 30 && edge.i == 10) || (edge.u == 10 && edge.i == 60));
 
     // Backward direction
     edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 101, false);

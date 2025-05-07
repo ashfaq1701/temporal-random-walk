@@ -234,32 +234,37 @@ namespace temporal_graph {
 
     HOST inline void add_multiple_edges_std(
         TemporalGraphStore* graph,
-        const Edge* new_edges,
+        const int* sources,
+        const int* targets,
+        const int64_t* timestamps,
         const size_t num_new_edges) {
         if (num_new_edges == 0) return;
 
         // Get start index for new edges
         const size_t start_idx = edge_data::size(graph->edge_data);
 
-        // Extract sources, targets, and timestamps from new edges
-        auto sources = new int[num_new_edges];
-        auto targets = new int[num_new_edges];
-        auto* timestamps = new int64_t[num_new_edges];
+        // Find maximum timestamp in the new edges efficiently
+        int64_t max_timestamp = graph->latest_timestamp;
 
-        for (size_t i = 0; i < num_new_edges; i++) {
-            if (!graph->is_directed && new_edges[i].u > new_edges[i].i) {
-                // For undirected graphs, ensure source < target
-                sources[i] = new_edges[i].i;
-                targets[i] = new_edges[i].u;
-            } else {
-                sources[i] = new_edges[i].u;
-                targets[i] = new_edges[i].i;
+        #pragma omp parallel
+        {
+            // Thread-local max timestamp
+            int64_t local_max = graph->latest_timestamp;
+
+            #pragma omp for nowait
+            for (size_t i = 0; i < num_new_edges; i++) {
+                local_max = std::max(local_max, timestamps[i]);
             }
-            timestamps[i] = new_edges[i].ts;
 
-            // Update latest timestamp
-            graph->latest_timestamp = std::max(graph->latest_timestamp, new_edges[i].ts);
+            // Update global max using critical section
+            #pragma omp critical
+            {
+                max_timestamp = std::max(max_timestamp, local_max);
+            }
         }
+
+        // Set the final maximum timestamp
+        graph->latest_timestamp = max_timestamp;
 
         // Add edges to edge data
         edge_data::add_edges(graph->edge_data, sources, targets, timestamps, num_new_edges);
@@ -285,11 +290,6 @@ namespace temporal_graph {
         if (graph->enable_weight_computation) {
             update_temporal_weights(graph);
         }
-
-        // Clean up
-        delete[] sources;
-        delete[] targets;
-        delete[] timestamps;
     }
 
     HOST inline size_t count_timestamps_less_than_std(const TemporalGraphStore* graph, const int64_t timestamp) {
@@ -534,8 +534,11 @@ namespace temporal_graph {
 
     HOST inline void add_multiple_edges_cuda(
         TemporalGraphStore *graph,
-        const Edge *new_edges,
+        const int* sources,
+        const int* targets,
+        const int64_t* timestamps,
         const size_t num_new_edges) {
+
         if (num_new_edges == 0) return;
 
         // Get start index for new edges
@@ -550,47 +553,24 @@ namespace temporal_graph {
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_targets, num_new_edges * sizeof(int)));
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_timestamps, num_new_edges * sizeof(int64_t)));
 
-        // Copy edges to device if they're not already there
-        Edge *d_edges = nullptr;
-        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_edges, num_new_edges * sizeof(Edge)));
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_edges, new_edges, num_new_edges * sizeof(Edge), cudaMemcpyHostToDevice));
+        // Copy data directly to device
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_sources, sources, num_new_edges * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_targets, targets, num_new_edges * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_timestamps, timestamps, num_new_edges * sizeof(int64_t), cudaMemcpyHostToDevice));
 
-        // Process edges in parallel and find maximum timestamp
-        const int64_t host_latest_timestamp = graph->latest_timestamp;
-        int64_t *d_latest_timestamp = nullptr;
-        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_latest_timestamp, sizeof(int64_t)));
-        CUDA_CHECK_AND_CLEAR(
-            cudaMemcpy(d_latest_timestamp, &host_latest_timestamp, sizeof(int64_t), cudaMemcpyHostToDevice));
-
-        const bool is_directed = graph->is_directed;
-
-        // Launch kernel to process edges in parallel
-        thrust::for_each(
+        // Find maximum timestamp using thrust::reduce
+        int64_t current_max = graph->latest_timestamp;
+        int64_t timestamps_max = thrust::reduce(
             DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(num_new_edges),
-            [d_sources, d_targets, d_timestamps, d_edges, d_latest_timestamp, is_directed] DEVICE (const size_t i) {
-                if (!is_directed && d_edges[i].u > d_edges[i].i) {
-                    // For undirected graphs, ensure source < target
-                    d_sources[i] = d_edges[i].i;
-                    d_targets[i] = d_edges[i].u;
-                } else {
-                    d_sources[i] = d_edges[i].u;
-                    d_targets[i] = d_edges[i].i;
-                }
-                d_timestamps[i] = d_edges[i].ts;
-
-                // Update latest timestamp using atomic max
-                atomicMax(reinterpret_cast<unsigned long long *>(d_latest_timestamp),
-                          static_cast<unsigned long long>(d_edges[i].ts));
-            }
+            thrust::device_pointer_cast(d_timestamps),
+            thrust::device_pointer_cast(d_timestamps + num_new_edges),
+            current_max,
+            thrust::maximum<int64_t>()
         );
-        CUDA_KERNEL_CHECK("After thrust for_each in add_multiple_edges_cuda");
+        CUDA_KERNEL_CHECK("After thrust reduce in add_multiple_edges_cuda");
 
-        CUDA_CHECK_AND_CLEAR(
-            cudaMemcpy(&graph->latest_timestamp, d_latest_timestamp, sizeof(int64_t), cudaMemcpyDeviceToHost));
-        CUDA_CHECK_AND_CLEAR(cudaFree(d_latest_timestamp));
-        CUDA_CHECK_AND_CLEAR(cudaFree(d_edges));
+        // Update latest timestamp
+        graph->latest_timestamp = timestamps_max;
 
         // Add edges to edge data
         edge_data::add_edges(graph->edge_data, d_sources, d_targets, d_timestamps, num_new_edges);

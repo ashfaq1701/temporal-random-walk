@@ -28,7 +28,13 @@ public:
 
     ~TemporalRandomWalk();
 
-    void add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges) const;
+    void add_multiple_edges(
+        const std::vector<int>& sources,
+        const std::vector<int>& targets,
+        const std::vector<int64_t>& timestamps) const;
+
+    void add_multiple_edges(
+        const std::vector<std::tuple<int, int, int64_t>>& edges) const;
 
     WalkSet get_random_walks_and_times_for_all_nodes(
         int max_walk_len,
@@ -57,4 +63,4 @@ public:
     void clear() const;
 };
 
-#endif // TEMPORAL_RANDOM_WALK_PROXY_H
+#endif // TEMPORAL_RANDOM_WALK_H
