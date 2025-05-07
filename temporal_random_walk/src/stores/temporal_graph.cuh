@@ -559,8 +559,8 @@ namespace temporal_graph {
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_timestamps, timestamps, num_new_edges * sizeof(int64_t), cudaMemcpyHostToDevice));
 
         // Find maximum timestamp using thrust::reduce
-        int64_t current_max = graph->latest_timestamp;
-        int64_t timestamps_max = thrust::reduce(
+        const int64_t current_max = graph->latest_timestamp;
+        const int64_t timestamps_max = thrust::reduce(
             DEVICE_EXECUTION_POLICY,
             thrust::device_pointer_cast(d_timestamps),
             thrust::device_pointer_cast(d_timestamps + num_new_edges),

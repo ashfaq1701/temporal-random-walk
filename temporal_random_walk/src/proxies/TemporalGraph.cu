@@ -145,13 +145,6 @@ void TemporalGraph::add_multiple_edges(
     const std::vector<int64_t>& timestamps) const {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
-        // Allocate device memory for edges
-        Edge* d_edges = nullptr;
-        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_edges, new_edges.size() * sizeof(Edge)));
-
-        // Copy edges to device
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_edges, new_edges.data(), new_edges.size() * sizeof(Edge), cudaMemcpyHostToDevice));
-
         // Call CUDA implementation
         temporal_graph::add_multiple_edges_cuda(
             graph,
@@ -159,9 +152,6 @@ void TemporalGraph::add_multiple_edges(
             targets.data(),
             timestamps.data(),
             timestamps.size());
-
-        // Clean up
-        CUDA_CHECK_AND_CLEAR(cudaFree(d_edges));
     }
     else
     #endif
