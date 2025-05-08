@@ -260,7 +260,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore *graph, c
     int64_t *d_timestamps = graph->edge_data->timestamps;
 
     // Use zip iterator to keep sources and targets paired during sort
-    auto zipped_values = thrust::make_zip_iterator(thrust::make_tuple(d_sources, d_targets));
+    const auto zipped_values = thrust::make_zip_iterator(thrust::make_tuple(d_sources, d_targets));
 
     // Sort all edges by timestamp, updating sources and targets accordingly
     thrust::sort_by_key(
