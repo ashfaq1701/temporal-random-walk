@@ -57,7 +57,7 @@ public:
 
     [[nodiscard]] std::vector<int> get_node_ids() const;
 
-    [[nodiscard]] std::vector<std::tuple<int, int, int64_t>> get_edges();
+    [[nodiscard]] std::vector<std::tuple<int, int, int64_t>> get_edges() const;
 
     [[nodiscard]] bool get_is_directed() const;
 

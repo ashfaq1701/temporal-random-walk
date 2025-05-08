@@ -187,7 +187,7 @@ std::vector<int> TemporalRandomWalk::get_node_ids() const {
     return result;
 }
 
-std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() {
+std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() const {
     const DataBlock<Edge> edges = temporal_random_walk::get_edges(temporal_random_walk);
     std::vector<std::tuple<int, int, int64_t>> result;
     result.reserve(edges.size);
