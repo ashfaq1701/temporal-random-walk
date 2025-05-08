@@ -82,11 +82,26 @@ Classes
         Args:
             nx_graph (networkx.Graph): NetworkX graph with timestamp edge attributes.
 
-    `add_multiple_edges(self: _temporal_random_walk.TemporalRandomWalk, edge_infos: list[tuple[int, int, int]])`
-    :   Add multiple directed edges to the temporal graph.
+    `add_multiple_edges(...)`
+    :   add_multiple_edges(self: _temporal_random_walk.TemporalRandomWalk, sources: numpy.ndarray[numpy.int32], targets: numpy.ndarray[numpy.int32], timestamps: numpy.ndarray[numpy.int64]) -> None
+        
+        
+        Add multiple directed edges to the temporal graph.
+        
+        This function efficiently handles both Python lists and NumPy arrays without
+        unnecessary data copying. The implementation automatically converts the input
+        data to the appropriate C++ types.
         
         Args:
-           edge_infos (List[Tuple[int, int, int]]): List of (source, target, timestamp) tuples.
+            sources: List or NumPy array of source node IDs (or first node in undirected graphs).
+            targets: List or NumPy array of target node IDs (or second node in undirected graph).
+            timestamps: List or NumPy array of timestamps representing when interactions occurred.
+        
+        Raises:
+            RuntimeError: If arrays are not 1-dimensional or have different lengths.
+        
+        Note:
+            For large datasets, NumPy arrays will provide better performance than Python lists.
 
     `clear(self: _temporal_random_walk.TemporalRandomWalk)`
     :   Clears and reinitiates the underlying graph.
@@ -112,29 +127,11 @@ Classes
         Returns:
             np.ndarray: A NumPy array with all node IDs.
 
-    `get_random_walks(self: _temporal_random_walk.TemporalRandomWalk, max_walk_len: int, walk_bias: str, num_walks_total: int, initial_edge_bias: str | None = None, walk_direction: str = 'Forward_In_Time')`
-    :   Generates temporal random walks.
+    `get_random_walks_and_times(...)`
+    :   get_random_walks_and_times(self: _temporal_random_walk.TemporalRandomWalk, max_walk_len: int, walk_bias: str, num_walks_total: int, initial_edge_bias: Optional[str] = None, walk_direction: str = 'Forward_In_Time') -> tuple[numpy.ndarray[numpy.int32], numpy.ndarray[numpy.int64], numpy.ndarray[numpy.uint64]]
         
-        Args:
-            max_walk_len (int): Maximum length of each random walk
-            walk_bias (str): Type of bias for selecting next edges during walk.
-                Can be one of:
-                    - "Uniform": Equal probability for all valid edges
-                    - "Linear": Linear decay based on time
-                    - "ExponentialIndex": Exponential decay with index sampling
-                    - "ExponentialWeight": Exponential decay with timestamp weights
-            num_walks_total (int): Total number of walks to generate.
-            initial_edge_bias (str, optional): Bias type for selecting first edge.
-                Uses walk_bias if not specified.
-            walk_direction (str, optional): Direction of temporal random walk.
-                Either "Forward_In_Time" (default) or "Backward_In_Time"
         
-        Returns:
-            List[List[int]]: A list of walks, where each walk is a list of node IDs
-                representing a temporal path through the network.
-
-    `get_random_walks_and_times(self: _temporal_random_walk.TemporalRandomWalk, max_walk_len: int, walk_bias: str, num_walks_total: int, initial_edge_bias: str | None = None, walk_direction: str = 'Forward_In_Time')`
-    :   Generate temporal random walks with timestamps.
+        Generate temporal random walks with timestamps.
         
         Args:
             max_walk_len (int): Maximum length of each random walk.
@@ -151,11 +148,16 @@ Classes
                 Either "Forward_In_Time" (default) or "Backward_In_Time".
         
         Returns:
-            List[List[Tuple[int, int]]]: List of walks where each walk is a sequence of
-                (node_id, timestamp) pairs representing temporal paths through the network.
+            Tuple[np.ndarray, np.ndarray, np.ndarray]:
+                - 2D array of node ids (shape: [num_walks, max_walk_len])
+                - 2D array of timestamps (shape: [num_walks, max_walk_len])
+                - 1D array of actual walk lengths (shape: [num_walks])
 
-    `get_random_walks_and_times_for_all_nodes(self: _temporal_random_walk.TemporalRandomWalk, max_walk_len: int, walk_bias: str, num_walks_per_node: int, initial_edge_bias: str | None = None, walk_direction: str = 'Forward_In_Time')`
-    :   Generate temporal random walks with timestamps starting from all nodes.
+    `get_random_walks_and_times_for_all_nodes(...)`
+    :   get_random_walks_and_times_for_all_nodes(self: _temporal_random_walk.TemporalRandomWalk, max_walk_len: int, walk_bias: str, num_walks_per_node: int, initial_edge_bias: Optional[str] = None, walk_direction: str = 'Forward_In_Time') -> tuple[numpy.ndarray[numpy.int32], numpy.ndarray[numpy.int64], numpy.ndarray[numpy.uint64]]
+        
+        
+        Generate temporal random walks with timestamps starting from all nodes.
         
         Args:
             max_walk_len (int): Maximum length of each random walk.
@@ -172,27 +174,10 @@ Classes
                 Either "Forward_In_Time" (default) or "Backward_In_Time".
         
         Returns:
-            List[List[Tuple[int, int]]]: List of walks as (node_id, timestamp) sequences.
-
-    `get_random_walks_for_all_nodes(self: _temporal_random_walk.TemporalRandomWalk, max_walk_len: int, walk_bias: str, num_walks_per_node: int, initial_edge_bias: str | None = None, walk_direction: str = 'Forward_In_Time')`
-    :   Generate temporal random walks starting from all nodes.
-        
-        Args:
-            max_walk_len (int): Maximum length of each random walk.
-            walk_bias (str): Type of bias for selecting next node.
-                Choices:
-                    - "Uniform": Equal probability
-                    - "Linear": Linear time decay
-                    - "ExponentialIndex": Exponential decay with indices
-                    - "ExponentialWeight": Exponential decay with weights
-            num_walks_per_node (int): Number of walks per starting node.
-            initial_edge_bias (str, optional): Bias type for first edge selection.
-                Uses walk_bias if not specified.
-            walk_direction (str, optional): Direction of temporal random walks.
-                Either "Forward_In_Time" (default) or "Backward_In_Time".
-        
-        Returns:
-            List[List[int]]: List of walks as node ID sequences.
+            Tuple[np.ndarray, np.ndarray, np.ndarray]:
+                - 2D array of node ids (shape: [num_walks, max_walk_len])
+                - 2D array of timestamps (shape: [num_walks, max_walk_len])
+                - 1D array of actual walk lengths (shape: [num_walks])
 
     `to_networkx(self: _temporal_random_walk.TemporalRandomWalk)`
     :   Export graph to NetworkX format.
