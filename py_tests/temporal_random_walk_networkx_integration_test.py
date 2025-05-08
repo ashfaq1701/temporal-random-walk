@@ -66,12 +66,10 @@ def test_networkx_integration_with_existing_edges():
     tw = TemporalRandomWalk(True, GPU_USAGE_MODE)
 
     # Add some initial edges directly
-    initial_edges = [
-        (0, 1, 50),   # Earlier timestamp
-        (1, 2, 150),  # Between networkx edges
-        (4, 5, 600)   # New nodes, later timestamp
-    ]
-    tw.add_multiple_edges(initial_edges)
+    sources = [0, 1, 4]
+    targets = [1, 2, 5]
+    timestamps = [50, 150, 600]
+    tw.add_multiple_edges(sources, targets, timestamps)
 
     # Verify initial state
     assert tw.get_node_count() == 5  # Nodes 0,1,2,4,5
@@ -126,11 +124,11 @@ def test_networkx_integration_with_existing_edges():
 def test_networkx_integration_directed_undirected():
     # Test directed graph
     tw_directed = TemporalRandomWalk(True, GPU_USAGE_MODE)  # is_directed = True
-    tw_directed.add_multiple_edges([
-        (0, 1, 100),
-        (1, 2, 200),
-        (2, 0, 300),
-    ])
+    tw_directed.add_multiple_edges(
+        [0, 1, 2],
+        [1, 2, 0],
+        [100, 200, 300]
+    )
 
     nx_directed = tw_directed.to_networkx()
     # Verify it's a directed graph
@@ -142,11 +140,11 @@ def test_networkx_integration_directed_undirected():
 
     # Test undirected graph
     tw_undirected = TemporalRandomWalk(False, GPU_USAGE_MODE)  # is_directed = False
-    tw_undirected.add_multiple_edges([
-        (0, 1, 100),
-        (1, 2, 200),
-        (2, 0, 300),
-    ])
+    tw_undirected.add_multiple_edges(
+        [0, 1, 2],
+        [1, 2, 0],
+        [100, 200, 300]
+    )
 
     nx_undirected = tw_undirected.to_networkx()
     # Verify it's an undirected graph

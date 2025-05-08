@@ -22,7 +22,9 @@ if __name__ == '__main__':
 
     data_file_path = '../data/sample_data.csv'
 
-    data_tuples = []
+    sources = []
+    targets = []
+    timestamps = []
 
     with open(data_file_path, mode='r', newline='') as csvfile:
         csv_reader = csv.reader(csvfile, delimiter=",")
@@ -31,12 +33,14 @@ if __name__ == '__main__':
             u = int(row[0])
             i = int(row[1])
             ts = int(row[2])
-            data_tuples.append((u, i, ts))
+            sources.append(u)
+            targets.append(i)
+            timestamps.append(ts)
 
-    print(f"--- Total edges: {len(data_tuples)} ---")
+    print(f"--- Total edges: {len(timestamps)} ---")
 
     start_time = time.time()
-    temporal_random_walk_obj.add_multiple_edges(data_tuples)
+    temporal_random_walk_obj.add_multiple_edges(sources, targets, timestamps)
     print(f"--- Edge addition time : {time.time() - start_time}---")
 
     print(f'Total edges: {temporal_random_walk_obj.get_edge_count()}')
