@@ -190,24 +190,11 @@ HOST void temporal_graph::add_multiple_edges_std(
     // Find maximum timestamp in the new edges efficiently
     int64_t max_timestamp = graph->latest_timestamp;
 
-    #pragma omp parallel
-    {
-        // Thread-local max timestamp
-        int64_t local_max = graph->latest_timestamp;
-
-        #pragma omp for nowait
-        for (size_t i = 0; i < num_new_edges; i++) {
-            local_max = std::max(local_max, timestamps[i]);
-        }
-
-        // Update global max using critical section
-        #pragma omp critical
-        {
-            max_timestamp = std::max(max_timestamp, local_max);
-        }
+    #pragma omp parallel for reduction(max:max_timestamp)
+    for (size_t i = 0; i < num_new_edges; i++) {
+        max_timestamp = std::max(max_timestamp, timestamps[i]);
     }
 
-    // Set the final maximum timestamp
     graph->latest_timestamp = max_timestamp;
 
     // Add edges to edge data
