@@ -72,7 +72,7 @@ pip install temporal-random-walk
 
 ## 📖 Documentation
 
-📌 **[C++ Documentation →](https://htmlpreview.github.io/?https://github.com/ashfaq1701/temporal-random-walk/blob/master/docs/html/class_temporal_random_walk.html)**<br>
+📌 **[C++ Documentation →](https://htmlpreview.github.io/?https://github.com/ashfaq1701/temporal-random-walk/blob/master/docs/html/classTemporalRandomWalk.html)**<br>
 📌 **[Python Interface Documentation →](docs/_temporal_random_walk.md)**
 
 ---
