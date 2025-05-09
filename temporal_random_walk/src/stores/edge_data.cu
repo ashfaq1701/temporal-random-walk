@@ -1,5 +1,8 @@
 #include "edge_data.cuh"
 
+#include <omp.h>
+#include "../utils/omp_utils.cuh"
+
 /**
  * Common Functions
  */
@@ -146,11 +149,13 @@ HOST void edge_data::populate_active_nodes_std(EdgeDataStore *edge_data) {
     }
 
     int max_node_id = -1;
+
+    // Parallel reduction to find the max node id
+    #pragma omp parallel for reduction(max:max_node_id)
     for (size_t i = 0; i < edge_data->sources_size; i++) {
         int src_node = edge_data->sources[i];
         int tgt_node = edge_data->targets[i];
-
-        max_node_id = std::max(std::max(max_node_id, src_node), tgt_node);
+        max_node_id = std::max({max_node_id, src_node, tgt_node});
     }
 
     allocate_memory(&edge_data->active_node_ids, max_node_id + 1, edge_data->use_gpu);
@@ -158,56 +163,79 @@ HOST void edge_data::populate_active_nodes_std(EdgeDataStore *edge_data) {
 
     fill_memory(edge_data->active_node_ids, max_node_id + 1, 0, edge_data->use_gpu);
 
+    // Parallel setting of active node flags
+    #pragma omp parallel for
     for (size_t i = 0; i < size(edge_data); i++) {
-        edge_data->active_node_ids[edge_data->sources[i]] = 1;
-        edge_data->active_node_ids[edge_data->targets[i]] = 1;
+        const int src = edge_data->sources[i];
+        const int tgt = edge_data->targets[i];
+
+        // Use atomic to avoid race conditions
+        edge_data->active_node_ids[src] = 1;
+        edge_data->active_node_ids[tgt] = 1;
     }
 }
 
 HOST void edge_data::update_timestamp_groups_std(EdgeDataStore *edge_data) {
     if (edge_data->timestamps_size == 0) {
         clear_memory(&edge_data->timestamp_group_offsets, edge_data->use_gpu);
+        edge_data->timestamp_group_offsets_size = 0;
+
         clear_memory(&edge_data->unique_timestamps, edge_data->use_gpu);
+        edge_data->unique_timestamps_size = 0;
         return;
     }
 
-    clear_memory(&edge_data->timestamp_group_offsets, edge_data->use_gpu);
-    clear_memory(&edge_data->unique_timestamps, edge_data->use_gpu);
+    const size_t n = edge_data->timestamps_size;
 
-    allocate_memory(&edge_data->timestamp_group_offsets, edge_data->timestamps_size + 1, edge_data->use_gpu);
-    allocate_memory(&edge_data->unique_timestamps, edge_data->timestamps_size, edge_data->use_gpu);
+    std::vector<int> flags(n, 0);
+    std::vector<int> prefix_sum;
 
-    size_t current_index = 0;
-    edge_data->timestamp_group_offsets[current_index] = 0;
-    edge_data->unique_timestamps[current_index++] = edge_data->timestamps[0];
+    // Step 1: Flag changes
+    flags[0] = 1;
+    #pragma omp parallel for
+    for (size_t i = 1; i < n; ++i) {
+        flags[i] = (edge_data->timestamps[i] != edge_data->timestamps[i - 1]) ? 1 : 0;
+    }
 
-    for (size_t i = 1; i < edge_data->timestamps_size; i++) {
-        if (edge_data->timestamps[i] != edge_data->timestamps[i - 1]) {
-            edge_data->timestamp_group_offsets[current_index] = i;
-            edge_data->unique_timestamps[current_index++] = edge_data->timestamps[i];
+    // Step 2: Compute prefix sum (exclusive scan) of flags
+    parallel_prefix_sum(flags, prefix_sum);
+
+    const int num_groups = prefix_sum[n - 1] + flags[n - 1];
+
+    // Step 3: Resize output arrays
+    resize_memory(&edge_data->timestamp_group_offsets, edge_data->timestamp_group_offsets_size, num_groups + 1, edge_data->use_gpu);
+    edge_data->timestamp_group_offsets_size = num_groups + 1;
+
+    resize_memory(&edge_data->unique_timestamps, edge_data->unique_timestamps_size, num_groups, edge_data->use_gpu);
+    edge_data->unique_timestamps_size = num_groups;
+
+    // Step 4: Scatter group offsets and unique timestamps
+    #pragma omp parallel for
+    for (size_t i = 0; i < n; ++i) {
+        if (flags[i]) {
+            const int idx = prefix_sum[i];
+            edge_data->timestamp_group_offsets[idx] = i;
+            edge_data->unique_timestamps[idx] = edge_data->timestamps[i];
         }
     }
-    edge_data->timestamp_group_offsets[current_index] = edge_data->timestamps_size;
 
-    edge_data->timestamp_group_offsets_size = current_index + 1;
-    edge_data->unique_timestamps_size = current_index;
+    // Step 5: Final offset
+    edge_data->timestamp_group_offsets[num_groups] = n;
 
-    resize_memory(
-        &edge_data->timestamp_group_offsets,
-        edge_data->timestamps_size + 1,
-        edge_data->timestamp_group_offsets_size,
-        edge_data->use_gpu);
-
-    resize_memory(
-        &edge_data->unique_timestamps,
-        edge_data->timestamps_size,
-        edge_data->unique_timestamps_size,
-        edge_data->use_gpu);
-
+    // Step 6: Populate active nodes
     populate_active_nodes_std(edge_data);
 }
 
-HOST void edge_data::update_temporal_weights_std(EdgeDataStore *edge_data, const double timescale_bound) {
+HOST void edge_data::update_temporal_weights_std(EdgeDataStore* edge_data, const double timescale_bound) {
+    if (edge_data->timestamps_size == 0) {
+        clear_memory(&edge_data->forward_cumulative_weights_exponential, edge_data->use_gpu);
+        edge_data->forward_cumulative_weights_exponential_size = 0;
+
+        clear_memory(&edge_data->backward_cumulative_weights_exponential, edge_data->use_gpu);
+        edge_data->backward_cumulative_weights_exponential_size = 0;
+        return;
+    }
+
     const int64_t min_timestamp = edge_data->timestamps[0];
     const int64_t max_timestamp = edge_data->timestamps[edge_data->timestamps_size - 1];
     const auto time_diff = static_cast<double>(max_timestamp - min_timestamp);
@@ -215,55 +243,63 @@ HOST void edge_data::update_temporal_weights_std(EdgeDataStore *edge_data, const
 
     const size_t num_groups = get_timestamp_group_count(edge_data);
 
-    resize_memory(
-        &edge_data->forward_cumulative_weights_exponential,
-        edge_data->forward_cumulative_weights_exponential_size,
-        num_groups,
-        edge_data->use_gpu);
+    // Resize memory
+    resize_memory(&edge_data->forward_cumulative_weights_exponential,
+                  edge_data->forward_cumulative_weights_exponential_size,
+                  num_groups,
+                  edge_data->use_gpu);
     edge_data->forward_cumulative_weights_exponential_size = num_groups;
 
-    resize_memory(
-        &edge_data->backward_cumulative_weights_exponential,
-        edge_data->backward_cumulative_weights_exponential_size,
-        num_groups,
-        edge_data->use_gpu);
+    resize_memory(&edge_data->backward_cumulative_weights_exponential,
+                  edge_data->backward_cumulative_weights_exponential_size,
+                  num_groups,
+                  edge_data->use_gpu);
     edge_data->backward_cumulative_weights_exponential_size = num_groups;
+
+    // Temporary vectors
+    std::vector<double> forward_weights(num_groups);
+    std::vector<double> backward_weights(num_groups);
 
     double forward_sum = 0.0, backward_sum = 0.0;
 
-    // First calculate all weights and total sums
-    for (size_t group = 0; group < num_groups; group++) {
+    // Step 1: Compute unnormalized weights
+    #pragma omp parallel for reduction(+:forward_sum, backward_sum)
+    for (size_t group = 0; group < num_groups; ++group) {
         const size_t start = edge_data->timestamp_group_offsets[group];
         const int64_t group_timestamp = edge_data->timestamps[start];
 
-        const auto time_diff_forward = static_cast<double>(max_timestamp - group_timestamp);
-        const auto time_diff_backward = static_cast<double>(group_timestamp - min_timestamp);
+        const double t_forward = static_cast<double>(max_timestamp - group_timestamp);
+        const double t_backward = static_cast<double>(group_timestamp - min_timestamp);
 
-        const double forward_scaled = timescale_bound > 0 ? time_diff_forward * time_scale : time_diff_forward;
-        const double backward_scaled = timescale_bound > 0 ? time_diff_backward * time_scale : time_diff_backward;
+        const double scaled_forward = (timescale_bound > 0) ? t_forward * time_scale : t_forward;
+        const double scaled_backward = (timescale_bound > 0) ? t_backward * time_scale : t_backward;
 
-        const double forward_weight = exp(forward_scaled);
-        const double backward_weight = exp(backward_scaled);
+        const double forward_weight = std::exp(scaled_forward);
+        const double backward_weight = std::exp(scaled_backward);
+
+        forward_weights[group] = forward_weight;
+        backward_weights[group] = backward_weight;
 
         forward_sum += forward_weight;
         backward_sum += backward_weight;
-
-        edge_data->forward_cumulative_weights_exponential[group] = forward_weight;
-        edge_data->backward_cumulative_weights_exponential[group] = backward_weight;
     }
 
-    // Then normalize and compute cumulative sums
-    double forward_cumsum = 0.0, backward_cumsum = 0.0;
-    for (size_t group = 0; group < num_groups; group++) {
-        edge_data->forward_cumulative_weights_exponential[group] /= forward_sum;
-        edge_data->backward_cumulative_weights_exponential[group] /= backward_sum;
+    // Step 2: Normalize
+    #pragma omp parallel for
+    for (size_t group = 0; group < num_groups; ++group) {
+        forward_weights[group] /= forward_sum;
+        backward_weights[group] /= backward_sum;
+    }
 
-        // Update with cumulative sums
-        forward_cumsum += edge_data->forward_cumulative_weights_exponential[group];
-        backward_cumsum += edge_data->backward_cumulative_weights_exponential[group];
+    // Step 3: Inclusive scan (cumulative sum)
+    parallel_inclusive_scan(forward_weights);
+    parallel_inclusive_scan(backward_weights);
 
-        edge_data->forward_cumulative_weights_exponential[group] = forward_cumsum;
-        edge_data->backward_cumulative_weights_exponential[group] = backward_cumsum;
+    // Step 4: Store results
+    #pragma omp parallel for
+    for (size_t group = 0; group < num_groups; ++group) {
+        edge_data->forward_cumulative_weights_exponential[group] = forward_weights[group];
+        edge_data->backward_cumulative_weights_exponential[group] = backward_weights[group];
     }
 }
 

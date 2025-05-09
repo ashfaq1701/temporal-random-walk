@@ -7,8 +7,10 @@
 #include <thrust/sort.h>
 #endif
 
+#include <omp.h>
 #include <cmath>
 #include <algorithm>
+#include "../utils/omp_utils.cuh"
 #include "../common/cuda_config.cuh"
 
 /**
@@ -284,76 +286,102 @@ HOST void node_edge_index::allocate_node_timestamp_indices(NodeEdgeIndexStore *n
  * Std implementations
  */
 HOST void node_edge_index::compute_node_edge_offsets_std(
-    NodeEdgeIndexStore *node_edge_index,
-    const EdgeDataStore *edge_data,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
     const bool is_directed
 ) {
-    // First pass: count edges per node
-    for (size_t i = 0; i < edge_data->timestamps_size; i++) {
-        const int src_idx = edge_data->sources[i];
-        const int tgt_idx = edge_data->targets[i];
+    const size_t num_edges = edge_data->timestamps_size;
 
-        // Count outbound edges (increment the count at index src_idx + 1)
-        node_edge_index->outbound_offsets[src_idx + 1]++;
+    // Alias for readability
+    auto* outbound_offsets = node_edge_index->outbound_offsets;
+    auto* inbound_offsets = node_edge_index->inbound_offsets;
+    const auto* sources = edge_data->sources;
+    const auto* targets = edge_data->targets;
+
+    const size_t offset_size = node_edge_index->outbound_offsets_size;
+
+    // Use std::vector for temporary atomic-safe accumulation (optional if pre-cleared)
+    std::vector<size_t> out_counts(offset_size, 0);
+    std::vector<size_t> in_counts(offset_size, 0); // Only used if directed
+
+    // Step 1: Count edges per node using atomics
+    #pragma omp parallel for
+    for (size_t i = 0; i < num_edges; ++i) {
+        const int src_idx = sources[i];
+        const int tgt_idx = targets[i];
+
+        #pragma omp atomic
+        out_counts[src_idx + 1]++;
 
         if (is_directed) {
-            // For directed graphs, also increment inbound edges count
-            node_edge_index->inbound_offsets[tgt_idx + 1]++;
+            #pragma omp atomic
+            in_counts[tgt_idx + 1]++;
         } else {
-            // For undirected graphs, each edge appears in both directions
-            node_edge_index->outbound_offsets[tgt_idx + 1]++;
+            #pragma omp atomic
+            out_counts[tgt_idx + 1]++;
         }
     }
 
-    // Calculate prefix sums for edge offsets
-    for (size_t i = 1; i < node_edge_index->outbound_offsets_size; i++) {
-        node_edge_index->outbound_offsets[i] += node_edge_index->outbound_offsets[i - 1];
+    // Step 2: Inclusive scan
+    parallel_inclusive_scan(out_counts);
 
+    if (is_directed) {
+        parallel_inclusive_scan(in_counts);
+    }
+
+    // Step 3: Copy results back to output arrays
+    #pragma omp parallel for
+    for (size_t i = 0; i < offset_size; ++i) {
+        outbound_offsets[i] = out_counts[i];
         if (is_directed) {
-            node_edge_index->inbound_offsets[i] += node_edge_index->inbound_offsets[i - 1];
+            inbound_offsets[i] = in_counts[i];
         }
     }
 }
 
 HOST void node_edge_index::compute_node_edge_indices_std(
-    NodeEdgeIndexStore *node_edge_index,
-    const EdgeDataStore *edge_data,
-    EdgeWithEndpointType *outbound_edge_indices_buffer,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
+    EdgeWithEndpointType* outbound_edge_indices_buffer,
     const bool is_directed
 ) {
     const size_t edges_size = edge_data->timestamps_size;
+    const size_t buffer_size = is_directed ? edges_size : edges_size * 2;
 
-    // Fill the buffer with edge information
-    for (size_t i = 0; i < edges_size; i++) {
-        const size_t outbound_index = is_directed ? i : i * 2;
+    const auto* sources = edge_data->sources;
+    const auto* targets = edge_data->targets;
+
+    // Step 1: Fill outbound_edge_indices_buffer
+    #pragma omp parallel for
+    for (size_t i = 0; i < edges_size; ++i) {
+        size_t outbound_index = is_directed ? i : i * 2;
         outbound_edge_indices_buffer[outbound_index] = EdgeWithEndpointType{static_cast<long>(i), true};
 
-        if (is_directed) {
-            // For directed graphs, simply assign each edge ID to inbound_indices
-            node_edge_index->inbound_indices[i] = i;
-        } else {
-            // For undirected graphs, add each edge in both directions
+        if (!is_directed) {
             outbound_edge_indices_buffer[outbound_index + 1] = EdgeWithEndpointType{static_cast<long>(i), false};
         }
     }
 
-    const size_t buffer_size = is_directed ? edges_size : edges_size * 2;
+    // Step 2: Fill inbound_indices for directed graphs
+    if (is_directed) {
+        #pragma omp parallel for
+        for (size_t i = 0; i < edges_size; ++i) {
+            node_edge_index->inbound_indices[i] = i;
+        }
+    }
 
-    auto sources = edge_data->sources;
-    auto targets = edge_data->targets;
-
-    // Sort outbound edge indices by node ID
+    // Step 3: Stable sort outbound_edge_indices_buffer by node ID (source or target depending on flag)
     std::stable_sort(
         outbound_edge_indices_buffer,
         outbound_edge_indices_buffer + buffer_size,
-        [sources, targets](const EdgeWithEndpointType &a, const EdgeWithEndpointType &b) {
+        [sources, targets](const EdgeWithEndpointType& a, const EdgeWithEndpointType& b) {
             const int node_a = a.is_source ? sources[a.edge_id] : targets[a.edge_id];
             const int node_b = b.is_source ? sources[b.edge_id] : targets[b.edge_id];
             return node_a < node_b;
         }
     );
 
-    // Sort inbound indices for directed graphs by target node
+    // Step 4: Stable sort inbound_indices by target node (if directed)
     if (is_directed) {
         std::stable_sort(
             node_edge_index->inbound_indices,
@@ -364,128 +392,130 @@ HOST void node_edge_index::compute_node_edge_indices_std(
         );
     }
 
-    // Extract edge IDs from buffer to outbound_indices
-    for (size_t i = 0; i < buffer_size; i++) {
+    // Step 5: Extract edge_id from buffer to outbound_indices
+    #pragma omp parallel for
+    for (size_t i = 0; i < buffer_size; ++i) {
         node_edge_index->outbound_indices[i] = outbound_edge_indices_buffer[i].edge_id;
     }
 }
 
 HOST void node_edge_index::compute_node_timestamp_offsets_std(
-    NodeEdgeIndexStore *node_edge_index,
-    const EdgeDataStore *edge_data,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
     const size_t node_count,
     const bool is_directed
 ) {
-    // Temporary arrays to store group counts for each node
-    auto *outbound_group_count = new size_t[node_count](); // Initialize to zeros
-    size_t *inbound_group_count = nullptr;
+    std::vector<size_t> outbound_group_count(node_count, 0);
+    std::vector<size_t> inbound_group_count;
 
     if (is_directed) {
-        inbound_group_count = new size_t[node_count](); // Initialize to zeros
+        inbound_group_count.resize(node_count, 0);
     }
 
-    // Count timestamp groups for each node
-    for (size_t node = 0; node < node_count; node++) {
-        // Process outbound groups
-        size_t start = node_edge_index->outbound_offsets[node];
-        size_t end = node_edge_index->outbound_offsets[node + 1];
+    const auto timestamps = edge_data->timestamps;
+    const auto outbound_offsets = node_edge_index->outbound_offsets;
+    const auto outbound_indices = node_edge_index->outbound_indices;
+    const auto inbound_offsets = node_edge_index->inbound_offsets;
+    const auto inbound_indices = node_edge_index->inbound_indices;
+
+    // Step 1: Parallel counting of timestamp groups
+    #pragma omp parallel for
+    for (size_t node = 0; node < node_count; ++node) {
+        // Outbound
+        size_t start = outbound_offsets[node];
+        size_t end = outbound_offsets[node + 1];
 
         if (start < end) {
-            outbound_group_count[node] = 1; // First group always exists if there are edges
-
+            outbound_group_count[node] = 1;
             for (size_t i = start + 1; i < end; ++i) {
-                size_t curr_edge_id = node_edge_index->outbound_indices[i];
-                size_t prev_edge_id = node_edge_index->outbound_indices[i - 1];
-
-                if (edge_data->timestamps[curr_edge_id] != edge_data->timestamps[prev_edge_id]) {
-                    ++outbound_group_count[node]; // New timestamp group
+                if (timestamps[outbound_indices[i]] != timestamps[outbound_indices[i - 1]]) {
+                    ++outbound_group_count[node];
                 }
             }
         }
 
-        // Process inbound groups for directed graphs
+        // Inbound (if directed)
         if (is_directed) {
-            start = node_edge_index->inbound_offsets[node];
-            end = node_edge_index->inbound_offsets[node + 1];
+            start = inbound_offsets[node];
+            end = inbound_offsets[node + 1];
 
             if (start < end) {
-                inbound_group_count[node] = 1; // First group always exists if there are edges
-
+                inbound_group_count[node] = 1;
                 for (size_t i = start + 1; i < end; ++i) {
-                    size_t curr_edge_id = node_edge_index->inbound_indices[i];
-                    size_t prev_edge_id = node_edge_index->inbound_indices[i - 1];
-
-                    if (edge_data->timestamps[curr_edge_id] != edge_data->timestamps[prev_edge_id]) {
-                        ++inbound_group_count[node]; // New timestamp group
+                    if (timestamps[inbound_indices[i]] != timestamps[inbound_indices[i - 1]]) {
+                        ++inbound_group_count[node];
                     }
                 }
             }
         }
     }
 
-    // Calculate prefix sums for group offsets
-    node_edge_index->outbound_timestamp_group_offsets[0] = 0; // Start at 0
-
-    for (size_t i = 0; i < node_count; i++) {
+    // Step 2: Compute prefix sums
+    node_edge_index->outbound_timestamp_group_offsets[0] = 0;
+    for (size_t i = 0; i < node_count; ++i) {
         node_edge_index->outbound_timestamp_group_offsets[i + 1] =
-                node_edge_index->outbound_timestamp_group_offsets[i] + outbound_group_count[i];
-
-        if (is_directed) {
-            node_edge_index->inbound_timestamp_group_offsets[i + 1] =
-                    node_edge_index->inbound_timestamp_group_offsets[i] + inbound_group_count[i];
-        }
+            node_edge_index->outbound_timestamp_group_offsets[i] + outbound_group_count[i];
     }
 
-    // Clean up temporary arrays
-    delete[] outbound_group_count;
-    delete[] inbound_group_count;
+    if (is_directed) {
+        node_edge_index->inbound_timestamp_group_offsets[0] = 0;
+        for (size_t i = 0; i < node_count; ++i) {
+            node_edge_index->inbound_timestamp_group_offsets[i + 1] =
+                node_edge_index->inbound_timestamp_group_offsets[i] + inbound_group_count[i];
+        }
+    }
 }
 
 HOST void node_edge_index::compute_node_timestamp_indices_std(
-    NodeEdgeIndexStore *node_edge_index,
-    const EdgeDataStore *edge_data,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
     const size_t node_index_capacity,
     const bool is_directed
 ) {
-    // Process each node
-    for (size_t node = 0; node < node_index_capacity; node++) {
-        // Fill outbound timestamp group indices
-        size_t start = node_edge_index->outbound_offsets[node];
-        size_t end = node_edge_index->outbound_offsets[node + 1];
-        size_t group_pos = node_edge_index->outbound_timestamp_group_offsets[node];
+    const auto timestamps = edge_data->timestamps;
+
+    const auto outbound_offsets = node_edge_index->outbound_offsets;
+    const auto outbound_indices = node_edge_index->outbound_indices;
+    const auto outbound_ts_group_offsets = node_edge_index->outbound_timestamp_group_offsets;
+    const auto outbound_ts_group_indices = node_edge_index->outbound_timestamp_group_indices;
+
+    const auto inbound_offsets = node_edge_index->inbound_offsets;
+    const auto inbound_indices = node_edge_index->inbound_indices;
+    const auto inbound_ts_group_offsets = node_edge_index->inbound_timestamp_group_offsets;
+    const auto inbound_ts_group_indices = node_edge_index->inbound_timestamp_group_indices;
+
+    // Parallel over nodes
+    #pragma omp parallel for
+    for (size_t node = 0; node < node_index_capacity; ++node) {
+        // Outbound timestamp group indices
+        size_t start = outbound_offsets[node];
+        size_t end = outbound_offsets[node + 1];
+        size_t group_pos = outbound_ts_group_offsets[node];
 
         if (start < end) {
-            // First group always starts at the first edge
-            node_edge_index->outbound_timestamp_group_indices[group_pos++] = start;
-
+            outbound_ts_group_indices[group_pos++] = start;
             for (size_t i = start + 1; i < end; ++i) {
-                size_t curr_edge_id = node_edge_index->outbound_indices[i];
-                size_t prev_edge_id = node_edge_index->outbound_indices[i - 1];
-
-                if (edge_data->timestamps[curr_edge_id] != edge_data->timestamps[prev_edge_id]) {
-                    // New group starts at current position
-                    node_edge_index->outbound_timestamp_group_indices[group_pos++] = i;
+                const size_t curr_id = outbound_indices[i];
+                size_t prev_id = outbound_indices[i - 1];
+                if (timestamps[curr_id] != timestamps[prev_id]) {
+                    outbound_ts_group_indices[group_pos++] = i;
                 }
             }
         }
 
-        // Fill inbound timestamp group indices for directed graphs
+        // Inbound timestamp group indices (if directed)
         if (is_directed) {
-            start = node_edge_index->inbound_offsets[node];
-            end = node_edge_index->inbound_offsets[node + 1];
-            group_pos = node_edge_index->inbound_timestamp_group_offsets[node];
+            start = inbound_offsets[node];
+            end = inbound_offsets[node + 1];
+            group_pos = inbound_ts_group_offsets[node];
 
             if (start < end) {
-                // First group always starts at the first edge
-                node_edge_index->inbound_timestamp_group_indices[group_pos++] = start;
-
+                inbound_ts_group_indices[group_pos++] = start;
                 for (size_t i = start + 1; i < end; ++i) {
-                    size_t curr_edge_id = node_edge_index->inbound_indices[i];
-                    size_t prev_edge_id = node_edge_index->inbound_indices[i - 1];
-
-                    if (edge_data->timestamps[curr_edge_id] != edge_data->timestamps[prev_edge_id]) {
-                        // New group starts at current position
-                        node_edge_index->inbound_timestamp_group_indices[group_pos++] = i;
+                    const size_t curr_id = inbound_indices[i];
+                    size_t prev_id = inbound_indices[i - 1];
+                    if (timestamps[curr_id] != timestamps[prev_id]) {
+                        inbound_ts_group_indices[group_pos++] = i;
                     }
                 }
             }
@@ -493,14 +523,15 @@ HOST void node_edge_index::compute_node_timestamp_indices_std(
     }
 }
 
-HOST void node_edge_index::update_temporal_weights_std(NodeEdgeIndexStore *node_edge_index, const EdgeDataStore *edge_data,
-                                             const double timescale_bound) {
+HOST void node_edge_index::update_temporal_weights_std(
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
+    const double timescale_bound
+) {
     const size_t node_index_capacity = node_edge_index->outbound_offsets_size - 1;
-
-    // Resize temporal weights arrays
     const size_t outbound_groups_size = node_edge_index->outbound_timestamp_group_indices_size;
 
-    // Allocate or resize outbound weights arrays
+    // Resize memory for outbound weights
     resize_memory(
         &node_edge_index->outbound_forward_cumulative_weights_exponential,
         node_edge_index->outbound_forward_cumulative_weights_exponential_size,
@@ -517,8 +548,9 @@ HOST void node_edge_index::update_temporal_weights_std(NodeEdgeIndexStore *node_
     );
     node_edge_index->outbound_backward_cumulative_weights_exponential_size = outbound_groups_size;
 
-    // Allocate inbound weights for directed graphs
-    if (node_edge_index->inbound_offsets_size > 0) {
+    const bool is_directed = node_edge_index->inbound_offsets_size > 0;
+
+    if (is_directed) {
         const size_t inbound_groups_size = node_edge_index->inbound_timestamp_group_indices_size;
         resize_memory(
             &node_edge_index->inbound_backward_cumulative_weights_exponential,
@@ -529,101 +561,88 @@ HOST void node_edge_index::update_temporal_weights_std(NodeEdgeIndexStore *node_
         node_edge_index->inbound_backward_cumulative_weights_exponential_size = inbound_groups_size;
     }
 
-    // Process each node
-    for (size_t node = 0; node < node_index_capacity; node++) {
-        // Outbound weights
-        MemoryView<size_t> outbound_offsets = get_timestamp_offset_vector(node_edge_index, true, false);
+    // Parallel over all nodes
+    #pragma omp parallel for
+    for (size_t node = 0; node < node_index_capacity; ++node) {
+        // === Outbound ===
+        auto outbound_offsets = get_timestamp_offset_vector(node_edge_index, true, false);
         const size_t out_start = outbound_offsets.data[node];
         const size_t out_end = outbound_offsets.data[node + 1];
 
         if (out_start < out_end) {
-            const size_t first_group_start = node_edge_index->outbound_timestamp_group_indices[out_start];
-            const size_t last_group_start = node_edge_index->outbound_timestamp_group_indices[out_end - 1];
-            const int64_t min_ts = edge_data->timestamps[node_edge_index->outbound_indices[first_group_start]];
-            const int64_t max_ts = edge_data->timestamps[node_edge_index->outbound_indices[last_group_start]];
+            const auto* ts_group_indices = node_edge_index->outbound_timestamp_group_indices;
+            const auto* edge_indices = node_edge_index->outbound_indices;
+            auto* f_weights = node_edge_index->outbound_forward_cumulative_weights_exponential;
+            auto* b_weights = node_edge_index->outbound_backward_cumulative_weights_exponential;
+            const auto* timestamps = edge_data->timestamps;
+
+            const int64_t min_ts = timestamps[edge_indices[ts_group_indices[out_start]]];
+            const int64_t max_ts = timestamps[edge_indices[ts_group_indices[out_end - 1]]];
             const auto time_diff = static_cast<double>(max_ts - min_ts);
             const double time_scale = (timescale_bound > 0 && time_diff > 0) ? timescale_bound / time_diff : 1.0;
 
-            double forward_sum = 0.0;
-            double backward_sum = 0.0;
+            double forward_sum = 0.0, backward_sum = 0.0;
 
-            // Calculate weights and sums
             for (size_t pos = out_start; pos < out_end; ++pos) {
-                const size_t edge_start = node_edge_index->outbound_timestamp_group_indices[pos];
-                const int64_t group_ts = edge_data->timestamps[node_edge_index->outbound_indices[edge_start]];
+                const size_t edge_start = ts_group_indices[pos];
+                const int64_t group_ts = timestamps[edge_indices[edge_start]];
 
-                const auto time_diff_forward = static_cast<double>(max_ts - group_ts);
-                const auto time_diff_backward = static_cast<double>(group_ts - min_ts);
+                const double f_scaled = (timescale_bound > 0) ? static_cast<double>(max_ts - group_ts) * time_scale : static_cast<double>(max_ts - group_ts);
+                const double b_scaled = (timescale_bound > 0) ? static_cast<double>(group_ts - min_ts) * time_scale : static_cast<double>(group_ts - min_ts);
 
-                const double forward_scaled = timescale_bound > 0
-                                                  ? time_diff_forward * time_scale
-                                                  : time_diff_forward;
-                const double backward_scaled = timescale_bound > 0
-                                                   ? time_diff_backward * time_scale
-                                                   : time_diff_backward;
+                const double fw = std::exp(f_scaled);
+                const double bw = std::exp(b_scaled);
 
-                const double forward_weight = exp(forward_scaled);
-                node_edge_index->outbound_forward_cumulative_weights_exponential[pos] = forward_weight;
-                forward_sum += forward_weight;
-
-                const double backward_weight = exp(backward_scaled);
-                node_edge_index->outbound_backward_cumulative_weights_exponential[pos] = backward_weight;
-                backward_sum += backward_weight;
+                f_weights[pos] = fw;
+                b_weights[pos] = bw;
+                forward_sum += fw;
+                backward_sum += bw;
             }
 
-            // Normalize and compute cumulative sums
-            double forward_cumsum = 0.0, backward_cumsum = 0.0;
+            double f_cumsum = 0.0, b_cumsum = 0.0;
             for (size_t pos = out_start; pos < out_end; ++pos) {
-                node_edge_index->outbound_forward_cumulative_weights_exponential[pos] /= forward_sum;
-                node_edge_index->outbound_backward_cumulative_weights_exponential[pos] /= backward_sum;
-
-                forward_cumsum += node_edge_index->outbound_forward_cumulative_weights_exponential[pos];
-                backward_cumsum += node_edge_index->outbound_backward_cumulative_weights_exponential[pos];
-
-                node_edge_index->outbound_forward_cumulative_weights_exponential[pos] = forward_cumsum;
-                node_edge_index->outbound_backward_cumulative_weights_exponential[pos] = backward_cumsum;
+                f_weights[pos] /= forward_sum;
+                b_weights[pos] /= backward_sum;
+                f_cumsum += f_weights[pos];
+                b_cumsum += b_weights[pos];
+                f_weights[pos] = f_cumsum;
+                b_weights[pos] = b_cumsum;
             }
         }
 
-        // Inbound weights
-        if (node_edge_index->inbound_offsets_size > 0) {
-            MemoryView<size_t> inbound_offsets = get_timestamp_offset_vector(node_edge_index, false, true);
+        // === Inbound ===
+        if (is_directed) {
+            auto inbound_offsets = get_timestamp_offset_vector(node_edge_index, false, true);
             const size_t in_start = inbound_offsets.data[node];
             const size_t in_end = inbound_offsets.data[node + 1];
 
             if (in_start < in_end) {
-                const size_t first_group_start = node_edge_index->inbound_timestamp_group_indices[in_start];
-                const size_t last_group_start = node_edge_index->inbound_timestamp_group_indices[in_end - 1];
-                const int64_t min_ts = edge_data->timestamps[node_edge_index->inbound_indices[first_group_start]];
-                const int64_t max_ts = edge_data->timestamps[node_edge_index->inbound_indices[last_group_start]];
+                const auto* ts_group_indices = node_edge_index->inbound_timestamp_group_indices;
+                const auto* edge_indices = node_edge_index->inbound_indices;
+                auto* b_weights = node_edge_index->inbound_backward_cumulative_weights_exponential;
+                const auto* timestamps = edge_data->timestamps;
+
+                const int64_t min_ts = timestamps[edge_indices[ts_group_indices[in_start]]];
+                const int64_t max_ts = timestamps[edge_indices[ts_group_indices[in_end - 1]]];
                 const auto time_diff = static_cast<double>(max_ts - min_ts);
-                const double time_scale = (timescale_bound > 0 && time_diff > 0)
-                                              ? timescale_bound / time_diff
-                                              : 1.0;
+                const double time_scale = (timescale_bound > 0 && time_diff > 0) ? timescale_bound / time_diff : 1.0;
 
                 double backward_sum = 0.0;
 
-                // Calculate weights and sum
                 for (size_t pos = in_start; pos < in_end; ++pos) {
-                    const size_t edge_start = node_edge_index->inbound_timestamp_group_indices[pos];
-                    const int64_t group_ts = edge_data->timestamps[node_edge_index->inbound_indices[edge_start]];
-
-                    const auto time_diff_backward = static_cast<double>(group_ts - min_ts);
-                    const double backward_scaled = timescale_bound > 0
-                                                       ? time_diff_backward * time_scale
-                                                       : time_diff_backward;
-
-                    const double backward_weight = exp(backward_scaled);
-                    node_edge_index->inbound_backward_cumulative_weights_exponential[pos] = backward_weight;
-                    backward_sum += backward_weight;
+                    const size_t edge_start = ts_group_indices[pos];
+                    const int64_t group_ts = timestamps[edge_indices[edge_start]];
+                    const double b_scaled = (timescale_bound > 0) ? static_cast<double>(group_ts - min_ts) * time_scale : static_cast<double>(group_ts - min_ts);
+                    const double bw = std::exp(b_scaled);
+                    b_weights[pos] = bw;
+                    backward_sum += bw;
                 }
 
-                // Normalize and compute cumulative sum
-                double backward_cumsum = 0.0;
+                double b_cumsum = 0.0;
                 for (size_t pos = in_start; pos < in_end; ++pos) {
-                    node_edge_index->inbound_backward_cumulative_weights_exponential[pos] /= backward_sum;
-                    backward_cumsum += node_edge_index->inbound_backward_cumulative_weights_exponential[pos];
-                    node_edge_index->inbound_backward_cumulative_weights_exponential[pos] = backward_cumsum;
+                    b_weights[pos] /= backward_sum;
+                    b_cumsum += b_weights[pos];
+                    b_weights[pos] = b_cumsum;
                 }
             }
         }
