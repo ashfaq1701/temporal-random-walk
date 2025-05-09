@@ -219,7 +219,7 @@ TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, ExactTimestampUndirectedTest) {
     // Backward direction
     edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 101, false);
     EXPECT_EQ(edge.ts, 100);
-    EXPECT_TRUE(edge.u == 10 && (edge.i == 20 || edge.i == 50));
+    EXPECT_TRUE((edge.u == 10 && edge.i == 20) or (edge.u == 50 && edge.i == 10));
 
     // Try from other node's perspective
     edge = this->graph->get_node_edge_at(20, RandomPickerType::TEST_FIRST, 100, true);
