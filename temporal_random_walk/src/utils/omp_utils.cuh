@@ -4,12 +4,14 @@
 #include <omp.h>
 #include <vector>
 
-inline void parallel_prefix_sum(const std::vector<int>& input, std::vector<int>& output) {
-    const size_t n = input.size();
-    int num_threads = 0;
-    std::vector<int> thread_sums;
+template <typename T>
+void parallel_prefix_sum(const T* input, T* output, size_t n) {
+    static_assert(std::is_arithmetic_v<T>, "parallel_prefix_sum_ptr requires a numeric type");
 
-    output.resize(n);
+    if (n == 0) return;
+
+    int num_threads = 0;
+    std::vector<T> thread_sums;
 
     #pragma omp parallel
     {
@@ -19,12 +21,12 @@ inline void parallel_prefix_sum(const std::vector<int>& input, std::vector<int>&
         #pragma omp single
         {
             num_threads = nt;
-            thread_sums.resize(nt + 1, 0);
+            thread_sums.resize(nt + 1, T(0));  // thread_sums[0] = 0
         }
 
-        int local_sum = 0;
-        size_t start, end;
+        T local_sum = T(0);
 
+        // First pass: local inclusive scan
         #pragma omp for schedule(static)
         for (size_t i = 0; i < n; ++i) {
             local_sum += input[i];
@@ -34,6 +36,8 @@ inline void parallel_prefix_sum(const std::vector<int>& input, std::vector<int>&
         thread_sums[tid + 1] = local_sum;
 
         #pragma omp barrier
+
+        // Scan over thread partial sums
         #pragma omp single
         {
             for (int i = 1; i <= num_threads; ++i) {
@@ -41,41 +45,45 @@ inline void parallel_prefix_sum(const std::vector<int>& input, std::vector<int>&
             }
         }
 
+        // Convert to exclusive and apply offset
+        T offset = thread_sums[tid];
+
         #pragma omp for schedule(static)
         for (size_t i = 0; i < n; ++i) {
-            output[i] -= input[i]; // convert to exclusive
-            output[i] += thread_sums[tid];
+            output[i] -= input[i];  // convert inclusive to exclusive
+            output[i] += offset;
         }
     }
 }
 
 template <typename T>
-void parallel_inclusive_scan(std::vector<T>& data) {
-    static_assert(std::is_arithmetic<T>::value, "parallel_inclusive_scan requires a numeric type");
-
-    const size_t n = data.size();
-    if (n == 0) return;
+void parallel_exclusive_scan(const T* input, T* output_with_offset, const size_t n) {
+    static_assert(std::is_arithmetic_v<T>, "T must be numeric");
+    if (n == 0) {
+        output_with_offset[0] = 0;
+        return;
+    }
 
     int num_threads = 0;
     std::vector<T> thread_sums;
 
     #pragma omp parallel
     {
-        int tid = omp_get_thread_num();
-        int nt = omp_get_num_threads();
+        const int tid = omp_get_thread_num();
+        const int nt = omp_get_num_threads();
 
         #pragma omp single
         {
             num_threads = nt;
-            thread_sums.resize(nt + 1, T(0));
+            thread_sums.resize(nt + 1, T(0));  // thread_sums[0] = 0
         }
 
-        T local_sum = T(0);
+        T local_sum = 0;
 
         #pragma omp for schedule(static)
         for (size_t i = 0; i < n; ++i) {
-            local_sum += data[i];
-            data[i] = local_sum;
+            local_sum += input[i];
+            output_with_offset[i + 1] = local_sum; // write to output[1..n]
         }
 
         thread_sums[tid + 1] = local_sum;
@@ -88,9 +96,63 @@ void parallel_inclusive_scan(std::vector<T>& data) {
             }
         }
 
+        T offset = thread_sums[tid];
+
         #pragma omp for schedule(static)
         for (size_t i = 0; i < n; ++i) {
-            data[i] += thread_sums[tid];
+            output_with_offset[i + 1] += offset;
+        }
+    }
+
+    output_with_offset[0] = 0; // Set base offset
+}
+
+template <typename T>
+void parallel_inclusive_scan(T* data, size_t n) {
+    static_assert(std::is_arithmetic_v<T>, "parallel_inclusive_scan_ptr requires a numeric type");
+    if (n == 0) return;
+
+    int num_threads = 0;
+    std::vector<T> thread_sums;
+
+    #pragma omp parallel
+    {
+        const int tid = omp_get_thread_num();
+        const int nt  = omp_get_num_threads();
+
+        #pragma omp single
+        {
+            num_threads = nt;
+            thread_sums.resize(nt + 1, T(0));
+        }
+
+        T local_sum = T(0);
+
+        // First pass: local inclusive scan per thread
+        #pragma omp for schedule(static)
+        for (size_t i = 0; i < n; ++i) {
+            local_sum += data[i];
+            data[i] = local_sum;
+        }
+
+        thread_sums[tid + 1] = local_sum;
+
+        #pragma omp barrier
+
+        // Prefix sum over thread_sums (serial, small)
+        #pragma omp single
+        {
+            for (int i = 1; i <= num_threads; ++i) {
+                thread_sums[i] += thread_sums[i - 1];
+            }
+        }
+
+        // Second pass: apply offset to each thread’s data
+        T offset = thread_sums[tid];
+
+        #pragma omp for schedule(static)
+        for (size_t i = 0; i < n; ++i) {
+            data[i] += offset;
         }
     }
 }

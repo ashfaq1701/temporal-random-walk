@@ -292,50 +292,42 @@ HOST void node_edge_index::compute_node_edge_offsets_std(
 ) {
     const size_t num_edges = edge_data->timestamps_size;
 
-    // Alias for readability
     auto* outbound_offsets = node_edge_index->outbound_offsets;
-    auto* inbound_offsets = node_edge_index->inbound_offsets;
-    const auto* sources = edge_data->sources;
-    const auto* targets = edge_data->targets;
+    auto* inbound_offsets  = node_edge_index->inbound_offsets;
+    const auto* sources    = edge_data->sources;
+    const auto* targets    = edge_data->targets;
 
     const size_t offset_size = node_edge_index->outbound_offsets_size;
 
-    // Use std::vector for temporary atomic-safe accumulation (optional if pre-cleared)
-    std::vector<size_t> out_counts(offset_size, 0);
-    std::vector<size_t> in_counts(offset_size, 0); // Only used if directed
+    // Step 1: Zero out offset arrays
+    std::fill_n(outbound_offsets, offset_size, 0);
+    if (is_directed) {
+        std::fill_n(inbound_offsets, node_edge_index->inbound_offsets_size, 0);
+    }
 
-    // Step 1: Count edges per node using atomics
+    // Step 2: Count edge occurrences (use atomic to avoid collisions)
     #pragma omp parallel for
     for (size_t i = 0; i < num_edges; ++i) {
         const int src_idx = sources[i];
         const int tgt_idx = targets[i];
 
         #pragma omp atomic
-        out_counts[src_idx + 1]++;
+        outbound_offsets[src_idx + 1]++;
 
         if (is_directed) {
             #pragma omp atomic
-            in_counts[tgt_idx + 1]++;
+            inbound_offsets[tgt_idx + 1]++;
         } else {
             #pragma omp atomic
-            out_counts[tgt_idx + 1]++;
+            outbound_offsets[tgt_idx + 1]++;
         }
     }
 
-    // Step 2: Inclusive scan
-    parallel_inclusive_scan(out_counts);
+    // Step 3: Inclusive scan over offsets[1..]
+    parallel_inclusive_scan(outbound_offsets + 1, offset_size - 1);
 
     if (is_directed) {
-        parallel_inclusive_scan(in_counts);
-    }
-
-    // Step 3: Copy results back to output arrays
-    #pragma omp parallel for
-    for (size_t i = 0; i < offset_size; ++i) {
-        outbound_offsets[i] = out_counts[i];
-        if (is_directed) {
-            inbound_offsets[i] = in_counts[i];
-        }
+        parallel_inclusive_scan(inbound_offsets + 1, node_edge_index->inbound_offsets_size - 1);
     }
 }
 
@@ -412,16 +404,19 @@ HOST void node_edge_index::compute_node_timestamp_offsets_std(
         inbound_group_count.resize(node_count, 0);
     }
 
-    const auto timestamps = edge_data->timestamps;
-    const auto outbound_offsets = node_edge_index->outbound_offsets;
-    const auto outbound_indices = node_edge_index->outbound_indices;
-    const auto inbound_offsets = node_edge_index->inbound_offsets;
-    const auto inbound_indices = node_edge_index->inbound_indices;
+    const int64_t* timestamps = edge_data->timestamps;
+    const size_t* outbound_offsets = node_edge_index->outbound_offsets;
+    const size_t* outbound_indices = node_edge_index->outbound_indices;
+    const size_t* inbound_offsets = node_edge_index->inbound_offsets;
+    const size_t* inbound_indices = node_edge_index->inbound_indices;
 
-    // Step 1: Parallel counting of timestamp groups
+    size_t* outbound_ts_group_offsets = node_edge_index->outbound_timestamp_group_offsets;
+    size_t* inbound_ts_group_offsets = node_edge_index->inbound_timestamp_group_offsets;
+
+    // Step 1: Count timestamp groups in parallel
     #pragma omp parallel for
     for (size_t node = 0; node < node_count; ++node) {
-        // Outbound
+        // Outbound groups
         size_t start = outbound_offsets[node];
         size_t end = outbound_offsets[node + 1];
 
@@ -434,7 +429,7 @@ HOST void node_edge_index::compute_node_timestamp_offsets_std(
             }
         }
 
-        // Inbound (if directed)
+        // Inbound groups (if directed)
         if (is_directed) {
             start = inbound_offsets[node];
             end = inbound_offsets[node + 1];
@@ -450,19 +445,19 @@ HOST void node_edge_index::compute_node_timestamp_offsets_std(
         }
     }
 
-    // Step 2: Compute prefix sums
-    node_edge_index->outbound_timestamp_group_offsets[0] = 0;
-    for (size_t i = 0; i < node_count; ++i) {
-        node_edge_index->outbound_timestamp_group_offsets[i + 1] =
-            node_edge_index->outbound_timestamp_group_offsets[i] + outbound_group_count[i];
-    }
+    // Step 2: Compute exclusive prefix sums
+    parallel_exclusive_scan(
+        outbound_group_count.data(),
+        outbound_ts_group_offsets,
+        node_count
+    );
 
     if (is_directed) {
-        node_edge_index->inbound_timestamp_group_offsets[0] = 0;
-        for (size_t i = 0; i < node_count; ++i) {
-            node_edge_index->inbound_timestamp_group_offsets[i + 1] =
-                node_edge_index->inbound_timestamp_group_offsets[i] + inbound_group_count[i];
-        }
+        parallel_exclusive_scan(
+            inbound_group_count.data(),
+            inbound_ts_group_offsets,
+            node_count
+        );
     }
 }
 
