@@ -2,7 +2,6 @@
 
 #ifdef HAS_CUDA
 #include <curand_kernel.h>
-#include <thrust/iterator/discard_iterator.h>
 #include <thrust/device_ptr.h>
 #include <thrust/sequence.h>
 #include <thrust/sort.h>
@@ -301,7 +300,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     // === Step 2: Sort new indices by timestamp ===
     thrust::sort(DEVICE_EXECUTION_POLICY,
                  new_indices.begin(), new_indices.end(),
-                 [d_timestamps] __device__(size_t i, size_t j) {
+                 [d_timestamps] __device__(const size_t i, const size_t j) {
                      return d_timestamps[i] < d_timestamps[j];
                  });
 
@@ -311,7 +310,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
                   old_indices.begin(), old_indices.end(),
                   new_indices.begin(), new_indices.end(),
                   merged_indices.begin(),
-                  [d_timestamps] __device__(size_t i, size_t j) {
+                  [d_timestamps] __device__(const size_t i, const size_t j) {
                       return d_timestamps[i] < d_timestamps[j];
                   });
 
