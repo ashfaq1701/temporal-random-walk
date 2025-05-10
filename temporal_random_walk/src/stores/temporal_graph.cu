@@ -47,35 +47,66 @@ HOST DataBlock<Edge> temporal_graph::get_edges(const TemporalGraphStore *graph) 
  * Std implementations
  */
 
-HOST void temporal_graph::sort_and_merge_edges_std(TemporalGraphStore *graph, const size_t /*start_idx*/) {
+HOST void temporal_graph::sort_and_merge_edges_std(TemporalGraphStore* graph, const size_t start_idx) {
     const size_t total_size = edge_data::size(graph->edge_data);
-    if (total_size == 0) return;
+    const size_t new_edges_count = total_size - start_idx;
+    if (new_edges_count == 0) return;
 
     int* sources = graph->edge_data->sources;
     int* targets = graph->edge_data->targets;
     int64_t* timestamps = graph->edge_data->timestamps;
 
-    // === Step 1: Create vector of (timestamp, source, target) tuples ===
-    std::vector<std::tuple<int64_t, int, int>> edge_tuples(total_size);
+    // === Step 1: Build index arrays for old and new edges ===
+    std::vector<size_t> old_indices(start_idx);
+    std::vector<size_t> new_indices(new_edges_count);
+    std::vector<size_t> merged_indices(total_size);
 
     #pragma omp parallel for
-    for (size_t i = 0; i < total_size; ++i) {
-        edge_tuples[i] = std::make_tuple(timestamps[i], sources[i], targets[i]);
-    }
+    for (size_t i = 0; i < start_idx; ++i)
+        old_indices[i] = i;
 
-    // === Step 2: Sort by timestamp (serial, or replace with parallel sort if available) ===
-    std::sort(edge_tuples.begin(), edge_tuples.end(),
-              [](const auto& a, const auto& b) {
-                  return std::get<0>(a) < std::get<0>(b);
+    #pragma omp parallel for
+    for (size_t i = 0; i < new_edges_count; ++i)
+        new_indices[i] = start_idx + i;
+
+    // === Step 2: Sort new indices by timestamp ===
+    std::sort(new_indices.begin(), new_indices.end(),
+              [timestamps](const size_t i, const size_t j) {
+                  return timestamps[i] < timestamps[j];
               });
 
-    // === Step 3: Write sorted values back ===
+    // === Step 3: Merge indices by timestamp ===
+    std::merge(
+        old_indices.begin(), old_indices.end(),
+        new_indices.begin(), new_indices.end(),
+        merged_indices.begin(),
+        [timestamps](const size_t i, const size_t j) {
+            return timestamps[i] < timestamps[j];
+        });
+
+    // === Step 4: Allocate temporary arrays for merged output ===
+    auto* merged_sources = new int[total_size];
+    auto* merged_targets = new int[total_size];
+    auto* merged_timestamps = new int64_t[total_size];
+
+    // === Step 5: Gather edge data using merged indices ===
     #pragma omp parallel for
     for (size_t i = 0; i < total_size; ++i) {
-        timestamps[i] = std::get<0>(edge_tuples[i]);
-        sources[i] = std::get<1>(edge_tuples[i]);
-        targets[i] = std::get<2>(edge_tuples[i]);
+        const size_t idx = merged_indices[i];
+        merged_sources[i] = sources[idx];
+        merged_targets[i] = targets[idx];
+        merged_timestamps[i] = timestamps[idx];
     }
+
+    // === Step 6: Copy merged data back to graph ===
+    std::memcpy(sources, merged_sources, total_size * sizeof(int));
+    std::memcpy(targets, merged_targets, total_size * sizeof(int));
+    std::memcpy(timestamps, merged_timestamps, total_size * sizeof(int64_t));
+
+    // === Step 7: Cleanup ===
+    delete[] merged_sources;
+    delete[] merged_targets;
+    delete[] merged_timestamps;
 }
 
 HOST void temporal_graph::delete_old_edges_std(TemporalGraphStore *graph) {
@@ -251,25 +282,66 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_std(TemporalGraph
 
 #ifdef HAS_CUDA
 
-HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore *graph, const size_t /*start_idx*/) {
+HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, const size_t start_idx) {
     const size_t total_size = edge_data::size(graph->edge_data);
-    if (total_size == 0) return;
+    const size_t new_edges_count = total_size - start_idx;
+    if (new_edges_count == 0) return;
 
-    int *d_sources = graph->edge_data->sources;
-    int *d_targets = graph->edge_data->targets;
-    int64_t *d_timestamps = graph->edge_data->timestamps;
+    int* d_sources = graph->edge_data->sources;
+    int* d_targets = graph->edge_data->targets;
+    int64_t* d_timestamps = graph->edge_data->timestamps;
 
-    // Use zip iterator to keep sources and targets paired during sort
-    const auto zipped_values = thrust::make_zip_iterator(thrust::make_tuple(d_sources, d_targets));
+    // === Step 1: Build index arrays ===
+    thrust::device_vector<size_t> old_indices(start_idx);
+    thrust::sequence(old_indices.begin(), old_indices.end(), 0);
 
-    // Sort all edges by timestamp, updating sources and targets accordingly
-    thrust::sort_by_key(
-        DEVICE_EXECUTION_POLICY,
-        d_timestamps, d_timestamps + total_size,
-        zipped_values
-    );
+    thrust::device_vector<size_t> new_indices(new_edges_count);
+    thrust::sequence(new_indices.begin(), new_indices.end(), start_idx);
 
-    CUDA_KERNEL_CHECK("After thrust::sort_by_key in sort_and_merge_edges_cuda");
+    // === Step 2: Sort new indices by timestamp ===
+    thrust::sort(DEVICE_EXECUTION_POLICY,
+                 new_indices.begin(), new_indices.end(),
+                 [d_timestamps] __device__(size_t i, size_t j) {
+                     return d_timestamps[i] < d_timestamps[j];
+                 });
+
+    // === Step 3: Merge old + new indices into merged_indices ===
+    thrust::device_vector<size_t> merged_indices(total_size);
+    thrust::merge(DEVICE_EXECUTION_POLICY,
+                  old_indices.begin(), old_indices.end(),
+                  new_indices.begin(), new_indices.end(),
+                  merged_indices.begin(),
+                  [d_timestamps] __device__(size_t i, size_t j) {
+                      return d_timestamps[i] < d_timestamps[j];
+                  });
+
+    // === Step 4: Allocate temporary merged arrays ===
+    int* d_merged_sources = nullptr;
+    int* d_merged_targets = nullptr;
+    int64_t* d_merged_timestamps = nullptr;
+
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_merged_sources, total_size * sizeof(int)));
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_merged_targets, total_size * sizeof(int)));
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_merged_timestamps, total_size * sizeof(int64_t)));
+
+    // === Step 5: Gather merged edge data ===
+    thrust::gather(DEVICE_EXECUTION_POLICY,
+                   merged_indices.begin(), merged_indices.end(), d_sources, d_merged_sources);
+    thrust::gather(DEVICE_EXECUTION_POLICY,
+                   merged_indices.begin(), merged_indices.end(), d_targets, d_merged_targets);
+    thrust::gather(DEVICE_EXECUTION_POLICY,
+                   merged_indices.begin(), merged_indices.end(), d_timestamps, d_merged_timestamps);
+    CUDA_KERNEL_CHECK("After thrust gather");
+
+    // === Step 6: Copy back to graph storage ===
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_sources, d_merged_sources, total_size * sizeof(int), cudaMemcpyDeviceToDevice));
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_targets, d_merged_targets, total_size * sizeof(int), cudaMemcpyDeviceToDevice));
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_timestamps, d_merged_timestamps, total_size * sizeof(int64_t), cudaMemcpyDeviceToDevice));
+
+    // === Step 7: Cleanup ===
+    clear_memory(&d_merged_sources, true);
+    clear_memory(&d_merged_targets, true);
+    clear_memory(&d_merged_timestamps, true);
 }
 
 HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore *graph) {
