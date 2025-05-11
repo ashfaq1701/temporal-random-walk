@@ -9,6 +9,7 @@
 
 #include <omp.h>
 #include <cmath>
+#include <execution>
 #include <algorithm>
 #include "../utils/omp_utils.cuh"
 #include "../common/cuda_config.cuh"
@@ -364,6 +365,7 @@ HOST void node_edge_index::compute_node_edge_indices_std(
 
     // Step 3: Stable sort outbound_edge_indices_buffer by node ID (source or target depending on flag)
     std::stable_sort(
+        std::execution::par_unseq,
         outbound_edge_indices_buffer,
         outbound_edge_indices_buffer + buffer_size,
         [sources, targets](const EdgeWithEndpointType& a, const EdgeWithEndpointType& b) {
