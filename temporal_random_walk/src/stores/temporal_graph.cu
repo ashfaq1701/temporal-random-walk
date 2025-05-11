@@ -7,7 +7,10 @@
 #include <thrust/sort.h>
 #include <thrust/gather.h>
 #include <thrust/binary_search.h>
+#include <cub/device/device_merge.cuh>
 #endif
+
+#include "../common/functors.cuh"
 
 HOST void temporal_graph::update_temporal_weights(const TemporalGraphStore *graph) {
 #ifdef HAS_CUDA
@@ -304,15 +307,36 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
                      return d_timestamps[i] < d_timestamps[j];
                  });
 
-    // === Step 3: Merge old + new indices into merged_indices ===
+    // === Step 3: Allocate output and temp storage for CUB merge ===
     thrust::device_vector<size_t> merged_indices(total_size);
-    thrust::merge(DEVICE_EXECUTION_POLICY,
-                  old_indices.begin(), old_indices.end(),
-                  new_indices.begin(), new_indices.end(),
-                  merged_indices.begin(),
-                  [d_timestamps] __device__(const size_t i, const size_t j) {
-                      return d_timestamps[i] < d_timestamps[j];
-                  });
+    void* d_temp_storage = nullptr;
+    size_t temp_storage_bytes = 0;
+
+    TimestampCompare comparator(d_timestamps);
+
+    cub::DeviceMerge::Merge(
+        nullptr,
+        temp_storage_bytes,
+        old_indices.data().get(),
+        new_indices.data().get(),
+        merged_indices.data().get(),
+        start_idx,
+        new_edges_count,
+        comparator
+    );
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_temp_storage, temp_storage_bytes));
+
+    cub::DeviceMerge::Merge(
+        d_temp_storage,
+        temp_storage_bytes,
+        old_indices.data().get(),
+        new_indices.data().get(),
+        merged_indices.data().get(),
+        start_idx,
+        new_edges_count,
+        comparator
+    );
+    cudaFree(d_temp_storage);
 
     // === Step 4: Allocate temporary merged arrays ===
     int* d_merged_sources = nullptr;
