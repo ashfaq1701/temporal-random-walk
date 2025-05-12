@@ -18,7 +18,7 @@ private:
 
 public:
     // Constructor
-    explicit WalksIterator(const WalkSet* walk_set, const size_t start_index = 0);
+    explicit WalksIterator(const WalkSet* walk_set, size_t start_index = 0);
 
     // Iterator operations
     Walk operator*() const;

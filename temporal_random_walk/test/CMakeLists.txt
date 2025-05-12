@@ -71,5 +71,6 @@ target_link_libraries(test_temporal_random_walk PRIVATE
         GTest::gmock
         GTest::gmock_main
         OpenMP::OpenMP_CXX
+        TBB::tbb
         ${CUDA_LIBS}
 )

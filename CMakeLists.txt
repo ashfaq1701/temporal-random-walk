@@ -40,6 +40,7 @@ message(STATUS "Setting pybind11 Python version to: ${PYBIND11_PYTHON_VERSION}")
 find_package(pybind11 REQUIRED)
 
 find_package(OpenMP REQUIRED)
+find_package(TBB REQUIRED)
 
 option(HAS_CUDA "Enable CUDA support" ON)
 

@@ -5,7 +5,7 @@ function(add_test_executable target_name source_file)
 
     target_compile_features(${target_name} PRIVATE cxx_std_17)
 
-    target_link_libraries(${target_name} PRIVATE OpenMP::OpenMP_CXX)
+    target_link_libraries(${target_name} PRIVATE OpenMP::OpenMP_CXX TBB::tbb)
 
     if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
         set_source_files_properties(
