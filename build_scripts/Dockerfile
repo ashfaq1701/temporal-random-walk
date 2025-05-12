@@ -3,6 +3,8 @@ FROM nvidia/cuda:12.6.0-devel-rockylinux9
 ARG PYTHON_VERSIONS="3.8.18 3.9.18 3.10.13 3.11.7"
 
 # Install system dependencies
+RUN dnf install epel-release
+
 RUN dnf -y update && \
     dnf -y --allowerasing install \
         gcc gcc-c++ make automake autoconf \
@@ -14,7 +16,8 @@ RUN dnf -y update && \
         ca-certificates gnupg \
         sudo which \
         dnf-plugins-core epel-release \
-        libomp-devel &&  \
+        libomp-devel \
+        tbb tbb-devel &&  \
     dnf clean all
 
 # Install Python 3.8–3.11 from source
