@@ -2,10 +2,13 @@ FROM nvidia/cuda:12.6.0-devel-rockylinux9
 
 ARG PYTHON_VERSIONS="3.8.18 3.9.18 3.10.13 3.11.7"
 
-# Install system dependencies
-RUN dnf install epel-release
+FROM nvidia/cuda:12.6.0-devel-rockylinux9
 
-RUN dnf -y update && \
+ARG PYTHON_VERSIONS="3.8.18 3.9.18 3.10.13 3.11.7"
+
+# Install EPEL and update system
+RUN dnf -y install epel-release && \
+    dnf -y update && \
     dnf -y --allowerasing install \
         gcc gcc-c++ make automake autoconf \
         git wget curl \
@@ -15,9 +18,9 @@ RUN dnf -y update && \
         openssl-devel \
         ca-certificates gnupg \
         sudo which \
-        dnf-plugins-core epel-release \
+        dnf-plugins-core \
         libomp-devel \
-        tbb tbb-devel &&  \
+        tbb tbb-devel && \
     dnf clean all
 
 # Install Python 3.8–3.11 from source
