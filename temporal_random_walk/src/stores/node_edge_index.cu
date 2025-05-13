@@ -9,9 +9,9 @@
 
 #include <omp.h>
 #include <cmath>
-#include <execution>
 #include <algorithm>
 #include "../utils/omp_utils.cuh"
+#include "../common/parallel_algorithms.cuh"
 #include "../common/cuda_config.cuh"
 
 /**
@@ -364,8 +364,7 @@ HOST void node_edge_index::compute_node_edge_indices_std(
     }
 
     // Step 3: Stable sort outbound_edge_indices_buffer by node ID (source or target depending on flag)
-    std::stable_sort(
-        std::execution::par_unseq,
+    parallel::stable_sort(
         outbound_edge_indices_buffer,
         outbound_edge_indices_buffer + buffer_size,
         [sources, targets](const EdgeWithEndpointType& a, const EdgeWithEndpointType& b) {
@@ -377,8 +376,7 @@ HOST void node_edge_index::compute_node_edge_indices_std(
 
     // Step 4: Stable sort inbound_indices by target node (if directed)
     if (is_directed) {
-        std::stable_sort(
-            std::execution::par_unseq,
+        parallel::stable_sort(
             node_edge_index->inbound_indices,
             node_edge_index->inbound_indices + edges_size,
             [targets](const size_t a, const size_t b) {

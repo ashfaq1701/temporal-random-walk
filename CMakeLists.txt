@@ -59,6 +59,10 @@ if(HAS_CUDA)
     endif()
 endif()
 
+if(APPLE)
+    add_definitions(-DIS_MACOS)
+endif()
+
 set(SRC_FILES
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/edge_data.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/node_edge_index.cu
