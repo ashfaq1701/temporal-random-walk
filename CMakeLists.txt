@@ -72,10 +72,6 @@ set(SRC_FILES
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/TemporalRandomWalk.cu
 )
 
-if(APPLE)
-    add_definitions(-DIS_MACOS)
-endif()
-
 if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
     add_compile_options(
             $<$<COMPILE_LANGUAGE:CUDA>:--extended-lambda>

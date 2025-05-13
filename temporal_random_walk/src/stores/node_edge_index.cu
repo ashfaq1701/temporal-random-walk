@@ -7,14 +7,9 @@
 #include <thrust/sort.h>
 #endif
 
-#ifndef IS_MACOS
-#include "execution"
-#else
-#include "tbb/parallel_sort.h"
-#endif
-
 #include <omp.h>
 #include <cmath>
+#include <execution>
 #include <algorithm>
 #include "../utils/omp_utils.cuh"
 #include "../common/cuda_config.cuh"
@@ -348,7 +343,6 @@ HOST void node_edge_index::compute_node_edge_indices_std(
 
     const auto* sources = edge_data->sources;
     const auto* targets = edge_data->targets;
-    const auto* timestamps = edge_data->timestamps;
 
     // Step 1: Fill outbound_edge_indices_buffer
     #pragma omp parallel for
@@ -369,76 +363,28 @@ HOST void node_edge_index::compute_node_edge_indices_std(
         }
     }
 
-    // Step 3: Sort outbound_edge_indices_buffer by node ID (source or target depending on flag)
-    auto edge_comparator = [sources, targets, timestamps](const EdgeWithEndpointType& a, const EdgeWithEndpointType& b) {
-        // Cache node lookups
-        const int node_a = a.is_source ? sources[a.edge_id] : targets[a.edge_id];
-        const int node_b = b.is_source ? sources[b.edge_id] : targets[b.edge_id];
-
-        // First compare by node
-        if (node_a != node_b) {
-            return node_a < node_b;
-        }
-
-        // Cache timestamp lookups
-        const auto time_a = timestamps[a.edge_id];
-        const auto time_b = timestamps[b.edge_id];
-
-        // If nodes are equal, compare by timestamp
-        return time_a < time_b;
-    };
-
-    // Use the lambda variable in the sort function
-
-    #ifndef IS_MACOS
-    std::sort(
+    // Step 3: Stable sort outbound_edge_indices_buffer by node ID (source or target depending on flag)
+    std::stable_sort(
         std::execution::par_unseq,
         outbound_edge_indices_buffer,
         outbound_edge_indices_buffer + buffer_size,
-        edge_comparator
+        [sources, targets](const EdgeWithEndpointType& a, const EdgeWithEndpointType& b) {
+            const int node_a = a.is_source ? sources[a.edge_id] : targets[a.edge_id];
+            const int node_b = b.is_source ? sources[b.edge_id] : targets[b.edge_id];
+            return node_a < node_b;
+        }
     );
-    #else
-    tbb::parallel_sort(
-        outbound_edge_indices_buffer,
-        outbound_edge_indices_buffer + buffer_size,
-        edge_comparator
-    );
-    #endif
 
-    // Step 4: Sort inbound_indices by target node (if directed)
+    // Step 4: Stable sort inbound_indices by target node (if directed)
     if (is_directed) {
-        auto edge_comparator_directed = [targets, timestamps](const size_t a, const size_t b) {
-            // Cache target lookups
-            const int target_a = targets[a];
-            const int target_b = targets[b];
-
-            // First compare by target node
-            if (target_a != target_b) {
-                return target_a < target_b;
-            }
-
-            // Cache timestamp lookups
-            const auto time_a = timestamps[a];
-            const auto time_b = timestamps[b];
-
-            // If targets are equal, compare by timestamp
-            return time_a < time_b;
-        };
-
-        #ifndef IS_MACOS
-        std::sort(
+        std::stable_sort(
             std::execution::par_unseq,
             node_edge_index->inbound_indices,
             node_edge_index->inbound_indices + edges_size,
-            edge_comparator_directed
+            [targets](const size_t a, const size_t b) {
+                return targets[a] < targets[b];
+            }
         );
-        #else
-        tbb::parallel_sort(
-            node_edge_index->inbound_indices,
-            node_edge_index->inbound_indices + edges_size,
-            edge_comparator_directed
-        );
-        #endif
     }
 
     // Step 5: Extract edge_id from buffer to outbound_indices
@@ -807,59 +753,33 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
 
     auto sources = edge_data->sources;
     auto targets = edge_data->targets;
-    auto timestamps = edge_data->timestamps;
 
-    // Sort outbound_edge_indices_buffer by node ID, then by timestamp
-    thrust::sort(
+    // Sort outbound_edge_indices_buffer by node ID
+    thrust::stable_sort(
         DEVICE_EXECUTION_POLICY,
         d_buffer,
         d_buffer + static_cast<long>(buffer_size),
-        [sources, targets, timestamps] DEVICE (const EdgeWithEndpointType &a, const EdgeWithEndpointType &b) {
-            // Cache node lookups
+        [sources, targets] DEVICE (
+    const EdgeWithEndpointType &a, const EdgeWithEndpointType &b) {
             const int node_a = a.is_source ? sources[a.edge_id] : targets[a.edge_id];
             const int node_b = b.is_source ? sources[b.edge_id] : targets[b.edge_id];
-
-            // First compare by node
-            if (node_a != node_b) {
-                return node_a < node_b;
-            }
-
-            // Cache timestamp lookups
-            const auto time_a = timestamps[a.edge_id];
-            const auto time_b = timestamps[b.edge_id];
-
-            // If nodes are equal, compare by timestamp
-            return time_a < time_b;
+            return node_a < node_b;
         }
     );
-    CUDA_KERNEL_CHECK("After thrust sort outbound in compute_node_edge_indices_cuda");
+    CUDA_KERNEL_CHECK("After thrust stable_sort outbound in compute_node_edge_indices_cuda");
 
-    // Sort inbound_indices for directed graphs by target node, then by timestamp
+    // Sort inbound_indices for directed graphs
     if (is_directed) {
         const thrust::device_ptr<size_t> d_inbound_indices(node_edge_index->inbound_indices);
-        thrust::sort(
+        thrust::stable_sort(
             DEVICE_EXECUTION_POLICY,
             d_inbound_indices,
             d_inbound_indices + static_cast<long>(edges_size),
-            [targets, timestamps] DEVICE (const size_t a, const size_t b) {
-                // Cache target lookups
-                const int target_a = targets[a];
-                const int target_b = targets[b];
-
-                // First compare by target node
-                if (target_a != target_b) {
-                    return target_a < target_b;
-                }
-
-                // Cache timestamp lookups
-                const auto time_a = timestamps[a];
-                const auto time_b = timestamps[b];
-
-                // If targets are equal, compare by timestamp
-                return time_a < time_b;
+            [targets] DEVICE (size_t a, size_t b) {
+                return targets[a] < targets[b];
             }
         );
-        CUDA_KERNEL_CHECK("After thrust sort inbound in compute_node_edge_indices_cuda");
+        CUDA_KERNEL_CHECK("After thrust stable_sort inbound in compute_node_edge_indices_cuda");
     }
 
     // Extract edge_id from buffer to outbound_indices
