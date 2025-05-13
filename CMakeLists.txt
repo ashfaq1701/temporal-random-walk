@@ -73,9 +73,7 @@ set(SRC_FILES
 )
 
 if(APPLE)
-    add_definitions(-DIS_MACOS=1)
-else()
-    add_definitions(-DIS_MACOS=0)
+    add_definitions(-DIS_MACOS)
 endif()
 
 if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
