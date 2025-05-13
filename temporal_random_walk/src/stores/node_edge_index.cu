@@ -775,7 +775,7 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
             DEVICE_EXECUTION_POLICY,
             d_inbound_indices,
             d_inbound_indices + static_cast<long>(edges_size),
-            [targets] DEVICE (size_t a, size_t b) {
+            [targets] DEVICE (const size_t a, const size_t b) {
                 return targets[a] < targets[b];
             }
         );
