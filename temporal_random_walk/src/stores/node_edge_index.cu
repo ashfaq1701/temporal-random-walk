@@ -7,8 +7,13 @@
 #include <thrust/sort.h>
 #endif
 
-#include <omp.h>
+#ifndef IS_MACOS
+#include "execution"
+#else
 #include "tbb/parallel_sort.h"
+#endif
+
+#include <omp.h>
 #include <cmath>
 #include <algorithm>
 #include "../utils/omp_utils.cuh"
@@ -365,51 +370,75 @@ HOST void node_edge_index::compute_node_edge_indices_std(
     }
 
     // Step 3: Sort outbound_edge_indices_buffer by node ID (source or target depending on flag)
+    auto edge_comparator = [sources, targets, timestamps](const EdgeWithEndpointType& a, const EdgeWithEndpointType& b) {
+        // Cache node lookups
+        const int node_a = a.is_source ? sources[a.edge_id] : targets[a.edge_id];
+        const int node_b = b.is_source ? sources[b.edge_id] : targets[b.edge_id];
+
+        // First compare by node
+        if (node_a != node_b) {
+            return node_a < node_b;
+        }
+
+        // Cache timestamp lookups
+        const auto time_a = timestamps[a.edge_id];
+        const auto time_b = timestamps[b.edge_id];
+
+        // If nodes are equal, compare by timestamp
+        return time_a < time_b;
+    };
+
+    // Use the lambda variable in the sort function
+
+    #ifndef IS_MACOS
+    std::sort(
+        std::execution::par_unseq,
+        outbound_edge_indices_buffer,
+        outbound_edge_indices_buffer + buffer_size,
+        edge_comparator
+    );
+    #else
     tbb::parallel_sort(
         outbound_edge_indices_buffer,
         outbound_edge_indices_buffer + buffer_size,
-        [sources, targets, timestamps](const EdgeWithEndpointType& a, const EdgeWithEndpointType& b) {
-            // Cache node lookups
-            const int node_a = a.is_source ? sources[a.edge_id] : targets[a.edge_id];
-            const int node_b = b.is_source ? sources[b.edge_id] : targets[b.edge_id];
-
-            // First compare by node
-            if (node_a != node_b) {
-                return node_a < node_b;
-            }
-
-            // Cache timestamp lookups
-            const auto time_a = timestamps[a.edge_id];
-            const auto time_b = timestamps[b.edge_id];
-
-            // If nodes are equal, compare by timestamp
-            return time_a < time_b;
-        }
+        edge_comparator
     );
+    #endif
 
     // Step 4: Sort inbound_indices by target node (if directed)
     if (is_directed) {
+        auto edge_comparator_directed = [targets, timestamps](const size_t a, const size_t b) {
+            // Cache target lookups
+            const int target_a = targets[a];
+            const int target_b = targets[b];
+
+            // First compare by target node
+            if (target_a != target_b) {
+                return target_a < target_b;
+            }
+
+            // Cache timestamp lookups
+            const auto time_a = timestamps[a];
+            const auto time_b = timestamps[b];
+
+            // If targets are equal, compare by timestamp
+            return time_a < time_b;
+        };
+
+        #ifndef IS_MACOS
+        std::sort(
+            std::execution::par_unseq,
+            node_edge_index->inbound_indices,
+            node_edge_index->inbound_indices + edges_size,
+            edge_comparator_directed
+        );
+        #else
         tbb::parallel_sort(
             node_edge_index->inbound_indices,
             node_edge_index->inbound_indices + edges_size,
-            [targets, timestamps](const size_t a, const size_t b) {
-                // Cache target lookups
-                const int target_a = targets[a];
-                const int target_b = targets[b];
-
-                // First compare by target node
-                if (target_a != target_b) {
-                    return target_a < target_b;
-                }
-
-                // Cache timestamp lookups
-                const auto time_a = timestamps[a];
-                const auto time_b = timestamps[b];
-
-                // If targets are equal, compare by timestamp
-                return time_a < time_b;
-            }
+            edge_comparator_directed
         );
+        #endif
     }
 
     // Step 5: Extract edge_id from buffer to outbound_indices

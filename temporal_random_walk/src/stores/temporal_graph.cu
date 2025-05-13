@@ -9,7 +9,11 @@
 #include <thrust/binary_search.h>
 #endif
 
+#ifndef IS_MACOS
+#include "execution"
+#else
 #include "tbb/parallel_sort.h"
+#endif
 
 HOST void temporal_graph::update_temporal_weights(const TemporalGraphStore *graph) {
 #ifdef HAS_CUDA
@@ -65,11 +69,20 @@ HOST void temporal_graph::sort_and_merge_edges_std(TemporalGraphStore *graph, co
     }
 
     // === Step 2: Sort by timestamp (serial, or replace with parallel sort if available) ===
+    #ifndef IS_MACOS
+    std::sort(
+        std::execution::par_unseq,
+        edge_tuples.begin(), edge_tuples.end(),
+        [](const auto& a, const auto& b) {
+                  return std::get<0>(a) < std::get<0>(b);
+              });
+    #else
     tbb::parallel_sort(
         edge_tuples.begin(), edge_tuples.end(),
         [](const auto& a, const auto& b) {
                   return std::get<0>(a) < std::get<0>(b);
               });
+    #endif
 
     // === Step 3: Write sorted values back ===
     #pragma omp parallel for
