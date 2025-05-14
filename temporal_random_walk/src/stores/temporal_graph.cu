@@ -9,6 +9,7 @@
 #include <thrust/binary_search.h>
 #endif
 
+#include "../common/comparators.cuh"
 #include "../common/parallel_algorithms.cuh"
 
 HOST void temporal_graph::update_temporal_weights(const TemporalGraphStore *graph) {
@@ -58,33 +59,29 @@ HOST void temporal_graph::sort_and_merge_edges_std(TemporalGraphStore* graph, co
     int64_t* timestamps = graph->edge_data->timestamps;
 
     // === Step 1: Build index arrays for old and new edges ===
-    std::vector<size_t> old_indices(start_idx);
-    std::vector<size_t> new_indices(new_edges_count);
-    std::vector<size_t> merged_indices(total_size);
+    std::vector<int> old_indices(start_idx);
+    std::vector<int> new_indices(new_edges_count);
+    std::vector<int> merged_indices(total_size);
 
     #pragma omp parallel for
-    for (size_t i = 0; i < start_idx; ++i)
+    for (int i = 0; i < start_idx; ++i)
         old_indices[i] = i;
 
     #pragma omp parallel for
-    for (size_t i = 0; i < new_edges_count; ++i)
-        new_indices[i] = start_idx + i;
+    for (int i = 0; i < new_edges_count; ++i)
+        new_indices[i] = static_cast<int>(start_idx) + i;
 
     // === Step 2: Sort new indices by timestamp ===
     parallel::sort(
         new_indices.begin(), new_indices.end(),
-        [timestamps](const size_t i, const size_t j) {
-            return timestamps[i] < timestamps[j];
-        });
+        TimestampComparator(timestamps));
 
     // === Step 3: Merge indices by timestamp ===
     parallel::merge(
         old_indices.begin(), old_indices.end(),
         new_indices.begin(), new_indices.end(),
         merged_indices.begin(),
-        [timestamps](const size_t i, const size_t j) {
-            return timestamps[i] < timestamps[j];
-        });
+        TimestampComparator(timestamps));
 
     // === Step 4: Allocate temporary arrays for merged output ===
     auto* merged_sources = new int[total_size];
@@ -93,8 +90,8 @@ HOST void temporal_graph::sort_and_merge_edges_std(TemporalGraphStore* graph, co
 
     // === Step 5: Gather edge data using merged indices ===
     #pragma omp parallel for
-    for (size_t i = 0; i < total_size; ++i) {
-        const size_t idx = merged_indices[i];
+    for (int i = 0; i < total_size; ++i) {
+        const int idx = merged_indices[i];
         merged_sources[i] = sources[idx];
         merged_targets[i] = targets[idx];
         merged_timestamps[i] = timestamps[idx];
@@ -294,28 +291,24 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     int64_t* d_timestamps = graph->edge_data->timestamps;
 
     // === Step 1: Build index arrays ===
-    thrust::device_vector<size_t> old_indices(start_idx);
+    thrust::device_vector<int> old_indices(start_idx);
     thrust::sequence(old_indices.begin(), old_indices.end(), 0);
 
-    thrust::device_vector<size_t> new_indices(new_edges_count);
+    thrust::device_vector<int> new_indices(new_edges_count);
     thrust::sequence(new_indices.begin(), new_indices.end(), start_idx);
 
     // === Step 2: Sort new indices by timestamp ===
     thrust::sort(DEVICE_EXECUTION_POLICY,
                  new_indices.begin(), new_indices.end(),
-                 [d_timestamps] __device__(const size_t i, const size_t j) {
-                     return d_timestamps[i] < d_timestamps[j];
-                 });
+                 TimestampComparator(d_timestamps));
 
     // === Step 3: Merge old + new indices into merged_indices ===
-    thrust::device_vector<size_t> merged_indices(total_size);
+    thrust::device_vector<int> merged_indices(total_size);
     thrust::merge(DEVICE_EXECUTION_POLICY,
                   old_indices.begin(), old_indices.end(),
                   new_indices.begin(), new_indices.end(),
                   merged_indices.begin(),
-                  [d_timestamps] __device__(const size_t i, const size_t j) {
-                      return d_timestamps[i] < d_timestamps[j];
-                  });
+                  TimestampComparator(d_timestamps));
 
     // === Step 4: Allocate temporary merged arrays ===
     int* d_merged_sources = nullptr;
