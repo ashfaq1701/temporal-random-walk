@@ -291,24 +291,48 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     int64_t* d_timestamps = graph->edge_data->timestamps;
 
     // === Step 1: Build index arrays ===
-    thrust::device_vector<int> old_indices(start_idx);
+    thrust::device_vector<int> old_indices(static_cast<int>(start_idx));
     thrust::sequence(old_indices.begin(), old_indices.end(), 0);
 
-    thrust::device_vector<int> new_indices(new_edges_count);
-    thrust::sequence(new_indices.begin(), new_indices.end(), start_idx);
+    thrust::device_vector<int> new_indices(static_cast<int>(new_edges_count));
+    thrust::sequence(new_indices.begin(), new_indices.end(), static_cast<int>(start_idx));
 
     // === Step 2: Sort new indices by timestamp ===
-    thrust::sort(DEVICE_EXECUTION_POLICY,
-                 new_indices.begin(), new_indices.end(),
-                 TimestampComparator(d_timestamps));
+    thrust::sort(
+        thrust::device,
+        new_indices.begin(), new_indices.end(),
+        TimestampComparator(d_timestamps)
+    );
 
-    // === Step 3: Merge old + new indices into merged_indices ===
-    thrust::device_vector<int> merged_indices(total_size);
-    thrust::merge(DEVICE_EXECUTION_POLICY,
-                  old_indices.begin(), old_indices.end(),
-                  new_indices.begin(), new_indices.end(),
-                  merged_indices.begin(),
-                  TimestampComparator(d_timestamps));
+    // === Step 3: Merge with CUB ===
+    thrust::device_vector<int> merged_indices(static_cast<int>(total_size));
+    int* d_old = thrust::raw_pointer_cast(old_indices.data());
+    int* d_new = thrust::raw_pointer_cast(new_indices.data());
+    int* d_out = thrust::raw_pointer_cast(merged_indices.data());
+
+    void* d_temp_storage = nullptr;
+    size_t temp_storage_bytes = 0;
+
+    // Query temp storage size
+    cub::DeviceMerge::MergeKeys(
+        nullptr, temp_storage_bytes,
+        d_old, d_new, d_out,
+        static_cast<int>(start_idx), static_cast<int>(new_edges_count),
+        TimestampComparator(d_timestamps)
+    );
+
+    // Allocate temp storage (+optional extra padding)
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_temp_storage, temp_storage_bytes));
+
+    // Actual merge
+    cub::DeviceMerge::MergeKeys(
+        d_temp_storage, temp_storage_bytes,
+        d_old, d_new, d_out,
+        static_cast<int>(start_idx), static_cast<int>(new_edges_count),
+        TimestampComparator(d_timestamps)
+    );
+
+    cudaFree(d_temp_storage);
 
     // === Step 4: Allocate temporary merged arrays ===
     int* d_merged_sources = nullptr;
@@ -320,15 +344,12 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_merged_timestamps, total_size * sizeof(int64_t)));
 
     // === Step 5: Gather merged edge data ===
-    thrust::gather(DEVICE_EXECUTION_POLICY,
-                   merged_indices.begin(), merged_indices.end(), d_sources, d_merged_sources);
-    thrust::gather(DEVICE_EXECUTION_POLICY,
-                   merged_indices.begin(), merged_indices.end(), d_targets, d_merged_targets);
-    thrust::gather(DEVICE_EXECUTION_POLICY,
-                   merged_indices.begin(), merged_indices.end(), d_timestamps, d_merged_timestamps);
+    thrust::gather(thrust::device, merged_indices.begin(), merged_indices.end(), d_sources, d_merged_sources);
+    thrust::gather(thrust::device, merged_indices.begin(), merged_indices.end(), d_targets, d_merged_targets);
+    thrust::gather(thrust::device, merged_indices.begin(), merged_indices.end(), d_timestamps, d_merged_timestamps);
     CUDA_KERNEL_CHECK("After thrust gather");
 
-    // === Step 6: Copy back to graph storage ===
+    // === Step 6: Copy back to graph ===
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_sources, d_merged_sources, total_size * sizeof(int), cudaMemcpyDeviceToDevice));
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_targets, d_merged_targets, total_size * sizeof(int), cudaMemcpyDeviceToDevice));
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_timestamps, d_merged_timestamps, total_size * sizeof(int64_t), cudaMemcpyDeviceToDevice));

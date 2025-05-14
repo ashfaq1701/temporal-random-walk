@@ -7,11 +7,9 @@
 struct TimestampComparator {
     int64_t* timestamps;
 
-    // Constructor to initialize the timestamps pointer
-    explicit TimestampComparator(int64_t* ts) : timestamps(ts) {}
+    HOST DEVICE explicit TimestampComparator(int64_t* ts) : timestamps(ts) {}
 
-    // Comparison operator
-    DEVICE bool operator()(const int a, const int b) const {
+    HOST DEVICE bool operator()(int a, int b) const {
         return timestamps[a] < timestamps[b];
     }
 };
