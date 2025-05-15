@@ -61,6 +61,17 @@
 } while(0)
 
 /**
+ * Macro to check for errors in CUB
+ */
+#define CUB_CHECK(call) do { \
+    cudaError_t err = (call); \
+    if (err != cudaSuccess) { \
+        fprintf(stderr, "CUB error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
+        exit(EXIT_FAILURE); \
+    } \
+} while (0)
+
+/**
  * Function to reset CUDA error state
  * Call this if you want to explicitly clear error state without checking
  */
