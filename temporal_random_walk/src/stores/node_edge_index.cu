@@ -713,85 +713,168 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
     NodeEdgeIndexStore *node_edge_index,
     const EdgeDataStore *edge_data,
     EdgeWithEndpointType *outbound_edge_indices_buffer,
-    bool is_directed
+    const bool is_directed
 ) {
     const size_t edges_size = edge_data->timestamps_size;
     const size_t buffer_size = is_directed ? edges_size : edges_size * 2;
+    const int* sources = edge_data->sources;
+    const int* targets = edge_data->targets;
 
-    // Initialize outbound_edge_indices_buffer with edge IDs
+    //=========================================================================
+    // OUTBOUND EDGES PROCESSING
+    //=========================================================================
+
+    // Step 1: Fill outbound_edge_indices_buffer
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
         thrust::make_counting_iterator<size_t>(edges_size),
-        [outbound_edge_indices_buffer, is_directed] DEVICE (const size_t i) {
-            size_t outbound_index = is_directed ? i : i * 2;
-            outbound_edge_indices_buffer[outbound_index] = EdgeWithEndpointType{static_cast<long>(i), true};
-
+        [outbound_edge_indices_buffer, is_directed] DEVICE(size_t i) {
+            size_t out_idx = is_directed ? i : i * 2;
+            outbound_edge_indices_buffer[out_idx] = EdgeWithEndpointType{static_cast<long>(i), true};
             if (!is_directed) {
-                outbound_edge_indices_buffer[outbound_index + 1] = EdgeWithEndpointType
-                        {static_cast<long>(i), false};
+                outbound_edge_indices_buffer[out_idx + 1] = EdgeWithEndpointType{static_cast<long>(i), false};
             }
         }
     );
-    CUDA_KERNEL_CHECK("After thrust for_each initialize buffer in compute_node_edge_indices_cuda");
+    CUDA_KERNEL_CHECK("Init outbound_edge_indices_buffer");
 
-    // Initialize inbound_indices for directed graphs
-    if (is_directed) {
-        thrust::device_ptr<size_t> d_inbound_indices(node_edge_index->inbound_indices);
-        thrust::sequence(
-            DEVICE_EXECUTION_POLICY,
-            d_inbound_indices,
-            d_inbound_indices + static_cast<long>(edges_size)
-        );
-        CUDA_KERNEL_CHECK("After thrust sequence in compute_node_edge_indices_cuda");
-    }
+    // Step 2: Allocate buffers for sorting
+    int* d_node_ids_in = nullptr;
+    int* d_node_ids_out = nullptr;
+    EdgeWithEndpointType* d_sorted_outbound = nullptr;
 
-    // Wrap buffer with device pointer for sorting
-    const thrust::device_ptr<EdgeWithEndpointType> d_buffer(outbound_edge_indices_buffer);
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_node_ids_in, buffer_size * sizeof(int)));
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_node_ids_out, buffer_size * sizeof(int)));
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_sorted_outbound, buffer_size * sizeof(EdgeWithEndpointType)));
 
-    auto sources = edge_data->sources;
-    auto targets = edge_data->targets;
-
-    // Sort outbound_edge_indices_buffer by node ID
-    thrust::stable_sort(
+    // Step 3: Extract node IDs
+    thrust::for_each(
         DEVICE_EXECUTION_POLICY,
-        d_buffer,
-        d_buffer + static_cast<long>(buffer_size),
-        [sources, targets] DEVICE (
-    const EdgeWithEndpointType &a, const EdgeWithEndpointType &b) {
-            const int node_a = a.is_source ? sources[a.edge_id] : targets[a.edge_id];
-            const int node_b = b.is_source ? sources[b.edge_id] : targets[b.edge_id];
-            return node_a < node_b;
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(buffer_size),
+        [d_node_ids_in, outbound_edge_indices_buffer, sources, targets] DEVICE(size_t i) {
+            const EdgeWithEndpointType e = outbound_edge_indices_buffer[i];
+            d_node_ids_in[i] = e.is_source ? sources[e.edge_id] : targets[e.edge_id];
         }
     );
-    CUDA_KERNEL_CHECK("After thrust stable_sort outbound in compute_node_edge_indices_cuda");
+    CUDA_KERNEL_CHECK("Extract node IDs");
 
-    // Sort inbound_indices for directed graphs
-    if (is_directed) {
-        const thrust::device_ptr<size_t> d_inbound_indices(node_edge_index->inbound_indices);
-        thrust::stable_sort(
-            DEVICE_EXECUTION_POLICY,
-            d_inbound_indices,
-            d_inbound_indices + static_cast<long>(edges_size),
-            [targets] DEVICE (const size_t a, const size_t b) {
-                return targets[a] < targets[b];
-            }
-        );
-        CUDA_KERNEL_CHECK("After thrust stable_sort inbound in compute_node_edge_indices_cuda");
+    // Step 4: CUB radix sort (stable)
+    cub::DoubleBuffer<int> node_id_keys(d_node_ids_in, d_node_ids_out);
+    cub::DoubleBuffer<EdgeWithEndpointType> outbound_values(outbound_edge_indices_buffer, d_sorted_outbound);
+
+    void* d_temp_storage = nullptr;
+    size_t temp_storage_bytes = 0;
+
+    cub::DeviceRadixSort::SortPairs(
+        nullptr, temp_storage_bytes,
+        node_id_keys, outbound_values,
+        static_cast<int>(buffer_size)
+    );
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_temp_storage, temp_storage_bytes));
+
+    cub::DeviceRadixSort::SortPairs(
+        d_temp_storage, temp_storage_bytes,
+        node_id_keys, outbound_values,
+        static_cast<int>(buffer_size)
+    );
+    CUDA_KERNEL_CHECK("CUB SortPairs outbound");
+
+    // Copy final sorted values back (if needed)
+    if (outbound_values.Current() != outbound_edge_indices_buffer) {
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+            outbound_edge_indices_buffer,
+            outbound_values.Current(),
+            buffer_size * sizeof(EdgeWithEndpointType),
+            cudaMemcpyDeviceToDevice
+        ));
     }
 
-    // Extract edge_id from buffer to outbound_indices
-    const thrust::device_ptr<size_t> d_outbound_indices(node_edge_index->outbound_indices);
+    // Step 5: Extract edge_id to outbound_indices
     thrust::transform(
         DEVICE_EXECUTION_POLICY,
-        d_buffer,
-        d_buffer + static_cast<long>(buffer_size),
-        d_outbound_indices,
-        [] DEVICE (const EdgeWithEndpointType &edge_with_type) {
-            return edge_with_type.edge_id;
+        outbound_edge_indices_buffer,
+        outbound_edge_indices_buffer + buffer_size,
+        node_edge_index->outbound_indices,
+        [] DEVICE(const EdgeWithEndpointType& e) {
+            return static_cast<size_t>(e.edge_id);
         }
     );
-    CUDA_KERNEL_CHECK("After thrust transform outbound in compute_node_edge_indices_cuda");
+    CUDA_KERNEL_CHECK("Extract edge IDs");
+
+    cudaFree(d_node_ids_in);
+    cudaFree(d_node_ids_out);
+    cudaFree(d_sorted_outbound);
+    cudaFree(d_temp_storage);
+
+    //=========================================================================
+    // INBOUND EDGES PROCESSING (if directed)
+    //=========================================================================
+    if (is_directed) {
+        // Step 6: Init inbound indices
+        thrust::sequence(
+            DEVICE_EXECUTION_POLICY,
+            node_edge_index->inbound_indices,
+            node_edge_index->inbound_indices + edges_size
+        );
+        CUDA_KERNEL_CHECK("Init inbound_indices");
+
+        // Step 7: Sort inbound by target ID
+        size_t* d_inbound_indices_in = node_edge_index->inbound_indices;
+        size_t* d_inbound_indices_out = nullptr;
+        int* d_target_keys_in = nullptr;
+        int* d_target_keys_out = nullptr;
+
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_target_keys_in, edges_size * sizeof(int)));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_target_keys_out, edges_size * sizeof(int)));
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_inbound_indices_out, edges_size * sizeof(size_t)));
+
+        // Extract target keys
+        thrust::for_each(
+            DEVICE_EXECUTION_POLICY,
+            thrust::make_counting_iterator<size_t>(0),
+            thrust::make_counting_iterator<size_t>(edges_size),
+            [d_target_keys_in, d_inbound_indices_in, targets] DEVICE(size_t i) {
+                d_target_keys_in[i] = targets[d_inbound_indices_in[i]];
+            }
+        );
+        CUDA_KERNEL_CHECK("Extract target node IDs");
+
+        cub::DoubleBuffer<int> inbound_keys(d_target_keys_in, d_target_keys_out);
+        cub::DoubleBuffer<size_t> inbound_vals(d_inbound_indices_in, d_inbound_indices_out);
+
+        void* d_temp_storage_in = nullptr;
+        size_t temp_storage_in_bytes = 0;
+
+        cub::DeviceRadixSort::SortPairs(
+            nullptr, temp_storage_in_bytes,
+            inbound_keys, inbound_vals,
+            static_cast<int>(edges_size)
+        );
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_temp_storage_in, temp_storage_in_bytes));
+
+        cub::DeviceRadixSort::SortPairs(
+            d_temp_storage_in, temp_storage_in_bytes,
+            inbound_keys, inbound_vals,
+            static_cast<int>(edges_size)
+        );
+        CUDA_KERNEL_CHECK("CUB SortPairs inbound");
+
+        if (inbound_vals.Current() != d_inbound_indices_in) {
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+                d_inbound_indices_in,
+                inbound_vals.Current(),
+                edges_size * sizeof(size_t),
+                cudaMemcpyDeviceToDevice
+            ));
+        }
+
+        cudaFree(d_target_keys_in);
+        cudaFree(d_target_keys_out);
+        cudaFree(d_inbound_indices_out);
+        cudaFree(d_temp_storage_in);
+    }
 }
 
 HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
