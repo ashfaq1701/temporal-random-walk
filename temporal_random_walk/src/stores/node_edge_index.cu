@@ -950,8 +950,8 @@ HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
     CUDA_KERNEL_CHECK("After thrust for_each fill groups in compute_node_timestamp_offsets_cuda");
 
     // Create device pointers for prefix scan
-    thrust::device_ptr<size_t> d_outbound_group_count_thrust(d_outbound_group_count);
-    thrust::device_ptr<size_t>
+    const thrust::device_ptr<size_t> d_outbound_group_count_thrust(d_outbound_group_count);
+    const thrust::device_ptr<size_t>
             d_outbound_timestamp_group_offsets(node_edge_index->outbound_timestamp_group_offsets);
 
     // First element should be 0
@@ -968,8 +968,8 @@ HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
 
     // Inbound processing for directed graphs
     if (is_directed) {
-        thrust::device_ptr<size_t> d_inbound_group_count_thrust(d_inbound_group_count);
-        thrust::device_ptr<size_t> d_inbound_timestamp_group_offsets(
+        const thrust::device_ptr<size_t> d_inbound_group_count_thrust(d_inbound_group_count);
+        const thrust::device_ptr<size_t> d_inbound_timestamp_group_offsets(
             node_edge_index->inbound_timestamp_group_offsets);
 
         // First element should be 0
