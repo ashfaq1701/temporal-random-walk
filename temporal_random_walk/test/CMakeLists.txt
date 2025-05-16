@@ -5,7 +5,7 @@ set(TEST_FILES
         test_edge_data_weights.cpp
         test_node_edge_index.cpp
         test_node_edge_index_weights.cpp
-        #test_random_picker.cpp
+        test_random_picker.cpp
         test_temporal_graph.cpp
         test_temporal_graph_get_node_edge_at.cpp
         test_temporal_graph_weights.cpp
