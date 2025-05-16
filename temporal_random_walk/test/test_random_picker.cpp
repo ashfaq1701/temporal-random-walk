@@ -23,8 +23,8 @@ protected:
 
         for (int i = 0; i < RANDOM_NUM_SAMPLES; i++) {
             const int pick = use_exponential ?
-                                 exp_picker.pick_random(RANDOM_START, RANDOM_END, prioritize_end, random_nums + i) :
-                                 linear_picker.pick_random(RANDOM_START, RANDOM_END, prioritize_end, random_nums + i);
+                                 exp_picker.pick_random_with_provided_number(RANDOM_START, RANDOM_END, prioritize_end, random_nums + i) :
+                                 linear_picker.pick_random_with_provided_number(RANDOM_START, RANDOM_END, prioritize_end, random_nums + i);
             sum += pick;
         }
         return sum / RANDOM_NUM_SAMPLES;
@@ -91,20 +91,22 @@ TYPED_TEST(RandomPickerTest, BoundsTest) {
     const int end = 10;
     const int num_tests = 1000;
 
+    const double* random_nums = generate_n_random_numbers(num_tests * 4, TypeParam::value);
+
     for (int i = 0; i < num_tests; i++) {
-        int linear_result = this->linear_picker.pick_random(start, end, true);
+        int linear_result = this->linear_picker.pick_random_with_provided_number(start, end, true, random_nums + i * 4);
         EXPECT_GE(linear_result, start);
         EXPECT_LT(linear_result, end);
 
-        linear_result = this->linear_picker.pick_random(start, end, false);
+        linear_result = this->linear_picker.pick_random_with_provided_number(start, end, false, random_nums + i * 4 + 1);
         EXPECT_GE(linear_result, start);
         EXPECT_LT(linear_result, end);
 
-        int exp_result = this->exp_picker.pick_random(start, end, true);
+        int exp_result = this->exp_picker.pick_random_with_provided_number(start, end, true, random_nums + i * 4 + 2);
         EXPECT_GE(exp_result, start);
         EXPECT_LT(exp_result, end);
 
-        exp_result = this->exp_picker.pick_random(start, end, false);
+        exp_result = this->exp_picker.pick_random_with_provided_number(start, end, false, random_nums + i * 4 + 3);
         EXPECT_GE(exp_result, start);
         EXPECT_LT(exp_result, end);
     }
@@ -135,13 +137,13 @@ TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForLinearRandomPicke
     // Run trials
     for (int i = 0; i < num_trials; i++) {
         // Test prioritize_end=true
-        int result_end = this->linear_picker.pick_random(start, end, true, rand_nums + i * 2);
+        int result_end = this->linear_picker.pick_random_with_provided_number(start, end, true, rand_nums + i * 2);
         if (result_end == 1) {
             count_ones_end_prioritized++;
         }
 
         // Test prioritize_end=false (separate trial)
-        int result_start = this->linear_picker.pick_random(start, end, false, rand_nums + i * 2 + 1);
+        int result_start = this->linear_picker.pick_random_with_provided_number(start, end, false, rand_nums + i * 2 + 1);
         if (result_start == 1) {
             count_ones_start_prioritized++;
         }
@@ -186,13 +188,13 @@ TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForExponentialRandom
     // Run trials
     for (int i = 0; i < num_trials; i++) {
         // Test prioritize_end=true
-        int result_end = this->exp_picker.pick_random(start, end, true, rand_nums + i * 2);
+        int result_end = this->exp_picker.pick_random_with_provided_number(start, end, true, rand_nums + i * 2);
         if (result_end == 1) {
             count_ones_end_prioritized++;
         }
 
         // Test prioritize_end=false (separate trial)
-        int result_start = this->exp_picker.pick_random(start, end, false, rand_nums + i * 2 + 1);
+        int result_start = this->exp_picker.pick_random_with_provided_number(start, end, false, rand_nums + i * 2 + 1);
         if (result_start == 1) {
             count_ones_start_prioritized++;
         }

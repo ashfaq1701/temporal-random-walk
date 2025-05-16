@@ -59,7 +59,7 @@ int ExponentialIndexRandomPicker::pick_random(const int start, const int end, co
     return result;
 }
 
-int ExponentialIndexRandomPicker::pick_random(const int start, const int end, const bool prioritize_end, const double* rand_nums) const {
+int ExponentialIndexRandomPicker::pick_random_with_provided_number(const int start, const int end, const bool prioritize_end, const double* rand_nums) const {
     int result;
 
     #ifdef HAS_CUDA
@@ -139,7 +139,7 @@ int LinearRandomPicker::pick_random(const int start, const int end, const bool p
     return result;
 }
 
-int LinearRandomPicker::pick_random(const int start, const int end, const bool prioritize_end, const double* rand_nums) const {
+int LinearRandomPicker::pick_random_with_provided_number(const int start, const int end, const bool prioritize_end, const double* rand_nums) const {
     int result;
 
     #ifdef HAS_CUDA
@@ -216,7 +216,7 @@ int UniformRandomPicker::pick_random(const int start, const int end, const bool 
     return result;
 }
 
-int UniformRandomPicker::pick_random(const int start, const int end, const bool /* prioritize_end */, const double* rand_nums) const {
+int UniformRandomPicker::pick_random_with_provided_number(const int start, const int end, const bool /* prioritize_end */, const double* rand_nums) const {
     int result;
 
     #ifdef HAS_CUDA
@@ -314,7 +314,7 @@ int WeightBasedRandomPicker::pick_random(const double* weights, const size_t wei
     return result;
 }
 
-int WeightBasedRandomPicker::pick_random(const double* weights, const size_t weights_size, const size_t group_start, const size_t group_end, const double* rand_nums) const {
+int WeightBasedRandomPicker::pick_random_with_provided_number(const double* weights, const size_t weights_size, const size_t group_start, const size_t group_end, const double* rand_nums) const {
     int result;
 
     #ifdef HAS_CUDA
@@ -360,7 +360,7 @@ int WeightBasedRandomPicker::pick_random(const std::vector<double>& cumulative_w
                      static_cast<size_t>(group_start), static_cast<size_t>(group_end));
 }
 
-int WeightBasedRandomPicker::pick_random(const std::vector<double>& cumulative_weights, const int group_start, const int group_end, const double* rand_nums) const {
-    return pick_random(cumulative_weights.data(), cumulative_weights.size(),
+int WeightBasedRandomPicker::pick_random_with_provided_number(const std::vector<double>& cumulative_weights, const int group_start, const int group_end, const double* rand_nums) const {
+    return pick_random_with_provided_number(cumulative_weights.data(), cumulative_weights.size(),
                      static_cast<size_t>(group_start), static_cast<size_t>(group_end), rand_nums);
 }

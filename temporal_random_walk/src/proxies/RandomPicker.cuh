@@ -24,7 +24,7 @@ public:
 
     int pick_random(int start, int end, bool prioritize_end) const;
 
-    int pick_random(int start, int end, bool prioritize_end, const double* rand_nums) const;
+    int pick_random_with_provided_number(int start, int end, bool prioritize_end, const double* rand_nums) const;
 };
 
 #ifdef HAS_CUDA
@@ -48,7 +48,7 @@ public:
 
     int pick_random(int start, int end, bool prioritize_end) const;
 
-    int pick_random(int start, int end, bool prioritize_end, const double* rand_nums) const;
+    int pick_random_with_provided_number(int start, int end, bool prioritize_end, const double* rand_nums) const;
 };
 
 #ifdef HAS_CUDA
@@ -69,7 +69,7 @@ public:
 
     int pick_random(int start, int end, bool /* prioritize_end */) const;
 
-    int pick_random(int start, int end, bool /* prioritize_end */, const double* rand_nums) const;
+    int pick_random_with_provided_number(int start, int end, bool /* prioritize_end */, const double* rand_nums) const;
 };
 
 #ifdef HAS_CUDA
@@ -92,11 +92,11 @@ public:
 
     int pick_random(const double* weights, size_t weights_size, size_t group_start, size_t group_end) const;
 
-    int pick_random(const double* weights, size_t weights_size, size_t group_start, size_t group_end, const double* rand_nums) const;
+    int pick_random_with_provided_number(const double* weights, size_t weights_size, size_t group_start, size_t group_end, const double* rand_nums) const;
 
     int pick_random(const std::vector<double>& cumulative_weights, int group_start, int group_end) const;
 
-    int pick_random(const std::vector<double>& cumulative_weights, int group_start, int group_end, const double* rand_nums) const;
+    int pick_random_with_provided_number(const std::vector<double>& cumulative_weights, int group_start, int group_end, const double* rand_nums) const;
 };
 
 #endif // RANDOM_PICKER_H
