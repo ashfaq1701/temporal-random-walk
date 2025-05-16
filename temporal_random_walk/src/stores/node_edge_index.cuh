@@ -115,7 +115,6 @@ namespace node_edge_index {
     HOST void compute_node_edge_indices_std(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
-        EdgeWithEndpointType* outbound_edge_indices_buffer,
         bool is_directed
     );
 
@@ -150,7 +149,6 @@ namespace node_edge_index {
     HOST void compute_node_edge_indices_cuda(
         NodeEdgeIndexStore *node_edge_index,
         const EdgeDataStore *edge_data,
-        EdgeWithEndpointType *outbound_edge_indices_buffer,
         bool is_directed
     );
 

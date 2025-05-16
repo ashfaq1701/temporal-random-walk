@@ -335,60 +335,60 @@ HOST void node_edge_index::compute_node_edge_offsets_std(
 HOST void node_edge_index::compute_node_edge_indices_std(
     NodeEdgeIndexStore* node_edge_index,
     const EdgeDataStore* edge_data,
-    EdgeWithEndpointType* outbound_edge_indices_buffer,
     const bool is_directed
 ) {
     const size_t edges_size = edge_data->timestamps_size;
     const size_t buffer_size = is_directed ? edges_size : edges_size * 2;
 
-    const auto* sources = edge_data->sources;
-    const auto* targets = edge_data->targets;
+    const int* sources = edge_data->sources;
+    const int* targets = edge_data->targets;
+    size_t* outbound_indices = node_edge_index->outbound_indices;
 
-    // Step 1: Fill outbound_edge_indices_buffer
+    // === Step 1: Initialize outbound_indices ===
     #pragma omp parallel for
-    for (size_t i = 0; i < edges_size; ++i) {
-        size_t outbound_index = is_directed ? i : i * 2;
-        outbound_edge_indices_buffer[outbound_index] = EdgeWithEndpointType{static_cast<long>(i), true};
+    for (size_t i = 0; i < buffer_size; ++i) {
+        outbound_indices[i] = is_directed ? i : i / 2;
+    }
 
-        if (!is_directed) {
-            outbound_edge_indices_buffer[outbound_index + 1] = EdgeWithEndpointType{static_cast<long>(i), false};
+    // === Step 2: Generate node keys for sorting ===
+    std::vector<int> node_keys(buffer_size);
+
+    #pragma omp parallel for
+    for (size_t i = 0; i < buffer_size; ++i) {
+        if (is_directed) {
+            node_keys[i] = sources[i];
+        } else {
+            node_keys[i] = (i % 2 == 0) ? sources[i / 2] : targets[i / 2];
         }
     }
 
-    // Step 2: Fill inbound_indices for directed graphs
-    if (is_directed) {
-        #pragma omp parallel for
-        for (size_t i = 0; i < edges_size; ++i) {
-            node_edge_index->inbound_indices[i] = i;
-        }
-    }
-
-    // Step 3: Stable sort outbound_edge_indices_buffer by node ID (source or target depending on flag)
+    // === Step 3: Stable sort outbound_indices by node ID ===
     parallel::stable_sort(
-        outbound_edge_indices_buffer,
-        outbound_edge_indices_buffer + buffer_size,
-        [sources, targets](const EdgeWithEndpointType& a, const EdgeWithEndpointType& b) {
-            const int node_a = a.is_source ? sources[a.edge_id] : targets[a.edge_id];
-            const int node_b = b.is_source ? sources[b.edge_id] : targets[b.edge_id];
-            return node_a < node_b;
+        outbound_indices,
+        outbound_indices + buffer_size,
+        [&node_keys](const size_t a, const size_t b) {
+            return node_keys[a] < node_keys[b];
         }
     );
 
-    // Step 4: Stable sort inbound_indices by target node (if directed)
+    // === Step 4: Process inbound_indices if directed ===
     if (is_directed) {
+        size_t* inbound_indices = node_edge_index->inbound_indices;
+
+        // Initialize 0..edges_size-1
+        #pragma omp parallel for
+        for (size_t i = 0; i < edges_size; ++i) {
+            inbound_indices[i] = i;
+        }
+
+        // Stable sort by target node
         parallel::stable_sort(
-            node_edge_index->inbound_indices,
-            node_edge_index->inbound_indices + edges_size,
-            [targets](const size_t a, const size_t b) {
+            inbound_indices,
+            inbound_indices + edges_size,
+            [targets](size_t a, size_t b) {
                 return targets[a] < targets[b];
             }
         );
-    }
-
-    // Step 5: Extract edge_id from buffer to outbound_indices
-    #pragma omp parallel for
-    for (size_t i = 0; i < buffer_size; ++i) {
-        node_edge_index->outbound_indices[i] = outbound_edge_indices_buffer[i].edge_id;
     }
 }
 
@@ -710,88 +710,87 @@ HOST void node_edge_index::compute_node_edge_offsets_cuda(
 }
 
 HOST void node_edge_index::compute_node_edge_indices_cuda(
-    NodeEdgeIndexStore *node_edge_index,
-    const EdgeDataStore *edge_data,
-    EdgeWithEndpointType *outbound_edge_indices_buffer,
+    NodeEdgeIndexStore* node_edge_index,
+    const EdgeDataStore* edge_data,
     bool is_directed
 ) {
     const size_t edges_size = edge_data->timestamps_size;
     const size_t buffer_size = is_directed ? edges_size : edges_size * 2;
 
-    // Initialize outbound_edge_indices_buffer with edge IDs
+    const int* sources = edge_data->sources;
+    const int* targets = edge_data->targets;
+    size_t* outbound_indices = node_edge_index->outbound_indices;
+
+    // === Step 1: Initialize outbound_indices ===
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
-        thrust::make_counting_iterator<size_t>(edges_size),
-        [outbound_edge_indices_buffer, is_directed] DEVICE (const size_t i) {
-            size_t outbound_index = is_directed ? i : i * 2;
-            outbound_edge_indices_buffer[outbound_index] = EdgeWithEndpointType{static_cast<long>(i), true};
-
-            if (!is_directed) {
-                outbound_edge_indices_buffer[outbound_index + 1] = EdgeWithEndpointType
-                        {static_cast<long>(i), false};
-            }
+        thrust::make_counting_iterator<size_t>(buffer_size),
+        [is_directed, outbound_indices] DEVICE (const size_t i) {
+            outbound_indices[i] = is_directed ? i : i / 2;
         }
     );
-    CUDA_KERNEL_CHECK("After thrust for_each initialize buffer in compute_node_edge_indices_cuda");
+    CUDA_KERNEL_CHECK("Initialized outbound_indices");
 
-    // Initialize inbound_indices for directed graphs
-    if (is_directed) {
-        thrust::device_ptr<size_t> d_inbound_indices(node_edge_index->inbound_indices);
-        thrust::sequence(
-            DEVICE_EXECUTION_POLICY,
-            d_inbound_indices,
-            d_inbound_indices + static_cast<long>(edges_size)
-        );
-        CUDA_KERNEL_CHECK("After thrust sequence in compute_node_edge_indices_cuda");
-    }
+    // === Step 2: Generate node keys for sorting ===
+    thrust::device_vector<int> node_keys(buffer_size);
 
-    // Wrap buffer with device pointer for sorting
-    const thrust::device_ptr<EdgeWithEndpointType> d_buffer(outbound_edge_indices_buffer);
-
-    auto sources = edge_data->sources;
-    auto targets = edge_data->targets;
-
-    // Sort outbound_edge_indices_buffer by node ID
-    thrust::stable_sort(
-        DEVICE_EXECUTION_POLICY,
-        d_buffer,
-        d_buffer + static_cast<long>(buffer_size),
-        [sources, targets] DEVICE (
-    const EdgeWithEndpointType &a, const EdgeWithEndpointType &b) {
-            const int node_a = a.is_source ? sources[a.edge_id] : targets[a.edge_id];
-            const int node_b = b.is_source ? sources[b.edge_id] : targets[b.edge_id];
-            return node_a < node_b;
-        }
-    );
-    CUDA_KERNEL_CHECK("After thrust stable_sort outbound in compute_node_edge_indices_cuda");
-
-    // Sort inbound_indices for directed graphs
-    if (is_directed) {
-        const thrust::device_ptr<size_t> d_inbound_indices(node_edge_index->inbound_indices);
-        thrust::stable_sort(
-            DEVICE_EXECUTION_POLICY,
-            d_inbound_indices,
-            d_inbound_indices + static_cast<long>(edges_size),
-            [targets] DEVICE (const size_t a, const size_t b) {
-                return targets[a] < targets[b];
-            }
-        );
-        CUDA_KERNEL_CHECK("After thrust stable_sort inbound in compute_node_edge_indices_cuda");
-    }
-
-    // Extract edge_id from buffer to outbound_indices
-    const thrust::device_ptr<size_t> d_outbound_indices(node_edge_index->outbound_indices);
     thrust::transform(
         DEVICE_EXECUTION_POLICY,
-        d_buffer,
-        d_buffer + static_cast<long>(buffer_size),
-        d_outbound_indices,
-        [] DEVICE (const EdgeWithEndpointType &edge_with_type) {
-            return edge_with_type.edge_id;
+        outbound_indices,
+        outbound_indices + buffer_size,
+        node_keys.begin(),
+        [is_directed, sources, targets] DEVICE (const size_t idx) -> int {
+            if (is_directed) {
+                return sources[idx];
+            } else {
+                return (idx % 2 == 0) ? sources[idx / 2] : targets[idx / 2];
+            }
         }
     );
-    CUDA_KERNEL_CHECK("After thrust transform outbound in compute_node_edge_indices_cuda");
+    CUDA_KERNEL_CHECK("Generated node keys");
+
+    // === Step 3: Stable sort outbound_indices by node ID ===
+    thrust::stable_sort_by_key(
+        DEVICE_EXECUTION_POLICY,
+        node_keys.begin(),
+        node_keys.end(),
+        outbound_indices
+    );
+    CUDA_KERNEL_CHECK("Sorted outbound_indices by node ID");
+
+    // === Step 4: Process inbound_indices if directed ===
+    if (is_directed) {
+        size_t* inbound_indices = node_edge_index->inbound_indices;
+
+        // Fill with 0..edges_size-1
+        thrust::sequence(
+            DEVICE_EXECUTION_POLICY,
+            inbound_indices,
+            inbound_indices + edges_size
+        );
+
+        // Use targets as keys
+        thrust::device_vector<int> target_keys(edges_size);
+        thrust::transform(
+            DEVICE_EXECUTION_POLICY,
+            inbound_indices,
+            inbound_indices + edges_size,
+            target_keys.begin(),
+            [targets] DEVICE (const size_t idx) -> int {
+                return targets[idx];
+            }
+        );
+        CUDA_KERNEL_CHECK("Generated target keys");
+
+        thrust::stable_sort_by_key(
+            DEVICE_EXECUTION_POLICY,
+            target_keys.begin(),
+            target_keys.end(),
+            inbound_indices
+        );
+        CUDA_KERNEL_CHECK("Sorted inbound_indices by target node");
+    }
 }
 
 HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
@@ -1377,21 +1376,14 @@ HOST void node_edge_index::rebuild(NodeEdgeIndexStore *node_edge_index, const Ed
     allocate_node_edge_indices(node_edge_index, is_directed);
 
     // Create buffer for outbound edge indices
-    size_t outbound_edge_indices_len = is_directed ? num_edges : num_edges * 2;
-    EdgeWithEndpointType *outbound_edge_indices_buffer = nullptr;
-    allocate_memory(&outbound_edge_indices_buffer, outbound_edge_indices_len, node_edge_index->use_gpu);
-
     #ifdef HAS_CUDA
     if (node_edge_index->use_gpu) {
-        compute_node_edge_indices_cuda(node_edge_index, edge_data, outbound_edge_indices_buffer, is_directed);
+        compute_node_edge_indices_cuda(node_edge_index, edge_data, is_directed);
     } else
     #endif
     {
-        compute_node_edge_indices_std(node_edge_index, edge_data, outbound_edge_indices_buffer, is_directed);
+        compute_node_edge_indices_std(node_edge_index, edge_data, is_directed);
     }
-
-    // Clean up edge indices buffer
-    clear_memory(&outbound_edge_indices_buffer, node_edge_index->use_gpu);
 
     // Step 4: Compute node timestamp offsets
     #ifdef HAS_CUDA
