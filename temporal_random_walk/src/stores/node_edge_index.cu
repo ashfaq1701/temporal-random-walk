@@ -720,7 +720,7 @@ HOST void node_edge_index::compute_node_edge_offsets_cuda(
 
     // Calculate prefix sums for inbound edge offsets (if directed)
     if (is_directed) {
-        thrust::device_ptr<size_t> d_inbound_offsets(inbound_offsets_ptr);
+        const thrust::device_ptr<size_t> d_inbound_offsets(inbound_offsets_ptr);
         thrust::inclusive_scan(
             DEVICE_EXECUTION_POLICY,
             d_inbound_offsets + 1,
@@ -765,9 +765,9 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
 
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
-        thrust::make_counting_iterator<size_t>(0),
-        thrust::make_counting_iterator<size_t>(buffer_size),
-        [node_keys_ptr, outbound_indices, sources, targets, is_directed] DEVICE (const size_t i) {
+        thrust::make_counting_iterator<thrust::device_ptr<int>::difference_type>(0),
+        thrust::make_counting_iterator<thrust::device_ptr<int>::difference_type>(static_cast<long>(buffer_size)),
+        [node_keys_ptr, outbound_indices, sources, targets, is_directed] DEVICE (const thrust::device_ptr<int>::difference_type i) {
             const size_t edge_id = outbound_indices[i];
             const bool is_source = is_directed || (i % 2 == 0);
             node_keys_ptr[i] = is_source ? sources[edge_id] : targets[edge_id];
@@ -795,9 +795,9 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
     thrust::device_vector<size_t> sorted_outbound(buffer_size);
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
-        thrust::make_counting_iterator<size_t>(0),
-        thrust::make_counting_iterator<size_t>(buffer_size),
-        [sorted_outbound = sorted_outbound.data(), outbound_indices, indices = indices.data()] DEVICE (const size_t i) {
+        thrust::make_counting_iterator<thrust::device_ptr<int>::difference_type>(0),
+        thrust::make_counting_iterator<thrust::device_ptr<int>::difference_type>(static_cast<long>(buffer_size)),
+        [sorted_outbound = sorted_outbound.data(), outbound_indices, indices = indices.data()] DEVICE (const thrust::device_ptr<int>::difference_type i) {
             sorted_outbound[i] = outbound_indices[indices[i]];
         }
     );
@@ -1395,9 +1395,6 @@ HOST NodeEdgeIndexStore* node_edge_index::to_device_ptr(const NodeEdgeIndexStore
 #endif
 
 HOST void node_edge_index::rebuild(NodeEdgeIndexStore *node_edge_index, const EdgeDataStore *edge_data, const bool is_directed) {
-    // Get sizes
-    const size_t num_edges = edge_data->timestamps_size;
-
     // Step 2: Allocate and compute node edge offsets
     allocate_node_edge_offsets(node_edge_index, edge_data->active_node_ids_size, is_directed);
 

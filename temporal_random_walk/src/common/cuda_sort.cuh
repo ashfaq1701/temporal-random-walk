@@ -7,7 +7,7 @@
 
 template <typename KeyType, typename ValueType>
 void cub_radix_sort_value_by_keys(
-    KeyType* d_keys,        // Input/output keys
+    const KeyType* d_keys,  // Input keys
     ValueType* d_values,    // Input/output values
     size_t num_items        // Number of items to sort
 )
@@ -22,7 +22,7 @@ void cub_radix_sort_value_by_keys(
     void* d_temp_storage = nullptr;
     size_t temp_storage_bytes = 0;
 
-    // Get required storage size
+    // Get required storage size - note the & before temp_storage_bytes
     cub::DeviceRadixSort::SortPairs(
         d_temp_storage,
         temp_storage_bytes,
@@ -45,7 +45,7 @@ void cub_radix_sort_value_by_keys(
         d_values_out,       // Output values
         num_items);
 
-    // Copy results back to input arrays
+    // Copy results back to input arrays - only for values
     cudaMemcpy(d_values, d_values_out, sizeof(ValueType) * num_items, cudaMemcpyDeviceToDevice);
 
     // Free temporary allocations
