@@ -2,6 +2,7 @@
 
 #include "../src/proxies/RandomPicker.cuh"
 #include "../src/utils/utils.cuh"
+#include "../src/common/random_gen.cuh"
 
 template<typename T>
 class WeightBasedRandomPickerTest : public ::testing::Test
@@ -19,9 +20,12 @@ protected:
                                const int num_samples = 1000)
     {
         std::map<int, int> sample_counts;
+
+        const double* random_nums = generate_n_random_numbers(num_samples, T::value);
+
         for (int i = 0; i < num_samples; i++)
         {
-            int picked = picker.pick_random(weights, start, end);
+            int picked = picker.pick_random_with_provided_number(weights, start, end, random_nums + i);
             EXPECT_GE(picked, start) << "Sampled index below start";
             EXPECT_LT(picked, end) << "Sampled index at or above end";
             ++sample_counts[picked];
@@ -82,11 +86,14 @@ TYPED_TEST(WeightBasedRandomPickerTest, SubrangeSampling)
 TYPED_TEST(WeightBasedRandomPickerTest, SingleElementRange)
 {
     std::vector<double> weights = {0.2, 0.5, 0.7, 1.0};
+    constexpr int num_samples = 100;
+
+    const double* random_nums = generate_n_random_numbers(num_samples, TypeParam::value);
 
     // When sampling single element, should always return that index
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < num_samples; i++)
     {
-        EXPECT_EQ(this->picker.pick_random(weights, 1, 2), 1);
+        EXPECT_EQ(this->picker.pick_random_with_provided_number(weights, 1, 2, random_nums + i), 1);
     }
 }
 
@@ -98,9 +105,11 @@ TYPED_TEST(WeightBasedRandomPickerTest, WeightDistributionTest)
     std::map<int, int> sample_counts;
     constexpr int num_samples = 100000;
 
+    const double* random_nums = generate_n_random_numbers(num_samples, TypeParam::value);
+
     for (int i = 0; i < num_samples; i++)
     {
-        int picked = this->picker.pick_random(weights, 0, 4);
+        int picked = this->picker.pick_random_with_provided_number(weights, 0, 4, random_nums + i);
         ++sample_counts[picked];
     }
 

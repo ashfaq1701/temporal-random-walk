@@ -6,6 +6,7 @@
 
 #include "../src/proxies/TemporalGraph.cuh"
 #include "../src/proxies/RandomPicker.cuh"
+#include "../src/common/random_gen.cuh"
 
 template<typename T>
 class TemporalGraphWeightTest : public ::testing::Test {
@@ -204,10 +205,12 @@ TYPED_TEST(TemporalGraphWeightTest, TimescaleBoundSampling) {
     std::map<int64_t, int> scaled_samples, unscaled_samples;
     constexpr int num_samples = 1000;
 
+    const double* random_nums = generate_n_random_numbers(num_samples * 4, TypeParam::value);
+
     // Forward sampling
     for (int i = 0; i < num_samples; i++) {
-        auto [u1, i1, ts1] = scaled_graph.get_edge_at(RandomPickerType::ExponentialWeight, 20, true);
-        auto [u2, i2, ts2] = unscaled_graph.get_edge_at(RandomPickerType::ExponentialWeight, 20, true);
+        auto [u1, i1, ts1] = scaled_graph.get_edge_at_with_provided_nums(RandomPickerType::ExponentialWeight, random_nums + i * 4, 20, true);
+        auto [u2, i2, ts2] = unscaled_graph.get_edge_at_with_provided_nums(RandomPickerType::ExponentialWeight, random_nums + i * 4 + 2, 20, true);
         scaled_samples[ts1]++;
         unscaled_samples[ts2]++;
     }
@@ -274,10 +277,12 @@ TYPED_TEST(TemporalGraphWeightTest, DifferentTimescaleBounds) {
         TemporalGraph graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, bound);
         graph.add_multiple_edges(this->test_edges);
 
+        const double* random_nums = generate_n_random_numbers(num_samples * 2, TypeParam::value);
+
         std::map<int64_t, int> samples;
         for (int i = 0; i < num_samples; i++) {
-            auto [u1, i1, ts] = graph.get_edge_at(RandomPickerType::ExponentialWeight, -1, true);
-            samples[ts]++;
+            auto [u1, i1, ts] = graph.get_edge_at_with_provided_nums(RandomPickerType::ExponentialWeight, random_nums + i * 2, -1, true);
+            ++samples[ts];
         }
 
         // Compare consecutive timestamps

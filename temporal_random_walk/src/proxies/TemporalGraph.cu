@@ -256,8 +256,7 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
     }
 }
 
-[[nodiscard]] Edge TemporalGraph::get_edge_at(const RandomPickerType picker_type, const int64_t timestamp, const bool forward) const {
-    double *rand_nums = generate_n_random_numbers(2, graph->use_gpu);
+[[nodiscard]] Edge TemporalGraph::get_edge_at_with_provided_nums(const RandomPickerType picker_type, const double * rand_nums, const int64_t timestamp, const bool forward) const {
     Edge result;
 
     #define DISPATCH_HOST(FWD, PICKER) \
@@ -331,6 +330,12 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
     #undef HANDLE_PICKER_HOST
     #undef HANDLE_PICKER_DEVICE
 
+    return result;
+}
+
+[[nodiscard]] Edge TemporalGraph::get_edge_at(const RandomPickerType picker_type, const int64_t timestamp, const bool forward) const {
+    double *rand_nums = generate_n_random_numbers(2, graph->use_gpu);
+    auto result = get_edge_at_with_provided_nums(picker_type, rand_nums, timestamp, forward);
     clear_memory(&rand_nums, graph->use_gpu);
     return result;
 }
