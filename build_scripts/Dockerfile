@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.8.0-devel-rockylinux9
+FROM nvidia/cuda:12.6.3-devel-rockylinux9
 
 ARG PYTHON_VERSIONS="3.8.18 3.9.18 3.10.13 3.11.7"
 
