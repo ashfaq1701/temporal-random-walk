@@ -346,8 +346,13 @@ HOST void node_edge_index::compute_node_edge_indices_std(
 
     // === Step 1: Initialize outbound_indices ===
     #pragma omp parallel for
-    for (size_t i = 0; i < buffer_size; ++i) {
-        outbound_indices[i] = is_directed ? i : i / 2;
+    for (size_t i = 0; i < edges_size; ++i) {
+        if (is_directed) {
+            outbound_indices[i] = i;
+        } else {
+            outbound_indices[i * 2]     = i;  // source endpoint
+            outbound_indices[i * 2 + 1] = i;  // target endpoint
+        }
     }
 
     // === Step 2: Generate node keys for sorting ===
@@ -355,37 +360,54 @@ HOST void node_edge_index::compute_node_edge_indices_std(
 
     #pragma omp parallel for
     for (size_t i = 0; i < buffer_size; ++i) {
-        if (is_directed) {
-            node_keys[i] = sources[i];
-        } else {
-            node_keys[i] = (i % 2 == 0) ? sources[i / 2] : targets[i / 2];
-        }
+        const size_t edge_id = outbound_indices[i];
+        const bool is_source = is_directed || (i % 2 == 0);
+        node_keys[i] = is_source ? sources[edge_id] : targets[edge_id];
     }
 
-    // === Step 3: Stable sort outbound_indices by node ID ===
+    // === Step 3: Build a permutation array for indirect stable sort ===
+    std::vector<size_t> indices(buffer_size);
+    #pragma omp parallel for
+    for (size_t i = 0; i < buffer_size; ++i) {
+        indices[i] = i;
+    }
+
+    // === Step 4: Stable sort the permutation array by node ID ===
     parallel::stable_sort(
-        outbound_indices,
-        outbound_indices + buffer_size,
+        indices.begin(),
+        indices.end(),
         [&node_keys](const size_t a, const size_t b) {
             return node_keys[a] < node_keys[b];
         }
     );
 
-    // === Step 4: Process inbound_indices if directed ===
+    // === Step 5: Apply permutation to reorder outbound_indices ===
+    std::vector<size_t> sorted_outbound(buffer_size);
+    #pragma omp parallel for
+    for (size_t i = 0; i < buffer_size; ++i) {
+        sorted_outbound[i] = outbound_indices[indices[i]];
+    }
+
+    #pragma omp parallel for
+    for (size_t i = 0; i < buffer_size; ++i) {
+        outbound_indices[i] = sorted_outbound[i];
+    }
+
+    // === Step 6: Handle inbound_indices (only for directed graphs) ===
     if (is_directed) {
         size_t* inbound_indices = node_edge_index->inbound_indices;
 
-        // Initialize 0..edges_size-1
+        // Fill with 0..edges_size-1
         #pragma omp parallel for
         for (size_t i = 0; i < edges_size; ++i) {
             inbound_indices[i] = i;
         }
 
-        // Stable sort by target node
+        // Stable sort directly by target node ID
         parallel::stable_sort(
             inbound_indices,
             inbound_indices + edges_size,
-            [targets](size_t a, size_t b) {
+            [targets](const size_t a, const size_t b) {
                 return targets[a] < targets[b];
             }
         );
@@ -725,9 +747,14 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
-        thrust::make_counting_iterator<size_t>(buffer_size),
-        [is_directed, outbound_indices] DEVICE (const size_t i) {
-            outbound_indices[i] = is_directed ? i : i / 2;
+        thrust::make_counting_iterator<size_t>(edges_size),
+        [outbound_indices, is_directed] DEVICE (const size_t i) {
+            if (is_directed) {
+                outbound_indices[i] = i;
+            } else {
+                outbound_indices[i * 2]     = i;  // source endpoint
+                outbound_indices[i * 2 + 1] = i;  // target endpoint
+            }
         }
     );
     CUDA_KERNEL_CHECK("Initialized outbound_indices");
@@ -735,31 +762,57 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
     // === Step 2: Generate node keys for sorting ===
     thrust::device_vector<int> node_keys(buffer_size);
 
-    thrust::transform(
+    thrust::for_each(
         DEVICE_EXECUTION_POLICY,
-        outbound_indices,
-        outbound_indices + buffer_size,
-        node_keys.begin(),
-        [is_directed, sources, targets] DEVICE (const size_t idx) -> int {
-            if (is_directed) {
-                return sources[idx];
-            } else {
-                return (idx % 2 == 0) ? sources[idx / 2] : targets[idx / 2];
-            }
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(buffer_size),
+        [node_keys = node_keys.data(), outbound_indices, sources, targets, is_directed] DEVICE (const size_t i) {
+            const size_t edge_id = outbound_indices[i];
+            const bool is_source = is_directed || (i % 2 == 0);
+            node_keys[i] = is_source ? sources[edge_id] : targets[edge_id];
         }
     );
     CUDA_KERNEL_CHECK("Generated node keys");
 
-    // === Step 3: Stable sort outbound_indices by node ID ===
+    // === Step 3: Build a permutation array for indirect stable sort ===
+    thrust::device_vector<size_t> indices(buffer_size);
+    thrust::sequence(
+        DEVICE_EXECUTION_POLICY,
+        indices.begin(),
+        indices.end()
+    );
+    CUDA_KERNEL_CHECK("Created indices array");
+
+    // === Step 4: Stable sort the permutation array by node ID ===
     thrust::stable_sort_by_key(
         DEVICE_EXECUTION_POLICY,
         node_keys.begin(),
         node_keys.end(),
+        indices.begin()
+    );
+    CUDA_KERNEL_CHECK("Sorted indices by node keys");
+
+    // === Step 5: Apply permutation to reorder outbound_indices ===
+    thrust::device_vector<size_t> sorted_outbound(buffer_size);
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(buffer_size),
+        [sorted_outbound = sorted_outbound.data(), outbound_indices, indices = indices.data()] DEVICE (const size_t i) {
+            sorted_outbound[i] = outbound_indices[indices[i]];
+        }
+    );
+    CUDA_KERNEL_CHECK("Applied permutation");
+
+    thrust::copy(
+        DEVICE_EXECUTION_POLICY,
+        sorted_outbound.begin(),
+        sorted_outbound.end(),
         outbound_indices
     );
-    CUDA_KERNEL_CHECK("Sorted outbound_indices by node ID");
+    CUDA_KERNEL_CHECK("Copied sorted results");
 
-    // === Step 4: Process inbound_indices if directed ===
+    // === Step 6: Handle inbound_indices (only for directed graphs) ===
     if (is_directed) {
         size_t* inbound_indices = node_edge_index->inbound_indices;
 
@@ -769,16 +822,17 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
             inbound_indices,
             inbound_indices + edges_size
         );
+        CUDA_KERNEL_CHECK("Initialized inbound_indices");
 
         // Use targets as keys
         thrust::device_vector<int> target_keys(edges_size);
         thrust::transform(
             DEVICE_EXECUTION_POLICY,
-            inbound_indices,
-            inbound_indices + edges_size,
+            thrust::make_counting_iterator<size_t>(0),
+            thrust::make_counting_iterator<size_t>(edges_size),
             target_keys.begin(),
-            [targets] DEVICE (const size_t idx) -> int {
-                return targets[idx];
+            [targets] DEVICE (const size_t i) -> int {
+                return targets[i];
             }
         );
         CUDA_KERNEL_CHECK("Generated target keys");
