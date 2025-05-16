@@ -4,7 +4,7 @@
 #include <thrust/device_ptr.h>
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/sequence.h>
-#include <thrust/sort.h>
+#include "../common/cuda_sort.cuh"
 #endif
 
 #include <omp.h>
@@ -761,15 +761,16 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
 
     // === Step 2: Generate node keys for sorting ===
     thrust::device_vector<int> node_keys(buffer_size);
+    thrust::device_ptr<int> node_keys_ptr = node_keys.data();
 
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
         thrust::make_counting_iterator<size_t>(buffer_size),
-        [node_keys = node_keys.data(), outbound_indices, sources, targets, is_directed] DEVICE (const size_t i) {
+        [node_keys_ptr, outbound_indices, sources, targets, is_directed] DEVICE (const size_t i) {
             const size_t edge_id = outbound_indices[i];
             const bool is_source = is_directed || (i % 2 == 0);
-            node_keys[i] = is_source ? sources[edge_id] : targets[edge_id];
+            node_keys_ptr[i] = is_source ? sources[edge_id] : targets[edge_id];
         }
     );
     CUDA_KERNEL_CHECK("Generated node keys");
@@ -784,12 +785,10 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
     CUDA_KERNEL_CHECK("Created indices array");
 
     // === Step 4: Stable sort the permutation array by node ID ===
-    thrust::stable_sort_by_key(
-        DEVICE_EXECUTION_POLICY,
-        node_keys.begin(),
-        node_keys.end(),
-        indices.begin()
-    );
+    cub_radix_sort_value_by_keys(
+        thrust::raw_pointer_cast(node_keys.data()),
+        thrust::raw_pointer_cast(indices.data()),
+        buffer_size);
     CUDA_KERNEL_CHECK("Sorted indices by node keys");
 
     // === Step 5: Apply permutation to reorder outbound_indices ===
@@ -824,25 +823,10 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
         );
         CUDA_KERNEL_CHECK("Initialized inbound_indices");
 
-        // Use targets as keys
-        thrust::device_vector<int> target_keys(edges_size);
-        thrust::transform(
-            DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(edges_size),
-            target_keys.begin(),
-            [targets] DEVICE (const size_t i) -> int {
-                return targets[i];
-            }
-        );
-        CUDA_KERNEL_CHECK("Generated target keys");
-
-        thrust::stable_sort_by_key(
-            DEVICE_EXECUTION_POLICY,
-            target_keys.begin(),
-            target_keys.end(),
-            inbound_indices
-        );
+        cub_radix_sort_value_by_keys(
+            targets,
+            inbound_indices,
+            edges_size);
         CUDA_KERNEL_CHECK("Sorted inbound_indices by target node");
     }
 }

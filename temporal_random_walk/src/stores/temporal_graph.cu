@@ -4,10 +4,9 @@
 #include <curand_kernel.h>
 #include <thrust/device_ptr.h>
 #include <thrust/sequence.h>
-#include <thrust/sort.h>
 #include <thrust/gather.h>
 #include <thrust/binary_search.h>
-#include <cub/device/device_radix_sort.cuh>
+#include "../common/cuda_sort.cuh"
 #endif
 
 #include "../common/comparators.cuh"
@@ -299,39 +298,10 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     thrust::sequence(new_indices.begin(), new_indices.end(), static_cast<int>(start_idx));
 
     // === Step 2: Sort new indices using CUB radix sort (direct keys) ===
-    const int64_t* d_keys_in = d_timestamps + start_idx;
-
-    int64_t* d_keys_out = nullptr;
-    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_keys_out, new_edges_count * sizeof(int64_t)));
-
-    thrust::device_vector<int> sorted_indices(new_edges_count);
-    const int* d_vals_in  = thrust::raw_pointer_cast(new_indices.data());
-    int* d_vals_out = thrust::raw_pointer_cast(sorted_indices.data());
-
-    void* d_sort_temp_storage = nullptr;
-    size_t sort_temp_storage_bytes = 0;
-
-    // Query storage
-    CUB_CHECK(cub::DeviceRadixSort::SortPairs(
-        nullptr, sort_temp_storage_bytes,
-        d_keys_in, d_keys_out,
-        d_vals_in, d_vals_out,
-        static_cast<int>(new_edges_count)
-    ));
-
-    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_sort_temp_storage, sort_temp_storage_bytes));
-
-    // Sort
-    CUB_CHECK(cub::DeviceRadixSort::SortPairs(
-        d_sort_temp_storage, sort_temp_storage_bytes,
-        d_keys_in, d_keys_out,
-        d_vals_in, d_vals_out,
-        static_cast<int>(new_edges_count)
-    ));
-
-    cudaFree(d_sort_temp_storage);
-    cudaFree(d_keys_out);  // we don't need the sorted keys
-    new_indices = std::move(sorted_indices);
+    cub_radix_sort_value_by_keys(
+        d_timestamps + start_idx,
+        thrust::raw_pointer_cast(new_indices.data()),
+        new_edges_count);
 
     // === Step 3: Merge with CUB ===
     thrust::device_vector<int> merged_indices(static_cast<int>(total_size));
