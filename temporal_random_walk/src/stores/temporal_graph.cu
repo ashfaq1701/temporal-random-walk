@@ -344,7 +344,6 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
         thrust::device_pointer_cast(d_merged_timestamps)
     );
 
-    cudaDeviceSynchronize();
     CUDA_KERNEL_CHECK("After thrust gather");
 
     // === Step 6: Copy back to graph ===
