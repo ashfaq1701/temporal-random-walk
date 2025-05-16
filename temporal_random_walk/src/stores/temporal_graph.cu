@@ -298,7 +298,7 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     thrust::sequence(new_indices.begin(), new_indices.end(), static_cast<int>(start_idx));
 
     // === Step 2: Sort new indices using CUB radix sort (direct keys) ===
-    cub_radix_sort_value_by_keys(
+    cub_radix_sort_values_by_keys(
         d_timestamps + start_idx,
         thrust::raw_pointer_cast(new_indices.data()),
         new_edges_count);

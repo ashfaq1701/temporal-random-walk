@@ -785,7 +785,7 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
     CUDA_KERNEL_CHECK("Created indices array");
 
     // === Step 4: Stable sort the permutation array by node ID ===
-    cub_radix_sort_value_by_keys(
+    cub_radix_sort_values_by_keys(
         thrust::raw_pointer_cast(node_keys.data()),
         thrust::raw_pointer_cast(indices.data()),
         buffer_size);
@@ -823,7 +823,7 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
         );
         CUDA_KERNEL_CHECK("Initialized inbound_indices");
 
-        cub_radix_sort_value_by_keys(
+        cub_radix_sort_values_by_keys(
             targets,
             inbound_indices,
             edges_size);

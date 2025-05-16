@@ -6,7 +6,7 @@
 #include <cub/device/device_radix_sort.cuh>
 
 template <typename KeyType, typename ValueType>
-void cub_radix_sort_value_by_keys(
+void cub_radix_sort_values_by_keys(
     const KeyType* d_keys,  // Input keys
     ValueType* d_values,    // Input/output values
     size_t num_items        // Number of items to sort
