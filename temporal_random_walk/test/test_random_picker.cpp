@@ -1,6 +1,8 @@
 #include <cmath>
+
 #include <gtest/gtest.h>
 #include "../src/proxies/RandomPicker.cuh"
+#include "../src/common/random_gen.cuh"
 
 constexpr int RANDOM_START = 0;
 constexpr int RANDOM_END = 10000;
@@ -17,10 +19,12 @@ protected:
 
     double compute_average_picks(const bool use_exponential, const bool prioritize_end) {
         double sum = 0;
+        const double* random_nums = generate_n_random_numbers(RANDOM_NUM_SAMPLES, T::value);
+
         for (int i = 0; i < RANDOM_NUM_SAMPLES; i++) {
             const int pick = use_exponential ?
-                                 exp_picker.pick_random(RANDOM_START, RANDOM_END, prioritize_end) :
-                                 linear_picker.pick_random(RANDOM_START, RANDOM_END, prioritize_end);
+                                 exp_picker.pick_random(RANDOM_START, RANDOM_END, prioritize_end, random_nums + i) :
+                                 linear_picker.pick_random(RANDOM_START, RANDOM_END, prioritize_end, random_nums + i);
             sum += pick;
         }
         return sum / RANDOM_NUM_SAMPLES;
@@ -126,16 +130,18 @@ TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForLinearRandomPicke
     int count_ones_start_prioritized = 0;
     const int num_trials = RANDOM_NUM_SAMPLES;
 
+    const double* rand_nums = generate_n_random_numbers(num_trials * 2, TypeParam::value);
+
     // Run trials
     for (int i = 0; i < num_trials; i++) {
         // Test prioritize_end=true
-        int result_end = this->linear_picker.pick_random(start, end, true);
+        int result_end = this->linear_picker.pick_random(start, end, true, rand_nums + i * 2);
         if (result_end == 1) {
             count_ones_end_prioritized++;
         }
 
         // Test prioritize_end=false (separate trial)
-        int result_start = this->linear_picker.pick_random(start, end, false);
+        int result_start = this->linear_picker.pick_random(start, end, false, rand_nums + i * 2 + 1);
         if (result_start == 1) {
             count_ones_start_prioritized++;
         }
@@ -175,16 +181,18 @@ TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForExponentialRandom
     int count_ones_start_prioritized = 0;
     constexpr int num_trials = RANDOM_NUM_SAMPLES;
 
+    const double* rand_nums = generate_n_random_numbers(num_trials * 2, TypeParam::value);
+
     // Run trials
     for (int i = 0; i < num_trials; i++) {
         // Test prioritize_end=true
-        int result_end = this->exp_picker.pick_random(start, end, true);
+        int result_end = this->exp_picker.pick_random(start, end, true, rand_nums + i * 2);
         if (result_end == 1) {
             count_ones_end_prioritized++;
         }
 
         // Test prioritize_end=false (separate trial)
-        int result_start = this->exp_picker.pick_random(start, end, false);
+        int result_start = this->exp_picker.pick_random(start, end, false, rand_nums + i * 2 + 1);
         if (result_start == 1) {
             count_ones_start_prioritized++;
         }
