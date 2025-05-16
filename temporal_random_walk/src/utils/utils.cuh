@@ -54,50 +54,6 @@ HOST inline DataBlock<int> repeat_elements(const DataBlock<int>& arr, int times,
     return repeated_items;
 }
 
-template <typename T>
-HOST DividedVector<T> divide_vector(const T* input, size_t input_size, int n, bool use_gpu) {
-    return DividedVector<T>(input, input_size, n, use_gpu);
-}
-
-HOST inline DataBlock<int> divide_number(const int n, const int i, const bool use_gpu) {
-    DataBlock<int> parts(i, use_gpu);
-
-    // Calculate the base division value
-    const int base_value = n / i;
-    const int remainder = n % i;
-
-    #ifdef HAS_CUDA
-    if (use_gpu) {
-        // Create a temporary host array
-        int* host_parts = new int[i];
-
-        // Fill with base values
-        std::fill_n(host_parts, i, base_value);
-
-        // Add remainder to first elements
-        for (int j = 0; j < remainder; ++j) {
-            host_parts[j]++;
-        }
-
-        // Copy to device
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(parts.data, host_parts, i * sizeof(int), cudaMemcpyHostToDevice));
-        delete[] host_parts;
-    }
-    else
-    #endif
-    {
-        // Fill with base values
-        std::fill_n(parts.data, i, base_value);
-
-        // Add remainder to first elements
-        for (int j = 0; j < remainder; ++j) {
-            parts.data[j]++;
-        }
-    }
-
-    return parts;
-}
-
 HOST DEVICE inline int pick_other_number(const int first, const int second, const int picked_number) {
     return (picked_number == first) ? second : first;
 }
