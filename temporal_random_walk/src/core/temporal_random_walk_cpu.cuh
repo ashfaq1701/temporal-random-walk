@@ -116,9 +116,27 @@ namespace temporal_random_walk {
         }
     }
 
+    // Helper function to dispatch start edge kernels on CPU
+    template <bool IsDirected, bool Forward, RandomPickerType StartPickerType>
+    void dispatch_start_edges_cpu(
+        const TemporalGraphStore *temporal_graph,
+        const WalkSet *walk_set,
+        const int *start_node_ids,
+        const int max_walk_len,
+        const size_t num_walks,
+        const double *rand_nums) {
+
+        #pragma omp parallel for
+        for (size_t walk_idx = 0; walk_idx < num_walks; ++walk_idx) {
+            pick_start_edges_cpu<IsDirected, Forward, StartPickerType>(
+                temporal_graph, walk_set, start_node_ids, max_walk_len, walk_idx, rand_nums);
+        }
+    }
+
+
     // Helper function to dispatch start edge processing on CPU
     template <bool IsDirected, bool Forward>
-    void dispatch_start_edges_cpu(
+    void handle_start_edges_cpu(
         const TemporalGraphStore *temporal_graph,
         const WalkSet *walk_set,
         const int *start_node_ids,
@@ -129,53 +147,35 @@ namespace temporal_random_walk {
 
         switch (start_picker_type) {
             case RandomPickerType::Uniform:
-                #pragma omp parallel for
-                for (size_t walk_idx = 0; walk_idx < num_walks; ++walk_idx) {
-                    pick_start_edges_cpu<IsDirected, Forward, RandomPickerType::Uniform>(
-                        temporal_graph, walk_set, start_node_ids, max_walk_len, walk_idx, rand_nums);
-                }
+                dispatch_start_edges_cpu<IsDirected, Forward, RandomPickerType::Uniform>(
+                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::Linear:
-                #pragma omp parallel for
-                for (size_t walk_idx = 0; walk_idx < num_walks; ++walk_idx) {
-                    pick_start_edges_cpu<IsDirected, Forward, RandomPickerType::Linear>(
-                        temporal_graph, walk_set, start_node_ids, max_walk_len, walk_idx, rand_nums);
-                }
+                dispatch_start_edges_cpu<IsDirected, Forward, RandomPickerType::Linear>(
+                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::ExponentialIndex:
-                #pragma omp parallel for
-                for (size_t walk_idx = 0; walk_idx < num_walks; ++walk_idx) {
-                    pick_start_edges_cpu<IsDirected, Forward, RandomPickerType::ExponentialIndex>(
-                        temporal_graph, walk_set, start_node_ids, max_walk_len, walk_idx, rand_nums);
-                }
+                dispatch_start_edges_cpu<IsDirected, Forward, RandomPickerType::ExponentialIndex>(
+                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::ExponentialWeight:
-                #pragma omp parallel for
-                for (size_t walk_idx = 0; walk_idx < num_walks; ++walk_idx) {
-                    pick_start_edges_cpu<IsDirected, Forward, RandomPickerType::ExponentialWeight>(
-                        temporal_graph, walk_set, start_node_ids, max_walk_len, walk_idx, rand_nums);
-                }
+                dispatch_start_edges_cpu<IsDirected, Forward, RandomPickerType::ExponentialWeight>(
+                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::TEST_FIRST:
-                #pragma omp parallel for
-                for (size_t walk_idx = 0; walk_idx < num_walks; ++walk_idx) {
-                    pick_start_edges_cpu<IsDirected, Forward, RandomPickerType::TEST_FIRST>(
-                        temporal_graph, walk_set, start_node_ids, max_walk_len, walk_idx, rand_nums);
-                }
+                dispatch_start_edges_cpu<IsDirected, Forward, RandomPickerType::TEST_FIRST>(
+                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::TEST_LAST:
-                #pragma omp parallel for
-                for (size_t walk_idx = 0; walk_idx < num_walks; ++walk_idx) {
-                    pick_start_edges_cpu<IsDirected, Forward, RandomPickerType::TEST_LAST>(
-                        temporal_graph, walk_set, start_node_ids, max_walk_len, walk_idx, rand_nums);
-                }
+                dispatch_start_edges_cpu<IsDirected, Forward, RandomPickerType::TEST_LAST>(
+                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, rand_nums);
                 break;
             default:
                 break;
         }
     }
 
-    // Helper function to dispatch intermediate edge kernels on CPU - optimized version
+    // Helper function to dispatch intermediate edge kernels on CPU
     template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
     void dispatch_intermediate_edges_cpu(
         const TemporalGraphStore *temporal_graph,
@@ -253,21 +253,21 @@ namespace temporal_random_walk {
         // Launch pick_start_edges_cpu
         if (is_directed) {
             if (should_walk_forward) {
-                dispatch_start_edges_cpu<true, true>(
+                handle_start_edges_cpu<true, true>(
                     temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks,
                     start_picker_type, rand_nums);
             } else {
-                dispatch_start_edges_cpu<true, false>(
+                handle_start_edges_cpu<true, false>(
                     temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks,
                     start_picker_type, rand_nums);
             }
         } else {
             if (should_walk_forward) {
-                dispatch_start_edges_cpu<false, true>(
+                handle_start_edges_cpu<false, true>(
                     temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks,
                     start_picker_type, rand_nums);
             } else {
-                dispatch_start_edges_cpu<false, false>(
+                handle_start_edges_cpu<false, false>(
                     temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks,
                     start_picker_type, rand_nums);
             }
