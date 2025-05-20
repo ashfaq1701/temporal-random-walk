@@ -24,7 +24,7 @@ namespace temporal_random_walk {
 
         const int rand_nums_start_offset =
             walk_idx +                          // To account extra value in all previous walk's start pickers.
-                (walk_idx * (max_walk_len - 1) * 2);  // To account all 2 rand numbers for all other steps in the previous walks.
+                (walk_idx * max_walk_len * 2);  // To account all 2 rand numbers for all other steps in the previous walks.
 
         Edge start_edge;
         if (start_node_ids[walk_idx] == -1) {
@@ -93,7 +93,7 @@ namespace temporal_random_walk {
 
         const int rand_nums_start_offset =
             walk_idx +                              // To account extra value in all previous walk's start pickers.
-                (walk_idx * (max_walk_len - 1) * 2) +     // To account all 2 rand numbers for all other steps in the previous walks.
+                (walk_idx * max_walk_len * 2) +     // To account all 2 rand numbers for all other steps in the previous walks.
                     (step_number * 2 + 1);          // To account for random numbers used in the current walk.
 
         const Edge next_edge = temporal_graph::get_node_edge_at_device<Forward, EdgePickerType, IsDirected>(

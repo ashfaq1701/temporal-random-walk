@@ -85,7 +85,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
     WalkSet walk_set(repeated_node_ids.size, max_walk_len, temporal_random_walk->walk_padding_value, temporal_random_walk->use_gpu);
 
     // max_walk_len requires walk_len - 1 steps
-    double *rand_nums = generate_n_random_numbers(repeated_node_ids.size + repeated_node_ids.size * (max_walk_len - 1) * 2, false);
+    double *rand_nums = generate_n_random_numbers(repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, false);
 
     launch_random_walk_cpu(
         temporal_random_walk->temporal_graph,
@@ -118,7 +118,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_std(
 
     WalkSet walk_set(num_walks_total, max_walk_len, temporal_random_walk->walk_padding_value, temporal_random_walk->use_gpu);
     // max_walk_len requires walk_len - 1 steps
-    double *rand_nums = generate_n_random_numbers(num_walks_total + num_walks_total * (max_walk_len - 1) * 2, false);
+    double *rand_nums = generate_n_random_numbers(num_walks_total + num_walks_total * max_walk_len * 2, false);
 
     const std::vector<int> start_node_ids(num_walks_total, -1);
 
@@ -171,7 +171,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
         BLOCK_DIM_GENERATING_RANDOM_WALKS);
 
     // Initialize random numbers between [0.0, 1.0)
-    double *rand_nums = generate_n_random_numbers(repeated_node_ids.size + repeated_node_ids.size * (max_walk_len -1) * 2, true);
+    double *rand_nums = generate_n_random_numbers(repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, true);
 
     // Shuffle node IDs for randomization
     shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
@@ -237,7 +237,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     fill_memory(start_node_ids, num_walks_total, -1, temporal_random_walk->use_gpu);
 
     // Initialize random numbers between [0.0, 1.0)
-    double *rand_nums = generate_n_random_numbers(num_walks_total + num_walks_total * (max_walk_len - 1) * 2, true);
+    double *rand_nums = generate_n_random_numbers(num_walks_total + num_walks_total * max_walk_len * 2, true);
 
     // Create and initialize the walk set on device
     const WalkSet walk_set(num_walks_total, max_walk_len, temporal_random_walk->walk_padding_value, true);
