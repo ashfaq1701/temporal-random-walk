@@ -24,7 +24,8 @@ public:
         bool use_gpu,
         int64_t max_time_capacity=-1,
         bool enable_weight_computation=false,
-        double timescale_bound=DEFAULT_TIMESCALE_BOUND);
+        double timescale_bound=DEFAULT_TIMESCALE_BOUND,
+        int walk_padding_value=EMPTY_NODE_VALUE);
 
     ~TemporalRandomWalk();
 

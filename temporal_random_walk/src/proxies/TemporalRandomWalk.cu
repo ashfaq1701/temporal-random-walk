@@ -20,13 +20,15 @@ TemporalRandomWalk::TemporalRandomWalk(
         const bool use_gpu,
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
-        const double timescale_bound): use_gpu(use_gpu) {
+        const double timescale_bound,
+        const int walk_padding_value): use_gpu(use_gpu) {
     temporal_random_walk = new TemporalRandomWalkStore(
         is_directed,
         use_gpu,
         max_time_capacity,
         enable_weight_computation,
-        timescale_bound);
+        timescale_bound,
+        walk_padding_value);
 }
 
 TemporalRandomWalk::~TemporalRandomWalk() {

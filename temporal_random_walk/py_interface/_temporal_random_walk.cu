@@ -25,31 +25,34 @@ PYBIND11_MODULE(_temporal_random_walk, m)
 {
     py::class_<TemporalRandomWalk>(m, "TemporalRandomWalk")
         .def(py::init([](const bool is_directed, bool use_gpu, const std::optional<int64_t> max_time_capacity,
-                        std::optional<bool> enable_weight_computation,
-                        std::optional<double> timescale_bound)
+                         const std::optional<bool> enable_weight_computation, const std::optional<double> timescale_bound,
+                         const std::optional<int> walk_padding_value)
              {
                  return std::make_unique<TemporalRandomWalk>(
                      is_directed,
                      use_gpu,
                      max_time_capacity.value_or(-1),
                      enable_weight_computation.value_or(false),
-                     timescale_bound.value_or(DEFAULT_TIMESCALE_BOUND));
+                     timescale_bound.value_or(DEFAULT_TIMESCALE_BOUND),
+                     walk_padding_value.value_or(EMPTY_NODE_VALUE));
              }),
              R"(
-            Initialize a temporal random walk generator.
+             Initialize a temporal random walk generator.
 
-            Args:
-            is_directed (bool): Whether to create a directed graph.
-            use_gpu (bool): Whether to use GPU or not.
-            max_time_capacity (int, optional): Maximum time window for edges. Edges older than (latest_time - max_time_capacity) are removed. Use -1 for no limit. Defaults to -1.
-            enable_weight_computation (bool, optional): Enable CTDNE weight computation. Required for ExponentialWeight picker. Defaults to False.
-            timescale_bound (float, optional): Scale factor for temporal differences. Used to prevent numerical issues with large time differences. Defaults to -1.0.
-            )",
+             Args:
+             is_directed (bool): Whether to create a directed graph.
+             use_gpu (bool): Whether to use GPU or not.
+             max_time_capacity (int, optional): Maximum time window for edges. Edges older than (latest_time - max_time_capacity) are removed. Use -1 for no limit. Defaults to -1.
+             enable_weight_computation (bool, optional): Enable CTDNE weight computation. Required for ExponentialWeight picker. Defaults to False.
+             timescale_bound (float, optional): Scale factor for temporal differences. Used to prevent numerical issues with large time differences. Defaults to -1.0.
+             walk_padding_value (int, optional): Padding node value for prematurely broken walks. Default is -1.
+             )",
              py::arg("is_directed"),
              py::arg("use_gpu") = false,
              py::arg("max_time_capacity") = py::none(),
              py::arg("enable_weight_computation") = py::none(),
-             py::arg("timescale_bound") = py::none())
+             py::arg("timescale_bound") = py::none(),
+             py::arg("walk_padding_value") = py::none())
 
         .def("add_multiple_edges", [](TemporalRandomWalk& tw,
                              const py::array_t<int>& sources,
@@ -57,23 +60,23 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                              const py::array_t<int64_t>& timestamps)
         {
             // Request buffer access to numpy arrays
-            auto sources_info = sources.request();
-            auto targets_info = targets.request();
-            auto timestamps_info = timestamps.request();
+            const auto sources_info = sources.request();
+            const auto targets_info = targets.request();
+            const auto timestamps_info = timestamps.request();
 
             // Check dimensions and sizes
             if (sources_info.ndim != 1 || targets_info.ndim != 1 || timestamps_info.ndim != 1)
                 throw std::runtime_error("Arrays must be 1-dimensional");
 
             // Check that all arrays have the same length
-            size_t num_edges = sources_info.shape[0];
+            const size_t num_edges = sources_info.shape[0];
             if (targets_info.shape[0] != num_edges || timestamps_info.shape[0] != num_edges)
                 throw std::runtime_error("All arrays must have the same length");
 
             // Get pointers to the data
-            auto sources_ptr = static_cast<int*>(sources_info.ptr);
-            auto targets_ptr = static_cast<int*>(targets_info.ptr);
-            auto* timestamps_ptr = static_cast<int64_t*>(timestamps_info.ptr);
+            const auto sources_ptr = static_cast<int*>(sources_info.ptr);
+            const auto targets_ptr = static_cast<int*>(targets_info.ptr);
+            const auto* timestamps_ptr = static_cast<int64_t*>(timestamps_info.ptr);
 
             // Call the C++ function with raw pointers and size
             tw.add_multiple_edges(sources_ptr, targets_ptr, timestamps_ptr, num_edges);
