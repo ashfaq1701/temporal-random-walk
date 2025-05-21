@@ -60,7 +60,7 @@ int main(const int argc, char* argv[]) {
 
     const auto file_paths = get_sorted_data_files(file_base_path);
 
-    const TemporalRandomWalk temporal_random_walk(true, USE_GPU, sliding_window_duration, true);
+    const TemporalRandomWalk temporal_random_walk(true, use_gpu, sliding_window_duration, true);
 
     std::vector<double> edge_addition_elapsed_times;
     double edge_addition_total_time = 0.0;
