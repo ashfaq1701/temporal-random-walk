@@ -849,7 +849,7 @@ HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
         CUDA_CHECK_AND_CLEAR(cudaMemset(d_inbound_group_count, 0, node_count * sizeof(size_t)));
     }
 
-    // Get raw pointers for data access in kernel
+    // Get raw pointers for data access
     int64_t *timestamps_ptr = edge_data->timestamps;
     size_t *outbound_offsets_ptr = node_edge_index->outbound_offsets;
     size_t *inbound_offsets_ptr = is_directed ? node_edge_index->inbound_offsets : nullptr;
@@ -859,84 +859,86 @@ HOST void node_edge_index::compute_node_timestamp_offsets_cuda(
     size_t *outbound_group_count_ptr = d_outbound_group_count;
     size_t *inbound_group_count_ptr = d_inbound_group_count;
 
-    // Fill timestamp groups counts
+    // Fill group counts with optimized loop
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
         thrust::make_counting_iterator<size_t>(node_count),
         [outbound_offsets_ptr, inbound_offsets_ptr,
-            outbound_indices_ptr, inbound_indices_ptr,
-            outbound_group_count_ptr, inbound_group_count_ptr,
-            timestamps_ptr, is_directed] DEVICE (const size_t node) {
-            // Outbound groups
+         outbound_indices_ptr, inbound_indices_ptr,
+         outbound_group_count_ptr, inbound_group_count_ptr,
+         timestamps_ptr, is_directed] DEVICE(const size_t node) {
+            // Outbound
             size_t start = outbound_offsets_ptr[node];
             size_t end = outbound_offsets_ptr[node + 1];
 
             if (start < end) {
-                outbound_group_count_ptr[node] = 1; // First group always exists
-
+                size_t count = 1;
+                int64_t prev_ts = timestamps_ptr[outbound_indices_ptr[start]];
                 for (size_t i = start + 1; i < end; ++i) {
-                    if (timestamps_ptr[outbound_indices_ptr[i]] !=
-                        timestamps_ptr[outbound_indices_ptr[i - 1]]) {
-                        atomicAdd(reinterpret_cast<unsigned int *>(&outbound_group_count_ptr[node]), 1);
+                    int64_t curr_ts = timestamps_ptr[outbound_indices_ptr[i]];
+                    if (curr_ts != prev_ts) {
+                        ++count;
+                        prev_ts = curr_ts;
                     }
                 }
+                outbound_group_count_ptr[node] = count;
             }
 
-            // Inbound groups for directed graphs
+            // Inbound
             if (is_directed) {
                 start = inbound_offsets_ptr[node];
                 end = inbound_offsets_ptr[node + 1];
 
                 if (start < end) {
-                    inbound_group_count_ptr[node] = 1; // First group always exists
-
+                    size_t count = 1;
+                    int64_t prev_ts = timestamps_ptr[inbound_indices_ptr[start]];
                     for (size_t i = start + 1; i < end; ++i) {
-                        if (timestamps_ptr[inbound_indices_ptr[i]] !=
-                            timestamps_ptr[inbound_indices_ptr[i - 1]]) {
-                            atomicAdd(reinterpret_cast<unsigned int *>(&inbound_group_count_ptr[node]), 1);
+                        int64_t curr_ts = timestamps_ptr[inbound_indices_ptr[i]];
+                        if (curr_ts != prev_ts) {
+                            ++count;
+                            prev_ts = curr_ts;
                         }
                     }
+                    inbound_group_count_ptr[node] = count;
                 }
             }
         }
     );
-    CUDA_KERNEL_CHECK("After thrust for_each fill groups in compute_node_timestamp_offsets_cuda");
+    CUDA_KERNEL_CHECK("After thrust::for_each in compute_node_timestamp_offsets_cuda");
 
-    // Create device pointers for prefix scan
+    // Setup for inclusive scan
     const thrust::device_ptr<size_t> d_outbound_group_count_thrust(d_outbound_group_count);
-    const thrust::device_ptr<size_t>
-            d_outbound_timestamp_group_offsets(node_edge_index->outbound_timestamp_group_offsets);
+    const thrust::device_ptr<size_t> d_outbound_timestamp_group_offsets(
+        node_edge_index->outbound_timestamp_group_offsets);
 
-    // First element should be 0
+    // Ensure first offset is 0 (manual shift due to inclusive scan)
     CUDA_CHECK_AND_CLEAR(cudaMemset(node_edge_index->outbound_timestamp_group_offsets, 0, sizeof(size_t)));
 
-    // Calculate prefix sum for outbound group offsets
+    // Inclusive scan with offset+1
     thrust::inclusive_scan(
         DEVICE_EXECUTION_POLICY,
         d_outbound_group_count_thrust,
         d_outbound_group_count_thrust + static_cast<long>(node_count),
         d_outbound_timestamp_group_offsets + 1
     );
-    CUDA_KERNEL_CHECK("After thrust inclusive_scan outbound in compute_node_timestamp_offsets_cuda");
+    CUDA_KERNEL_CHECK("After inclusive_scan outbound in compute_node_timestamp_offsets_cuda");
 
-    // Inbound processing for directed graphs
+    // Inbound (if directed)
     if (is_directed) {
         const thrust::device_ptr<size_t> d_inbound_group_count_thrust(d_inbound_group_count);
         const thrust::device_ptr<size_t> d_inbound_timestamp_group_offsets(
             node_edge_index->inbound_timestamp_group_offsets);
 
-        // First element should be 0
         CUDA_CHECK_AND_CLEAR(cudaMemset(node_edge_index->inbound_timestamp_group_offsets, 0, sizeof(size_t)));
 
-        // Calculate prefix sum for inbound group offsets
         thrust::inclusive_scan(
             DEVICE_EXECUTION_POLICY,
             d_inbound_group_count_thrust,
             d_inbound_group_count_thrust + static_cast<long>(node_count),
             d_inbound_timestamp_group_offsets + 1
         );
-        CUDA_KERNEL_CHECK("After thrust inclusive_scan inbound in compute_node_timestamp_offsets_cuda");
+        CUDA_KERNEL_CHECK("After inclusive_scan inbound in compute_node_timestamp_offsets_cuda");
     }
 
     // Free temporary memory
@@ -967,17 +969,17 @@ HOST void node_edge_index::compute_node_timestamp_indices_cuda(
                                                       ? node_edge_index->inbound_timestamp_group_offsets
                                                       : nullptr;
 
-    // Fill timestamp group indices
+    // Fill timestamp group indices using thrust::for_each
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
         thrust::make_counting_iterator<size_t>(node_index_capacity),
         [outbound_offsets_ptr, inbound_offsets_ptr,
-            outbound_indices_ptr, inbound_indices_ptr,
-            outbound_timestamp_group_offsets_ptr, inbound_timestamp_group_offsets_ptr,
-            outbound_timestamp_group_indices_ptr, inbound_timestamp_group_indices_ptr,
-            timestamps_ptr, is_directed] DEVICE (const size_t node) {
-            // Outbound timestamp groups
+         outbound_indices_ptr, inbound_indices_ptr,
+         outbound_timestamp_group_offsets_ptr, inbound_timestamp_group_offsets_ptr,
+         outbound_timestamp_group_indices_ptr, inbound_timestamp_group_indices_ptr,
+         timestamps_ptr, is_directed] DEVICE(const size_t node) {
+            // Process outbound edges
             size_t start = outbound_offsets_ptr[node];
             size_t end = outbound_offsets_ptr[node + 1];
             size_t group_pos = outbound_timestamp_group_offsets_ptr[node];
@@ -986,28 +988,31 @@ HOST void node_edge_index::compute_node_timestamp_indices_cuda(
                 // First group always starts at the first edge
                 outbound_timestamp_group_indices_ptr[group_pos++] = start;
 
+                int64_t prev_ts = timestamps_ptr[outbound_indices_ptr[start]];
                 for (size_t i = start + 1; i < end; ++i) {
-                    if (timestamps_ptr[outbound_indices_ptr[i]] !=
-                        timestamps_ptr[outbound_indices_ptr[i - 1]]) {
+                    int64_t curr_ts = timestamps_ptr[outbound_indices_ptr[i]];
+                    if (curr_ts != prev_ts) {
                         outbound_timestamp_group_indices_ptr[group_pos++] = i;
+                        prev_ts = curr_ts;
                     }
                 }
             }
 
-            // Inbound timestamp groups for directed graphs
+            // Process inbound edges (only for directed graphs)
             if (is_directed) {
                 start = inbound_offsets_ptr[node];
                 end = inbound_offsets_ptr[node + 1];
                 group_pos = inbound_timestamp_group_offsets_ptr[node];
 
                 if (start < end) {
-                    // First group always starts at the first edge
                     inbound_timestamp_group_indices_ptr[group_pos++] = start;
 
+                    int64_t prev_ts = timestamps_ptr[inbound_indices_ptr[start]];
                     for (size_t i = start + 1; i < end; ++i) {
-                        if (timestamps_ptr[inbound_indices_ptr[i]] !=
-                            timestamps_ptr[inbound_indices_ptr[i - 1]]) {
+                        int64_t curr_ts = timestamps_ptr[inbound_indices_ptr[i]];
+                        if (curr_ts != prev_ts) {
                             inbound_timestamp_group_indices_ptr[group_pos++] = i;
+                            prev_ts = curr_ts;
                         }
                     }
                 }
@@ -1055,89 +1060,77 @@ HOST void node_edge_index::update_temporal_weights_cuda(
 
     // Process outbound weights
     {
-        // Get outbound timestamp group offsets
         MemoryView<size_t> outbound_offsets = get_timestamp_offset_vector(node_edge_index, true, false);
 
-        // Allocate temporary device memory for weights
-        double *d_forward_weights = nullptr;
-        double *d_backward_weights = nullptr;
+        double* d_forward_weights = nullptr;
+        double* d_backward_weights = nullptr;
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_forward_weights, outbound_groups_size * sizeof(double)));
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_backward_weights, outbound_groups_size * sizeof(double)));
 
-        // Get raw pointers for device code
-        int64_t *timestamps_ptr = edge_data->timestamps;
-        size_t *outbound_indices_ptr = node_edge_index->outbound_indices;
-        size_t *outbound_group_indices_ptr = node_edge_index->outbound_timestamp_group_indices;
-        size_t *outbound_offsets_ptr = outbound_offsets.data;
+        int64_t* timestamps_ptr = edge_data->timestamps;
+        size_t* outbound_indices_ptr = node_edge_index->outbound_indices;
+        size_t* outbound_group_indices_ptr = node_edge_index->outbound_timestamp_group_indices;
+        size_t* outbound_offsets_ptr = outbound_offsets.data;
 
-        // Calculate weights in parallel for each node
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(node_index_capacity),
             [timestamps_ptr, outbound_indices_ptr, outbound_group_indices_ptr,
-                outbound_offsets_ptr, d_forward_weights, d_backward_weights, timescale_bound]
-            DEVICE (const size_t node) {
+             outbound_offsets_ptr, d_forward_weights, d_backward_weights, timescale_bound]
+            DEVICE(const size_t node) {
                 const size_t out_start = outbound_offsets_ptr[node];
                 const size_t out_end = outbound_offsets_ptr[node + 1];
 
-                if (out_start < out_end) {
-                    // Get node's timestamp range
-                    const size_t first_group_start = outbound_group_indices_ptr[out_start];
-                    const size_t last_group_start = outbound_group_indices_ptr[out_end - 1];
-                    const int64_t min_ts = timestamps_ptr[outbound_indices_ptr[first_group_start]];
-                    const int64_t max_ts = timestamps_ptr[outbound_indices_ptr[last_group_start]];
+                if (out_start >= out_end) return;
 
-                    const auto time_diff = static_cast<double>(max_ts - min_ts);
-                    const double time_scale = (timescale_bound > 0 && time_diff > 0)
-                                                  ? timescale_bound / time_diff
-                                                  : 1.0;
+                const size_t first_group_start = outbound_group_indices_ptr[out_start];
+                const size_t last_group_start = outbound_group_indices_ptr[out_end - 1];
+                const int64_t min_ts = timestamps_ptr[outbound_indices_ptr[first_group_start]];
+                const int64_t max_ts = timestamps_ptr[outbound_indices_ptr[last_group_start]];
+                const double time_diff = static_cast<double>(max_ts - min_ts);
+                const double time_scale = (timescale_bound > 0.0 && time_diff > 0.0)
+                    ? timescale_bound / time_diff
+                    : 1.0;
 
-                    double forward_sum = 0.0;
-                    double backward_sum = 0.0;
+                double forward_sum = 0.0;
+                double backward_sum = 0.0;
 
-                    // Calculate weights for each group
-                    for (size_t pos = out_start; pos < out_end; ++pos) {
-                        const size_t edge_start = outbound_group_indices_ptr[pos];
-                        const int64_t group_ts = timestamps_ptr[outbound_indices_ptr[edge_start]];
+                // Compute weights
+                for (size_t pos = out_start; pos < out_end; ++pos) {
+                    const size_t edge_start = outbound_group_indices_ptr[pos];
+                    const int64_t group_ts = timestamps_ptr[outbound_indices_ptr[edge_start]];
 
-                        const auto time_diff_forward = static_cast<double>(max_ts - group_ts);
-                        const auto time_diff_backward = static_cast<double>(group_ts - min_ts);
+                    const double tf = (max_ts - group_ts) * time_scale;
+                    const double tb = (group_ts - min_ts) * time_scale;
 
-                        const double forward_scaled = timescale_bound > 0
-                                                          ? time_diff_forward * time_scale
-                                                          : time_diff_forward;
-                        const double backward_scaled = timescale_bound > 0
-                                                           ? time_diff_backward * time_scale
-                                                           : time_diff_backward;
+                    const double fw = exp(tf);
+                    const double bw = exp(tb);
 
-                        const double forward_weight = exp(forward_scaled);
-                        d_forward_weights[pos] = forward_weight;
-                        forward_sum += forward_weight;
+                    d_forward_weights[pos] = fw;
+                    d_backward_weights[pos] = bw;
 
-                        const double backward_weight = exp(backward_scaled);
-                        d_backward_weights[pos] = backward_weight;
-                        backward_sum += backward_weight;
-                    }
+                    forward_sum += fw;
+                    backward_sum += bw;
+                }
 
-                    // Normalize and compute cumulative sums
-                    double forward_cumsum = 0.0, backward_cumsum = 0.0;
-                    for (size_t pos = out_start; pos < out_end; ++pos) {
-                        d_forward_weights[pos] /= forward_sum;
-                        d_backward_weights[pos] /= backward_sum;
+                // Normalize and compute cumulative weights
+                double fsum = 0.0;
+                double bsum = 0.0;
+                for (size_t pos = out_start; pos < out_end; ++pos) {
+                    d_forward_weights[pos] /= forward_sum;
+                    d_backward_weights[pos] /= backward_sum;
 
-                        forward_cumsum += d_forward_weights[pos];
-                        backward_cumsum += d_backward_weights[pos];
+                    fsum += d_forward_weights[pos];
+                    bsum += d_backward_weights[pos];
 
-                        d_forward_weights[pos] = forward_cumsum;
-                        d_backward_weights[pos] = backward_cumsum;
-                    }
+                    d_forward_weights[pos] = fsum;
+                    d_backward_weights[pos] = bsum;
                 }
             }
         );
         CUDA_KERNEL_CHECK("After thrust for_each outbound weights in update_temporal_weights_cuda");
 
-        // Copy results to destination arrays
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(
             node_edge_index->outbound_forward_cumulative_weights_exponential,
             d_forward_weights,
@@ -1152,80 +1145,69 @@ HOST void node_edge_index::update_temporal_weights_cuda(
             cudaMemcpyDeviceToDevice
         ));
 
-        // Clean up temporary memory
         CUDA_CHECK_AND_CLEAR(cudaFree(d_forward_weights));
         CUDA_CHECK_AND_CLEAR(cudaFree(d_backward_weights));
     }
 
-    // Process inbound weights if directed
+    // Process inbound weights (only backward)
     if (node_edge_index->inbound_offsets_size > 0) {
-        // Get inbound timestamp group offsets
         MemoryView<size_t> inbound_offsets = get_timestamp_offset_vector(node_edge_index, false, true);
         const size_t inbound_groups_size = node_edge_index->inbound_timestamp_group_indices_size;
 
-        // Allocate temporary device memory for weights
-        double *d_backward_weights = nullptr;
+        double* d_backward_weights = nullptr;
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_backward_weights, inbound_groups_size * sizeof(double)));
 
-        // Get raw pointers for device code
-        int64_t *timestamps_ptr = edge_data->timestamps;
-        size_t *inbound_indices_ptr = node_edge_index->inbound_indices;
-        size_t *inbound_group_indices_ptr = node_edge_index->inbound_timestamp_group_indices;
-        size_t *inbound_offsets_ptr = inbound_offsets.data;
+        int64_t* timestamps_ptr = edge_data->timestamps;
+        size_t* inbound_indices_ptr = node_edge_index->inbound_indices;
+        size_t* inbound_group_indices_ptr = node_edge_index->inbound_timestamp_group_indices;
+        size_t* inbound_offsets_ptr = inbound_offsets.data;
 
-        // Calculate weights in parallel for each node
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(node_index_capacity),
             [timestamps_ptr, inbound_indices_ptr, inbound_group_indices_ptr,
-                inbound_offsets_ptr, d_backward_weights, timescale_bound]
-            DEVICE (const size_t node) {
+             inbound_offsets_ptr, d_backward_weights, timescale_bound]
+            DEVICE(const size_t node) {
                 const size_t in_start = inbound_offsets_ptr[node];
                 const size_t in_end = inbound_offsets_ptr[node + 1];
 
-                if (in_start < in_end) {
-                    // Get node's timestamp range
-                    const size_t first_group_start = inbound_group_indices_ptr[in_start];
-                    const size_t last_group_start = inbound_group_indices_ptr[in_end - 1];
-                    const int64_t min_ts = timestamps_ptr[inbound_indices_ptr[first_group_start]];
-                    const int64_t max_ts = timestamps_ptr[inbound_indices_ptr[last_group_start]];
+                if (in_start >= in_end) return;
 
-                    const auto time_diff = static_cast<double>(max_ts - min_ts);
-                    const double time_scale = (timescale_bound > 0 && time_diff > 0)
-                                                  ? timescale_bound / time_diff
-                                                  : 1.0;
+                const size_t first_group_start = inbound_group_indices_ptr[in_start];
+                const size_t last_group_start = inbound_group_indices_ptr[in_end - 1];
+                const int64_t min_ts = timestamps_ptr[inbound_indices_ptr[first_group_start]];
+                const int64_t max_ts = timestamps_ptr[inbound_indices_ptr[last_group_start]];
+                const double time_diff = static_cast<double>(max_ts - min_ts);
+                const double time_scale = (timescale_bound > 0.0 && time_diff > 0.0)
+                    ? timescale_bound / time_diff
+                    : 1.0;
 
-                    double backward_sum = 0.0;
+                double backward_sum = 0.0;
 
-                    // Calculate weights and sum
-                    for (size_t pos = in_start; pos < in_end; ++pos) {
-                        const size_t edge_start = inbound_group_indices_ptr[pos];
-                        const int64_t group_ts = timestamps_ptr[inbound_indices_ptr[edge_start]];
+                // Compute weights
+                for (size_t pos = in_start; pos < in_end; ++pos) {
+                    const size_t edge_start = inbound_group_indices_ptr[pos];
+                    const int64_t group_ts = timestamps_ptr[inbound_indices_ptr[edge_start]];
 
-                        const auto time_diff_backward = static_cast<double>(group_ts - min_ts);
-                        const double backward_scaled = timescale_bound > 0
-                                                           ? time_diff_backward * time_scale
-                                                           : time_diff_backward;
+                    const double tb = (group_ts - min_ts) * time_scale;
+                    const double bw = exp(tb);
 
-                        const double backward_weight = exp(backward_scaled);
-                        d_backward_weights[pos] = backward_weight;
-                        backward_sum += backward_weight;
-                    }
+                    d_backward_weights[pos] = bw;
+                    backward_sum += bw;
+                }
 
-                    // Normalize and compute cumulative sum
-                    double backward_cumsum = 0.0;
-                    for (size_t pos = in_start; pos < in_end; ++pos) {
-                        d_backward_weights[pos] /= backward_sum;
-                        backward_cumsum += d_backward_weights[pos];
-                        d_backward_weights[pos] = backward_cumsum;
-                    }
+                // Normalize and compute cumulative weights
+                double bsum = 0.0;
+                for (size_t pos = in_start; pos < in_end; ++pos) {
+                    d_backward_weights[pos] /= backward_sum;
+                    bsum += d_backward_weights[pos];
+                    d_backward_weights[pos] = bsum;
                 }
             }
         );
         CUDA_KERNEL_CHECK("After thrust for_each inbound weights in update_temporal_weights_cuda");
 
-        // Copy results to destination array
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(
             node_edge_index->inbound_backward_cumulative_weights_exponential,
             d_backward_weights,
@@ -1233,7 +1215,6 @@ HOST void node_edge_index::update_temporal_weights_cuda(
             cudaMemcpyDeviceToDevice
         ));
 
-        // Clean up temporary memory
         CUDA_CHECK_AND_CLEAR(cudaFree(d_backward_weights));
     }
 }

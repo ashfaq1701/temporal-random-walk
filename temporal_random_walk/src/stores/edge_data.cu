@@ -169,7 +169,6 @@ HOST void edge_data::populate_active_nodes_std(EdgeDataStore *edge_data) {
         const int src = edge_data->sources[i];
         const int tgt = edge_data->targets[i];
 
-        // Use atomic to avoid race conditions
         edge_data->active_node_ids[src] = 1;
         edge_data->active_node_ids[tgt] = 1;
     }
