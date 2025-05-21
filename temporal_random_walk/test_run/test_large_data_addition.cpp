@@ -27,9 +27,22 @@ int main(const int argc, char* argv[]) {
 
     const std::string file_base_path = argv[1];
 
-    bool use_gpu = USE_GPU;
+    bool use_gpu = USE_GPU;  // Default value from a defined constant
     if (argc >= 3) {
-        use_gpu = argv[2] == "1" || argv[2] == "true";
+        std::string gpu_arg = argv[2];
+        // Convert to lowercase for case-insensitive comparison
+        std::transform(gpu_arg.begin(), gpu_arg.end(), gpu_arg.begin(),
+                       [](const unsigned char c){ return std::tolower(c); });
+
+        // Accept various forms of true/false input
+        if (gpu_arg == "1" || gpu_arg == "true" || gpu_arg == "yes" || gpu_arg == "y") {
+            use_gpu = true;
+        } else if (gpu_arg == "0" || gpu_arg == "false" || gpu_arg == "no" || gpu_arg == "n") {
+            use_gpu = false;
+        } else {
+            std::cerr << "Error: Invalid value '" << gpu_arg << "' for use_gpu parameter. Expected 1/0, true/false, yes/no, or y/n." << std::endl;
+            exit(EXIT_FAILURE);
+        }
     }
     std::cout << "Running on: " << (use_gpu ? "GPU" : "CPU") << std::endl;
 
