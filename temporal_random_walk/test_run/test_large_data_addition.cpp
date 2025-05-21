@@ -21,37 +21,41 @@ constexpr int SLIDING_WINDOW_DURATION = 900000;
 
 int main(const int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " [base_dir] [SLIDING_WINDOW_DURATION_MS] [edge_picker_type] [start_picker_type] [walk_len] [num_walks_total]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " [base_dir] [use_gpu] [SLIDING_WINDOW_DURATION_MS] [edge_picker_type] [start_picker_type] [walk_len] [num_walks_total]" << std::endl;
         return -1;
     }
 
-    std::cout << "Running on: " << (USE_GPU ? "GPU" : "CPU") << std::endl;
-
     const std::string file_base_path = argv[1];
 
-    auto sliding_window_duration = SLIDING_WINDOW_DURATION;
+    bool use_gpu = USE_GPU;
     if (argc >= 3) {
-        sliding_window_duration = std::stoi(argv[2]);
+        use_gpu = argv[2] == "1" || argv[2] == "true";
+    }
+    std::cout << "Running on: " << (use_gpu ? "GPU" : "CPU") << std::endl;
+
+    auto sliding_window_duration = SLIDING_WINDOW_DURATION;
+    if (argc >= 4) {
+        sliding_window_duration = std::stoi(argv[3]);
     }
 
     auto edge_picker = picker_type_from_string(EDGE_PICKER_TYPE);
-    if (argc >= 4) {
-        edge_picker = picker_type_from_string(argv[3]);
+    if (argc >= 5) {
+        edge_picker = picker_type_from_string(argv[4]);
     }
 
     auto start_picker = picker_type_from_string(START_PICKER_TYPE);
-    if (argc >= 5) {
-        start_picker = picker_type_from_string(argv[4]);
+    if (argc >= 6) {
+        start_picker = picker_type_from_string(argv[5]);
     }
 
     auto walk_len = WALK_LEN;
-    if (argc >= 6) {
-        walk_len = std::stoi(argv[5]);
+    if (argc >= 7) {
+        walk_len = std::stoi(argv[6]);
     }
 
     auto num_walks_total = NUM_WALKS_TOTAL;
-    if (argc >= 7) {
-        num_walks_total = std::stoi(argv[6]);
+    if (argc >= 8) {
+        num_walks_total = std::stoi(argv[7]);
     }
 
     const auto file_paths = get_sorted_data_files(file_base_path);
