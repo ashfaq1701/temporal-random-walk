@@ -17,7 +17,7 @@ const auto EDGE_PICKER_TYPE = "ExponentialIndex";
 const auto START_PICKER_TYPE = "Uniform";
 constexpr auto WALK_LEN = 100;
 constexpr int NUM_WALKS_TOTAL = 1000000;
-constexpr int SLIDING_WINDOW_DURATION = 900000;
+constexpr int SLIDING_WINDOW_DURATION = 540000;  // 9 minutes data
 
 int main(const int argc, char* argv[]) {
     if (argc < 2) {
