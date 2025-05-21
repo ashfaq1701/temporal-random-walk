@@ -233,7 +233,7 @@ namespace temporal_random_walk {
         }
     }
 
-    inline void launch_random_walk_kernels(
+    inline void launch_random_walk_kernel(
         TemporalGraphStore *temporal_graph,
         const bool is_directed,
         const WalkSet *walk_set,
