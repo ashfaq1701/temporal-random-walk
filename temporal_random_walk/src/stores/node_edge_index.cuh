@@ -118,20 +118,14 @@ namespace node_edge_index {
         bool is_directed
     );
 
-    HOST void compute_node_timestamp_offsets_std(
-        NodeEdgeIndexStore *node_edge_index,
-        const EdgeDataStore *edge_data,
+    HOST void compute_node_timestamp_offsets_and_indices_std(
+        NodeEdgeIndexStore* node_edge_index,
+        const EdgeDataStore* edge_data,
         size_t node_count,
-        bool is_directed
+        bool is_directed,
+        const int* outbound_node_ids,
+        const int* inbound_node_ids
     );
-
-    HOST void compute_node_timestamp_indices_std(
-        NodeEdgeIndexStore *node_edge_index,
-        const EdgeDataStore *edge_data,
-        size_t node_index_capacity,
-        bool is_directed
-    );
-
     HOST void update_temporal_weights_std(NodeEdgeIndexStore *node_edge_index, const EdgeDataStore *edge_data,
                                                  double timescale_bound);
 
@@ -149,22 +143,19 @@ namespace node_edge_index {
     HOST void compute_node_edge_indices_cuda(
         NodeEdgeIndexStore *node_edge_index,
         const EdgeDataStore *edge_data,
-        bool is_directed
+        bool is_directed,
+        size_t outbound_buffer_size,
+        int* outbound_node_ids,
+        int* inbound_node_ids
     );
 
-    HOST void compute_node_timestamp_offsets_cuda(
+    HOST void compute_node_timestamp_offsets_and_indices_cuda(
         NodeEdgeIndexStore *node_edge_index,
         const EdgeDataStore *edge_data,
         size_t node_count,
-        bool is_directed
-    );
-
-    HOST void compute_node_timestamp_indices_cuda(
-        NodeEdgeIndexStore *node_edge_index,
-        const EdgeDataStore *edge_data,
-        size_t node_index_capacity,
-        bool is_directed
-    );
+        bool is_directed,
+        const int* outbound_node_ids,
+        const int* inbound_node_ids);
 
     HOST void update_temporal_weights_cuda(
         NodeEdgeIndexStore *node_edge_index,
