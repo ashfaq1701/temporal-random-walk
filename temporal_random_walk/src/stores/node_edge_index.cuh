@@ -101,8 +101,6 @@ namespace node_edge_index {
 
     HOST void allocate_node_edge_indices(NodeEdgeIndexStore* node_edge_index, bool is_directed);
 
-    HOST void allocate_node_timestamp_indices(NodeEdgeIndexStore* node_edge_index, bool is_directed);
-
     /**
      * Std implementations
      */
@@ -115,7 +113,10 @@ namespace node_edge_index {
     HOST void compute_node_edge_indices_std(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
-        bool is_directed
+        bool is_directed,
+        size_t outbound_buffer_size,
+        int* outbound_node_ids,
+        int* inbound_node_ids
     );
 
     HOST void compute_node_timestamp_offsets_and_indices_std(

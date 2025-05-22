@@ -173,23 +173,11 @@ HOST void node_edge_index::allocate_node_edge_offsets(NodeEdgeIndexStore *node_e
     fill_memory(node_edge_index->outbound_offsets, node_index_capacity + 1, static_cast<size_t>(0),
                 node_edge_index->use_gpu);
 
-    allocate_memory(&node_edge_index->outbound_timestamp_group_offsets, node_index_capacity + 1,
-                    node_edge_index->use_gpu);
-    node_edge_index->outbound_timestamp_group_offsets_size = node_index_capacity + 1;
-    fill_memory(node_edge_index->outbound_timestamp_group_offsets, node_index_capacity + 1, static_cast<size_t>(0),
-                node_edge_index->use_gpu);
-
     // For directed graphs, also allocate inbound structures
     if (is_directed) {
         allocate_memory(&node_edge_index->inbound_offsets, node_index_capacity + 1, node_edge_index->use_gpu);
         node_edge_index->inbound_offsets_size = node_index_capacity + 1;
         fill_memory(node_edge_index->inbound_offsets, node_index_capacity + 1, static_cast<size_t>(0),
-                    node_edge_index->use_gpu);
-
-        allocate_memory(&node_edge_index->inbound_timestamp_group_offsets, node_index_capacity + 1,
-                        node_edge_index->use_gpu);
-        node_edge_index->inbound_timestamp_group_offsets_size = node_index_capacity + 1;
-        fill_memory(node_edge_index->inbound_timestamp_group_offsets, node_index_capacity + 1, static_cast<size_t>(0),
                     node_edge_index->use_gpu);
     }
 }
@@ -233,53 +221,6 @@ HOST void node_edge_index::allocate_node_edge_indices(NodeEdgeIndexStore *node_e
 
         allocate_memory(&node_edge_index->inbound_indices, num_inbound_edges, node_edge_index->use_gpu);
         node_edge_index->inbound_indices_size = num_inbound_edges;
-    }
-}
-
-HOST void node_edge_index::allocate_node_timestamp_indices(NodeEdgeIndexStore *node_edge_index, const bool is_directed) {
-    size_t num_outbound_groups = 0;
-
-    #ifdef HAS_CUDA
-    if (node_edge_index->use_gpu) {
-        // For GPU memory, we need to copy the value back to host
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&num_outbound_groups,
-            node_edge_index->outbound_timestamp_group_offsets + (node_edge_index->outbound_timestamp_group_offsets_size
-                - 1),
-            sizeof(size_t),
-            cudaMemcpyDeviceToHost));
-    } else
-    #endif
-    {
-        // For CPU memory, we can access it directly
-        num_outbound_groups = node_edge_index->outbound_timestamp_group_offsets[
-            node_edge_index->outbound_timestamp_group_offsets_size - 1];
-    }
-
-    // Allocate memory for outbound timestamp group indices
-    allocate_memory(&node_edge_index->outbound_timestamp_group_indices, num_outbound_groups, node_edge_index->use_gpu);
-    node_edge_index->outbound_timestamp_group_indices_size = num_outbound_groups;
-
-    // For directed graphs, also allocate inbound timestamp group indices
-    if (is_directed) {
-        size_t num_inbound_groups = 0;
-
-        #ifdef HAS_CUDA
-        if (node_edge_index->use_gpu) {
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(&num_inbound_groups,
-                node_edge_index->inbound_timestamp_group_offsets + (node_edge_index->
-                    inbound_timestamp_group_offsets_size - 1),
-                sizeof(size_t),
-                cudaMemcpyDeviceToHost));
-        } else
-        #endif
-        {
-            num_inbound_groups = node_edge_index->inbound_timestamp_group_offsets[
-                node_edge_index->inbound_timestamp_group_offsets_size - 1];
-        }
-
-        allocate_memory(&node_edge_index->inbound_timestamp_group_indices, num_inbound_groups,
-                        node_edge_index->use_gpu);
-        node_edge_index->inbound_timestamp_group_indices_size = num_inbound_groups;
     }
 }
 
@@ -335,10 +276,12 @@ HOST void node_edge_index::compute_node_edge_offsets_std(
 HOST void node_edge_index::compute_node_edge_indices_std(
     NodeEdgeIndexStore* node_edge_index,
     const EdgeDataStore* edge_data,
-    const bool is_directed
+    const bool is_directed,
+    const size_t outbound_buffer_size,
+    int* outbound_node_ids,
+    int* inbound_node_ids
 ) {
     const size_t edges_size = edge_data->timestamps_size;
-    const size_t buffer_size = is_directed ? edges_size : edges_size * 2;
 
     const int* sources = edge_data->sources;
     const int* targets = edge_data->targets;
@@ -356,19 +299,17 @@ HOST void node_edge_index::compute_node_edge_indices_std(
     }
 
     // === Step 2: Generate node keys for sorting ===
-    std::vector<int> node_keys(buffer_size);
-
     #pragma omp parallel for
-    for (size_t i = 0; i < buffer_size; ++i) {
+    for (size_t i = 0; i < outbound_buffer_size; ++i) {
         const size_t edge_id = outbound_indices[i];
         const bool is_source = is_directed || (i % 2 == 0);
-        node_keys[i] = is_source ? sources[edge_id] : targets[edge_id];
+        outbound_node_ids[i] = is_source ? sources[edge_id] : targets[edge_id];
     }
 
     // === Step 3: Build a permutation array for indirect stable sort ===
-    std::vector<size_t> indices(buffer_size);
+    std::vector<size_t> indices(outbound_buffer_size);
     #pragma omp parallel for
-    for (size_t i = 0; i < buffer_size; ++i) {
+    for (size_t i = 0; i < outbound_buffer_size; ++i) {
         indices[i] = i;
     }
 
@@ -376,41 +317,61 @@ HOST void node_edge_index::compute_node_edge_indices_std(
     parallel::stable_sort(
         indices.begin(),
         indices.end(),
-        [&node_keys](const size_t a, const size_t b) {
-            return node_keys[a] < node_keys[b];
+        [&outbound_node_ids](const size_t a, const size_t b) {
+            return outbound_node_ids[a] < outbound_node_ids[b];
         }
     );
 
-    // === Step 5: Apply permutation to reorder outbound_indices ===
-    std::vector<size_t> sorted_outbound(buffer_size);
+    // === Step 5: Apply permutation to reorder outbound_indices and outbound_node_ids ===
+    std::vector<size_t> sorted_outbound_indices(outbound_buffer_size);
+    std::vector<int> sorted_outbound_node_ids(outbound_buffer_size);
+
     #pragma omp parallel for
-    for (size_t i = 0; i < buffer_size; ++i) {
-        sorted_outbound[i] = outbound_indices[indices[i]];
+    for (size_t i = 0; i < outbound_buffer_size; ++i) {
+        sorted_outbound_indices[i] = outbound_indices[indices[i]];
+        sorted_outbound_node_ids[i] = outbound_node_ids[indices[i]];
     }
 
     #pragma omp parallel for
-    for (size_t i = 0; i < buffer_size; ++i) {
-        outbound_indices[i] = sorted_outbound[i];
+    for (size_t i = 0; i < outbound_buffer_size; ++i) {
+        outbound_indices[i] = sorted_outbound_indices[i];
+        outbound_node_ids[i] = sorted_outbound_node_ids[i];
     }
 
     // === Step 6: Handle inbound_indices (only for directed graphs) ===
     if (is_directed) {
         size_t* inbound_indices = node_edge_index->inbound_indices;
 
-        // Fill with 0..edges_size-1
+        // Step 1: Fill with 0..edges_size-1
         #pragma omp parallel for
         for (size_t i = 0; i < edges_size; ++i) {
             inbound_indices[i] = i;
         }
 
-        // Stable sort directly by target node ID
-        parallel::stable_sort(
-            inbound_indices,
-            inbound_indices + edges_size,
-            [targets](const size_t a, const size_t b) {
-                return targets[a] < targets[b];
+        // Step 2: Fill inbound_node_ids = targets[i]
+        #pragma omp parallel for
+        for (size_t i = 0; i < edges_size; ++i) {
+            inbound_node_ids[i] = edge_data->targets[i];
+        }
+
+        // Step 3: Sort inbound_indices by inbound_node_ids
+        parallel::stable_sort(inbound_indices, inbound_indices + edges_size,
+            [inbound_node_ids](size_t a, size_t b) {
+                return inbound_node_ids[a] < inbound_node_ids[b];
             }
         );
+
+        // Step 4: Permute inbound_node_ids to match sorted inbound_indices
+        std::vector<int> sorted_inbound_node_ids(edges_size);
+        #pragma omp parallel for
+        for (size_t i = 0; i < edges_size; ++i) {
+            sorted_inbound_node_ids[i] = inbound_node_ids[inbound_indices[i]];
+        }
+
+        #pragma omp parallel for
+        for (size_t i = 0; i < edges_size; ++i) {
+            inbound_node_ids[i] = sorted_inbound_node_ids[i];
+        }
     }
 }
 
@@ -427,12 +388,6 @@ HOST void node_edge_index::compute_node_timestamp_offsets_and_indices_std(
     const size_t* outbound_indices = node_edge_index->outbound_indices;
     const size_t* inbound_indices = node_edge_index->inbound_indices;
 
-    size_t* outbound_group_indices = node_edge_index->outbound_timestamp_group_indices;
-    size_t* inbound_group_indices = node_edge_index->inbound_timestamp_group_indices;
-
-    size_t* outbound_group_offsets = node_edge_index->outbound_timestamp_group_offsets;
-    size_t* inbound_group_offsets = node_edge_index->inbound_timestamp_group_offsets;
-
     const size_t num_outbound = node_edge_index->outbound_indices_size;
     const size_t num_inbound = node_edge_index->inbound_indices_size;
 
@@ -440,32 +395,45 @@ HOST void node_edge_index::compute_node_timestamp_offsets_and_indices_std(
     {
         std::vector<size_t> flags(num_outbound, 0);
 
-        // Step 1: Mark group starts
+        // Step 1: Mark group start flags
         #pragma omp parallel for
         for (size_t i = 0; i < num_outbound; ++i) {
             if (i == 0) {
                 flags[i] = 1;
                 continue;
             }
-
-            const int node_curr = outbound_node_ids[i];
-            const int node_prev = outbound_node_ids[i - 1];
-
-            const int64_t ts_curr = timestamps[outbound_indices[i]];
-            const int64_t ts_prev = timestamps[outbound_indices[i - 1]];
-
-            flags[i] = (node_curr != node_prev || ts_curr != ts_prev) ? 1 : 0;
+            const int curr_node = outbound_node_ids[i];
+            const int prev_node = outbound_node_ids[i - 1];
+            const int64_t curr_ts = timestamps[outbound_indices[i]];
+            const int64_t prev_ts = timestamps[outbound_indices[i - 1]];
+            flags[i] = (curr_node != prev_node || curr_ts != prev_ts) ? 1 : 0;
         }
 
-        // Step 2: Scan to compute write positions
+        // Step 2: Compute number of groups
+        size_t num_groups = 0;
+        #pragma omp parallel for reduction(+:num_groups)
+        for (size_t i = 0; i < num_outbound; ++i) {
+            num_groups += flags[i];
+        }
+
+        resize_memory(
+            &node_edge_index->outbound_timestamp_group_indices,
+            node_edge_index->outbound_timestamp_group_indices_size,
+            num_groups,
+            node_edge_index->use_gpu
+        );
+        node_edge_index->outbound_timestamp_group_indices_size = num_groups;
+
+        size_t* group_indices_out = node_edge_index->outbound_timestamp_group_indices;
+
+        // Step 3: Write group start indices using exclusive scan over flags
         std::vector<size_t> flag_scan(num_outbound + 1, 0);
         parallel_exclusive_scan(flags.data(), flag_scan.data(), num_outbound);
 
-        // Step 3: Write group indices
         #pragma omp parallel for
         for (size_t i = 0; i < num_outbound; ++i) {
             if (flags[i]) {
-                outbound_group_indices[flag_scan[i]] = i;
+                group_indices_out[flag_scan[i]] = i;
             }
         }
 
@@ -479,10 +447,22 @@ HOST void node_edge_index::compute_node_timestamp_offsets_and_indices_std(
             group_counts[node]++;
         }
 
-        // Step 5: Compute group_offsets[1..], set group_offsets[0] = 0
-        outbound_group_offsets[0] = 0;
+        // Step 5: Allocate and compute group offsets
+        resize_memory(
+            &node_edge_index->outbound_timestamp_group_offsets,
+            node_edge_index->outbound_timestamp_group_offsets_size,
+            node_count + 1,
+            node_edge_index->use_gpu
+        );
+        node_edge_index->outbound_timestamp_group_offsets_size = node_count + 1;
+
+        node_edge_index->outbound_timestamp_group_offsets[0] = 0;
         parallel_inclusive_scan(group_counts.data(), node_count);
-        std::copy(group_counts.begin(), group_counts.end(), outbound_group_offsets + 1);
+
+        #pragma omp parallel for
+        for (size_t i = 0; i < node_count; ++i) {
+            node_edge_index->outbound_timestamp_group_offsets[i + 1] = group_counts[i];
+        }
     }
 
     // === INBOUND ===
@@ -495,15 +475,28 @@ HOST void node_edge_index::compute_node_timestamp_offsets_and_indices_std(
                 flags[i] = 1;
                 continue;
             }
-
-            const int node_curr = inbound_node_ids[i];
-            const int node_prev = inbound_node_ids[i - 1];
-
-            const int64_t ts_curr = timestamps[inbound_indices[i]];
-            const int64_t ts_prev = timestamps[inbound_indices[i - 1]];
-
-            flags[i] = (node_curr != node_prev || ts_curr != ts_prev) ? 1 : 0;
+            const int curr_node = inbound_node_ids[i];
+            const int prev_node = inbound_node_ids[i - 1];
+            const int64_t curr_ts = timestamps[inbound_indices[i]];
+            const int64_t prev_ts = timestamps[inbound_indices[i - 1]];
+            flags[i] = (curr_node != prev_node || curr_ts != prev_ts) ? 1 : 0;
         }
+
+        size_t num_groups = 0;
+        #pragma omp parallel for reduction(+:num_groups)
+        for (size_t i = 0; i < num_inbound; ++i) {
+            num_groups += flags[i];
+        }
+
+        resize_memory(
+            &node_edge_index->inbound_timestamp_group_indices,
+            node_edge_index->inbound_timestamp_group_indices_size,
+            num_groups,
+            node_edge_index->use_gpu
+        );
+        node_edge_index->inbound_timestamp_group_indices_size = num_groups;
+
+        size_t* group_indices_out = node_edge_index->inbound_timestamp_group_indices;
 
         std::vector<size_t> flag_scan(num_inbound + 1, 0);
         parallel_exclusive_scan(flags.data(), flag_scan.data(), num_inbound);
@@ -511,7 +504,7 @@ HOST void node_edge_index::compute_node_timestamp_offsets_and_indices_std(
         #pragma omp parallel for
         for (size_t i = 0; i < num_inbound; ++i) {
             if (flags[i]) {
-                inbound_group_indices[flag_scan[i]] = i;
+                group_indices_out[flag_scan[i]] = i;
             }
         }
 
@@ -524,9 +517,21 @@ HOST void node_edge_index::compute_node_timestamp_offsets_and_indices_std(
             group_counts[node]++;
         }
 
-        inbound_group_offsets[0] = 0;
+        resize_memory(
+            &node_edge_index->inbound_timestamp_group_offsets,
+            node_edge_index->inbound_timestamp_group_offsets_size,
+            node_count + 1,
+            node_edge_index->use_gpu
+        );
+        node_edge_index->inbound_timestamp_group_offsets_size = node_count + 1;
+
+        node_edge_index->inbound_timestamp_group_offsets[0] = 0;
         parallel_inclusive_scan(group_counts.data(), node_count);
-        std::copy(group_counts.begin(), group_counts.end(), inbound_group_offsets + 1);
+
+        #pragma omp parallel for
+        for (size_t i = 0; i < node_count; ++i) {
+            node_edge_index->inbound_timestamp_group_offsets[i + 1] = group_counts[i];
+        }
     }
 }
 
@@ -780,21 +785,24 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
     CUDA_KERNEL_CHECK("Sorted indices by node keys");
 
     // === Step 5: Apply permutation to reorder outbound_indices ===
-    thrust::device_vector<size_t> sorted_outbound(outbound_buffer_size);
+    thrust::device_vector<size_t> sorted_outbound_indices(outbound_buffer_size);
+
+
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<thrust::device_ptr<int>::difference_type>(0),
         thrust::make_counting_iterator<thrust::device_ptr<int>::difference_type>(static_cast<long>(outbound_buffer_size)),
-        [sorted_outbound = sorted_outbound.data(), outbound_indices, indices = indices.data()] DEVICE (const thrust::device_ptr<int>::difference_type i) {
-            sorted_outbound[i] = outbound_indices[indices[i]];
+        [sorted_outbound_indices = sorted_outbound_indices.data(),
+            outbound_indices, indices = indices.data()] DEVICE (const thrust::device_ptr<int>::difference_type i) {
+            sorted_outbound_indices[i] = outbound_indices[indices[i]];
         }
     );
     CUDA_KERNEL_CHECK("Applied permutation");
 
     thrust::copy(
         DEVICE_EXECUTION_POLICY,
-        sorted_outbound.begin(),
-        sorted_outbound.end(),
+        sorted_outbound_indices.begin(),
+        sorted_outbound_indices.end(),
         outbound_indices
     );
     CUDA_KERNEL_CHECK("Copied sorted results");
@@ -822,6 +830,7 @@ HOST void node_edge_index::compute_node_edge_indices_cuda(
             inbound_node_ids,
             inbound_indices,
             edges_size);
+
         CUDA_KERNEL_CHECK("Sorted inbound_indices by target node");
     }
 }
@@ -840,12 +849,10 @@ HOST void node_edge_index::compute_node_timestamp_offsets_and_indices_cuda(
     {
         const size_t num_edges = node_edge_index->outbound_indices_size;
         size_t* indices = node_edge_index->outbound_indices;
-        size_t* group_indices = node_edge_index->outbound_timestamp_group_indices;
-        size_t* group_offsets = node_edge_index->outbound_timestamp_group_offsets;
 
-        // Step 1: Mark group starts
+        // Step 1: Mark timestamp group starts
         thrust::device_vector<int> flags(num_edges, 0);
-        int* flags_ptr = thrust::raw_pointer_cast(flags.data());
+        auto flags_ptr = thrust::raw_pointer_cast(flags.data());
 
         thrust::transform(
             DEVICE_EXECUTION_POLICY,
@@ -862,52 +869,78 @@ HOST void node_edge_index::compute_node_timestamp_offsets_and_indices_cuda(
             }
         );
 
-        // Step 2: Write group_indices using copy_if
+        // Step 2: Compute number of groups
+        const size_t num_groups = thrust::reduce(
+            DEVICE_EXECUTION_POLICY,
+            flags.begin(),
+            flags.end(),
+            0,
+            thrust::plus<int>()
+        );
+
+        // Resize output
+        resize_memory(
+            &node_edge_index->outbound_timestamp_group_indices,
+            node_edge_index->outbound_timestamp_group_indices_size,
+            num_groups,
+            node_edge_index->use_gpu
+        );
+        node_edge_index->outbound_timestamp_group_indices_size = num_groups;
+
+        size_t* group_indices_out = node_edge_index->outbound_timestamp_group_indices;
+
+        // Step 3: Copy group start edge indices
         thrust::copy_if(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(num_edges),
             flags.begin(),
-            group_indices,
+            group_indices_out,
             [] DEVICE(const int flag) { return flag != 0; }
         );
 
-        // Step 3: Count group starts per node
+        // Step 4: Count group starts per node
         thrust::device_vector<size_t> group_counts(node_count, 0);
-        size_t* group_counts_ptr = thrust::raw_pointer_cast(group_counts.data());
+        auto group_counts_ptr = thrust::raw_pointer_cast(group_counts.data());
 
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(num_edges),
-            [flags_ptr, outbound_node_ids, group_counts_ptr] DEVICE(const size_t i) {
+            [flags_ptr, outbound_node_ids, group_counts_ptr] DEVICE(size_t i) {
                 if (flags_ptr[i]) {
                     atomicAdd(reinterpret_cast<unsigned int*>(&group_counts_ptr[outbound_node_ids[i]]), 1);
                 }
             }
         );
 
-        // Step 4: Inclusive scan → group offsets
-        CUDA_CHECK_AND_CLEAR(cudaMemset(group_offsets, 0, sizeof(size_t)));
+        // Step 5: Compute offsets
+        resize_memory(
+            &node_edge_index->outbound_timestamp_group_offsets,
+            node_edge_index->outbound_timestamp_group_offsets_size,
+            node_count + 1,
+            node_edge_index->use_gpu
+        );
+        node_edge_index->outbound_timestamp_group_offsets_size = node_count + 1;
+
+        CUDA_CHECK_AND_CLEAR(cudaMemset(node_edge_index->outbound_timestamp_group_offsets, 0, sizeof(size_t)));
 
         thrust::inclusive_scan(
             DEVICE_EXECUTION_POLICY,
             group_counts.begin(),
             group_counts.end(),
-            group_offsets + 1
+            node_edge_index->outbound_timestamp_group_offsets + 1
         );
-        CUDA_KERNEL_CHECK("Completed outbound timestamp group offsets/indices");
+        CUDA_KERNEL_CHECK("Completed outbound timestamp groups");
     }
 
-    // === INBOUND ===
+    // === INBOUND (if directed) ===
     if (is_directed) {
         const size_t num_edges = node_edge_index->inbound_indices_size;
         size_t* indices = node_edge_index->inbound_indices;
-        size_t* group_indices = node_edge_index->inbound_timestamp_group_indices;
-        size_t* group_offsets = node_edge_index->inbound_timestamp_group_offsets;
 
         thrust::device_vector<int> flags(num_edges, 0);
-        int* flags_ptr = thrust::raw_pointer_cast(flags.data());
+        auto flags_ptr = thrust::raw_pointer_cast(flags.data());
 
         thrust::transform(
             DEVICE_EXECUTION_POLICY,
@@ -924,38 +957,64 @@ HOST void node_edge_index::compute_node_timestamp_offsets_and_indices_cuda(
             }
         );
 
+        const size_t num_groups = thrust::reduce(
+            DEVICE_EXECUTION_POLICY,
+            flags.begin(),
+            flags.end(),
+            0,
+            thrust::plus<int>()
+        );
+
+        resize_memory(
+            &node_edge_index->inbound_timestamp_group_indices,
+            node_edge_index->inbound_timestamp_group_indices_size,
+            num_groups,
+            node_edge_index->use_gpu
+        );
+        node_edge_index->inbound_timestamp_group_indices_size = num_groups;
+
+        size_t* group_indices_out = node_edge_index->inbound_timestamp_group_indices;
+
         thrust::copy_if(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(num_edges),
             flags.begin(),
-            group_indices,
+            group_indices_out,
             [] DEVICE(const int flag) { return flag != 0; }
         );
 
         thrust::device_vector<size_t> group_counts(node_count, 0);
-        size_t* group_counts_ptr = thrust::raw_pointer_cast(group_counts.data());
+        auto group_counts_ptr = thrust::raw_pointer_cast(group_counts.data());
 
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(num_edges),
-            [flags_ptr, inbound_node_ids, group_counts_ptr] DEVICE(size_t i) {
+            [flags_ptr, inbound_node_ids, group_counts_ptr] DEVICE(const size_t i) {
                 if (flags_ptr[i]) {
                     atomicAdd(reinterpret_cast<unsigned int*>(&group_counts_ptr[inbound_node_ids[i]]), 1);
                 }
             }
         );
 
-        CUDA_CHECK_AND_CLEAR(cudaMemset(group_offsets, 0, sizeof(size_t)));
+        resize_memory(
+            &node_edge_index->inbound_timestamp_group_offsets,
+            node_edge_index->inbound_timestamp_group_offsets_size,
+            node_count + 1,
+            node_edge_index->use_gpu
+        );
+        node_edge_index->inbound_timestamp_group_offsets_size = node_count + 1;
+
+        CUDA_CHECK_AND_CLEAR(cudaMemset(node_edge_index->inbound_timestamp_group_offsets, 0, sizeof(size_t)));
 
         thrust::inclusive_scan(
             DEVICE_EXECUTION_POLICY,
             group_counts.begin(),
             group_counts.end(),
-            group_offsets + 1
+            node_edge_index->inbound_timestamp_group_offsets + 1
         );
-        CUDA_KERNEL_CHECK("Completed inbound timestamp group offsets/indices");
+        CUDA_KERNEL_CHECK("Completed inbound timestamp groups");
     }
 }
 
@@ -1332,7 +1391,7 @@ HOST void node_edge_index::rebuild(
     // Step 2: Allocate and compute node edge indices
     allocate_node_edge_indices(node_edge_index, is_directed);
 
-    const size_t num_edges = edge_data->active_node_ids_size;
+    const size_t num_edges = edge_data->timestamps_size;
     const size_t outbound_buffer_size = is_directed ? num_edges : num_edges * 2;
 
     int* outbound_node_ids = nullptr;
@@ -1357,14 +1416,14 @@ HOST void node_edge_index::rebuild(
         compute_node_edge_indices_std(
             node_edge_index,
             edge_data,
-            is_directed
+            is_directed,
+            outbound_buffer_size,
+            outbound_node_ids,
+            inbound_node_ids
         );
     }
 
-    // Step 3: Allocate timestamp indices
-    allocate_node_timestamp_indices(node_edge_index, is_directed);
-
-    // Step 4 + 5: Compute timestamp group offsets AND group indices
+    // Step 3 + 4: Compute timestamp group offsets AND group indices
     #ifdef HAS_CUDA
     if (node_edge_index->use_gpu) {
         compute_node_timestamp_offsets_and_indices_cuda(

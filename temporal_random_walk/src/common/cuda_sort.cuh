@@ -56,7 +56,7 @@ void cub_radix_sort_values_by_keys(
 
 template <typename KeyType, typename ValueType>
 void cub_radix_sort_keys_and_values(
-    const KeyType* d_keys,  // Input keys
+    KeyType* d_keys,  // Input keys
     ValueType* d_values,    // Input/output values
     size_t num_items        // Number of items to sort
 )
