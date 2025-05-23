@@ -1,5 +1,5 @@
-#ifndef TEMPORAL_RANDOM_WALK_KERNELS_CUH
-#define TEMPORAL_RANDOM_WALK_KERNELS_CUH
+#ifndef TEMPORAL_RANDOM_WALK_KERNELS_STEP_BASED_CUH
+#define TEMPORAL_RANDOM_WALK_KERNELS_STEP_BASED_CUH
 
 #include "../data/walk_set/walk_set.cuh"
 #include "../stores/temporal_graph.cuh"
@@ -233,7 +233,7 @@ namespace temporal_random_walk {
         }
     }
 
-    inline void launch_random_walk_kernel(
+    inline void launch_random_walk_kernel_step_based(
         TemporalGraphStore *temporal_graph,
         const bool is_directed,
         const WalkSet *walk_set,
@@ -306,6 +306,7 @@ namespace temporal_random_walk {
     }
 
     #endif
+
 }
 
-#endif //TEMPORAL_RANDOM_WALK_KERNELS_CUH
+#endif //TEMPORAL_RANDOM_WALK_KERNELS_STEP_BASED_CUH
