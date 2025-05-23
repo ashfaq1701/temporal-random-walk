@@ -4,14 +4,12 @@
 #include <thrust/device_ptr.h>
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/sequence.h>
-#include <thrust/binary_search.h>
 #include "../common/cuda_sort.cuh"
 #endif
 
 #include <omp.h>
 #include <cmath>
 #include <algorithm>
-
 #include "../utils/omp_utils.cuh"
 #include "../common/parallel_algorithms.cuh"
 #include "../common/cuda_config.cuh"
@@ -1229,7 +1227,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
     double timescale_bound
 ) {
     // Get the number of nodes and timestamp groups
-    size_t node_index_capacity = node_edge_index->outbound_offsets_size - 1;
+    const size_t node_index_capacity = node_edge_index->outbound_offsets_size - 1;
     const size_t outbound_groups_size = node_edge_index->outbound_timestamp_group_indices_size;
 
     // Resize outbound weight arrays
@@ -1269,20 +1267,18 @@ HOST void node_edge_index::update_temporal_weights_cuda(
 
         size_t* outbound_offsets_ptr = outbound_offsets.data;
 
-        thrust::upper_bound(
+        thrust::for_each(
             DEVICE_EXECUTION_POLICY,
-            outbound_offsets_ptr,
-            outbound_offsets_ptr + node_index_capacity + 1,
             thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(outbound_groups_size),
-            group_to_node.begin()
-        );
+            thrust::make_counting_iterator<size_t>(node_index_capacity),
+            [outbound_offsets_ptr, group_to_node_ptr] DEVICE(const size_t node) {
+                const size_t out_start = outbound_offsets_ptr[node];
+                const size_t out_end = outbound_offsets_ptr[node + 1];
 
-        thrust::transform(
-            DEVICE_EXECUTION_POLICY,
-            group_to_node.begin(), group_to_node.end(),
-            group_to_node.begin(),
-            [] DEVICE(const size_t x) { return x - 1; }
+                for (size_t pos = out_start; pos < out_end; ++pos) {
+                    group_to_node_ptr[pos] = node;
+                }
+            }
         );
 
         // Step 2: Compute min/max timestamps per node
@@ -1428,8 +1424,6 @@ HOST void node_edge_index::update_temporal_weights_cuda(
 
     // Process inbound weights (only backward)
     if (node_edge_index->inbound_offsets_size > 0) {
-        node_index_capacity = node_edge_index->inbound_offsets_size - 1;
-
         MemoryView<size_t> inbound_offsets = get_timestamp_offset_vector(node_edge_index, false, true);
         const size_t inbound_groups_size = node_edge_index->inbound_timestamp_group_indices_size;
 
@@ -1438,22 +1432,6 @@ HOST void node_edge_index::update_temporal_weights_cuda(
         auto group_to_node_ptr = thrust::raw_pointer_cast(group_to_node.data());
 
         size_t* inbound_offsets_ptr = inbound_offsets.data;
-
-        thrust::upper_bound(
-            DEVICE_EXECUTION_POLICY,
-            inbound_offsets_ptr,
-            inbound_offsets_ptr + node_index_capacity + 1,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(inbound_groups_size),
-            group_to_node.begin()
-        );
-
-        thrust::transform(
-            DEVICE_EXECUTION_POLICY,
-            group_to_node.begin(), group_to_node.end(),
-            group_to_node.begin(),
-            [] DEVICE(const size_t x) { return x - 1; }
-        );
 
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
