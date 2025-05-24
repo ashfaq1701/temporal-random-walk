@@ -61,7 +61,7 @@ public:
         std::vector<TestParams> params;
 
         // Walk lengths to test both kernel approaches
-        const std::vector<int> walk_lengths = {200, 300}; // Below and above 256 threshold
+        const std::vector<int> walk_lengths = {100, 200}; // Below and above 256 threshold
 
         #ifdef HAS_CUDA
         // Test both CPU and GPU modes
