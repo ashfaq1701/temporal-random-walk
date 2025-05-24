@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <iostream>
 
+#include "../src/core/helpers.cuh"
 #include "../src/proxies/TemporalRandomWalk.cuh"
 #include "test_utils.h"
 #include "../test/test_utils.h"
