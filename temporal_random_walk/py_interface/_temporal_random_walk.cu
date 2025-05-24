@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include "../src/data/enums.cuh"
 #include "../src/common/const.cuh"
+#include "../src/core/helpers.cuh"
 
 namespace py = pybind11;
 
