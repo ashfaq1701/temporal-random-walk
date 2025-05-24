@@ -9,7 +9,7 @@
 #include "../utils/random.cuh"
 #include "../common/setup.cuh"
 #include "../common/random_gen.cuh"
-#include "temporal_random_walk_kernels_launcher.cuh"
+#include "../data/enums.cuh"
 
 struct TemporalRandomWalkStore {
     bool is_directed;
