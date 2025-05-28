@@ -138,9 +138,9 @@ PYBIND11_MODULE(_temporal_random_walk, m)
 
                 py::array_t lens_array(
                     py::array::ShapeContainer{static_cast<ssize_t>(walk_set.num_walks)},
-                    py::array::StridesContainer{static_cast<ssize_t>(sizeof(int))},
+                    py::array::StridesContainer{static_cast<ssize_t>(sizeof(size_t))},
                     walk_set.walk_lens,
-                    py::capsule(walk_set.walk_lens, [](void* p) { delete[] static_cast<int*>(p); })
+                    py::capsule(walk_set.walk_lens, [](void* p) { delete[] static_cast<size_t*>(p); })
                 );
 
                 walk_set.owns_data = false;
@@ -211,9 +211,9 @@ PYBIND11_MODULE(_temporal_random_walk, m)
 
                 py::array_t lens_array(
                     py::array::ShapeContainer{static_cast<ssize_t>(walk_set.num_walks)},
-                    py::array::StridesContainer{static_cast<ssize_t>(sizeof(int))},
+                    py::array::StridesContainer{static_cast<ssize_t>(sizeof(size_t))},
                     walk_set.walk_lens,
-                    py::capsule(walk_set.walk_lens, [](void* p) { delete[] static_cast<int*>(p); })
+                    py::capsule(walk_set.walk_lens, [](void* p) { delete[] static_cast<size_t*>(p); })
                 );
 
                 walk_set.owns_data = false;
