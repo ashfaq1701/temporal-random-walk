@@ -119,7 +119,7 @@ namespace node_edge_index {
         int* inbound_node_ids
     );
 
-    HOST void allocate_and_compute_node_node_counts_and_offsets_std(
+    HOST void allocate_and_compute_node_ts_groups_counts_and_offsets_std(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
         size_t node_count,
@@ -151,7 +151,7 @@ namespace node_edge_index {
         int* inbound_node_ids
     );
 
-    HOST void allocate_and_compute_node_node_counts_and_offsets_cuda(
+    HOST void allocate_and_compute_node_ts_groups_counts_and_offsets_cuda(
         NodeEdgeIndexStore *node_edge_index,
         const EdgeDataStore *edge_data,
         size_t node_count,

@@ -376,7 +376,7 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_std(
     }
 }
 
-HOST void node_edge_index::allocate_and_compute_node_node_counts_and_offsets_std(
+HOST void node_edge_index::allocate_and_compute_node_ts_groups_counts_and_offsets_std(
     NodeEdgeIndexStore* node_edge_index,
     const EdgeDataStore* edge_data,
     const size_t node_count,
@@ -1011,7 +1011,7 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_cuda(
     }
 }
 
-HOST void node_edge_index::allocate_and_compute_node_node_counts_and_offsets_cuda(
+HOST void node_edge_index::allocate_and_compute_node_ts_groups_counts_and_offsets_cuda(
     NodeEdgeIndexStore *node_edge_index,
     const EdgeDataStore *edge_data,
     const size_t node_count,
@@ -1792,7 +1792,7 @@ HOST void node_edge_index::rebuild(
     // Step 3 + 4: Compute timestamp group offsets AND group indices
     #ifdef HAS_CUDA
     if (node_edge_index->use_gpu) {
-        allocate_and_compute_node_node_counts_and_offsets_cuda(
+        allocate_and_compute_node_ts_groups_counts_and_offsets_cuda(
             node_edge_index,
             edge_data,
             edge_data->active_node_ids_size,
@@ -1803,7 +1803,7 @@ HOST void node_edge_index::rebuild(
     } else
     #endif
     {
-        allocate_and_compute_node_node_counts_and_offsets_std(
+        allocate_and_compute_node_ts_groups_counts_and_offsets_std(
             node_edge_index,
             edge_data,
             edge_data->active_node_ids_size,

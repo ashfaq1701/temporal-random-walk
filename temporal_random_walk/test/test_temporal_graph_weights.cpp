@@ -211,8 +211,8 @@ TYPED_TEST(TemporalGraphWeightTest, TimescaleBoundSampling) {
     for (int i = 0; i < num_samples; i++) {
         auto [u1, i1, ts1] = scaled_graph.get_edge_at_with_provided_nums(RandomPickerType::ExponentialWeight, random_nums + i * 4, 20, true);
         auto [u2, i2, ts2] = unscaled_graph.get_edge_at_with_provided_nums(RandomPickerType::ExponentialWeight, random_nums + i * 4 + 2, 20, true);
-        scaled_samples[ts1]++;
-        unscaled_samples[ts2]++;
+        ++scaled_samples[ts1];
+        ++unscaled_samples[ts2];
     }
 
     // Both should maintain same ordering of preferences
