@@ -101,11 +101,11 @@ TYPED_TEST(NodeEdgeIndexWeightTest, DirectedWeightNormalization) {
     this->setup_test_graph(true);
 
     // Verify per-node weight normalization
-    this->verify_node_weights(this->index.outbound_timestamp_group_offsets(),
+    this->verify_node_weights(this->index.count_ts_group_per_node_outbound(),
         this->index.outbound_forward_cumulative_weights_exponential());
-    this->verify_node_weights(this->index.outbound_timestamp_group_offsets(),
+    this->verify_node_weights(this->index.count_ts_group_per_node_outbound(),
         this->index.outbound_backward_cumulative_weights_exponential());
-    this->verify_node_weights(this->index.inbound_timestamp_group_offsets(),
+    this->verify_node_weights(this->index.count_ts_group_per_node_inbound(),
         this->index.inbound_backward_cumulative_weights_exponential());
 }
 
@@ -124,7 +124,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightBiasPerNode) {
     // Forward weights: exp(-(t - t_min))
     auto forward = this->get_individual_weights(
         this->index.outbound_forward_cumulative_weights_exponential(),
-        this->index.outbound_timestamp_group_offsets(), 1);
+        this->index.count_ts_group_per_node_outbound(), 1);
 
     for (size_t i = 0; i < forward.size() - 1; i++) {
         double expected_ratio = exp(-10); // Time diff between groups is 100
@@ -134,7 +134,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightBiasPerNode) {
     // Backward weights: exp(t - t_min)
     auto backward = this->get_individual_weights(
         this->index.outbound_backward_cumulative_weights_exponential(),
-        this->index.outbound_timestamp_group_offsets(), 1);
+        this->index.count_ts_group_per_node_outbound(), 1);
 
     for (size_t i = 0; i < backward.size() - 1; i++) {
         double expected_ratio = exp(10); // Time diff between groups is 100
@@ -157,7 +157,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, ScaledWeightRatios) {
 
     const auto forward = this->get_individual_weights(
         this->index.outbound_forward_cumulative_weights_exponential(),
-        this->index.outbound_timestamp_group_offsets(), 1);
+        this->index.count_ts_group_per_node_outbound(), 1);
 
     // Time range is 400, scale = 2.0/400 = 0.005
     constexpr double time_scale = timescale_bound / 400.0;
@@ -172,7 +172,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, ScaledWeightRatios) {
 
     auto backward = this->get_individual_weights(
         this->index.outbound_backward_cumulative_weights_exponential(),
-        this->index.outbound_timestamp_group_offsets(), 1);
+        this->index.count_ts_group_per_node_outbound(), 1);
 
     for (size_t i = 0; i < backward.size() - 1; i++) {
         constexpr double scaled_diff = 200 * time_scale;
@@ -186,9 +186,9 @@ TYPED_TEST(NodeEdgeIndexWeightTest, UndirectedWeightNormalization) {
    this->setup_test_graph(false);
 
    // For undirected, should only have outbound weights
-   this->verify_node_weights(this->index.outbound_timestamp_group_offsets(),
+   this->verify_node_weights(this->index.count_ts_group_per_node_outbound(),
                       this->index.outbound_forward_cumulative_weights_exponential());
-   this->verify_node_weights(this->index.outbound_timestamp_group_offsets(),
+   this->verify_node_weights(this->index.count_ts_group_per_node_outbound(),
                       this->index.outbound_backward_cumulative_weights_exponential());
    EXPECT_TRUE(this->index.inbound_backward_cumulative_weights_exponential().empty());
 }
@@ -212,7 +212,7 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightConsistencyAcrossUpdates) {
 
    // Weights should be different but still normalized
    EXPECT_NE(original_out_forward.size(), this->index.outbound_forward_cumulative_weights_exponential().size());
-   this->verify_node_weights(this->index.outbound_timestamp_group_offsets(),
+   this->verify_node_weights(this->index.count_ts_group_per_node_outbound(),
                       this->index.outbound_forward_cumulative_weights_exponential());
 }
 
@@ -228,9 +228,9 @@ TYPED_TEST(NodeEdgeIndexWeightTest, SingleTimestampGroupPerNode) {
    this->index.update_temporal_weights(edges.edge_data, -1);
 
    // Each node should have single weight of 1.0
-   for (size_t node = 0; node < this->index.outbound_timestamp_group_offsets().size() - 1; node++) {
-       const size_t start = this->index.outbound_timestamp_group_offsets()[node];
-       size_t end = this->index.outbound_timestamp_group_offsets()[node + 1];
+   for (size_t node = 0; node < this->index.count_ts_group_per_node_outbound().size() - 1; node++) {
+       const size_t start = this->index.count_ts_group_per_node_outbound()[node];
+       size_t end = this->index.count_ts_group_per_node_outbound()[node + 1];
        if (start < end) {
            EXPECT_EQ(end - start, 1);
            EXPECT_NEAR(this->index.outbound_forward_cumulative_weights_exponential()[start], 1.0, 1e-6);
@@ -249,9 +249,9 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundZero) {
     this->index.rebuild(edges.edge_data, true);
     this->index.update_temporal_weights(edges.edge_data, 0);  // Should behave like -1
 
-    this->verify_node_weights(this->index.outbound_timestamp_group_offsets(),
+    this->verify_node_weights(this->index.count_ts_group_per_node_outbound(),
                        this->index.outbound_forward_cumulative_weights_exponential());
-    this->verify_node_weights(this->index.outbound_timestamp_group_offsets(),
+    this->verify_node_weights(this->index.count_ts_group_per_node_outbound(),
                        this->index.outbound_backward_cumulative_weights_exponential());
 }
 
@@ -271,8 +271,8 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundWithSingleTimestamp) {
         this->index.update_temporal_weights(edges.edge_data, bound);
 
         // Node should have single group with weight 1.0
-        const size_t start = this->index.outbound_timestamp_group_offsets()[node_id];
-        const size_t end = this->index.outbound_timestamp_group_offsets()[node_id + 1];
+        const size_t start = this->index.count_ts_group_per_node_outbound()[node_id];
+        const size_t end = this->index.count_ts_group_per_node_outbound()[node_id + 1];
         ASSERT_EQ(end - start, 1) << "Node should have exactly one timestamp group";
         EXPECT_NEAR(this->index.outbound_forward_cumulative_weights_exponential()[start], 1.0, 1e-6);
         EXPECT_NEAR(this->index.outbound_backward_cumulative_weights_exponential()[start], 1.0, 1e-6);
@@ -297,8 +297,8 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightOrderPreservation) {
     this->index.update_temporal_weights(edges.edge_data, 10.0);
 
     // Check relative ordering is preserved for node 1
-    const size_t start = this->index.outbound_timestamp_group_offsets()[1];
-    const size_t end = this->index.outbound_timestamp_group_offsets()[2];
+    const size_t start = this->index.count_ts_group_per_node_outbound()[1];
+    const size_t end = this->index.count_ts_group_per_node_outbound()[2];
     for (size_t i = start + 1; i < end; i++) {
         // If unscaled weights were increasing/decreasing, scaled weights should follow
         EXPECT_EQ(unscaled_forward[i] > unscaled_forward[i-1],
@@ -325,12 +325,12 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleNormalizationTest) {
     this->index.update_temporal_weights(edges.edge_data, timescale_bound);
 
     // Get host data for group offsets and start/end indices
-    const auto host_offsets = this->index.outbound_timestamp_group_offsets();
+    const auto host_offsets = this->index.count_ts_group_per_node_outbound();
 
     // Get individual weights using helper method
     const auto weights = this->get_individual_weights(
         this->index.outbound_forward_cumulative_weights_exponential(),
-        this->index.outbound_timestamp_group_offsets(),
+        this->index.count_ts_group_per_node_outbound(),
         1  // Node index
     );
 

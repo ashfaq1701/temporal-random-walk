@@ -54,14 +54,14 @@ TYPED_TEST_SUITE(NodeEdgeIndexTest, GPU_USAGE_TYPES);
 
 // Test empty state
 TYPED_TEST(NodeEdgeIndexTest, EmptyStateTest) {
-    EXPECT_TRUE(this->index.outbound_offsets().empty());
-    EXPECT_TRUE(this->index.outbound_indices().empty());
-    EXPECT_TRUE(this->index.outbound_timestamp_group_offsets().empty());
-    EXPECT_TRUE(this->index.outbound_timestamp_group_indices().empty());
-    EXPECT_TRUE(this->index.inbound_offsets().empty());
-    EXPECT_TRUE(this->index.inbound_indices().empty());
-    EXPECT_TRUE(this->index.inbound_timestamp_group_offsets().empty());
-    EXPECT_TRUE(this->index.inbound_timestamp_group_indices().empty());
+    EXPECT_TRUE(this->index.node_groups_outbound_offsets().empty());
+    EXPECT_TRUE(this->index.node_ts_sorted_outbound_indices().empty());
+    EXPECT_TRUE(this->index.count_ts_group_per_node_outbound().empty());
+    EXPECT_TRUE(this->index.node_ts_groups_outbound_offsets().empty());
+    EXPECT_TRUE(this->index.node_groups_inbound_offsets().empty());
+    EXPECT_TRUE(this->index.node_ts_sorted_inbound_indices().empty());
+    EXPECT_TRUE(this->index.count_ts_group_per_node_inbound().empty());
+    EXPECT_TRUE(this->index.node_ts_groups_inbound_offsets().empty());
 }
 
 // Test edge ranges in directed graph
@@ -74,7 +74,7 @@ TYPED_TEST(NodeEdgeIndexTest, DirectedEdgeRangeTest) {
 
     // Verify each outbound edge
     for (size_t i = out_start10; i < out_end10; i++) {
-        size_t edge_idx = this->index.outbound_indices()[i];
+        size_t edge_idx = this->index.node_ts_sorted_outbound_indices()[i];
         EXPECT_EQ(this->edges.sources()[edge_idx], 10);  // All should be from node 10
     }
 
@@ -84,7 +84,7 @@ TYPED_TEST(NodeEdgeIndexTest, DirectedEdgeRangeTest) {
 
     // Verify each inbound edge
     for (size_t i = in_start20; i < in_end20; i++) {
-        size_t edge_idx = this->index.inbound_indices()[i];
+        size_t edge_idx = this->index.node_ts_sorted_inbound_indices()[i];
         EXPECT_EQ(this->edges.targets()[edge_idx], 20);  // All should be to node 20
     }
 
@@ -107,7 +107,7 @@ TYPED_TEST(NodeEdgeIndexTest, DirectedTimestampGroupTest) {
 
     // Verify all edges in first group
     for (size_t i = group1_start; i < group1_end; i++) {
-        size_t edge_idx = this->index.outbound_indices()[i];
+        size_t edge_idx = this->index.node_ts_sorted_outbound_indices()[i];
         EXPECT_EQ(this->edges.timestamps()[edge_idx], 100);
         EXPECT_EQ(this->edges.sources()[edge_idx], 10);
         EXPECT_TRUE(this->edges.targets()[edge_idx] == 20 || this->edges.targets()[edge_idx] == 30);
@@ -118,7 +118,7 @@ TYPED_TEST(NodeEdgeIndexTest, DirectedTimestampGroupTest) {
     EXPECT_EQ(group2_end - group2_start, 1);  // One edge in timestamp 200
 
     // Verify edge in second group
-    size_t edge_idx = this->index.outbound_indices()[group2_start];
+    size_t edge_idx = this->index.node_ts_sorted_outbound_indices()[group2_start];
     EXPECT_EQ(this->edges.timestamps()[edge_idx], 200);
     EXPECT_EQ(this->edges.sources()[edge_idx], 10);
     EXPECT_EQ(this->edges.targets()[edge_idx], 20);
@@ -134,7 +134,7 @@ TYPED_TEST(NodeEdgeIndexTest, UndirectedEdgeRangeTest) {
 
     // Verify each edge for node 100
     for (size_t i = out_start100; i < out_end100; i++) {
-        size_t edge_idx = this->index.outbound_indices()[i];
+        size_t edge_idx = this->index.node_ts_sorted_outbound_indices()[i];
         EXPECT_TRUE(
             (this->edges.sources()[edge_idx] == 100 && (this->edges.targets()[edge_idx] == 200 || this->edges.targets()[edge_idx] == 300)) ||
             (this->edges.targets()[edge_idx] == 100 && (this->edges.sources()[edge_idx] == 200 || this->edges.sources()[edge_idx] == 300))
@@ -154,12 +154,12 @@ TYPED_TEST(NodeEdgeIndexTest, UndirectedTimestampGroupTest) {
 
     // Check first group (timestamp 1000)
     auto [group1_start, group1_end] = this->index.get_timestamp_group_range(100, 0, true, false);
-    EXPECT_EQ(this->edges.timestamps()[this->index.outbound_indices()[group1_start]], 1000);
+    EXPECT_EQ(this->edges.timestamps()[this->index.node_ts_sorted_outbound_indices()[group1_start]], 1000);
     EXPECT_EQ(group1_end - group1_start, 2);  // Two edges in timestamp 1000 group
 
     // Verify all edges in first group (timestamp 1000)
     for (size_t i = group1_start; i < group1_end; i++) {
-        size_t edge_idx = this->index.outbound_indices()[i];
+        size_t edge_idx = this->index.node_ts_sorted_outbound_indices()[i];
         EXPECT_EQ(this->edges.timestamps()[edge_idx], 1000);
         EXPECT_TRUE(
             (this->edges.sources()[edge_idx] == 100 && (this->edges.targets()[edge_idx] == 200 || this->edges.targets()[edge_idx] == 300)) ||
@@ -169,11 +169,11 @@ TYPED_TEST(NodeEdgeIndexTest, UndirectedTimestampGroupTest) {
 
     // Check second group (timestamp 2000)
     auto [group2_start, group2_end] = this->index.get_timestamp_group_range(100, 1, true, false);
-    EXPECT_EQ(this->edges.timestamps()[this->index.outbound_indices()[group2_start]], 2000);
+    EXPECT_EQ(this->edges.timestamps()[this->index.node_ts_sorted_outbound_indices()[group2_start]], 2000);
     EXPECT_EQ(group2_end - group2_start, 1);  // One edge in timestamp 2000 group
 
     // Verify edge in second group (timestamp 2000)
-    size_t edge_idx = this->index.outbound_indices()[group2_start];
+    size_t edge_idx = this->index.node_ts_sorted_outbound_indices()[group2_start];
     EXPECT_EQ(this->edges.timestamps()[edge_idx], 2000);
     EXPECT_TRUE(
         (this->edges.sources()[edge_idx] == 100 && this->edges.targets()[edge_idx] == 200) ||
