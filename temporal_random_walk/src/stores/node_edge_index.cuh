@@ -14,11 +14,11 @@ struct NodeEdgeIndexStore {
     bool use_gpu;
     bool owns_data;
 
-    size_t* node_groups_outbound_offsets = nullptr;
-    size_t node_groups_outbound_offsets_size = 0;
+    size_t* node_group_outbound_offsets = nullptr;
+    size_t node_group_outbound_offsets_size = 0;
 
-    size_t* node_groups_inbound_offsets = nullptr;
-    size_t node_groups_inbound_offsets_size = 0;
+    size_t* node_group_inbound_offsets = nullptr;
+    size_t node_group_inbound_offsets_size = 0;
 
     size_t* node_ts_sorted_outbound_indices = nullptr;
     size_t node_ts_sorted_outbound_indices_size = 0;
@@ -32,11 +32,11 @@ struct NodeEdgeIndexStore {
     size_t* count_ts_group_per_node_inbound = nullptr;
     size_t count_ts_group_per_node_inbound_size = 0;
 
-    size_t* node_ts_groups_outbound_offsets = nullptr;
-    size_t node_ts_groups_outbound_offsets_size = 0;
+    size_t* node_ts_group_outbound_offsets = nullptr;
+    size_t node_ts_group_outbound_offsets_size = 0;
 
-    size_t* node_ts_groups_inbound_offsets = nullptr;
-    size_t node_ts_groups_inbound_offsets_size = 0;
+    size_t* node_ts_group_inbound_offsets = nullptr;
+    size_t node_ts_group_inbound_offsets_size = 0;
 
     double* outbound_forward_cumulative_weights_exponential = nullptr;
     size_t outbound_forward_cumulative_weights_exponential_size = 0;
@@ -51,26 +51,26 @@ struct NodeEdgeIndexStore {
 
     ~NodeEdgeIndexStore() {
         if (owns_data) {
-            clear_memory(&node_groups_outbound_offsets, use_gpu);
-            clear_memory(&node_groups_inbound_offsets, use_gpu);
+            clear_memory(&node_group_outbound_offsets, use_gpu);
+            clear_memory(&node_group_inbound_offsets, use_gpu);
             clear_memory(&node_ts_sorted_outbound_indices, use_gpu);
             clear_memory(&node_ts_sorted_inbound_indices, use_gpu);
             clear_memory(&count_ts_group_per_node_outbound, use_gpu);
             clear_memory(&count_ts_group_per_node_inbound, use_gpu);
-            clear_memory(&node_ts_groups_outbound_offsets, use_gpu);
-            clear_memory(&node_ts_groups_inbound_offsets, use_gpu);
+            clear_memory(&node_ts_group_outbound_offsets, use_gpu);
+            clear_memory(&node_ts_group_inbound_offsets, use_gpu);
             clear_memory(&outbound_forward_cumulative_weights_exponential, use_gpu);
             clear_memory(&outbound_backward_cumulative_weights_exponential, use_gpu);
             clear_memory(&inbound_backward_cumulative_weights_exponential, use_gpu);
         } else {
-            node_groups_outbound_offsets = nullptr;
-            node_groups_inbound_offsets = nullptr;
+            node_group_outbound_offsets = nullptr;
+            node_group_inbound_offsets = nullptr;
             node_ts_sorted_outbound_indices = nullptr;
             node_ts_sorted_inbound_indices = nullptr;
             count_ts_group_per_node_outbound = nullptr;
             count_ts_group_per_node_inbound = nullptr;
-            node_ts_groups_outbound_offsets = nullptr;
-            node_ts_groups_inbound_offsets = nullptr;
+            node_ts_group_outbound_offsets = nullptr;
+            node_ts_group_inbound_offsets = nullptr;
             outbound_forward_cumulative_weights_exponential = nullptr;
             outbound_backward_cumulative_weights_exponential = nullptr;
             inbound_backward_cumulative_weights_exponential = nullptr;
@@ -97,14 +97,14 @@ namespace node_edge_index {
      * Rebuild related functions
      */
 
-    HOST void allocate_node_groups_offsets(NodeEdgeIndexStore* node_edge_index, size_t node_index_capacity, bool is_directed);
+    HOST void allocate_node_group_offsets(NodeEdgeIndexStore* node_edge_index, size_t node_index_capacity, bool is_directed);
 
     HOST void allocate_node_ts_sorted_indices(NodeEdgeIndexStore* node_edge_index, bool is_directed);
 
     /**
      * Std implementations
      */
-    HOST void compute_node_groups_offsets_std(
+    HOST void compute_node_group_offsets_std(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
         bool is_directed
@@ -119,7 +119,7 @@ namespace node_edge_index {
         int* inbound_node_ids
     );
 
-    HOST void allocate_and_compute_node_ts_groups_counts_and_offsets_std(
+    HOST void allocate_and_compute_node_ts_group_counts_and_offsets_std(
         NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
         size_t node_count,
@@ -136,7 +136,7 @@ namespace node_edge_index {
      */
     #ifdef HAS_CUDA
 
-    HOST void compute_node_groups_offsets_cuda(
+    HOST void compute_node_group_offsets_cuda(
         NodeEdgeIndexStore *node_edge_index,
         const EdgeDataStore *edge_data,
         bool is_directed
@@ -151,7 +151,7 @@ namespace node_edge_index {
         int* inbound_node_ids
     );
 
-    HOST void allocate_and_compute_node_ts_groups_counts_and_offsets_cuda(
+    HOST void allocate_and_compute_node_ts_group_counts_and_offsets_cuda(
         NodeEdgeIndexStore *node_edge_index,
         const EdgeDataStore *edge_data,
         size_t node_count,

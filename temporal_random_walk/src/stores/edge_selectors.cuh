@@ -139,10 +139,10 @@ namespace temporal_graph {
                                                            : graph->node_edge_index->count_ts_group_per_node_outbound);
 
         size_t *node_ts_groups_offsets = Forward
-                                              ? graph->node_edge_index->node_ts_groups_outbound_offsets
+                                              ? graph->node_edge_index->node_ts_group_outbound_offsets
                                               : (IsDirected
-                                                     ? graph->node_edge_index->node_ts_groups_inbound_offsets
-                                                     : graph->node_edge_index->node_ts_groups_outbound_offsets);
+                                                     ? graph->node_edge_index->node_ts_group_inbound_offsets
+                                                     : graph->node_edge_index->node_ts_group_outbound_offsets);
 
         size_t *node_ts_sorted_indices = Forward
                                    ? graph->node_edge_index->node_ts_sorted_outbound_indices
@@ -289,11 +289,11 @@ namespace temporal_graph {
             edge_end = node_ts_groups_offsets[group_pos + 1];
         } else {
             if constexpr (Forward) {
-                edge_end = graph->node_edge_index->node_groups_outbound_offsets[node_id + 1];
+                edge_end = graph->node_edge_index->node_group_outbound_offsets[node_id + 1];
             } else {
                 edge_end = IsDirected
-                               ? graph->node_edge_index->node_groups_inbound_offsets[node_id + 1]
-                               : graph->node_edge_index->node_groups_outbound_offsets[node_id + 1];
+                               ? graph->node_edge_index->node_group_inbound_offsets[node_id + 1]
+                               : graph->node_edge_index->node_group_outbound_offsets[node_id + 1];
             }
         }
 
@@ -449,10 +449,10 @@ namespace temporal_graph {
                                                            : graph->node_edge_index->count_ts_group_per_node_outbound);
 
         size_t *node_ts_groups_offsets = Forward
-                                              ? graph->node_edge_index->node_ts_groups_outbound_offsets
+                                              ? graph->node_edge_index->node_ts_group_outbound_offsets
                                               : (IsDirected
-                                                     ? graph->node_edge_index->node_ts_groups_inbound_offsets
-                                                     : graph->node_edge_index->node_ts_groups_outbound_offsets);
+                                                     ? graph->node_edge_index->node_ts_group_inbound_offsets
+                                                     : graph->node_edge_index->node_ts_group_outbound_offsets);
 
         size_t *node_ts_sorted_indices = Forward
                                    ? graph->node_edge_index->node_ts_sorted_outbound_indices
@@ -599,11 +599,11 @@ namespace temporal_graph {
             edge_end = node_ts_groups_offsets[group_pos + 1];
         } else {
             if constexpr (Forward) {
-                edge_end = graph->node_edge_index->node_groups_outbound_offsets[node_id + 1];
+                edge_end = graph->node_edge_index->node_group_outbound_offsets[node_id + 1];
             } else {
                 edge_end = IsDirected
-                               ? graph->node_edge_index->node_groups_inbound_offsets[node_id + 1]
-                               : graph->node_edge_index->node_groups_outbound_offsets[node_id + 1];
+                               ? graph->node_edge_index->node_group_inbound_offsets[node_id + 1]
+                               : graph->node_edge_index->node_group_outbound_offsets[node_id + 1];
             }
         }
 

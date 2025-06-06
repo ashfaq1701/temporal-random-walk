@@ -54,14 +54,14 @@ TYPED_TEST_SUITE(NodeEdgeIndexTest, GPU_USAGE_TYPES);
 
 // Test empty state
 TYPED_TEST(NodeEdgeIndexTest, EmptyStateTest) {
-    EXPECT_TRUE(this->index.node_groups_outbound_offsets().empty());
+    EXPECT_TRUE(this->index.node_group_outbound_offsets().empty());
     EXPECT_TRUE(this->index.node_ts_sorted_outbound_indices().empty());
     EXPECT_TRUE(this->index.count_ts_group_per_node_outbound().empty());
-    EXPECT_TRUE(this->index.node_ts_groups_outbound_offsets().empty());
-    EXPECT_TRUE(this->index.node_groups_inbound_offsets().empty());
+    EXPECT_TRUE(this->index.node_ts_group_outbound_offsets().empty());
+    EXPECT_TRUE(this->index.node_group_inbound_offsets().empty());
     EXPECT_TRUE(this->index.node_ts_sorted_inbound_indices().empty());
     EXPECT_TRUE(this->index.count_ts_group_per_node_inbound().empty());
-    EXPECT_TRUE(this->index.node_ts_groups_inbound_offsets().empty());
+    EXPECT_TRUE(this->index.node_ts_group_inbound_offsets().empty());
 }
 
 // Test edge ranges in directed graph
