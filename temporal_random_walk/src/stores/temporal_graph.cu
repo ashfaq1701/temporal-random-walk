@@ -223,13 +223,13 @@ HOST size_t temporal_graph::count_node_timestamps_less_than_std(TemporalGraphSto
     }
 
     if (graph->is_directed) {
-        timestamp_group_offsets = graph->node_edge_index->inbound_timestamp_group_offsets;
-        timestamp_group_indices = graph->node_edge_index->inbound_timestamp_group_indices;
-        edge_indices = graph->node_edge_index->inbound_indices;
+        timestamp_group_offsets = graph->node_edge_index->count_ts_group_per_node_inbound;
+        timestamp_group_indices = graph->node_edge_index->node_ts_groups_inbound_offsets;
+        edge_indices = graph->node_edge_index->node_ts_sorted_inbound_indices;
     } else {
-        timestamp_group_offsets = graph->node_edge_index->outbound_timestamp_group_offsets;
-        timestamp_group_indices = graph->node_edge_index->outbound_timestamp_group_indices;
-        edge_indices = graph->node_edge_index->outbound_indices;
+        timestamp_group_offsets = graph->node_edge_index->count_ts_group_per_node_outbound;
+        timestamp_group_indices = graph->node_edge_index->node_ts_groups_outbound_offsets;
+        edge_indices = graph->node_edge_index->node_ts_sorted_outbound_indices;
     }
 
     const size_t group_start = timestamp_group_offsets[node_id];
@@ -255,9 +255,9 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_std(TemporalGraph
     }
 
     // Used for forward walks
-    const size_t *timestamp_group_offsets = graph->node_edge_index->outbound_timestamp_group_offsets;
-    size_t *timestamp_group_indices = graph->node_edge_index->outbound_timestamp_group_indices;
-    size_t *edge_indices = graph->node_edge_index->outbound_indices;
+    const size_t *timestamp_group_offsets = graph->node_edge_index->count_ts_group_per_node_outbound;
+    size_t *timestamp_group_indices = graph->node_edge_index->node_ts_groups_outbound_offsets;
+    size_t *edge_indices = graph->node_edge_index->node_ts_sorted_outbound_indices;
 
     const size_t group_start = timestamp_group_offsets[node_id];
     const size_t group_end = timestamp_group_offsets[node_id + 1];
@@ -520,13 +520,13 @@ HOST size_t temporal_graph::count_node_timestamps_less_than_cuda(const TemporalG
     size_t *edge_indices;
 
     if (graph->is_directed) {
-        timestamp_group_offsets = graph->node_edge_index->inbound_timestamp_group_offsets;
-        timestamp_group_indices = graph->node_edge_index->inbound_timestamp_group_indices;
-        edge_indices = graph->node_edge_index->inbound_indices;
+        timestamp_group_offsets = graph->node_edge_index->count_ts_group_per_node_inbound;
+        timestamp_group_indices = graph->node_edge_index->node_ts_groups_inbound_offsets;
+        edge_indices = graph->node_edge_index->node_ts_sorted_inbound_indices;
     } else {
-        timestamp_group_offsets = graph->node_edge_index->outbound_timestamp_group_offsets;
-        timestamp_group_indices = graph->node_edge_index->outbound_timestamp_group_indices;
-        edge_indices = graph->node_edge_index->outbound_indices;
+        timestamp_group_offsets = graph->node_edge_index->count_ts_group_per_node_outbound;
+        timestamp_group_indices = graph->node_edge_index->node_ts_groups_outbound_offsets;
+        edge_indices = graph->node_edge_index->node_ts_sorted_outbound_indices;
     }
 
     // Copy offsets from device to host
@@ -559,9 +559,9 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_cuda(const Tempor
         return 0;
     }
 
-    const size_t *timestamp_group_offsets = graph->node_edge_index->outbound_timestamp_group_offsets;
-    size_t *timestamp_group_indices = graph->node_edge_index->outbound_timestamp_group_indices;
-    size_t *edge_indices = graph->node_edge_index->outbound_indices;
+    const size_t *timestamp_group_offsets = graph->node_edge_index->count_ts_group_per_node_outbound;
+    size_t *timestamp_group_indices = graph->node_edge_index->node_ts_groups_outbound_offsets;
+    size_t *edge_indices = graph->node_edge_index->node_ts_sorted_outbound_indices;
 
     // Copy offsets from device to host
     size_t group_start, group_end;

@@ -107,7 +107,7 @@ TYPED_TEST(TemporalGraphWeightTest, NodeWeightComputation) {
     ASSERT_GT(num_out_groups, 0);
 
     // Get outbound group offsets
-    const auto host_offsets = node_index.outbound_timestamp_group_offsets();
+    const auto host_offsets = node_index.count_ts_group_per_node_outbound();
     const size_t start_pos = host_offsets[node_id];
     const size_t end_pos = host_offsets[node_id + 1];
 
@@ -254,7 +254,7 @@ TYPED_TEST(TemporalGraphWeightTest, WeightScalingPrecision) {
 
     // Get node's group range
     auto node_edge_index = NodeEdgeIndex(graph.graph->node_edge_index);
-    const auto host_offsets = node_edge_index.outbound_timestamp_group_offsets();
+    const auto host_offsets = node_edge_index.count_ts_group_per_node_outbound();
     const size_t start = host_offsets[node_id];
 
     // Get node's weights

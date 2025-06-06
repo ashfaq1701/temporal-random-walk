@@ -132,27 +132,27 @@ namespace temporal_graph {
         }
 
         // Get appropriate node indices based on direction and graph type
-        const size_t *timestamp_group_offsets = Forward
-                                                    ? graph->node_edge_index->outbound_timestamp_group_offsets
+        const size_t *count_ts_group_per_node = Forward
+                                                    ? graph->node_edge_index->count_ts_group_per_node_outbound
                                                     : (IsDirected
-                                                           ? graph->node_edge_index->inbound_timestamp_group_offsets
-                                                           : graph->node_edge_index->outbound_timestamp_group_offsets);
+                                                           ? graph->node_edge_index->count_ts_group_per_node_inbound
+                                                           : graph->node_edge_index->count_ts_group_per_node_outbound);
 
-        size_t *timestamp_group_indices = Forward
-                                              ? graph->node_edge_index->outbound_timestamp_group_indices
+        size_t *node_ts_groups_offsets = Forward
+                                              ? graph->node_edge_index->node_ts_groups_outbound_offsets
                                               : (IsDirected
-                                                     ? graph->node_edge_index->inbound_timestamp_group_indices
-                                                     : graph->node_edge_index->outbound_timestamp_group_indices);
+                                                     ? graph->node_edge_index->node_ts_groups_inbound_offsets
+                                                     : graph->node_edge_index->node_ts_groups_outbound_offsets);
 
-        size_t *edge_indices = Forward
-                                   ? graph->node_edge_index->outbound_indices
+        size_t *node_ts_sorted_indices = Forward
+                                   ? graph->node_edge_index->node_ts_sorted_outbound_indices
                                    : (IsDirected
-                                          ? graph->node_edge_index->inbound_indices
-                                          : graph->node_edge_index->outbound_indices);
+                                          ? graph->node_edge_index->node_ts_sorted_inbound_indices
+                                          : graph->node_edge_index->node_ts_sorted_outbound_indices);
 
         // Get node's group range
-        const size_t group_start_offset = timestamp_group_offsets[node_id];
-        const size_t group_end_offset = timestamp_group_offsets[node_id + 1];
+        const size_t group_start_offset = count_ts_group_per_node[node_id];
+        const size_t group_end_offset = count_ts_group_per_node[node_id + 1];
         if (group_start_offset == group_end_offset) return Edge{-1, -1, -1};
 
         long group_pos;
@@ -160,20 +160,20 @@ namespace temporal_graph {
             if constexpr (Forward) {
                 // Find first group after timestamp
                 const auto it = std::upper_bound(
-                    timestamp_group_indices + static_cast<int>(group_start_offset),
-                    timestamp_group_indices + static_cast<int>(group_end_offset),
+                    node_ts_groups_offsets + static_cast<int>(group_start_offset),
+                    node_ts_groups_offsets + static_cast<int>(group_end_offset),
                     timestamp,
-                    [graph, edge_indices](const int64_t ts, const size_t pos) {
-                        return ts < graph->edge_data->timestamps[edge_indices[pos]];
+                    [graph, node_ts_sorted_indices](const int64_t ts, const size_t pos) {
+                        return ts < graph->edge_data->timestamps[node_ts_sorted_indices[pos]];
                     });
 
                 // Count available groups after timestamp
                 const size_t available = std::distance(
                     it,
-                    timestamp_group_indices + static_cast<int>(group_end_offset));
+                    node_ts_groups_offsets + static_cast<int>(group_end_offset));
                 if (available == 0) return Edge{-1, -1, -1};
 
-                const size_t start_pos = it - timestamp_group_indices;
+                const size_t start_pos = it - node_ts_groups_offsets;
                 if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available), false, group_selector_rand_num);
@@ -192,15 +192,15 @@ namespace temporal_graph {
             } else {
                 // Find first group >= timestamp
                 auto it = std::lower_bound(
-                    timestamp_group_indices + static_cast<int>(group_start_offset),
-                    timestamp_group_indices + static_cast<int>(group_end_offset),
+                    node_ts_groups_offsets + static_cast<int>(group_start_offset),
+                    node_ts_groups_offsets + static_cast<int>(group_end_offset),
                     timestamp,
-                    [graph, edge_indices](const size_t pos, const int64_t ts) {
-                        return graph->edge_data->timestamps[edge_indices[pos]] < ts;
+                    [graph, node_ts_sorted_indices](const size_t pos, const int64_t ts) {
+                        return graph->edge_data->timestamps[node_ts_sorted_indices[pos]] < ts;
                     });
 
                 const size_t available = std::distance(
-                    timestamp_group_indices + static_cast<int>(group_start_offset),
+                    node_ts_groups_offsets + static_cast<int>(group_start_offset),
                     it);
                 if (available == 0) return Edge{-1, -1, -1};
 
@@ -211,7 +211,7 @@ namespace temporal_graph {
                     if (index == -1) return Edge{-1, -1, -1};
 
                     if (index >= available) return Edge{-1, -1, -1};
-                    group_pos = static_cast<long>((it - timestamp_group_indices) - 1 - (available - index - 1));
+                    group_pos = static_cast<long>((it - node_ts_groups_offsets) - 1 - (available - index - 1));
                 } else {
                     double *weights = IsDirected
                                           ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential
@@ -228,7 +228,7 @@ namespace temporal_graph {
                         weights,
                         weights_size,
                         group_start_offset,
-                        static_cast<size_t>(it - timestamp_group_indices),
+                        static_cast<size_t>(it - node_ts_groups_offsets),
                         group_selector_rand_num
                     );
                     if (group_pos == -1) return Edge{-1, -1, -1};
@@ -282,34 +282,34 @@ namespace temporal_graph {
         }
 
         // Get edge range for selected group
-        const size_t edge_start = timestamp_group_indices[group_pos];
+        const size_t edge_start = node_ts_groups_offsets[group_pos];
         size_t edge_end;
 
         if (group_pos + 1 < group_end_offset) {
-            edge_end = timestamp_group_indices[group_pos + 1];
+            edge_end = node_ts_groups_offsets[group_pos + 1];
         } else {
             if constexpr (Forward) {
-                edge_end = graph->node_edge_index->outbound_offsets[node_id + 1];
+                edge_end = graph->node_edge_index->node_groups_outbound_offsets[node_id + 1];
             } else {
                 edge_end = IsDirected
-                               ? graph->node_edge_index->inbound_offsets[node_id + 1]
-                               : graph->node_edge_index->outbound_offsets[node_id + 1];
+                               ? graph->node_edge_index->node_groups_inbound_offsets[node_id + 1]
+                               : graph->node_edge_index->node_groups_outbound_offsets[node_id + 1];
             }
         }
 
         // Validate range before random selection
         size_t const edge_indices_size = Forward
-                                             ? graph->node_edge_index->outbound_indices_size
+                                             ? graph->node_edge_index->node_ts_sorted_outbound_indices_size
                                              : (IsDirected
-                                                    ? graph->node_edge_index->inbound_indices_size
-                                                    : graph->node_edge_index->outbound_indices_size);
+                                                    ? graph->node_edge_index->node_ts_sorted_inbound_indices_size
+                                                    : graph->node_edge_index->node_ts_sorted_outbound_indices_size);
 
         if (edge_start >= edge_end || edge_start >= edge_indices_size || edge_end > edge_indices_size) {
             return Edge{-1, -1, -1};
         }
 
         // Random selection from group
-        const size_t edge_idx = edge_indices[
+        const size_t edge_idx = node_ts_sorted_indices[
             edge_start +
             generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), edge_selector_rand_num)];
 
@@ -442,27 +442,27 @@ namespace temporal_graph {
         }
 
         // Get appropriate node indices based on direction and graph type
-        const size_t *timestamp_group_offsets = Forward
-                                                    ? graph->node_edge_index->outbound_timestamp_group_offsets
+        const size_t *count_ts_group_per_node = Forward
+                                                    ? graph->node_edge_index->count_ts_group_per_node_outbound
                                                     : (IsDirected
-                                                           ? graph->node_edge_index->inbound_timestamp_group_offsets
-                                                           : graph->node_edge_index->outbound_timestamp_group_offsets);
+                                                           ? graph->node_edge_index->count_ts_group_per_node_inbound
+                                                           : graph->node_edge_index->count_ts_group_per_node_outbound);
 
-        size_t *timestamp_group_indices = Forward
-                                              ? graph->node_edge_index->outbound_timestamp_group_indices
+        size_t *node_ts_groups_offsets = Forward
+                                              ? graph->node_edge_index->node_ts_groups_outbound_offsets
                                               : (IsDirected
-                                                     ? graph->node_edge_index->inbound_timestamp_group_indices
-                                                     : graph->node_edge_index->outbound_timestamp_group_indices);
+                                                     ? graph->node_edge_index->node_ts_groups_inbound_offsets
+                                                     : graph->node_edge_index->node_ts_groups_outbound_offsets);
 
-        size_t *edge_indices = Forward
-                                   ? graph->node_edge_index->outbound_indices
+        size_t *node_ts_sorted_indices = Forward
+                                   ? graph->node_edge_index->node_ts_sorted_outbound_indices
                                    : (IsDirected
-                                          ? graph->node_edge_index->inbound_indices
-                                          : graph->node_edge_index->outbound_indices);
+                                          ? graph->node_edge_index->node_ts_sorted_inbound_indices
+                                          : graph->node_edge_index->node_ts_sorted_outbound_indices);
 
         // Get node's group range
-        const size_t group_start_offset = timestamp_group_offsets[node_id];
-        const size_t group_end_offset = timestamp_group_offsets[node_id + 1];
+        const size_t group_start_offset = count_ts_group_per_node[node_id];
+        const size_t group_end_offset = count_ts_group_per_node[node_id + 1];
         if (group_start_offset == group_end_offset) return Edge{-1, -1, -1};
 
         long group_pos;
@@ -470,20 +470,20 @@ namespace temporal_graph {
             if constexpr (Forward) {
                 // Find first group after timestamp
                 const auto it = cuda::std::upper_bound(
-                    timestamp_group_indices + static_cast<int>(group_start_offset),
-                    timestamp_group_indices + static_cast<int>(group_end_offset),
+                    node_ts_groups_offsets + static_cast<int>(group_start_offset),
+                    node_ts_groups_offsets + static_cast<int>(group_end_offset),
                     timestamp,
-                    [graph, edge_indices](const int64_t ts, const size_t pos) {
-                        return ts < graph->edge_data->timestamps[edge_indices[pos]];
+                    [graph, node_ts_sorted_indices](const int64_t ts, const size_t pos) {
+                        return ts < graph->edge_data->timestamps[node_ts_sorted_indices[pos]];
                     });
 
                 // Count available groups after timestamp
                 const size_t available = std::distance(
                     it,
-                    timestamp_group_indices + static_cast<int>(group_end_offset));
+                    node_ts_groups_offsets + static_cast<int>(group_end_offset));
                 if (available == 0) return Edge{-1, -1, -1};
 
-                const size_t start_pos = it - timestamp_group_indices;
+                const size_t start_pos = it - node_ts_groups_offsets;
                 if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available), false, group_selector_rand_num);
@@ -502,15 +502,15 @@ namespace temporal_graph {
             } else {
                 // Find first group >= timestamp
                 auto it = cuda::std::lower_bound(
-                    timestamp_group_indices + static_cast<int>(group_start_offset),
-                    timestamp_group_indices + static_cast<int>(group_end_offset),
+                    node_ts_groups_offsets + static_cast<int>(group_start_offset),
+                    node_ts_groups_offsets + static_cast<int>(group_end_offset),
                     timestamp,
-                    [graph, edge_indices](const size_t pos, const int64_t ts) {
-                        return graph->edge_data->timestamps[edge_indices[pos]] < ts;
+                    [graph, node_ts_sorted_indices](const size_t pos, const int64_t ts) {
+                        return graph->edge_data->timestamps[node_ts_sorted_indices[pos]] < ts;
                     });
 
                 const size_t available = std::distance(
-                    timestamp_group_indices + static_cast<int>(group_start_offset),
+                    node_ts_groups_offsets + static_cast<int>(group_start_offset),
                     it);
                 if (available == 0) return Edge{-1, -1, -1};
 
@@ -521,7 +521,7 @@ namespace temporal_graph {
                     if (index == -1) return Edge{-1, -1, -1};
 
                     if (index >= available) return Edge{-1, -1, -1};
-                    group_pos = static_cast<long>((it - timestamp_group_indices) - 1 - (available - index - 1));
+                    group_pos = static_cast<long>((it - node_ts_groups_offsets) - 1 - (available - index - 1));
                 } else {
                     double *weights = IsDirected
                                           ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential
@@ -538,7 +538,7 @@ namespace temporal_graph {
                         weights,
                         weights_size,
                         group_start_offset,
-                        static_cast<size_t>(it - timestamp_group_indices),
+                        static_cast<size_t>(it - node_ts_groups_offsets),
                         group_selector_rand_num
                     );
                     if (group_pos == -1) return Edge{-1, -1, -1};
@@ -592,34 +592,34 @@ namespace temporal_graph {
         }
 
         // Get edge range for selected group
-        const size_t edge_start = timestamp_group_indices[group_pos];
+        const size_t edge_start = node_ts_groups_offsets[group_pos];
         size_t edge_end;
 
         if (group_pos + 1 < group_end_offset) {
-            edge_end = timestamp_group_indices[group_pos + 1];
+            edge_end = node_ts_groups_offsets[group_pos + 1];
         } else {
             if constexpr (Forward) {
-                edge_end = graph->node_edge_index->outbound_offsets[node_id + 1];
+                edge_end = graph->node_edge_index->node_groups_outbound_offsets[node_id + 1];
             } else {
                 edge_end = IsDirected
-                               ? graph->node_edge_index->inbound_offsets[node_id + 1]
-                               : graph->node_edge_index->outbound_offsets[node_id + 1];
+                               ? graph->node_edge_index->node_groups_inbound_offsets[node_id + 1]
+                               : graph->node_edge_index->node_groups_outbound_offsets[node_id + 1];
             }
         }
 
         // Validate range before random selection
         const size_t edge_indices_size = Forward
-                                             ? graph->node_edge_index->outbound_indices_size
+                                             ? graph->node_edge_index->node_ts_sorted_outbound_indices_size
                                              : (IsDirected
-                                                    ? graph->node_edge_index->inbound_indices_size
-                                                    : graph->node_edge_index->outbound_indices_size);
+                                                    ? graph->node_edge_index->node_ts_sorted_inbound_indices_size
+                                                    : graph->node_edge_index->node_ts_sorted_outbound_indices_size);
 
         if (edge_start >= edge_end || edge_start >= edge_indices_size || edge_end > edge_indices_size) {
             return Edge{-1, -1, -1};
         }
 
         // Random selection from group
-        const size_t edge_idx = edge_indices[
+        const size_t edge_idx = node_ts_sorted_indices[
             edge_start +
             generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), edge_selector_rand_num)];
 
