@@ -55,5 +55,6 @@ endfunction()
 
 add_test_executable(test_run_temporal_random_walk test_run_temporal_random_walk.cpp)
 add_test_executable(test_run_temporal_random_walk_2 test_run_temporal_random_walk_2.cpp)
+add_test_executable(test_run_temporal_random_walk_3 test_run_temporal_random_walk_3.cpp)
 add_test_executable(test_run_exponential_random_picker test_run_exponential_picker.cpp)
 add_test_executable(test_large_data_addition test_large_data_addition.cpp)
