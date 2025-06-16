@@ -17,7 +17,9 @@ namespace temporal_random_walk {
         const int max_walk_len,
         const int *start_node_ids,
         const double *rand_nums) {
-        const size_t rand_nums_start_idx_for_walk = walk_idx + walk_idx * max_walk_len * 2;
+
+        const size_t rand_nums_start_idx_for_walk = static_cast<size_t>(walk_idx)
+            + static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) * 2;
 
         Edge start_edge;
         if (start_node_ids[walk_idx] == -1) {
