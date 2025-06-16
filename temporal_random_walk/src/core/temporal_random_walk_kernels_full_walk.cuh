@@ -20,12 +20,12 @@ namespace temporal_random_walk {
         const size_t num_walks,
         const double *__restrict__ rand_nums) {
 
-        const int walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
+        const size_t walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
         if (walk_idx >= num_walks) return;
 
         // Optimize rand_nums access - use direct formula instead of storing offset
         // Calculate indices directly to reduce register usage
-        const int base_idx = walk_idx * (1 + max_walk_len * 2);
+        const size_t base_idx = static_cast<size_t>(walk_idx) * (1 + static_cast<size_t>(max_walk_len) * 2);
 
         // Get start edge based on whether we have a starting node
         Edge start_edge;
@@ -79,7 +79,7 @@ namespace temporal_random_walk {
         int walk_len = 1; // Start at 1 since we already added first hop
         while (walk_len < max_walk_len && current_node != -1) {
             // Calculate random number indices directly based on walk_len
-            const int step_base_idx = base_idx + walk_len * 2 + 1;
+            const size_t step_base_idx = base_idx + static_cast<size_t>(walk_len) * 2 + 1;
 
             walk_set->add_hop(walk_idx, current_node, current_timestamp);
 
