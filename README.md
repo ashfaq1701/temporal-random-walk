@@ -20,19 +20,20 @@
 
 ```python
 from temporal_random_walk import TemporalRandomWalk
+import numpy as np
 
 # Create a directed temporal graph
-walker = TemporalRandomWalk(is_directed=True, use_gpu=True, node_count_max_bound=10)
+walker = TemporalRandomWalk(is_directed=True, use_gpu=True, max_time_capacity=-1)
 
-# Add edges: (source, target, timestamp)
-edges = [
-    (3, 4, 71), (2, 4, 82), (0, 2, 19),
-    (3, 1, 34), (3, 2, 79), (1, 4, 19)
-]
-walker.add_multiple_edges(edges)
+# Add edges
+sources = np.array([3, 2, 0, 3, 3, 1])
+targets = np.array([4, 4, 2, 1, 2, 4])
+timestamps = np.array([71, 82, 19, 34, 79, 19])
+
+walker.add_multiple_edges(sources, targets, timestamps)
 
 # Sample walks with exponential time bias
-walks = walker.get_random_walks_for_all_nodes(
+walk_nodes, walk_timestamps, walk_lens = walker.get_random_walks_for_all_nodes(
     max_walk_len=5,
     walk_bias="ExponentialIndex",
     num_walks_per_node=10,
