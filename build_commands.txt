@@ -1,3 +1,9 @@
+# ASAN Flags
+
+# -DCMAKE_CXX_FLAGS="-fsanitize=address -g -O1"
+# -DCMAKE_C_FLAGS="-fsanitize=address -g -O1"
+# -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address"
+
 compute-sanitizer --tool memcheck cmake-build-debug/bin/test_run_temporal_random_walk_2
 
 pip install -r requirements.txt
