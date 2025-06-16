@@ -17,17 +17,36 @@ int main(int argc, char* argv[]) {
     std::string file_path = "../../data/sample_data.csv";
     char delimiter = ',';
     int num_rows = 1000000;
+    bool use_gpu = USE_GPU;
 
     if (argc > 1) {
         file_path = argv[1];
     }
 
     if (argc > 2) {
-        delimiter = argv[2][0];
+        std::string gpu_arg = argv[2];
+        // Convert to lowercase for case-insensitive comparison
+        std::transform(gpu_arg.begin(), gpu_arg.end(), gpu_arg.begin(),
+                       [](const unsigned char c){ return std::tolower(c); });
+
+        // Accept various forms of true/false input
+        if (gpu_arg == "1" || gpu_arg == "true" || gpu_arg == "yes" || gpu_arg == "y") {
+            use_gpu = true;
+        } else if (gpu_arg == "0" || gpu_arg == "false" || gpu_arg == "no" || gpu_arg == "n") {
+            use_gpu = false;
+        } else {
+            std::cerr << "Error: Invalid value '" << gpu_arg << "' for use_gpu parameter. Expected 1/0, true/false, yes/no, or y/n." << std::endl;
+            exit(EXIT_FAILURE);
+        }
     }
+    std::cout << "Running on: " << (use_gpu ? "GPU" : "CPU") << std::endl;
 
     if (argc > 3) {
-        num_rows = std::stoi(argv[3]);
+        delimiter = argv[3][0];
+    }
+
+    if (argc > 4) {
+        num_rows = std::stoi(argv[4]);
     }
 
     const auto edge_infos = read_edges_from_csv(file_path, num_rows, delimiter);
@@ -45,7 +64,7 @@ int main(int argc, char* argv[]) {
 
     // Start timing for the entire process
     auto start = std::chrono::high_resolution_clock::now();
-    TemporalRandomWalk temporal_random_walk(false, USE_GPU, -1, true, 34);
+    TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, true, 34);
 
     // Add first half of edges
     std::vector first_half(first_half_begin, first_half_end);

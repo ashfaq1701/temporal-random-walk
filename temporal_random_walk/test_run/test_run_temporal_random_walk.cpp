@@ -9,7 +9,26 @@ constexpr bool USE_GPU = true;
 constexpr bool USE_GPU = false;
 #endif
 
-int main() {
+int main(const int argc, char* argv[]) {
+    bool use_gpu = USE_GPU;
+
+    if (argc > 1) {
+        std::string gpu_arg = argv[1];
+        // Convert to lowercase for case-insensitive comparison
+        std::transform(gpu_arg.begin(), gpu_arg.end(), gpu_arg.begin(),
+                       [](const unsigned char c){ return std::tolower(c); });
+
+        // Accept various forms of true/false input
+        if (gpu_arg == "1" || gpu_arg == "true" || gpu_arg == "yes" || gpu_arg == "y") {
+            use_gpu = true;
+        } else if (gpu_arg == "0" || gpu_arg == "false" || gpu_arg == "no" || gpu_arg == "n") {
+            use_gpu = false;
+        } else {
+            std::cerr << "Error: Invalid value '" << gpu_arg << "' for use_gpu parameter. Expected 1/0, true/false, yes/no, or y/n." << std::endl;
+            exit(EXIT_FAILURE);
+        }
+    }
+
     const std::vector<std::tuple<int, int, int64_t>> edges {
         {0, 1, 100}, {1, 2, 100}, {3, 0, 100},
         {0, 2, 101}, {1, 3, 101}, {2, 4, 101},
@@ -22,7 +41,7 @@ int main() {
 
     auto [sources, targets, timestamps] = convert_edge_tuples_to_components(edges);
 
-    const TemporalRandomWalk temporal_random_walk(true, USE_GPU);
+    const TemporalRandomWalk temporal_random_walk(true, use_gpu);
     temporal_random_walk.add_multiple_edges(
         sources.data(),
         targets.data(),
