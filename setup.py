@@ -1,10 +1,10 @@
+from setuptools import setup, find_packages, Extension
+from setuptools.command.build_ext import build_ext
 import os
-import re
 import subprocess
 import sys
 import pybind11
-from setuptools import setup, find_packages, Extension
-from setuptools.command.build_ext import build_ext
+
 
 def find_cmake():
     try:
@@ -64,11 +64,14 @@ class CMakeBuild(build_ext):
         # Add pybind11 include directory
         cmake_args.append(f'-DPYBIND11_INCLUDE_DIR={pybind11.get_include()}')
 
-        # Detect CUDA version
-        cuda_version = self.detect_cuda_version()
-
-        print(f"Using CUDA Version: {cuda_version}")
-        cmake_args.append(f'-DCUDA_VERSION={cuda_version}')
+        # Debug output
+        print(f"Building with compilers: CC={cc}, CXX={cxx}")
+        print(f"Building with Python: {python_executable}")
+        if python_include_dir:
+            print(f"Python include dir: {python_include_dir}")
+        if python_library:
+            print(f"Python library: {python_library}")
+        print(f"CMake arguments: {cmake_args}")
 
         # Set up compilation flags based on build type
         if is_debug:
@@ -113,30 +116,6 @@ class CMakeBuild(build_ext):
         except subprocess.CalledProcessError as e:
             print(f"Error during CMake configuration or build: {e}")
             sys.exit(1)
-
-    def detect_cuda_version(self):
-        """
-        Detect CUDA version using `nvcc` or `cuda-python`.
-        Returns a string representing the CUDA version (e.g., '10.2', '11.0').
-        """
-        # Try detecting the CUDA version from the environment
-        try:
-            cuda_version = subprocess.check_output(['nvcc', '--version']).decode()
-            match = re.search(r'V(\d+\.\d+)', cuda_version)
-            if match:
-                return match.group(1)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            pass
-
-        # Fallback to using CUDA-Python package if available
-        try:
-            import cuda
-            return cuda.__version__
-        except ImportError:
-            pass
-
-        return 'none'
-
 
 def read_version_number():
     with open('version_number.txt', 'r') as file:
