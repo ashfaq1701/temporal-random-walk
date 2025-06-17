@@ -75,8 +75,11 @@ source venv/bin/activate
 echo "Installing Python dependencies..."
 pip install -r requirements.txt
 
-# Build the wheel
-echo "Building the wheel..."
-python setup.py bdist_wheel
+# Build the project
+echo "Building the project..."
+mkdir cmake_build_debug
+cd cmake_build_debug/
+cmake ..
+make
 
 echo "Setup complete. The wheel has been built successfully."
