@@ -79,7 +79,7 @@ pip install -r requirements.txt
 echo "Building the project..."
 mkdir cmake_build_debug
 cd cmake_build_debug/
-cmake ..
+cmake .. -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
 make
 
 echo "Setup complete. The wheel has been built successfully."
