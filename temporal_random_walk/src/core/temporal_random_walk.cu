@@ -188,7 +188,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
     // Create device pointer for the temporal graph
     TemporalGraphStore *d_temporal_graph = temporal_graph::to_device_ptr(temporal_random_walk->temporal_graph);
 
-    launch_random_walk_kernel_full_walk(
+    launch_random_walk_kernel_step_based(
         d_temporal_graph,
         temporal_random_walk->is_directed,
         d_walk_set,
@@ -251,7 +251,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     TemporalGraphStore *d_temporal_graph = temporal_graph::to_device_ptr(temporal_random_walk->temporal_graph);
 
     // Launch kernel
-    launch_random_walk_kernel_full_walk(
+    launch_random_walk_kernel_step_based(
         d_temporal_graph,
         temporal_random_walk->is_directed,
         d_walk_set,
