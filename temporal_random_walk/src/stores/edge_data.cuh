@@ -2,6 +2,7 @@
 #define EDGE_DATA_STORE_H
 
 #include <cstddef>
+#import <algorithm>
 
 #ifdef HAS_CUDA
 #include <thrust/device_vector.h>
