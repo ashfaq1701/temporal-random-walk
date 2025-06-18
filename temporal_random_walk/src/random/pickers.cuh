@@ -2,6 +2,7 @@
 #define PICKERS_H
 
 #include <cstddef>
+#include <cmath>
 #ifdef HAS_CUDA
 #include <curand_kernel.h>
 #include <cuda/std/__algorithm/lower_bound.h>

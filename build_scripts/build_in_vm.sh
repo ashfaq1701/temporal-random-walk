@@ -55,7 +55,7 @@ source ~/.bashrc
 
 # Clone the user-provided repository into the home directory
 echo "Cloning repository: $REPO_URL into the home directory"
-git clone "$REPO_URL" ~/temporal_random_walk
+git clone "" ~/temporal_random_walk
 
 # Navigate into the cloned directory
 cd ~/temporal_random_walk || { echo "Failed to change directory"; exit 1; }
