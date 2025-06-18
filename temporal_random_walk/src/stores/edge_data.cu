@@ -1,5 +1,6 @@
 #include "edge_data.cuh"
 
+#include <cmath>
 #include <omp.h>
 #include "../utils/omp_utils.cuh"
 

@@ -1,5 +1,7 @@
 #include "node_edge_index.cuh"
 
+#include <cmath>
+
 #ifdef HAS_CUDA
 #include <thrust/device_ptr.h>
 #include <thrust/iterator/counting_iterator.h>
