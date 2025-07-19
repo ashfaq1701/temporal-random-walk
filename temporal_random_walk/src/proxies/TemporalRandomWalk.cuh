@@ -63,6 +63,8 @@ public:
     [[nodiscard]] bool get_is_directed() const;
 
     void clear() const;
+
+    [[nodiscard]] size_t get_memory_used() const;
 };
 
 #endif // TEMPORAL_RANDOM_WALK_H

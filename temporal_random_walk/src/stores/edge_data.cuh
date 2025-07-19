@@ -205,6 +205,8 @@ namespace edge_data {
 
     #endif
 
+    HOST size_t get_memory_used(EdgeDataStore* edge_data);
+
 }
 
 #endif // EDGE_DATA_STORE_H

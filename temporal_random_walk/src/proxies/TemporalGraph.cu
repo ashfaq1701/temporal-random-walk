@@ -436,3 +436,7 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
     clear_memory(&rand_nums, graph->use_gpu);
     return result;
 }
+
+size_t TemporalGraph::get_memory_used() const {
+    return temporal_graph::get_memory_used(graph);
+}

@@ -256,6 +256,8 @@ public:
     void update_temporal_weights(const EdgeDataStore* edge_data, double timescale_bound) const;
 
     [[nodiscard]] NodeEdgeIndexStore* get_node_edge_index() const;
+
+    [[nodiscard]] size_t get_memory_used() const;
 };
 
 #endif // NODE_EDGE_INDEX_H

@@ -1819,3 +1819,30 @@ HOST void node_edge_index::rebuild(
     clear_memory(&outbound_node_ids, node_edge_index->use_gpu);
     clear_memory(&inbound_node_ids, node_edge_index->use_gpu);
 }
+
+HOST size_t node_edge_index::get_memory_used(NodeEdgeIndexStore* node_edge_index) {
+    size_t total_memory = 0;
+
+    // Node group offset arrays
+    total_memory += node_edge_index->node_group_outbound_offsets_size * sizeof(size_t);
+    total_memory += node_edge_index->node_group_inbound_offsets_size * sizeof(size_t);
+
+    // Node timestamp-sorted indices arrays
+    total_memory += node_edge_index->node_ts_sorted_outbound_indices_size * sizeof(size_t);
+    total_memory += node_edge_index->node_ts_sorted_inbound_indices_size * sizeof(size_t);
+
+    // Timestamp group counts per node
+    total_memory += node_edge_index->count_ts_group_per_node_outbound_size * sizeof(size_t);
+    total_memory += node_edge_index->count_ts_group_per_node_inbound_size * sizeof(size_t);
+
+    // Node timestamp group offset arrays
+    total_memory += node_edge_index->node_ts_group_outbound_offsets_size * sizeof(size_t);
+    total_memory += node_edge_index->node_ts_group_inbound_offsets_size * sizeof(size_t);
+
+    // Cumulative weight arrays (if allocated for weight computation)
+    total_memory += node_edge_index->outbound_forward_cumulative_weights_exponential_size * sizeof(double);
+    total_memory += node_edge_index->outbound_backward_cumulative_weights_exponential_size * sizeof(double);
+    total_memory += node_edge_index->inbound_backward_cumulative_weights_exponential_size * sizeof(double);
+
+    return total_memory;
+}

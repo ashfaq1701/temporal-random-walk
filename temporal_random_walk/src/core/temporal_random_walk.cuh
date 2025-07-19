@@ -149,5 +149,8 @@ namespace temporal_random_walk {
     HOST void free_device_pointers(TemporalRandomWalkStore* d_temporal_random_walk);
 
     #endif
+
+    HOST size_t get_memory_used(TemporalRandomWalkStore* temporal_random_walk);
+
 }
 #endif // TEMPORAL_RANDOM_WALK_STORE_H

@@ -292,6 +292,15 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             )"
         )
 
+        .def("get_memory_used", &TemporalRandomWalk::get_memory_used,
+            R"(
+            Returns the memory used by the application in bytes.
+
+            Returns:
+                int: The total number of bytes allocated.
+            )"
+        )
+
         .def("add_edges_from_networkx", [](TemporalRandomWalk& tw, const py::object& nx_graph)
              {
                  const py::object edges = nx_graph.attr("edges")(py::arg("data") = true);

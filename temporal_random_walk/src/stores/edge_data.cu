@@ -685,3 +685,25 @@ HOST EdgeDataStore* edge_data::to_device_ptr(const EdgeDataStore *edge_data) {
 }
 
 #endif
+
+HOST size_t edge_data::get_memory_used(EdgeDataStore* edge_data) {
+    size_t total_memory = 0;
+
+    // Basic edge data arrays
+    total_memory += edge_data->sources_size * sizeof(int);
+    total_memory += edge_data->targets_size * sizeof(int);
+    total_memory += edge_data->timestamps_size * sizeof(int64_t);
+
+    // Active nodes array
+    total_memory += edge_data->active_node_ids_size * sizeof(int);
+
+    // Timestamp grouping arrays
+    total_memory += edge_data->timestamp_group_offsets_size * sizeof(size_t);
+    total_memory += edge_data->unique_timestamps_size * sizeof(int64_t);
+
+    // Weight computation arrays (if allocated)
+    total_memory += edge_data->forward_cumulative_weights_exponential_size * sizeof(double);
+    total_memory += edge_data->backward_cumulative_weights_exponential_size * sizeof(double);
+
+    return total_memory;
+}

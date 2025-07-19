@@ -343,3 +343,7 @@ size_t EdgeData::find_group_before_timestamp(int64_t timestamp) const {
         return edge_data::find_group_before_timestamp(edge_data, timestamp);
     }
 }
+
+size_t EdgeData::get_memory_used() const {
+    return edge_data::get_memory_used(edge_data);
+}

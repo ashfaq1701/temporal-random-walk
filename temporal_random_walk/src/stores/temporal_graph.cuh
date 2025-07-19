@@ -121,6 +121,8 @@ namespace temporal_graph {
 
     #endif
 
+    HOST size_t get_memory_used(TemporalGraphStore* graph);
+
 }
 
 #endif // TEMPORAL_GRAPH_STORE_H

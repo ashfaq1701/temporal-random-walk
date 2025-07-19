@@ -171,6 +171,8 @@ namespace node_edge_index {
 
     HOST void rebuild(NodeEdgeIndexStore *node_edge_index, const EdgeDataStore *edge_data, bool is_directed);
 
+    HOST size_t get_memory_used(NodeEdgeIndexStore* node_edge_index);
+
 }
 
 #endif // NODE_EDGE_INDEX_STORE_H

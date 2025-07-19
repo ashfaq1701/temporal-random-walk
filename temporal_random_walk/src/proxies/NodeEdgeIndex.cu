@@ -161,3 +161,7 @@ void NodeEdgeIndex::update_temporal_weights(const EdgeDataStore* edge_data, cons
 NodeEdgeIndexStore* NodeEdgeIndex::get_node_edge_index() const {
     return node_edge_index;
 }
+
+size_t NodeEdgeIndex::get_memory_used() const {
+    return node_edge_index::get_memory_used(node_edge_index);
+}

@@ -231,3 +231,7 @@ bool TemporalRandomWalk::get_is_directed() const {
 void TemporalRandomWalk::clear() const {
     temporal_random_walk::clear(temporal_random_walk);
 }
+
+size_t TemporalRandomWalk::get_memory_used() const {
+    return temporal_random_walk::get_memory_used(temporal_random_walk);
+}

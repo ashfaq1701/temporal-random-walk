@@ -185,6 +185,8 @@ public:
     [[nodiscard]] size_t find_group_after_timestamp(int64_t timestamp) const;
 
     [[nodiscard]] size_t find_group_before_timestamp(int64_t timestamp) const;
+
+    [[nodiscard]] size_t get_memory_used() const;
 };
 
 #endif // EDGE_DATA_H

@@ -86,6 +86,8 @@ public:
     [[nodiscard]] Edge get_node_edge_at(int node_id, RandomPickerType picker_type, int64_t timestamp = -1, bool forward = true) const;
 
     [[nodiscard]] TemporalGraphStore* get_graph() const;
+
+    [[nodiscard]] size_t get_memory_used() const;
 };
 
 #endif // TEMPORAL_GRAPH_H

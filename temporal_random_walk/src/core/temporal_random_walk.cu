@@ -329,3 +329,7 @@ HOST void temporal_random_walk::free_device_pointers(TemporalRandomWalkStore *d_
 }
 
 #endif
+
+HOST size_t temporal_random_walk::get_memory_used(TemporalRandomWalkStore* temporal_random_walk) {
+    return temporal_graph::get_memory_used(temporal_random_walk->temporal_graph);
+}

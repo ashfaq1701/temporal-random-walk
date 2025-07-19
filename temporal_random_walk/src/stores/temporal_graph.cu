@@ -631,3 +631,7 @@ HOST void temporal_graph::free_device_pointers(TemporalGraphStore *d_graph) {
 }
 
 #endif
+
+HOST size_t temporal_graph::get_memory_used(TemporalGraphStore* graph) {
+    return edge_data::get_memory_used(graph->edge_data) + node_edge_index::get_memory_used(graph->node_edge_index);
+}
