@@ -166,14 +166,13 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
         num_walks_per_node,
         temporal_random_walk->use_gpu);
 
+    auto base_seed = secure_random_seed();
+
     // Calculate optimal kernel launch parameters
     auto [grid_dim, block_dim] = get_optimal_launch_params(
         repeated_node_ids.size,
         temporal_random_walk->cuda_device_prop,
         BLOCK_DIM_GENERATING_RANDOM_WALKS);
-
-    // Initialize random numbers between [0.0, 1.0)
-    double *rand_nums = generate_n_random_numbers(repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, true);
 
     // Shuffle node IDs for randomization
     shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
@@ -198,7 +197,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
         *walk_bias,
         *initial_edge_bias,
         walk_direction,
-        rand_nums,
+        base_seed,
         grid_dim,
         block_dim);
 
@@ -209,7 +208,6 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
     host_walk_set.copy_from_device(d_walk_set);
 
     // Free device memory
-    clear_memory(&rand_nums, true);
     temporal_graph::free_device_pointers(d_temporal_graph);
     CUDA_CHECK_AND_CLEAR(cudaFree(d_walk_set));
 
@@ -227,6 +225,8 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
         initial_edge_bias = walk_bias;
     }
 
+    auto base_seed = secure_random_seed();
+
     // Calculate optimal kernel launch parameters
     auto [grid_dim, block_dim] = get_optimal_launch_params(
         num_walks_total,
@@ -237,9 +237,6 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     int *start_node_ids;
     CUDA_CHECK_AND_CLEAR(cudaMalloc(&start_node_ids, num_walks_total * sizeof(int)));
     fill_memory(start_node_ids, num_walks_total, -1, temporal_random_walk->use_gpu);
-
-    // Initialize random numbers between [0.0, 1.0)
-    double *rand_nums = generate_n_random_numbers(num_walks_total + num_walks_total * max_walk_len * 2, true);
 
     // Create and initialize the walk set on device
     const WalkSet walk_set(num_walks_total, max_walk_len, temporal_random_walk->walk_padding_value, true);
@@ -261,7 +258,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
         *walk_bias,
         *initial_edge_bias,
         walk_direction,
-        rand_nums,
+        base_seed,
         grid_dim,
         block_dim);
 
@@ -272,7 +269,6 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     host_walk_set.copy_from_device(d_walk_set);
 
     // Free device memory
-    clear_memory(&rand_nums, true);
     temporal_graph::free_device_pointers(d_temporal_graph);
     CUDA_CHECK_AND_CLEAR(cudaFree(start_node_ids));
     CUDA_CHECK_AND_CLEAR(cudaFree(d_walk_set));

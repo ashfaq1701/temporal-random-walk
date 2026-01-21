@@ -13,6 +13,16 @@
 #include "error_handlers.cuh"
 #include "memory.cuh"
 
+inline uint64_t secure_random_seed() {
+    std::random_device rd;
+    uint64_t seed = 0;
+
+    seed |= static_cast<uint64_t>(rd()) << 32;
+    seed |= static_cast<uint64_t>(rd());
+
+    return seed;
+}
+
 inline double* generate_n_random_numbers_cpu(const size_t n) {
     double* random_numbers = nullptr;
     allocate_memory(&random_numbers, n, false);
@@ -35,6 +45,17 @@ inline double* generate_n_random_numbers_cpu(const size_t n) {
 }
 
 #ifdef HAS_CUDA
+
+DEVICE __forceinline__ double rng_u01_philox(
+    const uint64_t base_seed,
+    const uint64_t walk_idx,
+    const uint64_t draw_idx) {
+
+    curandStatePhilox4_32_10_t state;
+    curand_init(base_seed, walk_idx, draw_idx, &state);
+    return curand_uniform_double(&state);
+}
+
 inline double* generate_n_random_numbers_gpu(const size_t n) {
     double* d_random_numbers = nullptr;
     allocate_memory(&d_random_numbers, n, true);
@@ -51,6 +72,7 @@ inline double* generate_n_random_numbers_gpu(const size_t n) {
 
     return d_random_numbers;
 }
+
 #endif
 
 inline double* generate_n_random_numbers(const size_t n, const bool use_gpu) {
