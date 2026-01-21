@@ -64,7 +64,7 @@ inline double* generate_n_random_numbers_gpu(const size_t n) {
     CHECK_CURAND(curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_PHILOX4_32_10));
 
     // Generate a random seed internally
-    const unsigned long long seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    const auto seed = secure_random_seed();
     CHECK_CURAND(curandSetPseudoRandomGeneratorSeed(gen, seed));
 
     CHECK_CURAND(curandGenerateUniformDouble(gen, d_random_numbers, n));
