@@ -5,6 +5,7 @@
 
 #include "../src/proxies/TemporalRandomWalk.cuh"
 #include "../test/test_utils.h"
+#include "test_utils.h"
 
 #ifdef HAS_CUDA
 constexpr bool DEFAULT_USE_GPU = true;
