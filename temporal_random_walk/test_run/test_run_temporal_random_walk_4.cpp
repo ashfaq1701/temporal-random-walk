@@ -3,6 +3,11 @@
 #include <chrono>
 #include <algorithm>
 
+#ifdef HAS_CUDA
+#include <nvtx3/nvToolsExt.h>
+#include <cuda_runtime.h>
+#endif
+
 #include "../src/proxies/TemporalRandomWalk.cuh"
 #include "../test/test_utils.h"
 #include "test_utils.h"
@@ -12,6 +17,22 @@ constexpr bool DEFAULT_USE_GPU = true;
 #else
 constexpr bool DEFAULT_USE_GPU = false;
 #endif
+
+// ------------------------------
+// NVTX helper (no-op on CPU)
+// ------------------------------
+struct NvtxRange {
+#ifdef HAS_CUDA
+    explicit NvtxRange(const char* name) {
+        nvtxRangePushA(name);
+    }
+    ~NvtxRange() {
+        nvtxRangePop();
+    }
+#else
+    explicit NvtxRange(const char*) {}
+#endif
+};
 
 RandomPickerType parse_picker(const std::string &s) {
     if (s == "uniform") return RandomPickerType::Uniform;
@@ -48,14 +69,22 @@ int main(int argc, char **argv) {
               << "Walks per node: " << num_walks_per_node << "\n"
               << "Max walk length: " << max_walk_len << "\n";
 
-    // Load edges
-    const auto edge_infos = read_edges_from_csv(file_path, -1);
-    auto [sources, targets, timestamps] =
-        convert_edge_tuples_to_components(edge_infos);
+    // ------------------------------
+    // Edge loading (CPU)
+    // ------------------------------
+    std::vector<int> sources, targets;
+    std::vector<int64_t> timestamps;
+    {
+        NvtxRange r("edge_load");
+        const auto edge_infos = read_edges_from_csv(file_path, -1);
+        std::tie(sources, targets, timestamps) =
+            convert_edge_tuples_to_components(edge_infos);
+        std::cout << "Edges loaded: " << edge_infos.size() << "\n";
+    }
 
-    std::cout << "Edges loaded: " << edge_infos.size() << "\n";
-
-    // Construct TRW system ONCE
+    // ------------------------------
+    // Construct TRW
+    // ------------------------------
     const bool use_weight = hop_picker == RandomPickerType::ExponentialWeight;
 
     TemporalRandomWalk trw(
@@ -66,36 +95,63 @@ int main(int argc, char **argv) {
         /*timescale_bound=*/0.0
     );
 
-    // Ingest edges
-    const auto ingest_start = std::chrono::high_resolution_clock::now();
-    trw.add_multiple_edges(
-        sources.data(),
-        targets.data(),
-        timestamps.data(),
-        timestamps.size());
-    const auto ingest_end = std::chrono::high_resolution_clock::now();
+    // ------------------------------
+    // Ingestion
+    // ------------------------------
+    double ingestion_time = 0.0;
+    {
+        NvtxRange r("ingestion");
+        const auto ingest_start = std::chrono::high_resolution_clock::now();
+        trw.add_multiple_edges(
+            sources.data(),
+            targets.data(),
+            timestamps.data(),
+            timestamps.size());
 
-    std::cout << "Ingestion time: "
-              << std::chrono::duration<double>(ingest_end - ingest_start).count()
-              << " sec\n";
+#ifdef HAS_CUDA
+        if (use_gpu) cudaDeviceSynchronize();
+#endif
 
-    // Run walks
-    const auto walk_start = std::chrono::high_resolution_clock::now();
-    const auto walks = trw.get_random_walks_and_times_for_all_nodes(
-        max_walk_len,
-        &hop_picker,
-        num_walks_per_node,
-        &start_picker,
-        WalkDirection::Forward_In_Time);
-    const auto walk_end = std::chrono::high_resolution_clock::now();
+        const auto ingest_end = std::chrono::high_resolution_clock::now();
+        ingestion_time =
+            std::chrono::duration<double>(ingest_end - ingest_start).count();
+    }
 
-    const double walk_time =
-        std::chrono::duration<double>(walk_end - walk_start).count();
+    std::cout << "Ingestion time: " << ingestion_time << " sec\n";
 
-    std::cout << "Walks generated: " << walks.size() << "\n"
-              << "Average walk length: " << get_average_walk_length(walks) << "\n"
+    // ------------------------------
+    // Walk sampling
+    // ------------------------------
+    double walk_time = 0.0;
+    size_t num_walks = 0;
+    double avg_len = 0.0;
+
+    {
+        NvtxRange r("walk_sampling");
+        const auto walk_start = std::chrono::high_resolution_clock::now();
+
+        const auto walks = trw.get_random_walks_and_times_for_all_nodes(
+            max_walk_len,
+            &hop_picker,
+            num_walks_per_node,
+            &start_picker,
+            WalkDirection::Forward_In_Time);
+
+#ifdef HAS_CUDA
+        if (use_gpu) cudaDeviceSynchronize();
+#endif
+
+        const auto walk_end = std::chrono::high_resolution_clock::now();
+        walk_time =
+            std::chrono::duration<double>(walk_end - walk_start).count();
+        num_walks = walks.size();
+        avg_len = get_average_walk_length(walks);
+    }
+
+    std::cout << "Walks generated: " << num_walks << "\n"
+              << "Average walk length: " << avg_len << "\n"
               << "Walk generation time: " << walk_time << " sec\n"
-              << "Throughput: " << (walks.size() / walk_time) << " walks/sec\n";
+              << "Throughput: " << (num_walks / walk_time) << " walks/sec\n";
 
     return 0;
 }
