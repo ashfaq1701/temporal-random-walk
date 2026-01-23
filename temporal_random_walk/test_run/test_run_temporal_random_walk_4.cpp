@@ -42,24 +42,33 @@ RandomPickerType parse_picker(const std::string &s) {
     throw std::runtime_error("Invalid picker type");
 }
 
-int main(int argc, char **argv) {
+KernelLaunchType parse_kernel_launch_type(const std::string &s) {
+    if (s == "full_walk") return KernelLaunchType::FULL_WALK;
+    if (s == "step_based") return KernelLaunchType::STEP_BASED;
+    throw std::runtime_error("Invalid kernel launch type");
+}
+
+int main(const int argc, char **argv) {
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0]
                   << " <file_path>"
                   << " [use_gpu=1]"
                   << " [picker=exponential_index]"
+                  << " [kernel_launch_type=full_walk]"
                   << " [num_walks_per_node=1]"
                   << " [max_walk_len=80]\n";
         return 1;
     }
 
     const std::string file_path = argv[1];
-    bool use_gpu = (argc > 2) ? std::stoi(argv[2]) : DEFAULT_USE_GPU;
-    std::string picker_str = (argc > 3) ? argv[3] : "exponential_index";
-    int num_walks_per_node = (argc > 4) ? std::stoi(argv[4]) : 1;
-    int max_walk_len = (argc > 5) ? std::stoi(argv[5]) : 80;
+    const bool use_gpu = (argc > 2) ? std::stoi(argv[2]) : DEFAULT_USE_GPU;
+    const std::string picker_str = (argc > 3) ? argv[3] : "exponential_index";
+    const std::string kernel_launch_type_str = (argc > 4) ? argv[4] : "full_walk";
+    const int num_walks_per_node = (argc > 5) ? std::stoi(argv[5]) : 1;
+    const int max_walk_len = (argc > 6) ? std::stoi(argv[6]) : 80;
 
     const RandomPickerType hop_picker = parse_picker(picker_str);
+    const KernelLaunchType kernel_launch_type = parse_kernel_launch_type(kernel_launch_type_str);
     constexpr RandomPickerType start_picker = RandomPickerType::Uniform;
 
     std::cout << "=== RNG Microbenchmark ===\n"
@@ -135,7 +144,8 @@ int main(int argc, char **argv) {
             &hop_picker,
             num_walks_per_node,
             &start_picker,
-            WalkDirection::Forward_In_Time);
+            WalkDirection::Forward_In_Time,
+            kernel_launch_type);
 
 #ifdef HAS_CUDA
         if (use_gpu) cudaDeviceSynchronize();

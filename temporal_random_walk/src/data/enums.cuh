@@ -17,4 +17,9 @@ enum WalkDirection {
     Backward_In_Time
 };
 
+enum KernelLaunchType {
+    FULL_WALK,
+    STEP_BASED
+};
+
 #endif // ENUMS_H

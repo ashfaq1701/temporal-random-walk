@@ -71,7 +71,8 @@ WalkSet TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
         const RandomPickerType* walk_bias,
         const int num_walks_per_node,
         const RandomPickerType* initial_edge_bias,
-        const WalkDirection walk_direction) const {
+        const WalkDirection walk_direction,
+        const KernelLaunchType kernel_launch_type) const {
     WalkSet walk_set;
 
     #ifdef HAS_CUDA
@@ -82,7 +83,8 @@ WalkSet TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
             walk_bias,
             num_walks_per_node,
             initial_edge_bias,
-            walk_direction);
+            walk_direction,
+            kernel_launch_type);
     }
     else
     #endif
@@ -104,7 +106,8 @@ WalkSet TemporalRandomWalk::get_random_walks_and_times(
         const RandomPickerType* walk_bias,
         const int num_walks_total,
         const RandomPickerType* initial_edge_bias,
-        const WalkDirection walk_direction) const {
+        const WalkDirection walk_direction,
+        const KernelLaunchType kernel_launch_type) const {
 
     WalkSet walk_set;
 
@@ -116,7 +119,8 @@ WalkSet TemporalRandomWalk::get_random_walks_and_times(
             walk_bias,
             num_walks_total,
             initial_edge_bias,
-            walk_direction);
+            walk_direction,
+            kernel_launch_type);
     }
     else
     #endif

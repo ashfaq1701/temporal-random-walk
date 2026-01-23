@@ -134,7 +134,8 @@ namespace temporal_random_walk {
         const RandomPickerType *walk_bias,
         int num_walks_per_node,
         const RandomPickerType *initial_edge_bias = nullptr,
-        WalkDirection walk_direction = WalkDirection::Forward_In_Time);
+        WalkDirection walk_direction = WalkDirection::Forward_In_Time,
+        KernelLaunchType kernel_launch_type=KernelLaunchType::FULL_WALK);
 
     HOST WalkSet get_random_walks_and_times_cuda(
         const TemporalRandomWalkStore *temporal_random_walk,
@@ -142,7 +143,8 @@ namespace temporal_random_walk {
         const RandomPickerType *walk_bias,
         int num_walks_total,
         const RandomPickerType *initial_edge_bias = nullptr,
-        WalkDirection walk_direction = WalkDirection::Forward_In_Time);
+        WalkDirection walk_direction = WalkDirection::Forward_In_Time,
+        KernelLaunchType kernel_launch_type=KernelLaunchType::FULL_WALK);
 
     HOST TemporalRandomWalkStore *to_device_ptr(const TemporalRandomWalkStore* temporal_random_walk);
 

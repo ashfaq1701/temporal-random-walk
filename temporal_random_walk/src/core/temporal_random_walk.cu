@@ -154,7 +154,8 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
     const RandomPickerType *walk_bias,
     const int num_walks_per_node,
     const RandomPickerType *initial_edge_bias,
-    const WalkDirection walk_direction) {
+    const WalkDirection walk_direction,
+    const KernelLaunchType kernel_launch_type) {
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
     }
@@ -166,7 +167,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
         num_walks_per_node,
         temporal_random_walk->use_gpu);
 
-    auto base_seed = secure_random_seed();
+    const auto base_seed = secure_random_seed();
 
     // Calculate optimal kernel launch parameters
     auto [grid_dim, block_dim] = get_optimal_launch_params(
@@ -187,19 +188,42 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
     // Create device pointer for the temporal graph
     TemporalGraphStore *d_temporal_graph = temporal_graph::to_device_ptr(temporal_random_walk->temporal_graph);
 
-    launch_random_walk_kernel_full_walk(
-        d_temporal_graph,
-        temporal_random_walk->is_directed,
-        d_walk_set,
-        max_walk_len,
-        repeated_node_ids.data,
-        repeated_node_ids.size,
-        *walk_bias,
-        *initial_edge_bias,
-        walk_direction,
-        base_seed,
-        grid_dim,
-        block_dim);
+    switch (kernel_launch_type) {
+        case KernelLaunchType::FULL_WALK:
+            launch_random_walk_kernel_full_walk(
+                d_temporal_graph,
+                temporal_random_walk->is_directed,
+                d_walk_set,
+                max_walk_len,
+                repeated_node_ids.data,
+                repeated_node_ids.size,
+                *walk_bias,
+                *initial_edge_bias,
+                walk_direction,
+                base_seed,
+                grid_dim,
+                block_dim);
+        break;
+
+        case KernelLaunchType::STEP_BASED:
+            launch_random_walk_kernel_step_based(
+                d_temporal_graph,
+                temporal_random_walk->is_directed,
+                d_walk_set,
+                max_walk_len,
+                repeated_node_ids.data,
+                repeated_node_ids.size,
+                *walk_bias,
+                *initial_edge_bias,
+                walk_direction,
+                base_seed,
+                grid_dim,
+                block_dim);
+        break;
+
+        default:
+            throw std::runtime_error("Unknown KernelLaunchType");
+    }
 
     CUDA_KERNEL_CHECK("After generate_random_walks_kernel in get_random_walks_and_times_for_all_nodes_cuda");
 
@@ -220,12 +244,13 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     const RandomPickerType *walk_bias,
     const int num_walks_total,
     const RandomPickerType *initial_edge_bias,
-    const WalkDirection walk_direction) {
+    const WalkDirection walk_direction,
+    const KernelLaunchType kernel_launch_type) {
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
     }
 
-    auto base_seed = secure_random_seed();
+    const auto base_seed = secure_random_seed();
 
     // Calculate optimal kernel launch parameters
     auto [grid_dim, block_dim] = get_optimal_launch_params(
@@ -247,20 +272,42 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     // Create device pointer for the temporal graph
     TemporalGraphStore *d_temporal_graph = temporal_graph::to_device_ptr(temporal_random_walk->temporal_graph);
 
-    // Launch kernel
-    launch_random_walk_kernel_full_walk(
-        d_temporal_graph,
-        temporal_random_walk->is_directed,
-        d_walk_set,
-        max_walk_len,
-        start_node_ids,
-        num_walks_total,
-        *walk_bias,
-        *initial_edge_bias,
-        walk_direction,
-        base_seed,
-        grid_dim,
-        block_dim);
+    switch (kernel_launch_type) {
+        case KernelLaunchType::FULL_WALK:
+            launch_random_walk_kernel_full_walk(
+                d_temporal_graph,
+                temporal_random_walk->is_directed,
+                d_walk_set,
+                max_walk_len,
+                start_node_ids,
+                num_walks_total,
+                *walk_bias,
+                *initial_edge_bias,
+                walk_direction,
+                base_seed,
+                grid_dim,
+                block_dim);
+        break;
+
+        case KernelLaunchType::STEP_BASED:
+            launch_random_walk_kernel_step_based(
+                d_temporal_graph,
+                temporal_random_walk->is_directed,
+                d_walk_set,
+                max_walk_len,
+                start_node_ids,
+                num_walks_total,
+                *walk_bias,
+                *initial_edge_bias,
+                walk_direction,
+                base_seed,
+                grid_dim,
+                block_dim);
+        break;
+
+        default:
+            throw std::runtime_error("Unknown KernelLaunchType");
+    }
 
     CUDA_KERNEL_CHECK("After generate_random_walks_kernel in get_random_walks_and_times_cuda");
 
