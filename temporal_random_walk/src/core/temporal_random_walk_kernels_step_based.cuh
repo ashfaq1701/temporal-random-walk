@@ -18,7 +18,7 @@ namespace temporal_random_walk {
         const int *__restrict__ start_node_ids,
         const int max_walk_len,
         const size_t num_walks,
-        const uint64_t base_seed) {
+        const double *__restrict__ rand_nums) {
         const size_t walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
         if (walk_idx >= num_walks) return;
 
@@ -31,15 +31,15 @@ namespace temporal_random_walk {
             start_edge = temporal_graph::get_edge_at_device<Forward, StartPickerType>(
                 temporal_graph,
                 -1, // timestamp
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1));
+                rand_nums[rand_nums_start_offset],
+                rand_nums[rand_nums_start_offset + 1]);
         } else {
             start_edge = temporal_graph::get_node_edge_at_device<Forward, StartPickerType, IsDirected>(
                 temporal_graph,
                 start_node_ids[walk_idx],
                 -1, // timestamp
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1));
+                rand_nums[rand_nums_start_offset],
+                rand_nums[rand_nums_start_offset + 1]);
         }
 
         if (start_edge.i == -1) {
@@ -63,7 +63,7 @@ namespace temporal_random_walk {
             // For undirected graphs, use specified start node or pick a random node
             const int picked_node = (start_node_ids[walk_idx] != -1)
                                         ? start_node_ids[walk_idx]
-                                        : pick_random_number(start_src, start_dst, rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 2));
+                                        : pick_random_number(start_src, start_dst, rand_nums[rand_nums_start_offset + 2]);
             const int other_node = pick_other_number(start_src, start_dst, picked_node);
 
             walk_set->add_hop(walk_idx, picked_node, sentinel_timestamp);
@@ -78,7 +78,7 @@ namespace temporal_random_walk {
         const int step_number,
         const int max_walk_len,
         const size_t num_walks,
-        const uint64_t base_seed) {
+        const double *__restrict__ rand_nums) {
 
         const size_t walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
         if (walk_idx >= num_walks) return;
@@ -100,8 +100,8 @@ namespace temporal_random_walk {
                 temporal_graph,
                 last_node,
                 last_ts,
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1));
+                rand_nums[rand_nums_start_offset],
+                rand_nums[rand_nums_start_offset + 1]);
 
         if (next_edge.ts == -1) {
             return;
@@ -130,34 +130,34 @@ namespace temporal_random_walk {
         const int max_walk_len,
         const size_t num_walks,
         const RandomPickerType start_picker_type,
-        const uint64_t base_seed,
+        const double *rand_nums,
         const dim3 &grid,
         const dim3 &block_dim) {
 
         switch (start_picker_type) {
             case RandomPickerType::Uniform:
                 pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::Uniform><<<grid, block_dim>>>(
-                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, base_seed);
+                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::Linear:
                 pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::Linear><<<grid, block_dim>>>(
-                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, base_seed);
+                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::ExponentialIndex:
                 pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::ExponentialIndex><<<grid, block_dim>>>(
-                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, base_seed);
+                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::ExponentialWeight:
                 pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::ExponentialWeight><<<grid, block_dim>>>(
-                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, base_seed);
+                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::TEST_FIRST:
                 pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::TEST_FIRST><<<grid, block_dim>>>(
-                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, base_seed);
+                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::TEST_LAST:
                 pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::TEST_LAST><<<grid, block_dim>>>(
-                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, base_seed);
+                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, rand_nums);
                 break;
             default:
                 break;
@@ -173,34 +173,34 @@ namespace temporal_random_walk {
         const int max_walk_len,
         const size_t num_walks,
         const RandomPickerType edge_picker_type,
-        const uint64_t base_seed,
+        const double *rand_nums,
         const dim3 &grid,
         const dim3 &block_dim) {
 
         switch (edge_picker_type) {
             case RandomPickerType::Uniform:
                 pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::Uniform><<<grid, block_dim>>>(
-                    temporal_graph, walk_set, step_number, max_walk_len, num_walks, base_seed);
+                    temporal_graph, walk_set, step_number, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::Linear:
                 pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::Linear><<<grid, block_dim>>>(
-                    temporal_graph, walk_set, step_number, max_walk_len, num_walks, base_seed);
+                    temporal_graph, walk_set, step_number, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::ExponentialIndex:
                 pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::ExponentialIndex><<<grid, block_dim>>>(
-                    temporal_graph, walk_set, step_number, max_walk_len, num_walks, base_seed);
+                    temporal_graph, walk_set, step_number, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::ExponentialWeight:
                 pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::ExponentialWeight><<<grid, block_dim>>>(
-                    temporal_graph, walk_set, step_number, max_walk_len, num_walks, base_seed);
+                    temporal_graph, walk_set, step_number, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::TEST_FIRST:
                 pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::TEST_FIRST><<<grid, block_dim>>>(
-                    temporal_graph, walk_set, step_number, max_walk_len, num_walks, base_seed);
+                    temporal_graph, walk_set, step_number, max_walk_len, num_walks, rand_nums);
                 break;
             case RandomPickerType::TEST_LAST:
                 pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::TEST_LAST><<<grid, block_dim>>>(
-                    temporal_graph, walk_set, step_number, max_walk_len, num_walks, base_seed);
+                    temporal_graph, walk_set, step_number, max_walk_len, num_walks, rand_nums);
                 break;
             default:
                 break;
@@ -215,7 +215,7 @@ namespace temporal_random_walk {
         const int max_walk_len,
         const size_t num_walks,
         const RandomPickerType edge_picker_type,
-        const uint64_t base_seed,
+        const double *rand_nums,
         const dim3 &grid,
         const dim3 &block_dim) {
 
@@ -227,7 +227,7 @@ namespace temporal_random_walk {
                 max_walk_len,
                 num_walks,
                 edge_picker_type,
-                base_seed,
+                rand_nums,
                 grid,
                 block_dim);
         }
@@ -243,7 +243,7 @@ namespace temporal_random_walk {
         const RandomPickerType edge_picker_type,
         const RandomPickerType start_picker_type,
         const WalkDirection walk_direction,
-        const uint64_t base_seed,
+        const double *rand_nums,
         const dim3 &grid_dim,
         const dim3 &block_dim) {
         // Calculate grid dimensions if not provided
@@ -262,21 +262,21 @@ namespace temporal_random_walk {
             if (should_walk_forward) {
                 dispatch_start_edges_kernel<true, true>(
                     temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks_int,
-                    start_picker_type, base_seed, grid, block_dim);
+                    start_picker_type, rand_nums, grid, block_dim);
             } else {
                 dispatch_start_edges_kernel<true, false>(
                     temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks_int,
-                    start_picker_type, base_seed, grid, block_dim);
+                    start_picker_type, rand_nums, grid, block_dim);
             }
         } else {
             if (should_walk_forward) {
                 dispatch_start_edges_kernel<false, true>(
                     temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks_int,
-                    start_picker_type, base_seed, grid, block_dim);
+                    start_picker_type, rand_nums, grid, block_dim);
             } else {
                 dispatch_start_edges_kernel<false, false>(
                     temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks_int,
-                    start_picker_type, base_seed, grid, block_dim);
+                    start_picker_type, rand_nums, grid, block_dim);
             }
         }
 
@@ -284,18 +284,18 @@ namespace temporal_random_walk {
         if (is_directed) {
             if (should_walk_forward) {
                 handle_intermediate_steps<true, true>(
-                    temporal_graph, walk_set, max_walk_len, num_walks_int, edge_picker_type, base_seed, grid, block_dim);
+                    temporal_graph, walk_set, max_walk_len, num_walks_int, edge_picker_type, rand_nums, grid, block_dim);
             } else {
                 handle_intermediate_steps<true, false>(
-                    temporal_graph, walk_set, max_walk_len, num_walks_int, edge_picker_type, base_seed, grid, block_dim);
+                    temporal_graph, walk_set, max_walk_len, num_walks_int, edge_picker_type, rand_nums, grid, block_dim);
             }
         } else {
             if (should_walk_forward) {
                 handle_intermediate_steps<false, true>(
-                    temporal_graph, walk_set, max_walk_len, num_walks_int, edge_picker_type, base_seed, grid, block_dim);
+                    temporal_graph, walk_set, max_walk_len, num_walks_int, edge_picker_type, rand_nums, grid, block_dim);
             } else {
                 handle_intermediate_steps<false, false>(
-                    temporal_graph, walk_set, max_walk_len, num_walks_int, edge_picker_type, base_seed, grid, block_dim);
+                    temporal_graph, walk_set, max_walk_len, num_walks_int, edge_picker_type, rand_nums, grid, block_dim);
             }
         }
 

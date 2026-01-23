@@ -167,13 +167,14 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
         num_walks_per_node,
         temporal_random_walk->use_gpu);
 
-    const auto base_seed = secure_random_seed();
-
     // Calculate optimal kernel launch parameters
     auto [grid_dim, block_dim] = get_optimal_launch_params(
         repeated_node_ids.size,
         temporal_random_walk->cuda_device_prop,
         BLOCK_DIM_GENERATING_RANDOM_WALKS);
+
+    // Initialize random numbers between [0.0, 1.0)
+    const double *rand_nums = generate_n_random_numbers(repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, true);
 
     // Shuffle node IDs for randomization
     shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
@@ -200,7 +201,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
                 *walk_bias,
                 *initial_edge_bias,
                 walk_direction,
-                base_seed,
+                rand_nums,
                 grid_dim,
                 block_dim);
         break;
@@ -216,7 +217,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
                 *walk_bias,
                 *initial_edge_bias,
                 walk_direction,
-                base_seed,
+                rand_nums,
                 grid_dim,
                 block_dim);
         break;
@@ -250,13 +251,14 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
         initial_edge_bias = walk_bias;
     }
 
-    const auto base_seed = secure_random_seed();
-
     // Calculate optimal kernel launch parameters
     auto [grid_dim, block_dim] = get_optimal_launch_params(
         num_walks_total,
         temporal_random_walk->cuda_device_prop,
         BLOCK_DIM_GENERATING_RANDOM_WALKS);
+
+    // Initialize random numbers between [0.0, 1.0)
+    const double *rand_nums = generate_n_random_numbers(num_walks_total + num_walks_total * max_walk_len * 2, true);
 
     // Initialize all start node IDs to -1 (indicating random start)
     int *start_node_ids;
@@ -284,7 +286,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
                 *walk_bias,
                 *initial_edge_bias,
                 walk_direction,
-                base_seed,
+                rand_nums,
                 grid_dim,
                 block_dim);
         break;
@@ -300,7 +302,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
                 *walk_bias,
                 *initial_edge_bias,
                 walk_direction,
-                base_seed,
+                rand_nums,
                 grid_dim,
                 block_dim);
         break;
