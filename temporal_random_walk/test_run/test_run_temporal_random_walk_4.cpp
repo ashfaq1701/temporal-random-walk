@@ -75,6 +75,7 @@ int main(const int argc, char **argv) {
               << "File: " << file_path << "\n"
               << "Device: " << (use_gpu ? "GPU" : "CPU") << "\n"
               << "Hop picker: " << picker_str << "\n"
+              << "Kernel launch type: " << kernel_launch_type_str << "\n"
               << "Walks per node: " << num_walks_per_node << "\n"
               << "Max walk length: " << max_walk_len << "\n";
 
