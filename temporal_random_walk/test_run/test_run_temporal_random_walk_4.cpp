@@ -55,9 +55,10 @@ int main(const int argc, char **argv) {
                   << " [use_gpu=1]"
                   << " [picker=exponential_index]"
                   << " [kernel_launch_type=full_walk]"
+                  << " [is_directed=0]"
                   << " [num_walks_per_node=1]"
                   << " [max_walk_len=80]"
-                  << " [timescale_bound=-1]\n";
+                  << " [timescale_bound=0.0]\n";
         return 1;
     }
 
@@ -65,9 +66,10 @@ int main(const int argc, char **argv) {
     const bool use_gpu = (argc > 2) ? std::stoi(argv[2]) : DEFAULT_USE_GPU;
     const std::string picker_str = (argc > 3) ? argv[3] : "exponential_index";
     const std::string kernel_launch_type_str = (argc > 4) ? argv[4] : "full_walk";
-    const int num_walks_per_node = (argc > 5) ? std::stoi(argv[5]) : 1;
-    const int max_walk_len = (argc > 6) ? std::stoi(argv[6]) : 80;
-    const double timescale_bound = (argc > 7) ? std::stod(argv[7]) : -1;
+    const bool is_directed = (argc > 5) ? std::stoi(argv[5]) != 0 : false;
+    const int num_walks_per_node = (argc > 6) ? std::stoi(argv[6]) : 1;
+    const int max_walk_len = (argc > 7) ? std::stoi(argv[7]) : 80;
+    const double timescale_bound = (argc > 8) ? std::stod(argv[8]) : 0.0;
 
     const RandomPickerType hop_picker = parse_picker(picker_str);
     const KernelLaunchType kernel_launch_type = parse_kernel_launch_type(kernel_launch_type_str);
@@ -78,6 +80,7 @@ int main(const int argc, char **argv) {
               << "Device: " << (use_gpu ? "GPU" : "CPU") << "\n"
               << "Hop picker: " << picker_str << "\n"
               << "Kernel launch type: " << kernel_launch_type_str << "\n"
+              << "Directed graph: " << (is_directed ? "yes" : "no") << "\n"
               << "Walks per node: " << num_walks_per_node << "\n"
               << "Max walk length: " << max_walk_len << "\n"
               << "Timescale bound: " << timescale_bound << "\n";
@@ -101,11 +104,11 @@ int main(const int argc, char **argv) {
     const bool use_weight = hop_picker == RandomPickerType::ExponentialWeight;
 
     TemporalRandomWalk trw(
-        false,            // undirected
+        is_directed,      // <-- now configurable
         use_gpu,
         -1,               // no sliding window
         use_weight,
-        timescale_bound   // <-- now configurable
+        timescale_bound
     );
 
     // ------------------------------
