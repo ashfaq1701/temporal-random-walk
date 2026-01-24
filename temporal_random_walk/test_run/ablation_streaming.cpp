@@ -55,6 +55,7 @@ int main(int argc, char **argv) {
                   << " [is_directed=0]"
                   << " [num_walks_per_node=1]"
                   << " [num_batches=5]"
+                  << " [num_windows=3]"
                   << " [max_walk_len=80]"
                   << " [timescale_bound=-1]\n";
         return 1;
@@ -67,15 +68,16 @@ int main(int argc, char **argv) {
     const bool is_directed = (argc > 5) ? std::stoi(argv[5]) != 0 : false;
     const int num_walks_per_node = (argc > 6) ? std::stoi(argv[6]) : 1;
     const int num_batches = (argc > 7) ? std::stoi(argv[7]) : 5;
-    const int max_walk_len = (argc > 8) ? std::stoi(argv[8]) : 80;
-    const double timescale_bound = (argc > 9) ? std::stod(argv[9]) : -1;
+    const int num_windows = (argc > 8) ? std::stoi(argv[8]) : 3;
+    const int max_walk_len = (argc > 9) ? std::stoi(argv[9]) : 80;
+    const double timescale_bound = (argc > 10) ? std::stod(argv[10]) : -1;
 
     const RandomPickerType hop_picker = parse_picker(picker_str);
     const KernelLaunchType kernel_launch_type =
         parse_kernel_launch_type(kernel_launch_type_str);
     constexpr RandomPickerType start_picker = RandomPickerType::Uniform;
 
-    std::cout << "=== Streaming Benchmark ===\n"
+    std::cout << "=== Streaming Benchmark (decoupled batch & window) ===\n"
               << "File: " << file_path << "\n"
               << "Device: " << (use_gpu ? "GPU" : "CPU") << "\n"
               << "Hop picker: " << picker_str << "\n"
@@ -83,6 +85,7 @@ int main(int argc, char **argv) {
               << "Directed graph: " << (is_directed ? "yes" : "no") << "\n"
               << "Walks per node: " << num_walks_per_node << "\n"
               << "Num batches: " << num_batches << "\n"
+              << "Num windows: " << num_windows << "\n"
               << "Max walk length: " << max_walk_len << "\n"
               << "Timescale bound: " << timescale_bound << "\n";
 
@@ -99,55 +102,66 @@ int main(int argc, char **argv) {
         std::cout << "Edges loaded: " << edge_infos.size() << "\n";
     }
 
-    // Compute sliding window Δ
+    // ------------------------------
+    // Compute durations
+    // ------------------------------
     auto [min_it, max_it] =
         std::minmax_element(timestamps.begin(), timestamps.end());
     const int64_t min_ts = *min_it;
     const int64_t max_ts = *max_it;
-    const int64_t window_duration =
-        (max_ts - min_ts) / std::max(1, num_batches);
 
-    std::cout << "Computed window duration Δ = " << window_duration << "\n";
+    const int64_t batch_duration =
+        (max_ts - min_ts) / std::max(1, num_batches);
+    const int64_t window_duration =
+        (max_ts - min_ts) / std::max(1, num_windows);
+
+    std::cout << "Batch duration Δ_batch = " << batch_duration << "\n"
+              << "Window duration Δ_window = " << window_duration << "\n";
 
     // ------------------------------
-    // Construct TRW with sliding window
+    // Construct TRW
     // ------------------------------
     const bool use_weight = hop_picker == RandomPickerType::ExponentialWeight;
 
     TemporalRandomWalk trw(
         is_directed,
         use_gpu,
-        window_duration,
+        window_duration,   // sliding window
         use_weight,
         timescale_bound
     );
 
+    // ------------------------------
     // Sort edges by timestamp
+    // ------------------------------
     std::vector<size_t> order(timestamps.size());
     std::iota(order.begin(), order.end(), 0);
     std::sort(order.begin(), order.end(),
-              [&](const size_t a, const size_t b) { return timestamps[a] < timestamps[b]; });
+              [&](size_t a, size_t b) {
+                  return timestamps[a] < timestamps[b];
+              });
 
     std::vector<double> ingestion_times;
     std::vector<double> walk_times;
     size_t total_walks = 0;
 
     size_t cursor = 0;
-    const size_t total_edges = timestamps.size();
+    const size_t N = timestamps.size();
 
     // ------------------------------
     // Streaming loop
     // ------------------------------
     for (int b = 0; b < num_batches; ++b) {
-        const size_t batch_end =
+        const int64_t batch_start_ts = min_ts + b * batch_duration;
+        const int64_t batch_end_ts =
             (b == num_batches - 1)
-                ? total_edges
-                : (total_edges * (b + 1)) / num_batches;
+                ? max_ts + 1
+                : batch_start_ts + batch_duration;
 
         std::vector<int> batch_src, batch_dst;
         std::vector<int64_t> batch_ts;
 
-        while (cursor < batch_end) {
+        while (cursor < N && timestamps[order[cursor]] < batch_end_ts) {
             const size_t idx = order[cursor++];
             batch_src.push_back(sources[idx]);
             batch_dst.push_back(targets[idx]);
