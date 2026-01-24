@@ -126,7 +126,7 @@ int main(int argc, char **argv) {
     TemporalRandomWalk trw(
         is_directed,
         use_gpu,
-        window_duration,   // sliding window
+        window_duration,
         use_weight,
         timescale_bound
     );
@@ -144,6 +144,7 @@ int main(int argc, char **argv) {
     std::vector<double> ingestion_times;
     std::vector<double> walk_times;
     size_t total_walks = 0;
+    double total_walk_len_sum = 0.0;
 
     size_t cursor = 0;
     const size_t N = timestamps.size();
@@ -152,11 +153,10 @@ int main(int argc, char **argv) {
     // Streaming loop
     // ------------------------------
     for (int b = 0; b < num_batches; ++b) {
-        const int64_t batch_start_ts = min_ts + b * batch_duration;
         const int64_t batch_end_ts =
             (b == num_batches - 1)
                 ? max_ts + 1
-                : batch_start_ts + batch_duration;
+                : min_ts + (b + 1) * batch_duration;
 
         std::vector<int> batch_src, batch_dst;
         std::vector<int64_t> batch_ts;
@@ -195,9 +195,12 @@ int main(int argc, char **argv) {
         // Walk sampling
         double walk_time = 0.0;
         size_t walks_this_batch = 0;
+        double avg_len_batch = 0.0;
+
         {
             NvtxRange r("walk_sampling_batch");
             const auto t0 = std::chrono::high_resolution_clock::now();
+
             const auto walks = trw.get_random_walks_and_times_for_all_nodes(
                 max_walk_len,
                 &hop_picker,
@@ -213,20 +216,27 @@ int main(int argc, char **argv) {
             const auto t1 = std::chrono::high_resolution_clock::now();
             walk_time =
                 std::chrono::duration<double>(t1 - t0).count();
+
             walks_this_batch = walks.size();
+            avg_len_batch = get_average_walk_length(walks);
+
             total_walks += walks_this_batch;
+            total_walk_len_sum += avg_len_batch * walks_this_batch;
         }
         walk_times.push_back(walk_time);
 
-        std::cout << "  Ingest: " << ingest_time << " sec\n"
-                  << "  Walk:   " << walk_time << " sec\n"
-                  << "  Walks:  " << walks_this_batch << "\n";
+        std::cout << "  Ingest time: " << ingest_time << " sec\n"
+                  << "  Walk time:   " << walk_time << " sec\n"
+                  << "  Walks:       " << walks_this_batch << "\n"
+                  << "  Avg length:  " << avg_len_batch << "\n";
     }
 
     const double total_ingestion =
         std::accumulate(ingestion_times.begin(), ingestion_times.end(), 0.0);
     const double total_walk =
         std::accumulate(walk_times.begin(), walk_times.end(), 0.0);
+    const double final_avg_len =
+        (total_walks > 0) ? (total_walk_len_sum / total_walks) : 0.0;
 
     std::cout << "\n=== Summary ===\n"
               << "Total ingestion time: " << total_ingestion << " sec\n"
@@ -236,6 +246,7 @@ int main(int argc, char **argv) {
               << "Mean walk time/batch: "
               << (total_walk / num_batches) << " sec\n"
               << "Total walks:          " << total_walks << "\n"
+              << "Final avg walk length:" << final_avg_len << "\n"
               << "Throughput:           "
               << (total_walks / total_walk) << " walks/sec\n";
 
