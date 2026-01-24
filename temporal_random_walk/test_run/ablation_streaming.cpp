@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
                   << " [num_walks_per_node=1]"
                   << " [num_batches=5]"
                   << " [max_walk_len=80]"
-                  << " [timescale_bound=0.0]\n";
+                  << " [timescale_bound=-1]\n";
         return 1;
     }
 
@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
     const int num_walks_per_node = (argc > 6) ? std::stoi(argv[6]) : 1;
     const int num_batches = (argc > 7) ? std::stoi(argv[7]) : 5;
     const int max_walk_len = (argc > 8) ? std::stoi(argv[8]) : 80;
-    const double timescale_bound = (argc > 9) ? std::stod(argv[9]) : 0.0;
+    const double timescale_bound = (argc > 9) ? std::stod(argv[9]) : -1;
 
     const RandomPickerType hop_picker = parse_picker(picker_str);
     const KernelLaunchType kernel_launch_type =
