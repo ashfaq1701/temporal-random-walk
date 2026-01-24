@@ -277,6 +277,42 @@ def main() -> int:
     print(f"ncu:  {ncu}")
     print("")
 
+    # -----------------------------
+    # Warmup run (baseline only)
+    # -----------------------------
+    print("\n========================================")
+    print(" GPU WARMUP RUN (baseline configuration)")
+    print("========================================")
+
+    # Baseline = first variant (v0_fullwalk_index_inkernel)
+    warmup_variant = variants[0]
+    warmup_cmd = warmup_variant.command(
+        code_path=code_path,
+        dataset_csv=dataset_csv
+    )
+
+    print("Warmup variant:", warmup_variant.key)
+    print("Warmup command:")
+    print("  ", " ".join(warmup_cmd))
+
+    if not dry_run:
+        warmup_proc = subprocess.run(
+            warmup_cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            env=os.environ.copy(),
+        )
+
+        if warmup_proc.returncode != 0:
+            print(
+                f"WARNING: warmup run failed with return code "
+                f"{warmup_proc.returncode}. Continuing anyway.",
+                file=sys.stderr
+            )
+
+    print("Warmup completed. Starting measured runs.\n")
+
     for run_id in range(1, runs + 1):
         run_dir = results_base / f"run-{run_id}"
         run_dir.mkdir(parents=True, exist_ok=True)
