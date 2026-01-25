@@ -131,12 +131,15 @@ def which_or_die(prog: str) -> str:
     return p
 
 
-def tool_path(cuda_tools_path: str, name: str) -> str:
+def tool_path(cuda_tools_path: Optional[str], name: str) -> str:
     """
-    If cuda_tools_path is '', rely on PATH; otherwise prefix it.
+    Resolve tool path.
+    - If cuda_tools_path is None: resolve via PATH
+    - Else: resolve from the given directory
     """
-    if cuda_tools_path.strip() == "":
+    if cuda_tools_path is None:
         return which_or_die(name)
+
     candidate = (Path(cuda_tools_path) / name).resolve()
     if not candidate.exists():
         raise FileNotFoundError(f"Could not find '{name}' at {candidate}")
@@ -195,7 +198,7 @@ def format_mean_std(values: List[float]) -> Tuple[float, float]:
 # -----------------------------
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--cuda-tools-path", default="", help="Root path containing nsys/ncu (default: use PATH)")
+    ap.add_argument("--cuda-tools-path", default=None, help="Optional directory containing nsys/ncu (default: use PATH)")
     ap.add_argument("--dataset-base-path", required=True, help="Directory containing ml_tgbl-coin.csv")
     ap.add_argument("--code-path", default=str(Path.home()), help="Path containing temporal-random-walk dirs (default: HOME)")
     ap.add_argument("--results-path", default=str(Path.cwd() / "ablation-results"), help="Output dir (default: ./ablation-results)")
@@ -357,14 +360,12 @@ def main() -> int:
             ncu_base = var_dir / "ncu"
             ncu_cmd = [
                 ncu,
+                "--target-processes", "all",
+                "--replay-mode", "kernel",
                 "-o", str(ncu_base),
-                "--nvtx", "--nvtx-include", "walk_sampling_batch",
                 "--kernel-name", "regex:generate_random_walks_kernel|pick_start_edges_kernel|pick_intermediate_edges_kernel",
                 "--kernel-name-base", "demangled",
-                "--section", "SpeedOfLight_Roofline",
-                "--section", "MemoryWorkloadAnalysis",
-                "--section", "Occupancy",
-                "--section", "WarpStateStats",
+                "--set", "speedOfLight",
                 *cmd,
             ]
             rc = run_cmd(ncu_cmd, cwd=None, stdout_path=var_dir / "ncu_stdout.txt", stderr_path=var_dir / "ncu_stderr.txt", dry_run=dry_run)
