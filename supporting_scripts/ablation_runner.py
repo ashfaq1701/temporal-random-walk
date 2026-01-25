@@ -360,14 +360,13 @@ def main() -> int:
             ncu_base = var_dir / "ncu"
             ncu_cmd = [
                 ncu,
+                "--target-processes", "all",
+                "--replay-mode", "kernel",
                 "-o", str(ncu_base),
                 "--nvtx", "--nvtx-include", "walk_sampling_batch",
                 "--kernel-name", "regex:generate_random_walks_kernel|pick_start_edges_kernel|pick_intermediate_edges_kernel",
                 "--kernel-name-base", "demangled",
-                "--section", "SpeedOfLight_Roofline",
-                "--section", "MemoryWorkloadAnalysis",
-                "--section", "Occupancy",
-                "--section", "WarpStateStats",
+                "--set", "speedOfLight",
                 *cmd,
             ]
             rc = run_cmd(ncu_cmd, cwd=None, stdout_path=var_dir / "ncu_stdout.txt", stderr_path=var_dir / "ncu_stderr.txt", dry_run=dry_run)
