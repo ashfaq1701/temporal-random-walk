@@ -363,7 +363,7 @@ def main() -> int:
                 "--target-processes", "all",
                 "--replay-mode", "kernel",
                 "-o", str(ncu_base),
-                "--nvtx", "--nvtx-include", "walk_sampling_batch",
+                "--nvtx", "--nvtx-include-range", "walk_sampling_batch",
                 "--kernel-name", "regex:generate_random_walks_kernel|pick_start_edges_kernel|pick_intermediate_edges_kernel",
                 "--kernel-name-base", "demangled",
                 "--set", "speedOfLight",
