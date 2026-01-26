@@ -238,7 +238,7 @@ def main() -> int:
                 "--force-overwrite",
                 "-o", str(var_dir / "ncu"),
                 "--section-folder", args.ncu_section_folder,
-                "--set", "full",
+                "--set", "speedOfLight",
                 "--kernel-name", "regex:generate_random_walks_kernel|pick_start_edges_kernel|pick_intermediate_edges_kernel",
                 "--kernel-name-base", "demangled",
                 *cmd,
