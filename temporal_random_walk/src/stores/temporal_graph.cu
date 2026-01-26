@@ -9,6 +9,7 @@
 #include "../common/cuda_sort.cuh"
 #endif
 
+#include "../common/nvtx_utils.h"
 #include "../common/comparators.cuh"
 #include "../common/parallel_algorithms.cuh"
 

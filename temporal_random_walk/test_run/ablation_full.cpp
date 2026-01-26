@@ -3,8 +3,8 @@
 #include <chrono>
 #include <algorithm>
 
+#include "../src/common/nvtx_utils.h"
 #ifdef HAS_CUDA
-#include <nvtx3/nvToolsExt.h>
 #include <cuda_runtime.h>
 #endif
 
@@ -18,21 +18,6 @@ constexpr bool DEFAULT_USE_GPU = true;
 constexpr bool DEFAULT_USE_GPU = false;
 #endif
 
-// ------------------------------
-// NVTX helper (no-op on CPU)
-// ------------------------------
-struct NvtxRange {
-#ifdef HAS_CUDA
-    explicit NvtxRange(const char* name) {
-        nvtxRangePushA(name);
-    }
-    ~NvtxRange() {
-        nvtxRangePop();
-    }
-#else
-    explicit NvtxRange(const char*) {}
-#endif
-};
 
 RandomPickerType parse_picker(const std::string &s) {
     if (s == "uniform") return RandomPickerType::Uniform;

@@ -14,6 +14,7 @@
 #include <cmath>
 #include <algorithm>
 #include "../utils/omp_utils.cuh"
+#include "../common/nvtx_utils.h"
 #include "../common/parallel_algorithms.cuh"
 #include "../common/cuda_config.cuh"
 
