@@ -63,23 +63,16 @@ def parse_stdout_summary(stdout_path: Path) -> Dict[str, float]:
         for key, pat in SUMMARY_PATTERNS.items():
             m = pat.match(line)
             if m:
-                if key == "total_walks":
-                    metrics[key] = float(int(m.group(1)))
-                else:
-                    metrics[key] = float(m.group(1))
+                metrics[key] = float(int(m.group(1))) if key == "total_walks" else float(m.group(1))
                 break
 
-    required = list(SUMMARY_PATTERNS.keys())
-    missing = [k for k in required if k not in metrics]
+    missing = [k for k in SUMMARY_PATTERNS if k not in metrics]
     if missing:
         raise ValueError(f"Missing fields {missing} while parsing {stdout_path}")
 
     return metrics
 
 
-# -----------------------------
-# Experiment definition
-# -----------------------------
 @dataclass(frozen=True)
 class Variant:
     key: str
@@ -155,22 +148,17 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    cuda_tools_path = args.cuda_tools_path
-    ncu_section_folder = args.ncu_section_folder
-
     dataset_base = Path(args.dataset_base_path).expanduser().resolve()
     code_path = Path(args.code_path).expanduser().resolve()
     results_base = Path(args.results_path).expanduser().resolve()
-    runs = args.runs
-    dry_run = args.dry_run
 
     dataset_csv = dataset_base / "ml_tgbl-coin.csv"
     if not dataset_csv.exists():
         print(f"ERROR: dataset not found: {dataset_csv}", file=sys.stderr)
         return 2
 
-    nsys = tool_path(cuda_tools_path, "nsys")
-    ncu = tool_path(cuda_tools_path, "ncu")
+    nsys = tool_path(args.cuda_tools_path, "nsys")
+    ncu = tool_path(args.cuda_tools_path, "ncu")
 
     variants = [
         Variant("v0_fullwalk_index_inkernel", "in-kernel RNG + full_walk + index (exponential_index)",
@@ -183,29 +171,54 @@ def main() -> int:
                 "temporal-random-walk/build/bin/ablation_streaming", "exponential_weight", "full_walk"),
     ]
 
-    results_base.mkdir(parents=True, exist_ok=True)
-
     metrics_by_variant = {v.key: {k: [] for k in SUMMARY_PATTERNS} for v in variants}
 
-    # Warmup
+    print("========================================")
+    print(" Tempest Ablation Runner")
+    print("========================================")
+    print(f"Dataset: {dataset_csv}")
+    print(f"Code path: {code_path}")
+    print(f"Results: {results_base}")
+    print(f"Runs per variant: {args.runs}")
+    print(f"nsys: {nsys}")
+    print(f"ncu:  {ncu}")
+    print("")
+
+    print("\n========================================")
+    print(" GPU WARMUP RUN (baseline configuration)")
+    print("========================================")
+
     warmup_cmd = variants[0].command(code_path, dataset_csv)
-    if not dry_run:
+    print("Warmup variant:", variants[0].key)
+    print("Warmup command:")
+    print("  ", " ".join(warmup_cmd))
+
+    if not args.dry_run:
         subprocess.run(warmup_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    for run_id in range(1, runs + 1):
+    print("Warmup completed. Starting measured runs.\n")
+
+    for run_id in range(1, args.runs + 1):
         run_dir = results_base / f"run-{run_id}"
         run_dir.mkdir(parents=True, exist_ok=True)
+        print(f"==============================")
+        print(f"Run {run_id}/{args.runs} -> {run_dir}")
+        print(f"==============================")
 
         for v in variants:
             var_dir = run_dir / v.key
             var_dir.mkdir(parents=True, exist_ok=True)
+            print(f"\nVariant: {v.key}")
+            print(f"  {v.description}")
+            print(f"  Output: {var_dir}")
 
             cmd = v.command(code_path, dataset_csv)
 
-            # Normal
-            run_cmd(cmd, None, var_dir / "stdout.txt", var_dir / "stderr.txt", dry_run)
+            rc = run_cmd(cmd, None, var_dir / "stdout.txt", var_dir / "stderr.txt", args.dry_run)
+            if rc != 0:
+                print(f"ERROR: normal run failed (rc={rc}) for {v.key} run-{run_id}", file=sys.stderr)
+                return 3
 
-            # nsys
             nsys_cmd = [
                 nsys, "profile",
                 "-o", str(var_dir / "nsys"),
@@ -213,37 +226,47 @@ def main() -> int:
                 "--cuda-memory-usage=true",
                 *cmd,
             ]
-            run_cmd(nsys_cmd, None, var_dir / "nsys_stdout.txt", var_dir / "nsys_stderr.txt", dry_run)
+            rc = run_cmd(nsys_cmd, None, var_dir / "nsys_stdout.txt", var_dir / "nsys_stderr.txt", args.dry_run)
+            if rc != 0:
+                print(f"ERROR: nsys failed (rc={rc}) for {v.key} run-{run_id}", file=sys.stderr)
+                return 4
 
-            # ncu (FINAL REQUIRED COMMAND)
             ncu_cmd = [
                 ncu,
                 "--target-processes", "all",
                 "--replay-mode", "kernel",
                 "--force-overwrite",
                 "-o", str(var_dir / "ncu"),
-                "--section-folder", ncu_section_folder,
+                "--section-folder", args.ncu_section_folder,
                 "--set", "full",
-                "--kernel-name", 'regex:generate_random_walks_kernel|pick_start_edges_kernel|pick_intermediate_edges_kernel',
+                "--kernel-name", "regex:generate_random_walks_kernel|pick_start_edges_kernel|pick_intermediate_edges_kernel",
                 "--kernel-name-base", "demangled",
                 *cmd,
             ]
-            run_cmd(ncu_cmd, None, var_dir / "ncu_stdout.txt", var_dir / "ncu_stderr.txt", dry_run)
+            rc = run_cmd(ncu_cmd, None, var_dir / "ncu_stdout.txt", var_dir / "ncu_stderr.txt", args.dry_run)
+            if rc != 0:
+                print(f"ERROR: ncu failed (rc={rc}) for {v.key} run-{run_id}", file=sys.stderr)
+                return 5
 
             parsed = parse_stdout_summary(var_dir / "stdout.txt")
             for k, vval in parsed.items():
                 metrics_by_variant[v.key][k].append(vval)
 
-    # Summary
-    print("\n=== ABLATION SUMMARY ===")
+    print("\n========================================")
+    print(" ABLATION SUMMARY (mean ± std)")
+    print(f" Over {args.runs} runs per variant")
+    print("========================================")
+
     for v in variants:
         m = metrics_by_variant[v.key]
         ingest_mean, ingest_std = format_mean_std(m["total_ingestion_time_sec"])
         walk_mean, walk_std = format_mean_std(m["total_walk_time_sec"])
         thr_mean, thr_std = format_mean_std(m["throughput_walks_per_sec"])
-        print(f"{v.key}: ingest {ingest_mean:.3f}±{ingest_std:.3f}, "
-              f"walk {walk_mean:.3f}±{walk_std:.3f}, "
-              f"thr {thr_mean:.3e}±{thr_std:.3e}")
+        print(f"\n{v.key}")
+        print(f"  {v.description}")
+        print(f"  Total ingestion time (sec): {ingest_mean:.3f} ± {ingest_std:.3f}")
+        print(f"  Total walk time (sec):      {walk_mean:.3f} ± {walk_std:.3f}")
+        print(f"  Throughput (walks/sec):     {thr_mean:.3e} ± {thr_std:.3e}")
 
     return 0
 
