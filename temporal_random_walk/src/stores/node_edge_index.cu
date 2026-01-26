@@ -14,6 +14,7 @@
 #include <cmath>
 #include <algorithm>
 #include "../utils/omp_utils.cuh"
+#include "../common/nvtx_utils.h"
 #include "../common/parallel_algorithms.cuh"
 #include "../common/cuda_config.cuh"
 
@@ -867,6 +868,7 @@ HOST void node_edge_index::compute_node_group_offsets_cuda(
     }
 }
 
+NvtxRange r("ingestion_sort_merge");
 HOST void node_edge_index::compute_node_ts_sorted_indices_cuda(
     NodeEdgeIndexStore* node_edge_index,
     const EdgeDataStore* edge_data,
