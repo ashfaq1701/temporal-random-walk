@@ -3,7 +3,8 @@
 
 #ifdef HAS_CUDA
 #include <curand.h>
-#include <cuda_runtime.h>
+#include <curand_kernel.h>
+#include <curand_philox4x32_x.h>
 #endif
 
 #include <chrono>

@@ -22,7 +22,7 @@ TemporalRandomWalk::TemporalRandomWalk(
         const bool enable_weight_computation,
         const double timescale_bound,
         const int walk_padding_value,
-        const std::optional<uint64_t> global_seed): use_gpu(use_gpu) {
+        const uint64_t global_seed): use_gpu(use_gpu) {
     temporal_random_walk = new TemporalRandomWalkStore(
         is_directed,
         use_gpu,

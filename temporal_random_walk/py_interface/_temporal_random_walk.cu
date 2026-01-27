@@ -36,7 +36,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                      enable_weight_computation.value_or(false),
                      timescale_bound.value_or(DEFAULT_TIMESCALE_BOUND),
                      walk_padding_value.value_or(EMPTY_NODE_VALUE),
-                     global_seed);
+                     global_seed.value_or(EMPTY_GLOBAL_SEED));
              }),
              R"(
              Initialize a temporal random walk generator.

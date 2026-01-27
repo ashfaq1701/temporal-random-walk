@@ -1,13 +1,14 @@
 #ifndef TEMPORAL_RANDOM_WALK_STORE_H
 #define TEMPORAL_RANDOM_WALK_STORE_H
 
+#include <optional>
+#include <cstdint>
 #include "../common/macros.cuh"
 #include "../data/structs.cuh"
 #include "../data/walk_set/walk_set.cuh"
 #include "../stores/temporal_graph.cuh"
 #include "../utils/utils.cuh"
 #include "../utils/random.cuh"
-#include "../common/setup.cuh"
 #include "../common/random_gen.cuh"
 #include "../data/enums.cuh"
 
@@ -19,7 +20,7 @@ struct TemporalRandomWalkStore {
     bool enable_weight_computation;
     double timescale_bound;
     int walk_padding_value;
-    std::optional<uint64_t> global_seed;
+    uint64_t global_seed;
 
     #ifdef HAS_CUDA
     cudaDeviceProp *cuda_device_prop;
@@ -33,7 +34,7 @@ struct TemporalRandomWalkStore {
         const bool enable_weight_computation,
         const double timescale_bound,
         const int walk_padding_value=EMPTY_NODE_VALUE,
-        const std::optional<uint64_t> global_seed=std::nullopt) {
+        const uint64_t global_seed=EMPTY_GLOBAL_SEED) {
         this->is_directed = is_directed;
         this->use_gpu = use_gpu;
         this->max_time_capacity = max_time_capacity;
@@ -58,7 +59,7 @@ struct TemporalRandomWalkStore {
     TemporalRandomWalkStore()
         : is_directed(false), use_gpu(false), max_time_capacity(-1),
           enable_weight_computation(false), timescale_bound(-1),
-          walk_padding_value(EMPTY_NODE_VALUE), global_seed(std::nullopt),
+          walk_padding_value(EMPTY_NODE_VALUE), global_seed(EMPTY_GLOBAL_SEED),
           temporal_graph(nullptr) {
         #ifdef HAS_CUDA
         cuda_device_prop = nullptr;

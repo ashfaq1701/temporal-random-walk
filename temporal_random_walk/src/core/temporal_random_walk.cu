@@ -1,5 +1,7 @@
 #include "temporal_random_walk.cuh"
 
+#include "../common/setup.cuh"
+
 #include "temporal_random_walk_cpu.cuh"
 #include "temporal_random_walk_kernels_full_walk.cuh"
 #include "temporal_random_walk_kernels_step_based.cuh"
@@ -168,8 +170,8 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
         temporal_random_walk->use_gpu);
 
     uint64_t base_seed;
-    if (temporal_random_walk->global_seed.has_value()) {
-        base_seed = *temporal_random_walk->global_seed;
+    if (temporal_random_walk->global_seed != EMPTY_GLOBAL_SEED) {
+        base_seed = temporal_random_walk->global_seed;
     } else {
         base_seed = secure_random_seed();
     }
@@ -256,8 +258,8 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
     }
 
     uint64_t base_seed;
-    if (temporal_random_walk->global_seed.has_value()) {
-        base_seed = *temporal_random_walk->global_seed;
+    if (temporal_random_walk->global_seed != EMPTY_GLOBAL_SEED) {
+        base_seed = temporal_random_walk->global_seed;
     } else {
         base_seed = secure_random_seed();
     }

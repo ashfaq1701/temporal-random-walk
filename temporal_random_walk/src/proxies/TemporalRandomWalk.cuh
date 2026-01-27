@@ -26,7 +26,7 @@ public:
         bool enable_weight_computation=false,
         double timescale_bound=DEFAULT_TIMESCALE_BOUND,
         int walk_padding_value=EMPTY_NODE_VALUE,
-        std::optional<uint64_t> global_seed=std::nullopt);
+        uint64_t global_seed=EMPTY_GLOBAL_SEED);
 
     ~TemporalRandomWalk();
 
