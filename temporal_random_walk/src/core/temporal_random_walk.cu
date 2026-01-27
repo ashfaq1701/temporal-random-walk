@@ -167,7 +167,12 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
         num_walks_per_node,
         temporal_random_walk->use_gpu);
 
-    const auto base_seed = secure_random_seed();
+    uint64_t base_seed;
+    if (temporal_random_walk->global_seed.has_value()) {
+        base_seed = *temporal_random_walk->global_seed;
+    } else {
+        base_seed = secure_random_seed();
+    }
 
     // Calculate optimal kernel launch parameters
     auto [grid_dim, block_dim] = get_optimal_launch_params(
@@ -250,7 +255,12 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_cuda(
         initial_edge_bias = walk_bias;
     }
 
-    const auto base_seed = secure_random_seed();
+    uint64_t base_seed;
+    if (temporal_random_walk->global_seed.has_value()) {
+        base_seed = *temporal_random_walk->global_seed;
+    } else {
+        base_seed = secure_random_seed();
+    }
 
     // Calculate optimal kernel launch parameters
     auto [grid_dim, block_dim] = get_optimal_launch_params(
