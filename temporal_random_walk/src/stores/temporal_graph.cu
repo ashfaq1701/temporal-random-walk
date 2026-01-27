@@ -282,8 +282,9 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_std(TemporalGraph
 
 #ifdef HAS_CUDA
 
-NvtxRange r("ingestion_sort_merge");
 HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, const size_t start_idx) {
+    NvtxRange r("ingestion_sort_merge");
+
     const size_t total_size = edge_data::size(graph->edge_data);
     const size_t new_edges_count = total_size - start_idx;
     if (new_edges_count == 0) return;

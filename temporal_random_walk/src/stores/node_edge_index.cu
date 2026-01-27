@@ -868,7 +868,6 @@ HOST void node_edge_index::compute_node_group_offsets_cuda(
     }
 }
 
-NvtxRange r("ingestion_sort_merge");
 HOST void node_edge_index::compute_node_ts_sorted_indices_cuda(
     NodeEdgeIndexStore* node_edge_index,
     const EdgeDataStore* edge_data,
@@ -877,6 +876,8 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_cuda(
     int* outbound_node_ids,
     int* inbound_node_ids
 ) {
+    NvtxRange r("node_index_rebuild");
+
     const size_t edges_size = edge_data->timestamps_size;
 
     const int* sources = edge_data->sources;
