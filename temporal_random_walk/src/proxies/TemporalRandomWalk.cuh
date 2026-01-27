@@ -25,7 +25,8 @@ public:
         int64_t max_time_capacity=-1,
         bool enable_weight_computation=false,
         double timescale_bound=DEFAULT_TIMESCALE_BOUND,
-        int walk_padding_value=EMPTY_NODE_VALUE);
+        int walk_padding_value=EMPTY_NODE_VALUE,
+        uint64_t global_seed=EMPTY_GLOBAL_SEED);
 
     ~TemporalRandomWalk();
 

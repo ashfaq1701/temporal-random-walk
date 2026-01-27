@@ -1,5 +1,7 @@
 #include "temporal_random_walk.cuh"
 
+#include "../common/setup.cuh"
+
 #include "temporal_random_walk_cpu.cuh"
 #include "temporal_random_walk_kernels_full_walk.cuh"
 #include "temporal_random_walk_kernels_step_based.cuh"

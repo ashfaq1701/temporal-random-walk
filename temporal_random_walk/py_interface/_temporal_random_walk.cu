@@ -27,7 +27,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
     py::class_<TemporalRandomWalk>(m, "TemporalRandomWalk")
         .def(py::init([](const bool is_directed, bool use_gpu, const std::optional<int64_t> max_time_capacity,
                          const std::optional<bool> enable_weight_computation, const std::optional<double> timescale_bound,
-                         const std::optional<int> walk_padding_value)
+                         const std::optional<int> walk_padding_value, const std::optional<uint64_t> global_seed)
              {
                  return std::make_unique<TemporalRandomWalk>(
                      is_directed,
@@ -35,7 +35,8 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                      max_time_capacity.value_or(-1),
                      enable_weight_computation.value_or(false),
                      timescale_bound.value_or(DEFAULT_TIMESCALE_BOUND),
-                     walk_padding_value.value_or(EMPTY_NODE_VALUE));
+                     walk_padding_value.value_or(EMPTY_NODE_VALUE),
+                     global_seed.value_or(EMPTY_GLOBAL_SEED));
              }),
              R"(
              Initialize a temporal random walk generator.
@@ -47,13 +48,15 @@ PYBIND11_MODULE(_temporal_random_walk, m)
              enable_weight_computation (bool, optional): Enable CTDNE weight computation. Required for ExponentialWeight picker. Defaults to False.
              timescale_bound (float, optional): Scale factor for temporal differences. Used to prevent numerical issues with large time differences. Defaults to -1.0.
              walk_padding_value (int, optional): Padding node value for prematurely broken walks. Default is -1.
+             global_seed (int, optional): A global seed to have reproducibility inside random walks. Default is empty and the code in that case generates random seed in each run.
              )",
              py::arg("is_directed"),
              py::arg("use_gpu") = false,
              py::arg("max_time_capacity") = py::none(),
              py::arg("enable_weight_computation") = py::none(),
              py::arg("timescale_bound") = py::none(),
-             py::arg("walk_padding_value") = py::none())
+             py::arg("walk_padding_value") = py::none(),
+             py::arg("global_seed") = py::none())
 
         .def("add_multiple_edges", [](TemporalRandomWalk& tw,
                              const py::array_t<int>& sources,
