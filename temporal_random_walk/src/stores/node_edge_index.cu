@@ -1269,8 +1269,8 @@ HOST void node_edge_index::update_temporal_weights_cuda(
 
     // Helper: build group_to_node[pos] from CSR offsets using upper_bound
     auto build_group_to_node = [](size_t* offsets_ptr,
-                                  size_t node_count,
-                                  size_t groups_size,
+                                  const size_t node_count,
+                                  const size_t groups_size,
                                   thrust::device_vector<size_t>& group_to_node) {
         // group_to_node[pos] = upper_bound(offsets, pos) - 1
         thrust::upper_bound(
@@ -1334,7 +1334,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
                 const int64_t min_ts = timestamps_ptr[outbound_indices_ptr[first_group_start]];
                 const int64_t max_ts = timestamps_ptr[outbound_indices_ptr[last_group_start]];
 
-                const double time_diff = static_cast<double>(max_ts - min_ts);
+                const auto time_diff = static_cast<double>(max_ts - min_ts);
                 const double time_scale = (timescale_bound > 0.0 && time_diff > 0.0)
                     ? (timescale_bound / time_diff)
                     : 1.0;
@@ -1480,7 +1480,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
                 const int64_t min_ts = timestamps_ptr[inbound_indices_ptr[first_group_start]];
                 const int64_t max_ts = timestamps_ptr[inbound_indices_ptr[last_group_start]];
 
-                const double time_diff = static_cast<double>(max_ts - min_ts);
+                const auto time_diff = static_cast<double>(max_ts - min_ts);
                 const double time_scale = (timescale_bound > 0.0 && time_diff > 0.0)
                     ? (timescale_bound / time_diff)
                     : 1.0;
