@@ -1232,16 +1232,16 @@ HOST void node_edge_index::update_temporal_weights_cuda(
     const EdgeDataStore *edge_data,
     double timescale_bound
 ) {
-    // Get the number of nodes and timestamp groups
+    // === Resize output arrays (same as before) ===
     size_t node_index_capacity = node_edge_index->node_group_outbound_offsets_size - 1;
     const size_t outbound_groups_size = node_edge_index->node_ts_group_outbound_offsets_size;
 
-    // Resize outbound weight arrays
     resize_memory(
         &node_edge_index->outbound_forward_cumulative_weights_exponential,
         node_edge_index->outbound_forward_cumulative_weights_exponential_size,
         outbound_groups_size,
-        node_edge_index->use_gpu);
+        node_edge_index->use_gpu
+    );
     node_edge_index->outbound_forward_cumulative_weights_exponential_size = outbound_groups_size;
 
     resize_memory(
@@ -1252,65 +1252,74 @@ HOST void node_edge_index::update_temporal_weights_cuda(
     );
     node_edge_index->outbound_backward_cumulative_weights_exponential_size = outbound_groups_size;
 
-    // Resize inbound weights array if directed graph
-    if (node_edge_index->node_group_inbound_offsets_size > 0) {
+    const bool is_directed = (node_edge_index->node_group_inbound_offsets_size > 0);
+    if (is_directed) {
         const size_t inbound_groups_size = node_edge_index->node_ts_group_inbound_offsets_size;
         resize_memory(
             &node_edge_index->inbound_backward_cumulative_weights_exponential,
             node_edge_index->inbound_backward_cumulative_weights_exponential_size,
             inbound_groups_size,
-            node_edge_index->use_gpu);
+            node_edge_index->use_gpu
+        );
         node_edge_index->inbound_backward_cumulative_weights_exponential_size = inbound_groups_size;
     }
 
-    // Process outbound weights
-    {
-        MemoryView<size_t> outbound_offsets = get_timestamp_offset_vector(node_edge_index, true, false);
+    // Common raw pointers
+    int64_t* timestamps_ptr = edge_data->timestamps;
 
-        // Step 1: Create node mapping for each group position
-        thrust::device_vector<size_t> group_to_node(outbound_groups_size);
-        auto group_to_node_ptr = thrust::raw_pointer_cast(group_to_node.data());
-
-        size_t* outbound_offsets_ptr = outbound_offsets.data;
-
+    // Helper: build group_to_node[pos] from CSR offsets using upper_bound
+    auto build_group_to_node = [](size_t* offsets_ptr,
+                                  size_t node_count,
+                                  size_t groups_size,
+                                  thrust::device_vector<size_t>& group_to_node) {
+        // group_to_node[pos] = upper_bound(offsets, pos) - 1
         thrust::upper_bound(
             DEVICE_EXECUTION_POLICY,
-            outbound_offsets_ptr,
-            outbound_offsets_ptr + node_index_capacity + 1,
+            offsets_ptr,
+            offsets_ptr + node_count + 1,
             thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(outbound_groups_size),
+            thrust::make_counting_iterator<size_t>(groups_size),
             group_to_node.begin()
         );
 
+        // Safe subtract-one: guards underflow if upper_bound ever returns 0
         thrust::transform(
             DEVICE_EXECUTION_POLICY,
             group_to_node.begin(), group_to_node.end(),
             group_to_node.begin(),
-            [] DEVICE(const size_t x) { return x - 1; }
+            [] DEVICE(const size_t x) { return (x == 0) ? 0 : (x - 1); }
         );
+    };
 
-        // Step 2: Compute min/max timestamps per node
+    // === OUTBOUND weights: forward + backward ===
+    {
+        MemoryView<size_t> outbound_offsets = get_timestamp_offset_vector(node_edge_index, true, false);
+        size_t* outbound_offsets_ptr = outbound_offsets.data;
+
+        // Step 1: group_to_node for outbound groups
+        thrust::device_vector<size_t> group_to_node(outbound_groups_size);
+        build_group_to_node(outbound_offsets_ptr, node_index_capacity, outbound_groups_size, group_to_node);
+        auto group_to_node_ptr = thrust::raw_pointer_cast(group_to_node.data());
+
+        // Step 2: per-node min/max timestamps + time scale
         thrust::device_vector<int64_t> node_min_ts(node_index_capacity);
         thrust::device_vector<int64_t> node_max_ts(node_index_capacity);
-        thrust::device_vector<double> node_time_scale(node_index_capacity);
+        thrust::device_vector<double>  node_time_scale(node_index_capacity);
 
-        auto node_min_ts_ptr = thrust::raw_pointer_cast(node_min_ts.data());
-        auto node_max_ts_ptr = thrust::raw_pointer_cast(node_max_ts.data());
+        auto node_min_ts_ptr     = thrust::raw_pointer_cast(node_min_ts.data());
+        auto node_max_ts_ptr     = thrust::raw_pointer_cast(node_max_ts.data());
         auto node_time_scale_ptr = thrust::raw_pointer_cast(node_time_scale.data());
 
-        int64_t* timestamps_ptr = edge_data->timestamps;
-        size_t* outbound_indices_ptr = node_edge_index->node_ts_sorted_outbound_indices;
+        size_t* outbound_indices_ptr       = node_edge_index->node_ts_sorted_outbound_indices;
         size_t* outbound_group_indices_ptr = node_edge_index->node_ts_group_outbound_offsets;
 
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(node_index_capacity),
-            [timestamps_ptr, outbound_indices_ptr, outbound_group_indices_ptr,
-             outbound_offsets_ptr, node_min_ts_ptr, node_max_ts_ptr, node_time_scale_ptr, timescale_bound]
-            DEVICE(const size_t node) {
+            [=] DEVICE(const size_t node) {
                 const size_t out_start = outbound_offsets_ptr[node];
-                const size_t out_end = outbound_offsets_ptr[node + 1];
+                const size_t out_end   = outbound_offsets_ptr[node + 1];
 
                 if (out_start >= out_end) {
                     node_min_ts_ptr[node] = 0;
@@ -1320,12 +1329,14 @@ HOST void node_edge_index::update_temporal_weights_cuda(
                 }
 
                 const size_t first_group_start = outbound_group_indices_ptr[out_start];
-                const size_t last_group_start = outbound_group_indices_ptr[out_end - 1];
+                const size_t last_group_start  = outbound_group_indices_ptr[out_end - 1];
+
                 const int64_t min_ts = timestamps_ptr[outbound_indices_ptr[first_group_start]];
                 const int64_t max_ts = timestamps_ptr[outbound_indices_ptr[last_group_start]];
-                const auto time_diff = static_cast<double>(max_ts - min_ts);
+
+                const double time_diff = static_cast<double>(max_ts - min_ts);
                 const double time_scale = (timescale_bound > 0.0 && time_diff > 0.0)
-                    ? timescale_bound / time_diff
+                    ? (timescale_bound / time_diff)
                     : 1.0;
 
                 node_min_ts_ptr[node] = min_ts;
@@ -1334,167 +1345,127 @@ HOST void node_edge_index::update_temporal_weights_cuda(
             }
         );
 
-        // Step 3: Compute raw weights in parallel
+        // Step 3: raw weights per group position
         thrust::device_vector<double> raw_forward_weights(outbound_groups_size);
         thrust::device_vector<double> raw_backward_weights(outbound_groups_size);
 
-        auto raw_forward_weights_ptr = thrust::raw_pointer_cast(raw_forward_weights.data());
+        auto raw_forward_weights_ptr  = thrust::raw_pointer_cast(raw_forward_weights.data());
         auto raw_backward_weights_ptr = thrust::raw_pointer_cast(raw_backward_weights.data());
 
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(outbound_groups_size),
-            [timestamps_ptr, outbound_indices_ptr, outbound_group_indices_ptr,
-             group_to_node_ptr, node_min_ts_ptr, node_max_ts_ptr, node_time_scale_ptr,
-             raw_forward_weights_ptr, raw_backward_weights_ptr]
-            DEVICE(const size_t pos) {
+            [=] DEVICE(const size_t pos) {
                 const size_t node = group_to_node_ptr[pos];
+
                 const size_t edge_start = outbound_group_indices_ptr[pos];
-                const int64_t group_ts = timestamps_ptr[outbound_indices_ptr[edge_start]];
+                const int64_t group_ts  = timestamps_ptr[outbound_indices_ptr[edge_start]];
+
                 const int64_t min_ts = node_min_ts_ptr[node];
                 const int64_t max_ts = node_max_ts_ptr[node];
-                const double time_scale = node_time_scale_ptr[node];
+                const double  scale  = node_time_scale_ptr[node];
 
-                const double tf = static_cast<double>(max_ts - group_ts) * time_scale;
-                const double tb = static_cast<double>(group_ts - min_ts) * time_scale;
+                const double tf = static_cast<double>(max_ts - group_ts) * scale;
+                const double tb = static_cast<double>(group_ts - min_ts) * scale;
 
-                raw_forward_weights_ptr[pos] = exp(tf);
+                raw_forward_weights_ptr[pos]  = exp(tf);
                 raw_backward_weights_ptr[pos] = exp(tb);
             }
         );
 
-        // Step 4: Compute normalization sums per node using segmented reduce
-        thrust::device_vector<double> node_forward_sums(node_index_capacity);
-        thrust::device_vector<double> node_backward_sums(node_index_capacity);
+        // Step 4: sums per node (keep atomics to preserve behavior)
+        thrust::device_vector<double> node_forward_sums(node_index_capacity, 0.0);
+        thrust::device_vector<double> node_backward_sums(node_index_capacity, 0.0);
 
-        auto node_forward_sums_ptr = thrust::raw_pointer_cast(node_forward_sums.data());
+        auto node_forward_sums_ptr  = thrust::raw_pointer_cast(node_forward_sums.data());
         auto node_backward_sums_ptr = thrust::raw_pointer_cast(node_backward_sums.data());
 
-        // Initialize sums to zero
-        thrust::fill(node_forward_sums.begin(), node_forward_sums.end(), 0.0);
-        thrust::fill(node_backward_sums.begin(), node_backward_sums.end(), 0.0);
-
-        // Accumulate sums using atomic operations
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(outbound_groups_size),
-            [group_to_node_ptr, raw_forward_weights_ptr, raw_backward_weights_ptr,
-             node_forward_sums_ptr, node_backward_sums_ptr]
-            DEVICE(const size_t pos) {
+            [=] DEVICE(const size_t pos) {
                 const size_t node = group_to_node_ptr[pos];
-                atomicAdd(&node_forward_sums_ptr[node], raw_forward_weights_ptr[pos]);
+                atomicAdd(&node_forward_sums_ptr[node],  raw_forward_weights_ptr[pos]);
                 atomicAdd(&node_backward_sums_ptr[node], raw_backward_weights_ptr[pos]);
             }
         );
 
-        // Step 5: Normalize weights and compute cumulative sums
+        // Step 5: normalize
         thrust::device_vector<double> normalized_forward_weights(outbound_groups_size);
         thrust::device_vector<double> normalized_backward_weights(outbound_groups_size);
 
-        auto normalized_forward_weights_ptr = thrust::raw_pointer_cast(normalized_forward_weights.data());
+        auto normalized_forward_weights_ptr  = thrust::raw_pointer_cast(normalized_forward_weights.data());
         auto normalized_backward_weights_ptr = thrust::raw_pointer_cast(normalized_backward_weights.data());
 
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(outbound_groups_size),
-            [group_to_node_ptr, raw_forward_weights_ptr, raw_backward_weights_ptr,
-             node_forward_sums_ptr, node_backward_sums_ptr,
-             normalized_forward_weights_ptr, normalized_backward_weights_ptr]
-            DEVICE(const size_t pos) {
+            [=] DEVICE(const size_t pos) {
                 const size_t node = group_to_node_ptr[pos];
-                const double forward_sum = node_forward_sums_ptr[node];
-                const double backward_sum = node_backward_sums_ptr[node];
+                const double fsum = node_forward_sums_ptr[node];
+                const double bsum = node_backward_sums_ptr[node];
 
-                normalized_forward_weights_ptr[pos] = raw_forward_weights_ptr[pos] / forward_sum;
-                normalized_backward_weights_ptr[pos] = raw_backward_weights_ptr[pos] / backward_sum;
+                normalized_forward_weights_ptr[pos]  = raw_forward_weights_ptr[pos]  / fsum;
+                normalized_backward_weights_ptr[pos] = raw_backward_weights_ptr[pos] / bsum;
             }
         );
 
-        // Step 6: Compute cumulative sums per node
-        double* final_forward_weights = node_edge_index->outbound_forward_cumulative_weights_exponential;
-        double* final_backward_weights = node_edge_index->outbound_backward_cumulative_weights_exponential;
+        // Step 6: scan-by-key => per-node CDFs
+        double* final_forward  = node_edge_index->outbound_forward_cumulative_weights_exponential;
+        double* final_backward = node_edge_index->outbound_backward_cumulative_weights_exponential;
 
         thrust::inclusive_scan_by_key(
             DEVICE_EXECUTION_POLICY,
             group_to_node.begin(), group_to_node.end(),
-            normalized_forward_weights_ptr, final_forward_weights);
-
-        thrust::inclusive_scan_by_key(
-            DEVICE_EXECUTION_POLICY,
-            group_to_node.begin(), group_to_node.end(),
-            normalized_backward_weights_ptr, final_backward_weights
+            normalized_forward_weights_ptr,
+            final_forward
         );
+
+        thrust::inclusive_scan_by_key(
+            DEVICE_EXECUTION_POLICY,
+            group_to_node.begin(), group_to_node.end(),
+            normalized_backward_weights_ptr,
+            final_backward
+        );
+
         CUDA_KERNEL_CHECK("After outbound weights processing in update_temporal_weights_cuda");
     }
 
-    // Process inbound weights (only backward)
-    if (node_edge_index->node_group_inbound_offsets_size > 0) {
+    // === INBOUND weights: backward only (reverse walks) ===
+    if (is_directed) {
         node_index_capacity = node_edge_index->node_group_inbound_offsets_size - 1;
 
         MemoryView<size_t> inbound_offsets = get_timestamp_offset_vector(node_edge_index, false, true);
+        size_t* inbound_offsets_ptr = inbound_offsets.data;
         const size_t inbound_groups_size = node_edge_index->node_ts_group_inbound_offsets_size;
 
-        // Step 1: Create node mapping for each group position
+        // Step 1: group_to_node for inbound groups (NO overwrite loop)
         thrust::device_vector<size_t> group_to_node(inbound_groups_size);
+        build_group_to_node(inbound_offsets_ptr, node_index_capacity, inbound_groups_size, group_to_node);
         auto group_to_node_ptr = thrust::raw_pointer_cast(group_to_node.data());
 
-        size_t* inbound_offsets_ptr = inbound_offsets.data;
-
-        thrust::upper_bound(
-            DEVICE_EXECUTION_POLICY,
-            inbound_offsets_ptr,
-            inbound_offsets_ptr + node_index_capacity + 1,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(inbound_groups_size),
-            group_to_node.begin()
-        );
-
-        thrust::transform(
-            DEVICE_EXECUTION_POLICY,
-            group_to_node.begin(), group_to_node.end(),
-            group_to_node.begin(),
-            [] DEVICE(const size_t x) { return x - 1; }
-        );
-
-        thrust::for_each(
-            DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(node_index_capacity),
-            [inbound_offsets_ptr, group_to_node_ptr] DEVICE(const size_t node) {
-                const size_t in_start = inbound_offsets_ptr[node];
-                const size_t in_end = inbound_offsets_ptr[node + 1];
-
-                for (size_t pos = in_start; pos < in_end; ++pos) {
-                    group_to_node_ptr[pos] = node;
-                }
-            }
-        );
-
-        // Step 2: Compute min/max timestamps per node
+        // Step 2: per-node min/max timestamps + time scale
         thrust::device_vector<int64_t> node_min_ts(node_index_capacity);
         thrust::device_vector<int64_t> node_max_ts(node_index_capacity);
-        thrust::device_vector<double> node_time_scale(node_index_capacity);
+        thrust::device_vector<double>  node_time_scale(node_index_capacity);
 
-        auto node_min_ts_ptr = thrust::raw_pointer_cast(node_min_ts.data());
-        auto node_max_ts_ptr = thrust::raw_pointer_cast(node_max_ts.data());
+        auto node_min_ts_ptr     = thrust::raw_pointer_cast(node_min_ts.data());
+        auto node_max_ts_ptr     = thrust::raw_pointer_cast(node_max_ts.data());
         auto node_time_scale_ptr = thrust::raw_pointer_cast(node_time_scale.data());
 
-        int64_t* timestamps_ptr = edge_data->timestamps;
-        size_t* inbound_indices_ptr = node_edge_index->node_ts_sorted_inbound_indices;
+        size_t* inbound_indices_ptr       = node_edge_index->node_ts_sorted_inbound_indices;
         size_t* inbound_group_indices_ptr = node_edge_index->node_ts_group_inbound_offsets;
 
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(node_index_capacity),
-            [timestamps_ptr, inbound_indices_ptr, inbound_group_indices_ptr,
-             inbound_offsets_ptr, node_min_ts_ptr, node_max_ts_ptr, node_time_scale_ptr, timescale_bound]
-            DEVICE(const size_t node) {
+            [=] DEVICE(const size_t node) {
                 const size_t in_start = inbound_offsets_ptr[node];
-                const size_t in_end = inbound_offsets_ptr[node + 1];
+                const size_t in_end   = inbound_offsets_ptr[node + 1];
 
                 if (in_start >= in_end) {
                     node_min_ts_ptr[node] = 0;
@@ -1504,12 +1475,14 @@ HOST void node_edge_index::update_temporal_weights_cuda(
                 }
 
                 const size_t first_group_start = inbound_group_indices_ptr[in_start];
-                const size_t last_group_start = inbound_group_indices_ptr[in_end - 1];
+                const size_t last_group_start  = inbound_group_indices_ptr[in_end - 1];
+
                 const int64_t min_ts = timestamps_ptr[inbound_indices_ptr[first_group_start]];
                 const int64_t max_ts = timestamps_ptr[inbound_indices_ptr[last_group_start]];
-                const auto time_diff = static_cast<double>(max_ts - min_ts);
+
+                const double time_diff = static_cast<double>(max_ts - min_ts);
                 const double time_scale = (timescale_bound > 0.0 && time_diff > 0.0)
-                    ? timescale_bound / time_diff
+                    ? (timescale_bound / time_diff)
                     : 1.0;
 
                 node_min_ts_ptr[node] = min_ts;
@@ -1518,7 +1491,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
             }
         );
 
-        // Step 3: Compute raw weights in parallel
+        // Step 3: raw backward weights per inbound group
         thrust::device_vector<double> raw_backward_weights(inbound_groups_size);
         auto raw_backward_weights_ptr = thrust::raw_pointer_cast(raw_backward_weights.data());
 
@@ -1526,38 +1499,35 @@ HOST void node_edge_index::update_temporal_weights_cuda(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(inbound_groups_size),
-            [timestamps_ptr, inbound_indices_ptr, inbound_group_indices_ptr,
-             group_to_node_ptr, node_min_ts_ptr, node_time_scale_ptr, raw_backward_weights_ptr]
-            DEVICE(const size_t pos) {
+            [=] DEVICE(const size_t pos) {
                 const size_t node = group_to_node_ptr[pos];
-                const size_t edge_start = inbound_group_indices_ptr[pos];
-                const int64_t group_ts = timestamps_ptr[inbound_indices_ptr[edge_start]];
-                const int64_t min_ts = node_min_ts_ptr[node];
-                const double time_scale = node_time_scale_ptr[node];
 
-                const double tb = static_cast<double>(group_ts - min_ts) * time_scale;
+                const size_t edge_start = inbound_group_indices_ptr[pos];
+                const int64_t group_ts  = timestamps_ptr[inbound_indices_ptr[edge_start]];
+
+                const int64_t min_ts = node_min_ts_ptr[node];
+                const double  scale  = node_time_scale_ptr[node];
+
+                const double tb = static_cast<double>(group_ts - min_ts) * scale;
                 raw_backward_weights_ptr[pos] = exp(tb);
             }
         );
 
-        // Step 4: Compute normalization sums per node
-        thrust::device_vector<double> node_backward_sums(node_index_capacity);
+        // Step 4: sums per node (keep atomics)
+        thrust::device_vector<double> node_backward_sums(node_index_capacity, 0.0);
         auto node_backward_sums_ptr = thrust::raw_pointer_cast(node_backward_sums.data());
-
-        thrust::fill(node_backward_sums.begin(), node_backward_sums.end(), 0.0);
 
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(inbound_groups_size),
-            [group_to_node_ptr, raw_backward_weights_ptr, node_backward_sums_ptr]
-            DEVICE(const size_t pos) {
+            [=] DEVICE(const size_t pos) {
                 const size_t node = group_to_node_ptr[pos];
                 atomicAdd(&node_backward_sums_ptr[node], raw_backward_weights_ptr[pos]);
             }
         );
 
-        // Step 5: Normalize weights
+        // Step 5: normalize
         thrust::device_vector<double> normalized_backward_weights(inbound_groups_size);
         auto normalized_backward_weights_ptr = thrust::raw_pointer_cast(normalized_backward_weights.data());
 
@@ -1565,21 +1535,21 @@ HOST void node_edge_index::update_temporal_weights_cuda(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(inbound_groups_size),
-            [group_to_node_ptr, raw_backward_weights_ptr, node_backward_sums_ptr, normalized_backward_weights_ptr]
-            DEVICE(const size_t pos) {
+            [=] DEVICE(const size_t pos) {
                 const size_t node = group_to_node_ptr[pos];
-                const double backward_sum = node_backward_sums_ptr[node];
-                normalized_backward_weights_ptr[pos] = raw_backward_weights_ptr[pos] / backward_sum;
+                const double bsum = node_backward_sums_ptr[node];
+                normalized_backward_weights_ptr[pos] = raw_backward_weights_ptr[pos] / bsum;
             }
         );
 
-        // Step 6: Compute cumulative sums per node
-        double* final_backward_weights = node_edge_index->inbound_backward_cumulative_weights_exponential;
+        // Step 6: scan-by-key => per-node inbound CDF
+        double* final_backward = node_edge_index->inbound_backward_cumulative_weights_exponential;
 
         thrust::inclusive_scan_by_key(
             DEVICE_EXECUTION_POLICY,
             group_to_node.begin(), group_to_node.end(),
-            normalized_backward_weights_ptr, final_backward_weights
+            normalized_backward_weights_ptr,
+            final_backward
         );
 
         CUDA_KERNEL_CHECK("After inbound weights processing in update_temporal_weights_cuda");
