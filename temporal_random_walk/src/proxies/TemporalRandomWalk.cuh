@@ -25,6 +25,9 @@ public:
         int64_t max_time_capacity=-1,
         bool enable_weight_computation=false,
         double timescale_bound=DEFAULT_TIMESCALE_BOUND,
+        bool enable_node2vec=DEFAULT_ENABLE_NODE2VEC,
+        double node2vec_p=DEFAULT_NODE2VEC_P,
+        double node2vec_q=DEFAULT_NODE2VEC_Q,
         int walk_padding_value=EMPTY_NODE_VALUE,
         uint64_t global_seed=EMPTY_GLOBAL_SEED);
 

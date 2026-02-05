@@ -19,6 +19,9 @@ struct TemporalRandomWalkStore {
     int64_t max_time_capacity;
     bool enable_weight_computation;
     double timescale_bound;
+    bool enable_node2vec;
+    double node2vec_p;
+    double node2vec_q;
     int walk_padding_value;
     uint64_t global_seed;
 
@@ -33,6 +36,9 @@ struct TemporalRandomWalkStore {
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
         const double timescale_bound,
+        const bool enable_node2vec = DEFAULT_ENABLE_NODE2VEC,
+        const double node2vec_p = DEFAULT_NODE2VEC_P,
+        const double node2vec_q = DEFAULT_NODE2VEC_Q,
         const int walk_padding_value=EMPTY_NODE_VALUE,
         const uint64_t global_seed=EMPTY_GLOBAL_SEED) {
         this->is_directed = is_directed;
@@ -40,6 +46,9 @@ struct TemporalRandomWalkStore {
         this->max_time_capacity = max_time_capacity;
         this->enable_weight_computation = enable_weight_computation;
         this->timescale_bound = timescale_bound;
+        this->enable_node2vec = enable_node2vec;
+        this->node2vec_p = node2vec_p;
+        this->node2vec_q = node2vec_q;
         this->walk_padding_value = walk_padding_value;
         this->global_seed = global_seed;
 
@@ -48,7 +57,10 @@ struct TemporalRandomWalkStore {
             use_gpu,
             max_time_capacity,
             enable_weight_computation,
-            timescale_bound);
+            timescale_bound,
+            enable_node2vec,
+            node2vec_p,
+            node2vec_q);
 
         #ifdef HAS_CUDA
         cuda_device_prop = new cudaDeviceProp();
@@ -59,7 +71,9 @@ struct TemporalRandomWalkStore {
     TemporalRandomWalkStore()
         : is_directed(false), use_gpu(false), max_time_capacity(-1),
           enable_weight_computation(false), timescale_bound(-1),
-          walk_padding_value(EMPTY_NODE_VALUE), global_seed(EMPTY_GLOBAL_SEED),
+          enable_node2vec(DEFAULT_ENABLE_NODE2VEC), node2vec_p(DEFAULT_NODE2VEC_P),
+          node2vec_q(DEFAULT_NODE2VEC_Q), walk_padding_value(EMPTY_NODE_VALUE),
+          global_seed(EMPTY_GLOBAL_SEED),
           temporal_graph(nullptr) {
         #ifdef HAS_CUDA
         cuda_device_prop = nullptr;
