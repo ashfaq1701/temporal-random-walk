@@ -95,6 +95,10 @@ size_t TemporalGraph::get_total_edges() const {
     }
 }
 
+size_t TemporalGraph::get_node_count() const {
+    return temporal_graph::get_node_count(graph);
+}
+
 int64_t TemporalGraph::get_latest_timestamp() const {
     return temporal_graph::get_latest_timestamp(graph);
 }
@@ -445,6 +449,10 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
 
     clear_memory(&rand_nums, graph->use_gpu);
     return result;
+}
+
+TemporalGraphStore* TemporalGraph::get_graph() const {
+    return graph;
 }
 
 size_t TemporalGraph::get_memory_used() const {
