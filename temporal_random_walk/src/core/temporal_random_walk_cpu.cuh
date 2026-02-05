@@ -33,6 +33,7 @@ namespace temporal_random_walk {
                 temporal_graph,
                 start_node_ids[walk_idx],
                 -1,
+                -1,
                 rand_nums[rand_nums_start_idx_for_walk],
                 rand_nums[rand_nums_start_idx_for_walk + 1]
             );
@@ -86,6 +87,7 @@ namespace temporal_random_walk {
                 temporal_graph,
                 current_node,
                 current_timestamp,
+                -1,
                 group_selector_rand_num,
                 edge_selector_rand_num
             );

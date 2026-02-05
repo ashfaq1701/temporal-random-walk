@@ -38,6 +38,7 @@ namespace temporal_random_walk {
                 temporal_graph,
                 start_node_ids[walk_idx],
                 -1, // timestamp
+                -1,
                 rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
                 rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1));
         }
@@ -100,6 +101,7 @@ namespace temporal_random_walk {
                 temporal_graph,
                 last_node,
                 last_ts,
+                -1,
                 rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
                 rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1));
 
