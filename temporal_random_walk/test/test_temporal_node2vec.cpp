@@ -68,9 +68,9 @@ TYPED_TEST_SUITE(TemporalNode2VecHelpersTest, GPU_USAGE_TYPES);
 TYPED_TEST(TemporalNode2VecHelpersTest, AdjacencyAndBetaRulesWorkForDirectedGraph) {
     const auto* store = this->graph.get_graph();
 
-    EXPECT_TRUE(temporal_graph::is_node_adjacent_to_host_or_device(store, 1, 2));
-    EXPECT_TRUE(temporal_graph::is_node_adjacent_to_host_or_device(store, 1, 4));
-    EXPECT_FALSE(temporal_graph::is_node_adjacent_to_host_or_device(store, 1, 3));
+    EXPECT_TRUE(temporal_graph::is_node_adjacent_to(store, 1, 2));
+    EXPECT_TRUE(temporal_graph::is_node_adjacent_to(store, 1, 4));
+    EXPECT_FALSE(temporal_graph::is_node_adjacent_to(store, 1, 3));
 
     EXPECT_DOUBLE_EQ(temporal_graph::compute_node2vec_beta_host(store, 1, 1), 0.5);
     EXPECT_DOUBLE_EQ(temporal_graph::compute_node2vec_beta_host(store, 1, 2), 1.0);
@@ -216,9 +216,9 @@ __global__ void adjacency_and_beta_device_kernel(
     double* beta_neighbor,
     double* beta_distant) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *adj_12 = temporal_graph::is_node_adjacent_to_host_or_device(graph, 1, 2);
-        *adj_14 = temporal_graph::is_node_adjacent_to_host_or_device(graph, 1, 4);
-        *adj_13 = temporal_graph::is_node_adjacent_to_host_or_device(graph, 1, 3);
+        *adj_12 = temporal_graph::is_node_adjacent_to(graph, 1, 2);
+        *adj_14 = temporal_graph::is_node_adjacent_to(graph, 1, 4);
+        *adj_13 = temporal_graph::is_node_adjacent_to(graph, 1, 3);
         *beta_return = temporal_graph::compute_node2vec_beta_device(graph, 1, 1);
         *beta_neighbor = temporal_graph::compute_node2vec_beta_device(graph, 1, 2);
         *beta_distant = temporal_graph::compute_node2vec_beta_device(graph, 1, 3);

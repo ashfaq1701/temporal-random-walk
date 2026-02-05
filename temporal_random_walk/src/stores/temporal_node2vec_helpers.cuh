@@ -9,7 +9,7 @@ namespace temporal_graph {
     // Node2Vec beta primitives
     // -------------------------------------------------------------------------
 
-    HOST DEVICE inline bool is_node_adjacent_to_host_or_device(
+    HOST DEVICE inline bool is_node_adjacent_to(
         const TemporalGraphStore *graph,
         const int prev_node,
         const int candidate_node) {
@@ -58,7 +58,7 @@ namespace temporal_graph {
             return graph->inv_p;
         }
 
-        if (is_node_adjacent_to_host_or_device(graph, prev_node, w)) {
+        if (is_node_adjacent_to(graph, prev_node, w)) {
             return 1.0;
         }
 
@@ -75,7 +75,7 @@ namespace temporal_graph {
             return graph->inv_p;
         }
 
-        if (is_node_adjacent_to_host_or_device(graph, prev_node, w)) {
+        if (is_node_adjacent_to(graph, prev_node, w)) {
             return 1.0;
         }
 
