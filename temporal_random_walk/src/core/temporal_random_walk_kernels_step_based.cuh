@@ -91,6 +91,7 @@ namespace temporal_random_walk {
         const size_t offset = static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) + static_cast<size_t>(step_number); // Get endpoint of previous step (step_number - 1). And endpoint is (step_number - 1 + 1).
         const int last_node = walk_set->nodes[offset];
         const int last_ts = walk_set->timestamps[offset];
+        const int prev_node = step_number > 0 ? walk_set->nodes[offset - 1] : -1;
 
         const size_t rand_nums_start_offset =
             static_cast<size_t>(walk_idx) +                                               // To account extra value in all previous walk's start pickers.
@@ -101,7 +102,7 @@ namespace temporal_random_walk {
                 temporal_graph,
                 last_node,
                 last_ts,
-                -1,
+                prev_node,
                 rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
                 rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1));
 

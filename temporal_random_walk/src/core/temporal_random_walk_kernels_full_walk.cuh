@@ -53,6 +53,7 @@ namespace temporal_random_walk {
         }
 
         int current_node;
+        int prev_node = -1;
         int64_t current_timestamp = Forward ? INT64_MIN : INT64_MAX;
         const int start_src = start_edge.u;
         const int start_dst = start_edge.i;
@@ -97,7 +98,7 @@ namespace temporal_random_walk {
                 temporal_graph,
                 current_node,
                 current_timestamp,
-                -1,
+                prev_node,
                 r_step0,
                 r_step1);
 
@@ -108,8 +109,10 @@ namespace temporal_random_walk {
 
             // Update current node based on template parameters
             if constexpr (IsDirected) {
+                prev_node = current_node;
                 current_node = Forward ? next_edge.i : next_edge.u;
             } else {
+                prev_node = current_node;
                 current_node = pick_other_number(next_edge.u, next_edge.i, current_node);
             }
 
