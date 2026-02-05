@@ -11,6 +11,30 @@
 
 namespace py = pybind11;
 
+inline double resolve_temporal_node2vec_parameter(
+    const std::optional<double>& temporal_param,
+    const std::optional<double>& legacy_param,
+    const double default_value,
+    const char* temporal_name,
+    const char* legacy_name) {
+
+    if (temporal_param.has_value() && legacy_param.has_value()) {
+        throw std::invalid_argument(
+            std::string("Specify only one of '") + temporal_name + "' or '" + legacy_name + "'.");
+    }
+
+    const double value = temporal_param.has_value()
+        ? *temporal_param
+        : legacy_param.value_or(default_value);
+
+    if (value <= 0.0) {
+        throw std::invalid_argument(
+            std::string("'") + temporal_name + "' must be > 0.");
+    }
+
+    return value;
+}
+
 inline const RandomPickerType* get_picker_ptr_from_optional_string(
     const std::optional<std::string>& picker_str,
     std::optional<RandomPickerType>& picker_enum_storage) {
@@ -27,18 +51,35 @@ PYBIND11_MODULE(_temporal_random_walk, m)
     py::class_<TemporalRandomWalk>(m, "TemporalRandomWalk")
         .def(py::init([](const bool is_directed, bool use_gpu, const std::optional<int64_t> max_time_capacity,
                          const std::optional<bool> enable_weight_computation, const std::optional<double> timescale_bound,
+                         const std::optional<double> temporal_node2vec_p,
+                         const std::optional<double> temporal_node2vec_q,
                          const std::optional<double> node2vec_p,
-                         const std::optional<double> node2vec_q, const std::optional<int> walk_padding_value,
+                         const std::optional<double> node2vec_q,
+                         const std::optional<int> walk_padding_value,
                          const std::optional<uint64_t> global_seed)
              {
+                 const double resolved_node2vec_p = resolve_temporal_node2vec_parameter(
+                     temporal_node2vec_p,
+                     node2vec_p,
+                     DEFAULT_NODE2VEC_P,
+                     "temporal_node2vec_p",
+                     "node2vec_p");
+
+                 const double resolved_node2vec_q = resolve_temporal_node2vec_parameter(
+                     temporal_node2vec_q,
+                     node2vec_q,
+                     DEFAULT_NODE2VEC_Q,
+                     "temporal_node2vec_q",
+                     "node2vec_q");
+
                  return std::make_unique<TemporalRandomWalk>(
                      is_directed,
                      use_gpu,
                      max_time_capacity.value_or(-1),
                      enable_weight_computation.value_or(false),
                      timescale_bound.value_or(DEFAULT_TIMESCALE_BOUND),
-                     node2vec_p.value_or(DEFAULT_NODE2VEC_P),
-                     node2vec_q.value_or(DEFAULT_NODE2VEC_Q),
+                     resolved_node2vec_p,
+                     resolved_node2vec_q,
                      walk_padding_value.value_or(EMPTY_NODE_VALUE),
                      global_seed.value_or(EMPTY_GLOBAL_SEED));
              }),
@@ -51,8 +92,10 @@ PYBIND11_MODULE(_temporal_random_walk, m)
              max_time_capacity (int, optional): Maximum time window for edges. Edges older than (latest_time - max_time_capacity) are removed. Use -1 for no limit. Defaults to -1.
              enable_weight_computation (bool, optional): Enable CTDNE weight computation. Required for ExponentialWeight picker. Defaults to False.
              timescale_bound (float, optional): Scale factor for temporal differences. Used to prevent numerical issues with large time differences. Defaults to -1.0.
-             node2vec_p (float, optional): Node2vec return parameter p. Defaults to 1.0.
-             node2vec_q (float, optional): Node2vec in-out parameter q. Defaults to 1.0.
+             temporal_node2vec_p (float, optional): Temporal-node2vec return parameter p (> 0). Defaults to 1.0.
+             temporal_node2vec_q (float, optional): Temporal-node2vec in-out parameter q (> 0). Defaults to 1.0.
+             node2vec_p (float, optional): Legacy alias for temporal_node2vec_p.
+             node2vec_q (float, optional): Legacy alias for temporal_node2vec_q.
              walk_padding_value (int, optional): Padding node value for prematurely broken walks. Default is -1.
              global_seed (int, optional): A global seed to have reproducibility inside random walks. Default is empty and the code in that case generates random seed in each run.
              )",
@@ -61,6 +104,8 @@ PYBIND11_MODULE(_temporal_random_walk, m)
              py::arg("max_time_capacity") = py::none(),
              py::arg("enable_weight_computation") = py::none(),
              py::arg("timescale_bound") = py::none(),
+             py::arg("temporal_node2vec_p") = py::none(),
+             py::arg("temporal_node2vec_q") = py::none(),
              py::arg("node2vec_p") = py::none(),
              py::arg("node2vec_q") = py::none(),
              py::arg("walk_padding_value") = py::none(),
@@ -169,6 +214,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                         - "Linear": Linear time decay
                         - "ExponentialIndex": Exponential decay with indices
                         - "ExponentialWeight": Exponential decay with weights
+                        - "TemporalNode2Vec": Temporal-node2vec transition bias
                 num_walks_per_node (int): Number of walks per starting node.
                 initial_edge_bias (str, optional): Bias type for first edge selection.
                     Uses walk_bias if not specified.
@@ -242,6 +288,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                         - "Linear": Linear time decay
                         - "ExponentialIndex": Exponential decay with indices
                         - "ExponentialWeight": Exponential decay with weights
+                        - "TemporalNode2Vec": Temporal-node2vec transition bias
                 num_walks_total (int): Total Number of walks to generate.
                 initial_edge_bias (str, optional): Bias type for first edge selection.
                     Uses walk_bias if not specified.

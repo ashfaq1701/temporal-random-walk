@@ -58,7 +58,7 @@ Classes
             int: Selected index
 
 `TemporalRandomWalk(...)`
-:   __init__(self: _temporal_random_walk.TemporalRandomWalk, is_directed: bool, use_gpu: bool = False, max_time_capacity: Optional[int] = None, enable_weight_computation: Optional[bool] = None, timescale_bound: Optional[float] = None) -> None
+:   __init__(self: _temporal_random_walk.TemporalRandomWalk, is_directed: bool, use_gpu: bool = False, max_time_capacity: Optional[int] = None, enable_weight_computation: Optional[bool] = None, timescale_bound: Optional[float] = None, temporal_node2vec_p: Optional[float] = None, temporal_node2vec_q: Optional[float] = None, node2vec_p: Optional[float] = None, node2vec_q: Optional[float] = None) -> None
     
     
     Initialize a temporal random walk generator.
@@ -69,6 +69,10 @@ Classes
     max_time_capacity (int, optional): Maximum time window for edges. Edges older than (latest_time - max_time_capacity) are removed. Use -1 for no limit. Defaults to -1.
     enable_weight_computation (bool, optional): Enable CTDNE weight computation. Required for ExponentialWeight picker. Defaults to False.
     timescale_bound (float, optional): Scale factor for temporal differences. Used to prevent numerical issues with large time differences. Defaults to -1.0.
+    temporal_node2vec_p (float, optional): Temporal-node2vec return parameter p (> 0). Defaults to 1.0.
+    temporal_node2vec_q (float, optional): Temporal-node2vec in-out parameter q (> 0). Defaults to 1.0.
+    node2vec_p (float, optional): Legacy alias for temporal_node2vec_p.
+    node2vec_q (float, optional): Legacy alias for temporal_node2vec_q.
 
     ### Ancestors (in MRO)
 
@@ -127,6 +131,7 @@ Classes
                     - "Linear": Linear time decay
                     - "ExponentialIndex": Exponential decay with indices
                     - "ExponentialWeight": Exponential decay with weights
+                    - "TemporalNode2Vec": Temporal-node2vec transition bias
             num_walks_total (int): Total Number of walks to generate.
             initial_edge_bias (str, optional): Bias type for first edge selection.
                 Uses walk_bias if not specified.
@@ -153,6 +158,7 @@ Classes
                     - "Linear": Linear time decay
                     - "ExponentialIndex": Exponential decay with indices
                     - "ExponentialWeight": Exponential decay with weights
+                    - "TemporalNode2Vec": Temporal-node2vec transition bias
             num_walks_per_node (int): Number of walks per starting node.
             initial_edge_bias (str, optional): Bias type for first edge selection.
                 Uses walk_bias if not specified.
