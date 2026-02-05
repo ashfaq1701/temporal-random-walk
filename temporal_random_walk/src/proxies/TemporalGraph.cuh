@@ -23,7 +23,7 @@ template <bool IsDirected, bool Forward, RandomPickerType PickerType>
 __global__ void get_node_edge_at_kernel(Edge* result, TemporalGraphStore* graph, const int node_id, const int64_t timestamp, const double* rand_nums) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = temporal_graph::get_node_edge_at_device<Forward, PickerType, IsDirected>(
-            graph, node_id, timestamp, rand_nums[0], rand_nums[1]);
+            graph, node_id, timestamp, -1, rand_nums[0], rand_nums[1]);
     }
 }
 

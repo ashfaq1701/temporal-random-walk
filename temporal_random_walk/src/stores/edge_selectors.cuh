@@ -125,8 +125,10 @@ namespace temporal_graph {
         const TemporalGraphStore *graph,
         const int node_id,
         const int64_t timestamp,
+        const int prev_node,
         const double group_selector_rand_num,
         const double edge_selector_rand_num) {
+        (void)prev_node;
         if (!edge_data::is_node_active_host(graph->edge_data, node_id)) {
             return Edge{-1, -1, -1};
         }
@@ -435,8 +437,10 @@ namespace temporal_graph {
         const TemporalGraphStore *graph,
         const int node_id,
         int64_t timestamp,
+        const int prev_node,
         const double group_selector_rand_num,
         const double edge_selector_rand_num) {
+        (void)prev_node;
         if (!edge_data::is_node_active_device(graph->edge_data, node_id)) {
             return Edge{-1, -1, -1};
         }
