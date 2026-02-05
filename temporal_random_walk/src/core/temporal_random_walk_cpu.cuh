@@ -150,6 +150,11 @@ namespace temporal_random_walk {
                             RandomPickerType::ExponentialWeight>(
                             temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
                         break;
+                    case RandomPickerType::TemporalNode2Vec:
+                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Uniform,
+                            RandomPickerType::TemporalNode2Vec>(
+                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
+                        break;
                     case RandomPickerType::TEST_FIRST:
                         generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Uniform,
                             RandomPickerType::TEST_FIRST>(
@@ -185,6 +190,11 @@ namespace temporal_random_walk {
                             RandomPickerType::ExponentialWeight>(
                             temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
                         break;
+                    case RandomPickerType::TemporalNode2Vec:
+                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Linear,
+                            RandomPickerType::TemporalNode2Vec>(
+                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
+                        break;
                     case RandomPickerType::TEST_FIRST:
                         generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Linear,
                             RandomPickerType::TEST_FIRST>(
@@ -218,6 +228,11 @@ namespace temporal_random_walk {
                     case RandomPickerType::ExponentialWeight:
                         generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialIndex,
                             RandomPickerType::ExponentialWeight>(
+                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
+                        break;
+                    case RandomPickerType::TemporalNode2Vec:
+                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialIndex,
+                            RandomPickerType::TemporalNode2Vec>(
                             temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
                         break;
                     case RandomPickerType::TEST_FIRST:
@@ -335,6 +350,11 @@ namespace temporal_random_walk {
                             RandomPickerType::ExponentialWeight>(
                             temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
                         break;
+                    case RandomPickerType::TemporalNode2Vec:
+                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_FIRST,
+                            RandomPickerType::TemporalNode2Vec>(
+                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
+                        break;
                     case RandomPickerType::TEST_FIRST:
                         generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_FIRST,
                             RandomPickerType::TEST_FIRST>(
@@ -368,6 +388,11 @@ namespace temporal_random_walk {
                     case RandomPickerType::ExponentialWeight:
                         generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_LAST,
                             RandomPickerType::ExponentialWeight>(
+                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
+                        break;
+                    case RandomPickerType::TemporalNode2Vec:
+                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_LAST,
+                            RandomPickerType::TemporalNode2Vec>(
                             temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
                         break;
                     case RandomPickerType::TEST_FIRST:
