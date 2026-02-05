@@ -129,7 +129,6 @@ namespace temporal_graph {
         const int prev_node,
         const double group_selector_rand_num,
         const double edge_selector_rand_num) {
-        (void)prev_node;
         if (!edge_data::is_node_active_host(graph->edge_data, node_id)) {
             return Edge{-1, -1, -1};
         }
@@ -185,12 +184,17 @@ namespace temporal_graph {
                     if (index >= available) return Edge{-1, -1, -1};
                     group_pos = static_cast<long>(start_pos) + index;
                 } else {
-                    group_pos = random_pickers::pick_using_weight_based_picker_host(
-                        PickerType,
-                        graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
-                        graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
-                        start_pos, group_end_offset, group_selector_rand_num);
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    const bool skip_node2vec = !graph->enable_node2vec || prev_node == -1;
+                    if (skip_node2vec) {
+                        group_pos = random_pickers::pick_using_weight_based_picker_host(
+                            PickerType,
+                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
+                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
+                            start_pos, group_end_offset, group_selector_rand_num);
+                        if (group_pos == -1) return Edge{-1, -1, -1};
+                    } else {
+                        return Edge{-1, -1, -1};
+                    }
                 }
             } else {
                 // Find first group >= timestamp
@@ -226,15 +230,20 @@ namespace temporal_graph {
                                                     : graph->node_edge_index->
                                                     outbound_backward_cumulative_weights_exponential_size;
 
-                    group_pos = random_pickers::pick_using_weight_based_picker_host(
-                        PickerType,
-                        weights,
-                        weights_size,
-                        group_start_offset,
-                        static_cast<size_t>(it - node_ts_groups_offsets),
-                        group_selector_rand_num
-                    );
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    const bool skip_node2vec = !graph->enable_node2vec || prev_node == -1;
+                    if (skip_node2vec) {
+                        group_pos = random_pickers::pick_using_weight_based_picker_host(
+                            PickerType,
+                            weights,
+                            weights_size,
+                            group_start_offset,
+                            static_cast<size_t>(it - node_ts_groups_offsets),
+                            group_selector_rand_num
+                        );
+                        if (group_pos == -1) return Edge{-1, -1, -1};
+                    } else {
+                        return Edge{-1, -1, -1};
+                    }
                 }
             }
         } else {
@@ -253,14 +262,19 @@ namespace temporal_graph {
                                 : static_cast<long>(group_end_offset - 1 - (num_groups - index - 1));
             } else {
                 if constexpr (Forward) {
-                    group_pos = random_pickers::pick_using_weight_based_picker_host(
-                        PickerType,
-                        graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
-                        graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
-                        group_start_offset,
-                        group_end_offset,
-                        group_selector_rand_num);
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    const bool skip_node2vec = !graph->enable_node2vec || prev_node == -1;
+                    if (skip_node2vec) {
+                        group_pos = random_pickers::pick_using_weight_based_picker_host(
+                            PickerType,
+                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
+                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
+                            group_start_offset,
+                            group_end_offset,
+                            group_selector_rand_num);
+                        if (group_pos == -1) return Edge{-1, -1, -1};
+                    } else {
+                        return Edge{-1, -1, -1};
+                    }
                 } else {
                     double *weights = IsDirected
                                           ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential
@@ -272,14 +286,19 @@ namespace temporal_graph {
                                                     : graph->node_edge_index->
                                                     outbound_backward_cumulative_weights_exponential_size;
 
-                    group_pos = random_pickers::pick_using_weight_based_picker_host(
-                        PickerType,
-                        weights,
-                        weights_size,
-                        group_start_offset,
-                        group_end_offset,
-                        group_selector_rand_num);
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    const bool skip_node2vec = !graph->enable_node2vec || prev_node == -1;
+                    if (skip_node2vec) {
+                        group_pos = random_pickers::pick_using_weight_based_picker_host(
+                            PickerType,
+                            weights,
+                            weights_size,
+                            group_start_offset,
+                            group_end_offset,
+                            group_selector_rand_num);
+                        if (group_pos == -1) return Edge{-1, -1, -1};
+                    } else {
+                        return Edge{-1, -1, -1};
+                    }
                 }
             }
         }
@@ -441,7 +460,6 @@ namespace temporal_graph {
         const int prev_node,
         const double group_selector_rand_num,
         const double edge_selector_rand_num) {
-        (void)prev_node;
         if (!edge_data::is_node_active_device(graph->edge_data, node_id)) {
             return Edge{-1, -1, -1};
         }
@@ -497,12 +515,17 @@ namespace temporal_graph {
                     if (index >= available) return Edge{-1, -1, -1};
                     group_pos = static_cast<long>(start_pos) + index;
                 } else {
-                    group_pos = random_pickers::pick_using_weight_based_picker_device(
-                        PickerType,
-                        graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
-                        graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
-                        start_pos, group_end_offset, group_selector_rand_num);
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    const bool skip_node2vec = !graph->enable_node2vec || prev_node == -1;
+                    if (skip_node2vec) {
+                        group_pos = random_pickers::pick_using_weight_based_picker_device(
+                            PickerType,
+                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
+                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
+                            start_pos, group_end_offset, group_selector_rand_num);
+                        if (group_pos == -1) return Edge{-1, -1, -1};
+                    } else {
+                        return Edge{-1, -1, -1};
+                    }
                 }
             } else {
                 // Find first group >= timestamp
@@ -538,15 +561,20 @@ namespace temporal_graph {
                                               : graph->node_edge_index->
                                               outbound_backward_cumulative_weights_exponential_size;
 
-                    group_pos = random_pickers::pick_using_weight_based_picker_device(
-                        PickerType,
-                        weights,
-                        weights_size,
-                        group_start_offset,
-                        static_cast<size_t>(it - node_ts_groups_offsets),
-                        group_selector_rand_num
-                    );
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    const bool skip_node2vec = !graph->enable_node2vec || prev_node == -1;
+                    if (skip_node2vec) {
+                        group_pos = random_pickers::pick_using_weight_based_picker_device(
+                            PickerType,
+                            weights,
+                            weights_size,
+                            group_start_offset,
+                            static_cast<size_t>(it - node_ts_groups_offsets),
+                            group_selector_rand_num
+                        );
+                        if (group_pos == -1) return Edge{-1, -1, -1};
+                    } else {
+                        return Edge{-1, -1, -1};
+                    }
                 }
             }
         } else {
@@ -565,14 +593,19 @@ namespace temporal_graph {
                                 : static_cast<long>(group_end_offset - 1 - (num_groups - index - 1));
             } else {
                 if constexpr (Forward) {
-                    group_pos = random_pickers::pick_using_weight_based_picker_device(
-                        PickerType,
-                        graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
-                        graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
-                        group_start_offset,
-                        group_end_offset,
-                        group_selector_rand_num);
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    const bool skip_node2vec = !graph->enable_node2vec || prev_node == -1;
+                    if (skip_node2vec) {
+                        group_pos = random_pickers::pick_using_weight_based_picker_device(
+                            PickerType,
+                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
+                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
+                            group_start_offset,
+                            group_end_offset,
+                            group_selector_rand_num);
+                        if (group_pos == -1) return Edge{-1, -1, -1};
+                    } else {
+                        return Edge{-1, -1, -1};
+                    }
                 } else {
                     double *weights = IsDirected
                                           ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential
@@ -584,14 +617,19 @@ namespace temporal_graph {
                                               : graph->node_edge_index->
                                               outbound_backward_cumulative_weights_exponential_size;
 
-                    group_pos = random_pickers::pick_using_weight_based_picker_device(
-                        PickerType,
-                        weights,
-                        weights_size,
-                        group_start_offset,
-                        group_end_offset,
-                        group_selector_rand_num);
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    const bool skip_node2vec = !graph->enable_node2vec || prev_node == -1;
+                    if (skip_node2vec) {
+                        group_pos = random_pickers::pick_using_weight_based_picker_device(
+                            PickerType,
+                            weights,
+                            weights_size,
+                            group_start_offset,
+                            group_end_offset,
+                            group_selector_rand_num);
+                        if (group_pos == -1) return Edge{-1, -1, -1};
+                    } else {
+                        return Edge{-1, -1, -1};
+                    }
                 }
             }
         }
