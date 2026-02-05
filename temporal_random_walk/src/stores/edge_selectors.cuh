@@ -186,7 +186,7 @@ namespace temporal_graph {
                     group_pos = static_cast<long>(start_pos) + index;
                 } else {
                     if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-                        if (!graph->enable_node2vec || prev_node == -1) {
+                        if (prev_node == -1) {
                             group_pos = random_pickers::pick_using_weight_based_picker_host(
                                 RandomPickerType::ExponentialWeight,
                                 graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
@@ -250,7 +250,7 @@ namespace temporal_graph {
 
                     const size_t range_end = static_cast<size_t>(it - node_ts_groups_offsets);
                     if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-                        if (!graph->enable_node2vec || prev_node == -1) {
+                        if (prev_node == -1) {
                             group_pos = random_pickers::pick_using_weight_based_picker_host(
                                 RandomPickerType::ExponentialWeight,
                                 weights,
@@ -302,7 +302,7 @@ namespace temporal_graph {
             } else {
                 if constexpr (Forward) {
                     if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-                        if (!graph->enable_node2vec || prev_node == -1) {
+                        if (prev_node == -1) {
                             group_pos = random_pickers::pick_using_weight_based_picker_host(
                                 RandomPickerType::ExponentialWeight,
                                 graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
@@ -345,7 +345,7 @@ namespace temporal_graph {
                                                     outbound_backward_cumulative_weights_exponential_size;
 
                     if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-                        if (!graph->enable_node2vec || prev_node == -1) {
+                        if (prev_node == -1) {
                             group_pos = random_pickers::pick_using_weight_based_picker_host(
                                 RandomPickerType::ExponentialWeight,
                                 weights,
@@ -593,7 +593,7 @@ namespace temporal_graph {
                     group_pos = static_cast<long>(start_pos) + index;
                 } else {
                     if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-                        if (!graph->enable_node2vec || prev_node == -1) {
+                        if (prev_node == -1) {
                             group_pos = random_pickers::pick_using_weight_based_picker_device(
                                 RandomPickerType::ExponentialWeight,
                                 graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
@@ -657,7 +657,7 @@ namespace temporal_graph {
 
                     const size_t range_end = static_cast<size_t>(it - node_ts_groups_offsets);
                     if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-                        if (!graph->enable_node2vec || prev_node == -1) {
+                        if (prev_node == -1) {
                             group_pos = random_pickers::pick_using_weight_based_picker_device(
                                 RandomPickerType::ExponentialWeight,
                                 weights,
@@ -709,7 +709,7 @@ namespace temporal_graph {
             } else {
                 if constexpr (Forward) {
                     if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-                        if (!graph->enable_node2vec || prev_node == -1) {
+                        if (prev_node == -1) {
                             group_pos = random_pickers::pick_using_weight_based_picker_device(
                                 RandomPickerType::ExponentialWeight,
                                 graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
@@ -752,7 +752,7 @@ namespace temporal_graph {
                                               outbound_backward_cumulative_weights_exponential_size;
 
                     if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-                        if (!graph->enable_node2vec || prev_node == -1) {
+                        if (prev_node == -1) {
                             group_pos = random_pickers::pick_using_weight_based_picker_device(
                                 RandomPickerType::ExponentialWeight,
                                 weights,
