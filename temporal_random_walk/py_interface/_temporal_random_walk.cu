@@ -27,7 +27,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
     py::class_<TemporalRandomWalk>(m, "TemporalRandomWalk")
         .def(py::init([](const bool is_directed, bool use_gpu, const std::optional<int64_t> max_time_capacity,
                          const std::optional<bool> enable_weight_computation, const std::optional<double> timescale_bound,
-                         const std::optional<bool> enable_node2vec, const std::optional<double> node2vec_p,
+                         const std::optional<double> node2vec_p,
                          const std::optional<double> node2vec_q, const std::optional<int> walk_padding_value,
                          const std::optional<uint64_t> global_seed)
              {
@@ -37,7 +37,6 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                      max_time_capacity.value_or(-1),
                      enable_weight_computation.value_or(false),
                      timescale_bound.value_or(DEFAULT_TIMESCALE_BOUND),
-                     enable_node2vec.value_or(DEFAULT_ENABLE_NODE2VEC),
                      node2vec_p.value_or(DEFAULT_NODE2VEC_P),
                      node2vec_q.value_or(DEFAULT_NODE2VEC_Q),
                      walk_padding_value.value_or(EMPTY_NODE_VALUE),
@@ -52,7 +51,6 @@ PYBIND11_MODULE(_temporal_random_walk, m)
              max_time_capacity (int, optional): Maximum time window for edges. Edges older than (latest_time - max_time_capacity) are removed. Use -1 for no limit. Defaults to -1.
              enable_weight_computation (bool, optional): Enable CTDNE weight computation. Required for ExponentialWeight picker. Defaults to False.
              timescale_bound (float, optional): Scale factor for temporal differences. Used to prevent numerical issues with large time differences. Defaults to -1.0.
-             enable_node2vec (bool, optional): Enables node2vec-aware behavior. Defaults to False.
              node2vec_p (float, optional): Node2vec return parameter p. Defaults to 1.0.
              node2vec_q (float, optional): Node2vec in-out parameter q. Defaults to 1.0.
              walk_padding_value (int, optional): Padding node value for prematurely broken walks. Default is -1.
@@ -63,7 +61,6 @@ PYBIND11_MODULE(_temporal_random_walk, m)
              py::arg("max_time_capacity") = py::none(),
              py::arg("enable_weight_computation") = py::none(),
              py::arg("timescale_bound") = py::none(),
-             py::arg("enable_node2vec") = py::none(),
              py::arg("node2vec_p") = py::none(),
              py::arg("node2vec_q") = py::none(),
              py::arg("walk_padding_value") = py::none(),
