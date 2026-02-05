@@ -172,7 +172,7 @@ TYPED_TEST(TemporalNode2VecHelpersTest, InvalidTemporalNode2VecInputsReturnSenti
 
     std::vector<double> synthetic_cumulative_weights = {0.20, 1.00};
 
-    EXPECT_EQ(temporal_graph::pick_random_temporal_node2vec_host<true, true>(
+    EXPECT_EQ((temporal_graph::pick_random_temporal_node2vec_host<true, true>(
         store,
         0,
         -1,
@@ -182,25 +182,25 @@ TYPED_TEST(TemporalNode2VecHelpersTest, InvalidTemporalNode2VecInputsReturnSenti
         groups_offsets,
         sorted_indices,
         synthetic_cumulative_weights.data(),
-        0.5), -1);
+        0.5)), -1);
 
-    EXPECT_EQ(temporal_graph::pick_random_temporal_node2vec_edge_host<true, true>(
+    EXPECT_EQ((temporal_graph::pick_random_temporal_node2vec_edge_host<true, true>(
         store,
         0,
         -1,
         groups_offsets[range_start],
         groups_offsets[range_start + 1],
         sorted_indices,
-        0.5), -1);
+        0.5)), -1);
 
-    EXPECT_EQ(temporal_graph::pick_random_temporal_node2vec_edge_host<true, true>(
+    EXPECT_EQ((temporal_graph::pick_random_temporal_node2vec_edge_host<true, true>(
         store,
         0,
         1,
         groups_offsets[range_start],
         groups_offsets[range_start],
         sorted_indices,
-        0.5), -1);
+        0.5)), -1);
 }
 
 #ifdef HAS_CUDA
