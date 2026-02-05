@@ -11,6 +11,7 @@ set(TEST_FILES
         test_temporal_graph_weights.cpp
         test_temporal_random_walk.cpp
         test_weight_based_random_picker.cpp
+        test_temporal_node2vec.cpp
 )
 
 set(MODULE_SRC_FILES ${SRC_FILES} ${TEST_FILES})
