@@ -44,6 +44,7 @@ namespace temporal_random_walk {
         }
 
         int current_node;
+        int prev_node = -1;
         int64_t current_timestamp = Forward ? INT64_MIN : INT64_MAX;
 
         // Extract start edge components
@@ -87,7 +88,7 @@ namespace temporal_random_walk {
                 temporal_graph,
                 current_node,
                 current_timestamp,
-                -1,
+                prev_node,
                 group_selector_rand_num,
                 edge_selector_rand_num
             );
@@ -99,8 +100,10 @@ namespace temporal_random_walk {
 
             // Use template parameter again
             if constexpr (IsDirected) {
+                prev_node = current_node;
                 current_node = Forward ? next_edge.i : next_edge.u;
             } else {
+                prev_node = current_node;
                 current_node = pick_other_number(next_edge.u, next_edge.i, current_node);
             }
 
