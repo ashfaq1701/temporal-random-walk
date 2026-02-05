@@ -154,6 +154,10 @@ namespace temporal_random_walk {
                 pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::ExponentialWeight><<<grid, block_dim>>>(
                     temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, base_seed);
                 break;
+            case RandomPickerType::TemporalNode2Vec:
+                pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::TemporalNode2Vec><<<grid, block_dim>>>(
+                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, base_seed);
+                break;
             case RandomPickerType::TEST_FIRST:
                 pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::TEST_FIRST><<<grid, block_dim>>>(
                     temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, base_seed);
@@ -195,6 +199,10 @@ namespace temporal_random_walk {
                 break;
             case RandomPickerType::ExponentialWeight:
                 pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::ExponentialWeight><<<grid, block_dim>>>(
+                    temporal_graph, walk_set, step_number, max_walk_len, num_walks, base_seed);
+                break;
+            case RandomPickerType::TemporalNode2Vec:
+                pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::TemporalNode2Vec><<<grid, block_dim>>>(
                     temporal_graph, walk_set, step_number, max_walk_len, num_walks, base_seed);
                 break;
             case RandomPickerType::TEST_FIRST:

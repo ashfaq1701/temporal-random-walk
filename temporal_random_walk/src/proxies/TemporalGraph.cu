@@ -285,6 +285,7 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
             case RandomPickerType::Linear: DISPATCH_HOST(FWD, RandomPickerType::Linear) \
             case RandomPickerType::ExponentialIndex: DISPATCH_HOST(FWD, RandomPickerType::ExponentialIndex) \
             case RandomPickerType::ExponentialWeight: DISPATCH_HOST(FWD, RandomPickerType::ExponentialWeight) \
+            case RandomPickerType::TemporalNode2Vec: DISPATCH_HOST(FWD, RandomPickerType::TemporalNode2Vec) \
             case RandomPickerType::TEST_FIRST: DISPATCH_HOST(FWD, RandomPickerType::TEST_FIRST) \
             case RandomPickerType::TEST_LAST: DISPATCH_HOST(FWD, RandomPickerType::TEST_LAST) \
             default: break; \
@@ -296,6 +297,7 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
             case RandomPickerType::Linear: DISPATCH_DEVICE(FWD, RandomPickerType::Linear) \
             case RandomPickerType::ExponentialIndex: DISPATCH_DEVICE(FWD, RandomPickerType::ExponentialIndex) \
             case RandomPickerType::ExponentialWeight: DISPATCH_DEVICE(FWD, RandomPickerType::ExponentialWeight) \
+            case RandomPickerType::TemporalNode2Vec: DISPATCH_DEVICE(FWD, RandomPickerType::TemporalNode2Vec) \
             case RandomPickerType::TEST_FIRST: DISPATCH_DEVICE(FWD, RandomPickerType::TEST_FIRST) \
             case RandomPickerType::TEST_LAST: DISPATCH_DEVICE(FWD, RandomPickerType::TEST_LAST) \
             default: break; \
@@ -371,6 +373,7 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
             case RandomPickerType::Linear: DISPATCH_HOST(FWD, RandomPickerType::Linear, DIR) \
             case RandomPickerType::ExponentialIndex: DISPATCH_HOST(FWD, RandomPickerType::ExponentialIndex, DIR) \
             case RandomPickerType::ExponentialWeight: DISPATCH_HOST(FWD, RandomPickerType::ExponentialWeight, DIR) \
+            case RandomPickerType::TemporalNode2Vec: DISPATCH_HOST(FWD, RandomPickerType::TemporalNode2Vec, DIR) \
             case RandomPickerType::TEST_FIRST: DISPATCH_HOST(FWD, RandomPickerType::TEST_FIRST, DIR) \
             case RandomPickerType::TEST_LAST: DISPATCH_HOST(FWD, RandomPickerType::TEST_LAST, DIR) \
             default: break; \
@@ -382,6 +385,7 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
             case RandomPickerType::Linear: DISPATCH_DEVICE(FWD, RandomPickerType::Linear, DIR) \
             case RandomPickerType::ExponentialIndex: DISPATCH_DEVICE(FWD, RandomPickerType::ExponentialIndex, DIR) \
             case RandomPickerType::ExponentialWeight: DISPATCH_DEVICE(FWD, RandomPickerType::ExponentialWeight, DIR) \
+            case RandomPickerType::TemporalNode2Vec: DISPATCH_DEVICE(FWD, RandomPickerType::TemporalNode2Vec, DIR) \
             case RandomPickerType::TEST_FIRST: DISPATCH_DEVICE(FWD, RandomPickerType::TEST_FIRST, DIR) \
             case RandomPickerType::TEST_LAST: DISPATCH_DEVICE(FWD, RandomPickerType::TEST_LAST, DIR) \
             default: break; \

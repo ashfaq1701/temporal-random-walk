@@ -212,7 +212,8 @@ namespace random_pickers {
         const size_t group_start,
         const size_t group_end,
         const double random_number) {
-        if (random_picker != RandomPickerType::ExponentialWeight) {
+        if (random_picker != RandomPickerType::ExponentialWeight &&
+            random_picker != RandomPickerType::TemporalNode2Vec) {
             return -1;
         }
 
@@ -228,7 +229,8 @@ namespace random_pickers {
         const size_t group_start,
         const size_t group_end,
         const double random_number) {
-        if (random_picker != RandomPickerType::ExponentialWeight) {
+        if (random_picker != RandomPickerType::ExponentialWeight &&
+            random_picker != RandomPickerType::TemporalNode2Vec) {
             return -1;
         }
 

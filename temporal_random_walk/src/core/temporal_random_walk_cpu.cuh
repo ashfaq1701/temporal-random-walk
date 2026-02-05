@@ -255,6 +255,11 @@ namespace temporal_random_walk {
                             RandomPickerType::ExponentialWeight>(
                             temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
                         break;
+                    case RandomPickerType::TemporalNode2Vec:
+                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialWeight,
+                            RandomPickerType::TemporalNode2Vec>(
+                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
+                        break;
                     case RandomPickerType::TEST_FIRST:
                         generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialWeight,
                             RandomPickerType::TEST_FIRST>(
@@ -262,6 +267,46 @@ namespace temporal_random_walk {
                         break;
                     case RandomPickerType::TEST_LAST:
                         generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialWeight,
+                            RandomPickerType::TEST_LAST>(
+                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
+                        break;
+                }
+                break;
+
+            case RandomPickerType::TemporalNode2Vec:
+                switch (start_picker_type) {
+                    case RandomPickerType::Uniform:
+                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TemporalNode2Vec,
+                            RandomPickerType::Uniform>(
+                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
+                        break;
+                    case RandomPickerType::Linear:
+                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TemporalNode2Vec,
+                            RandomPickerType::Linear>(
+                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
+                        break;
+                    case RandomPickerType::ExponentialIndex:
+                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TemporalNode2Vec,
+                            RandomPickerType::ExponentialIndex>(
+                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
+                        break;
+                    case RandomPickerType::ExponentialWeight:
+                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TemporalNode2Vec,
+                            RandomPickerType::ExponentialWeight>(
+                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
+                        break;
+                    case RandomPickerType::TemporalNode2Vec:
+                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TemporalNode2Vec,
+                            RandomPickerType::TemporalNode2Vec>(
+                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
+                        break;
+                    case RandomPickerType::TEST_FIRST:
+                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TemporalNode2Vec,
+                            RandomPickerType::TEST_FIRST>(
+                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
+                        break;
+                    case RandomPickerType::TEST_LAST:
+                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TemporalNode2Vec,
                             RandomPickerType::TEST_LAST>(
                             temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
                         break;
@@ -353,27 +398,32 @@ namespace temporal_random_walk {
         const double *rand_nums) {
         const bool should_walk_forward = get_should_walk_forward(walk_direction);
 
+        const RandomPickerType normalized_start_picker_type =
+            start_picker_type == RandomPickerType::TemporalNode2Vec
+                ? RandomPickerType::ExponentialWeight
+                : start_picker_type;
+
         #pragma omp parallel for
         for (int walk_idx = 0; walk_idx < num_walks; walk_idx++) {
             if (is_directed) {
                 if (should_walk_forward) {
                     dispatch_walk_generation<true, true>(
                         temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums,
-                        edge_picker_type, start_picker_type);
+                        edge_picker_type, normalized_start_picker_type);
                 } else {
                     dispatch_walk_generation<true, false>(
                         temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums,
-                        edge_picker_type, start_picker_type);
+                        edge_picker_type, normalized_start_picker_type);
                 }
             } else {
                 if (should_walk_forward) {
                     dispatch_walk_generation<false, true>(
                         temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums,
-                        edge_picker_type, start_picker_type);
+                        edge_picker_type, normalized_start_picker_type);
                 } else {
                     dispatch_walk_generation<false, false>(
                         temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums,
-                        edge_picker_type, start_picker_type);
+                        edge_picker_type, normalized_start_picker_type);
                 }
             }
         }
