@@ -12,6 +12,7 @@
 #include "../utils/random.cuh"
 
 namespace temporal_graph {
+
     /**
      * Host functions
      */
