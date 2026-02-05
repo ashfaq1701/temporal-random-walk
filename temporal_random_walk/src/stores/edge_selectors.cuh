@@ -407,10 +407,28 @@ namespace temporal_graph {
             return Edge{-1, -1, -1};
         }
 
-        // Random selection from group
-        const size_t edge_idx = node_ts_sorted_indices[
-            edge_start +
-            generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), edge_selector_rand_num)];
+        long edge_idx;
+        if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
+            if (prev_node == -1) {
+                edge_idx = static_cast<long>(node_ts_sorted_indices[
+                    edge_start +
+                    generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), edge_selector_rand_num)]);
+            } else {
+                edge_idx = pick_random_temporal_node2vec_edge_host<Forward, IsDirected>(
+                    graph,
+                    node_id,
+                    prev_node,
+                    edge_start,
+                    edge_end,
+                    node_ts_sorted_indices,
+                    edge_selector_rand_num);
+                if (edge_idx == -1) return Edge{-1, -1, -1};
+            }
+        } else {
+            edge_idx = static_cast<long>(node_ts_sorted_indices[
+                edge_start +
+                generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), edge_selector_rand_num)]);
+        }
 
         return Edge{
             graph->edge_data->sources[edge_idx],
@@ -814,10 +832,28 @@ namespace temporal_graph {
             return Edge{-1, -1, -1};
         }
 
-        // Random selection from group
-        const size_t edge_idx = node_ts_sorted_indices[
-            edge_start +
-            generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), edge_selector_rand_num)];
+        long edge_idx;
+        if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
+            if (prev_node == -1) {
+                edge_idx = static_cast<long>(node_ts_sorted_indices[
+                    edge_start +
+                    generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), edge_selector_rand_num)]);
+            } else {
+                edge_idx = pick_random_temporal_node2vec_edge_device<Forward, IsDirected>(
+                    graph,
+                    node_id,
+                    prev_node,
+                    edge_start,
+                    edge_end,
+                    node_ts_sorted_indices,
+                    edge_selector_rand_num);
+                if (edge_idx == -1) return Edge{-1, -1, -1};
+            }
+        } else {
+            edge_idx = static_cast<long>(node_ts_sorted_indices[
+                edge_start +
+                generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), edge_selector_rand_num)]);
+        }
 
         return Edge{
             graph->edge_data->sources[edge_idx],

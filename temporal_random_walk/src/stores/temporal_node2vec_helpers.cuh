@@ -137,6 +137,49 @@ namespace temporal_graph {
     }
 
     // -------------------------------------------------------------------------
+    // Temporal-node2vec edge selection inside selected timestamp group
+    // -------------------------------------------------------------------------
+
+    template<bool Forward, bool IsDirected>
+    HOST inline long pick_random_temporal_node2vec_edge_host(
+        const TemporalGraphStore *graph,
+        const int node_id,
+        const int prev_node,
+        const size_t edge_start,
+        const size_t edge_end,
+        size_t *node_ts_sorted_indices,
+        const double edge_selector_rand_num) {
+        if (prev_node == -1 || edge_start >= edge_end) {
+            return -1;
+        }
+
+        double beta_sum = 0.0;
+        for (size_t i = edge_start; i < edge_end; ++i) {
+            const size_t edge_idx = node_ts_sorted_indices[i];
+            const int w = get_node2vec_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
+            beta_sum += compute_node2vec_beta_host(graph, prev_node, w);
+        }
+
+        if (beta_sum <= 0.0) {
+            return -1;
+        }
+
+        const double target = edge_selector_rand_num * beta_sum;
+        double running_sum = 0.0;
+
+        for (size_t i = edge_start; i < edge_end; ++i) {
+            const size_t edge_idx = node_ts_sorted_indices[i];
+            const int w = get_node2vec_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
+            running_sum += compute_node2vec_beta_host(graph, prev_node, w);
+            if (running_sum >= target) {
+                return static_cast<long>(edge_idx);
+            }
+        }
+
+        return static_cast<long>(node_ts_sorted_indices[edge_end - 1]);
+    }
+
+    // -------------------------------------------------------------------------
     // Temporal-node2vec timestamp-group selection
     // -------------------------------------------------------------------------
 
@@ -284,6 +327,45 @@ namespace temporal_graph {
         }
 
         return selected_group;
+    }
+
+    template<bool Forward, bool IsDirected>
+    DEVICE inline long pick_random_temporal_node2vec_edge_device(
+        const TemporalGraphStore *graph,
+        const int node_id,
+        const int prev_node,
+        const size_t edge_start,
+        const size_t edge_end,
+        size_t *node_ts_sorted_indices,
+        const double edge_selector_rand_num) {
+        if (prev_node == -1 || edge_start >= edge_end) {
+            return -1;
+        }
+
+        double beta_sum = 0.0;
+        for (size_t i = edge_start; i < edge_end; ++i) {
+            const size_t edge_idx = node_ts_sorted_indices[i];
+            const int w = get_node2vec_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
+            beta_sum += compute_node2vec_beta_device(graph, prev_node, w);
+        }
+
+        if (beta_sum <= 0.0) {
+            return -1;
+        }
+
+        const double target = edge_selector_rand_num * beta_sum;
+        double running_sum = 0.0;
+
+        for (size_t i = edge_start; i < edge_end; ++i) {
+            const size_t edge_idx = node_ts_sorted_indices[i];
+            const int w = get_node2vec_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
+            running_sum += compute_node2vec_beta_device(graph, prev_node, w);
+            if (running_sum >= target) {
+                return static_cast<long>(edge_idx);
+            }
+        }
+
+        return static_cast<long>(node_ts_sorted_indices[edge_end - 1]);
     }
 
     #endif
