@@ -43,6 +43,7 @@ namespace temporal_random_walk {
                 temporal_graph,
                 start_node_ids[walk_idx],
                 -1, // timestamp
+                -1,
                 r0,
                 r1);
         }
@@ -96,6 +97,7 @@ namespace temporal_random_walk {
                 temporal_graph,
                 current_node,
                 current_timestamp,
+                walk_set->nodes[static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) + static_cast<size_t>(walk_len - 1)],
                 r_step0,
                 r_step1);
 

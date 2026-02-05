@@ -347,12 +347,12 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
 
     #define DISPATCH_HOST(FWD, PICKER, DIR) \
         result = temporal_graph::get_node_edge_at_host<FWD, PICKER, DIR>( \
-            graph, node_id, timestamp, rand_nums[0], rand_nums[1]); \
+            graph, node_id, timestamp, -1, rand_nums[0], rand_nums[1]); \
         break;
 
     #define DISPATCH_DEVICE(FWD, PICKER, DIR) \
         get_node_edge_at_kernel<DIR, FWD, PICKER><<<1, 1>>>( \
-            d_result, d_graph, node_id, timestamp, rand_nums); \
+            d_result, d_graph, node_id, timestamp, -1, rand_nums); \
         CUDA_KERNEL_CHECK("After get_node_edge_at_kernel execution"); \
         break;
 
