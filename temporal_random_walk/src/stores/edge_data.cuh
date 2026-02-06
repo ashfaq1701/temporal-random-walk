@@ -9,6 +9,11 @@
 #include <cuda/std/__algorithm/lower_bound.h>
 #include <cuda/std/__algorithm/upper_bound.h>
 #include <thrust/count.h>
+#include <thrust/copy.h>
+#include <thrust/execution_policy.h>
+#include <thrust/fill.h>
+#include <thrust/for_each.h>
+#include <thrust/scan.h>
 #endif
 
 #include "../common/macros.cuh"
@@ -35,6 +40,13 @@ struct EdgeDataStore {
     int* active_node_ids = nullptr;
     size_t active_node_ids_size = 0;
 
+    // Node adjacency CSR (for temporal node2vec)
+    size_t *node_adj_offsets = nullptr;
+    size_t node_adj_offsets_size = 0;
+
+    int *node_adj_neighbors = nullptr;
+    size_t node_adj_neighbors_size = 0;
+
     size_t* timestamp_group_offsets = nullptr;
     size_t timestamp_group_offsets_size = 0;
 
@@ -55,6 +67,8 @@ struct EdgeDataStore {
             clear_memory(&targets, use_gpu);
             clear_memory(&timestamps, use_gpu);
             clear_memory(&active_node_ids, use_gpu);
+            clear_memory(&node_adj_offsets, use_gpu);
+            clear_memory(&node_adj_neighbors, use_gpu);
             clear_memory(&timestamp_group_offsets, use_gpu);
             clear_memory(&unique_timestamps, use_gpu);
             clear_memory(&forward_cumulative_weights_exponential, use_gpu);
@@ -64,6 +78,8 @@ struct EdgeDataStore {
             targets = nullptr;
             timestamps = nullptr;
             active_node_ids = nullptr;
+            node_adj_offsets = nullptr;
+            node_adj_neighbors = nullptr;
             timestamp_group_offsets = nullptr;
             unique_timestamps = nullptr;
             forward_cumulative_weights_exponential = nullptr;
@@ -154,6 +170,8 @@ namespace edge_data {
 
     HOST void populate_active_nodes_std(EdgeDataStore* edge_data);
 
+    HOST void build_node_adjacency_csr(EdgeDataStore *edge_data);
+
     HOST void update_timestamp_groups_std(EdgeDataStore *edge_data);
 
     HOST void update_temporal_weights_std(EdgeDataStore *edge_data, double timescale_bound);
@@ -165,6 +183,8 @@ namespace edge_data {
      */
 
     HOST void populate_active_nodes_cuda(EdgeDataStore* edge_data);
+
+    HOST void build_node_adjacency_csr_cuda(EdgeDataStore *edge_data);
 
     HOST void update_timestamp_groups_cuda(EdgeDataStore *edge_data);
 

@@ -175,6 +175,54 @@ HOST void edge_data::populate_active_nodes_std(EdgeDataStore *edge_data) {
     }
 }
 
+HOST void edge_data::build_node_adjacency_csr(EdgeDataStore *edge_data) {
+    const size_t n = active_node_count(edge_data);
+    const size_t m = size(edge_data);
+
+    resize_memory(&edge_data->node_adj_offsets, edge_data->node_adj_offsets_size, n + 1, edge_data->use_gpu);
+    edge_data->node_adj_offsets_size = n + 1;
+
+    resize_memory(&edge_data->node_adj_neighbors, edge_data->node_adj_neighbors_size, 2 * m, edge_data->use_gpu);
+    edge_data->node_adj_neighbors_size = 2 * m;
+
+    if (n == 0) {
+        if (edge_data->node_adj_offsets_size > 0) {
+            edge_data->node_adj_offsets[0] = 0;
+        }
+        return;
+    }
+
+    std::vector<size_t> degree(n, 0);
+
+    for (size_t i = 0; i < m; ++i) {
+        const int u = edge_data->sources[i];
+        const int v = edge_data->targets[i];
+        degree[u]++;
+        degree[v]++;
+    }
+
+    edge_data->node_adj_offsets[0] = 0;
+    for (size_t i = 0; i < n; ++i) {
+        edge_data->node_adj_offsets[i + 1] = edge_data->node_adj_offsets[i] + degree[i];
+    }
+
+    std::vector<size_t> cursor(edge_data->node_adj_offsets, edge_data->node_adj_offsets + n);
+
+    for (size_t i = 0; i < m; ++i) {
+        const int u = edge_data->sources[i];
+        const int v = edge_data->targets[i];
+        edge_data->node_adj_neighbors[cursor[u]++] = v;
+        edge_data->node_adj_neighbors[cursor[v]++] = u;
+    }
+
+    for (size_t node = 0; node < n; ++node) {
+        const size_t start = edge_data->node_adj_offsets[node];
+        const size_t end = edge_data->node_adj_offsets[node + 1];
+        std::sort(edge_data->node_adj_neighbors + static_cast<long>(start),
+                  edge_data->node_adj_neighbors + static_cast<long>(end));
+    }
+}
+
 HOST void edge_data::update_timestamp_groups_std(EdgeDataStore* edge_data) {
     if (edge_data->timestamps_size == 0) {
         clear_memory(&edge_data->timestamp_group_offsets, edge_data->use_gpu);
@@ -358,6 +406,99 @@ HOST void edge_data::populate_active_nodes_cuda(EdgeDataStore *edge_data) {
         }
     );
     CUDA_KERNEL_CHECK("After thrust for_each targets in populate_active_nodes_cuda");
+}
+
+HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
+    const size_t n = active_node_count(edge_data);
+    const size_t m = size(edge_data);
+
+    resize_memory(&edge_data->node_adj_offsets, edge_data->node_adj_offsets_size, n + 1, edge_data->use_gpu);
+    edge_data->node_adj_offsets_size = n + 1;
+
+    resize_memory(&edge_data->node_adj_neighbors, edge_data->node_adj_neighbors_size, 2 * m, edge_data->use_gpu);
+    edge_data->node_adj_neighbors_size = 2 * m;
+
+    if (n == 0) {
+        if (edge_data->node_adj_offsets_size > 0) {
+            thrust::fill_n(DEVICE_EXECUTION_POLICY,
+                           thrust::device_pointer_cast(edge_data->node_adj_offsets),
+                           1,
+                           0);
+            CUDA_KERNEL_CHECK("After thrust fill_n zero offsets in build_node_adjacency_csr_cuda");
+        }
+        return;
+    }
+
+    size_t *d_degree = nullptr;
+    size_t *d_cursor = nullptr;
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_degree, n * sizeof(size_t)));
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_cursor, n * sizeof(size_t)));
+
+    const auto d_degree_ptr = thrust::device_pointer_cast(d_degree);
+    const auto d_offsets_ptr = thrust::device_pointer_cast(edge_data->node_adj_offsets);
+    const auto d_cursor_ptr = thrust::device_pointer_cast(d_cursor);
+    const auto d_sources = thrust::device_pointer_cast(edge_data->sources);
+    const auto d_targets = thrust::device_pointer_cast(edge_data->targets);
+    const auto d_neighbors = thrust::device_pointer_cast(edge_data->node_adj_neighbors);
+
+    thrust::fill(DEVICE_EXECUTION_POLICY, d_degree_ptr, d_degree_ptr + static_cast<long>(n), 0);
+    CUDA_KERNEL_CHECK("After thrust fill degree in build_node_adjacency_csr_cuda");
+
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(m),
+        [d_sources, d_targets, d_degree] __device__(const size_t i) {
+            const int u = d_sources[static_cast<long>(i)];
+            const int v = d_targets[static_cast<long>(i)];
+            atomicAdd(d_degree + u, static_cast<size_t>(1));
+            atomicAdd(d_degree + v, static_cast<size_t>(1));
+        }
+    );
+    CUDA_KERNEL_CHECK("After thrust for_each degree counting in build_node_adjacency_csr_cuda");
+
+    thrust::exclusive_scan(
+        DEVICE_EXECUTION_POLICY,
+        d_degree_ptr,
+        d_degree_ptr + static_cast<long>(n),
+        d_offsets_ptr
+    );
+    CUDA_KERNEL_CHECK("After thrust exclusive_scan offsets in build_node_adjacency_csr_cuda");
+
+    thrust::copy(
+        DEVICE_EXECUTION_POLICY,
+        d_offsets_ptr,
+        d_offsets_ptr + static_cast<long>(n),
+        d_cursor_ptr
+    );
+    CUDA_KERNEL_CHECK("After thrust copy cursor in build_node_adjacency_csr_cuda");
+
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(m),
+        [d_sources, d_targets, d_cursor, d_neighbors] __device__(const size_t i) {
+            const int u = d_sources[static_cast<long>(i)];
+            const int v = d_targets[static_cast<long>(i)];
+
+            const size_t u_pos = atomicAdd(d_cursor + u, static_cast<size_t>(1));
+            const size_t v_pos = atomicAdd(d_cursor + v, static_cast<size_t>(1));
+
+            d_neighbors[static_cast<long>(u_pos)] = v;
+            d_neighbors[static_cast<long>(v_pos)] = u;
+        }
+    );
+    CUDA_KERNEL_CHECK("After thrust for_each neighbor fill in build_node_adjacency_csr_cuda");
+
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+        edge_data->node_adj_offsets + n,
+        &edge_data->node_adj_neighbors_size,
+        sizeof(size_t),
+        cudaMemcpyHostToDevice
+    ));
+
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_degree));
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_cursor));
 }
 
 HOST void edge_data::update_timestamp_groups_cuda(EdgeDataStore *edge_data) {
@@ -634,6 +775,28 @@ HOST EdgeDataStore* edge_data::to_device_ptr(const EdgeDataStore *edge_data) {
             temp_edge_data.active_node_ids = d_active_node_ids;
         }
 
+        if (edge_data->node_adj_offsets) {
+            size_t *d_node_adj_offsets;
+            CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_node_adj_offsets, edge_data->node_adj_offsets_size * sizeof(size_t)));
+            CUDA_CHECK_AND_CLEAR(
+                cudaMemcpy(d_node_adj_offsets,
+                           edge_data->node_adj_offsets,
+                           edge_data->node_adj_offsets_size * sizeof(size_t),
+                           cudaMemcpyHostToDevice));
+            temp_edge_data.node_adj_offsets = d_node_adj_offsets;
+        }
+
+        if (edge_data->node_adj_neighbors) {
+            int *d_node_adj_neighbors;
+            CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_node_adj_neighbors, edge_data->node_adj_neighbors_size * sizeof(int)));
+            CUDA_CHECK_AND_CLEAR(
+                cudaMemcpy(d_node_adj_neighbors,
+                           edge_data->node_adj_neighbors,
+                           edge_data->node_adj_neighbors_size * sizeof(int),
+                           cudaMemcpyHostToDevice));
+            temp_edge_data.node_adj_neighbors = d_node_adj_neighbors;
+        }
+
         if (edge_data->timestamp_group_offsets) {
             size_t *d_timestamp_group_offsets;
             CUDA_CHECK_AND_CLEAR(
@@ -696,6 +859,10 @@ HOST size_t edge_data::get_memory_used(EdgeDataStore* edge_data) {
 
     // Active nodes array
     total_memory += edge_data->active_node_ids_size * sizeof(int);
+
+    // Node adjacency CSR arrays
+    total_memory += edge_data->node_adj_offsets_size * sizeof(size_t);
+    total_memory += edge_data->node_adj_neighbors_size * sizeof(int);
 
     // Timestamp grouping arrays
     total_memory += edge_data->timestamp_group_offsets_size * sizeof(size_t);
