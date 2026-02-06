@@ -92,7 +92,7 @@ namespace temporal_graph {
     HOST DEVICE size_t get_node_group_edge_end(
         const TemporalGraphStore *graph,
         const int node_id,
-        size_t *node_ts_groups_offsets,
+        const size_t *node_ts_groups_offsets,
         const size_t group_pos,
         const size_t group_end_offset) {
         if (group_pos + 1 < group_end_offset) {
