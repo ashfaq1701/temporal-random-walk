@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
 
     // Start timing for the entire process
     auto start = std::chrono::high_resolution_clock::now();
-    TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, true, false, 34);
+    TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, false, true, 34);
 
     // Add first half of edges
     std::vector first_half(first_half_begin, first_half_end);
@@ -86,20 +86,23 @@ int main(int argc, char* argv[]) {
     constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;
     constexpr RandomPickerType exponential_picker_type = RandomPickerType::ExponentialIndex;
     constexpr RandomPickerType uniform_picker_type = RandomPickerType::Uniform;
+    constexpr RandomPickerType temporal_node2vec_type = RandomPickerType::TemporalNode2Vec;
+
+    constexpr RandomPickerType effective_step_picker = RandomPickerType::ExponentialIndex;
 
     // Generate walks with first half
     auto first_half_walks_start = std::chrono::high_resolution_clock::now();
 
     const auto walks_backward_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
         80,
-        &exponential_picker_type,
+        &effective_step_picker,
         NUM_WALKS_TOTAL,
         &uniform_picker_type,
         WalkDirection::Backward_In_Time);
 
     const auto walks_forward_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
         80,
-        &exponential_picker_type,
+        &effective_step_picker,
         NUM_WALKS_TOTAL,
         &uniform_picker_type,
         WalkDirection::Forward_In_Time);
@@ -130,14 +133,14 @@ int main(int argc, char* argv[]) {
 
     const auto walks_backward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
         80,
-        &exponential_picker_type,
+        &effective_step_picker,
         NUM_WALKS_TOTAL,
         &uniform_picker_type,
         WalkDirection::Backward_In_Time);
 
     const auto walks_forward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
         80,
-        &exponential_picker_type,
+        &effective_step_picker,
         NUM_WALKS_TOTAL,
         &uniform_picker_type,
         WalkDirection::Forward_In_Time);
