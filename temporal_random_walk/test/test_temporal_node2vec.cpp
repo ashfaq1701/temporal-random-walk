@@ -12,6 +12,10 @@ using GPU_USAGE_TYPES = ::testing::Types<
     std::integral_constant<bool, false>,
     std::integral_constant<bool, true>
 >;
+
+using GPU_DEVICE_ONLY_TYPES = ::testing::Types<
+    std::integral_constant<bool, true>
+>;
 #else
 using GPU_USAGE_TYPES = ::testing::Types<
     std::integral_constant<bool, false>
@@ -64,6 +68,13 @@ protected:
 };
 
 TYPED_TEST_SUITE(TemporalNode2VecHelpersTest, GPU_USAGE_TYPES);
+
+#ifdef HAS_CUDA
+template<typename T>
+class TemporalNode2VecHelpersDeviceTest : public TemporalNode2VecHelpersTest<T> {};
+
+TYPED_TEST_SUITE(TemporalNode2VecHelpersDeviceTest, GPU_DEVICE_ONLY_TYPES);
+#endif
 
 TYPED_TEST(TemporalNode2VecHelpersTest, AdjacencyAndBetaRulesWorkForDirectedGraph) {
     const auto* store = this->graph.get_graph();
@@ -284,11 +295,7 @@ __global__ void temporal_node2vec_edge_pick_device_kernel(
 
 } // namespace
 
-TYPED_TEST(TemporalNode2VecHelpersTest, DeviceAdjacencyAndBetaRulesWorkForDirectedGraph) {
-    if constexpr (!TypeParam::value) {
-        GTEST_SKIP() << "Device test only runs for GPU-typed variant.";
-    }
-
+TYPED_TEST(TemporalNode2VecHelpersDeviceTest, DeviceAdjacencyAndBetaRulesWorkForDirectedGraph) {
     const auto* host_store = this->graph.get_graph();
     auto* d_graph = temporal_graph::to_device_ptr(host_store);
 
@@ -331,11 +338,7 @@ TYPED_TEST(TemporalNode2VecHelpersTest, DeviceAdjacencyAndBetaRulesWorkForDirect
     temporal_graph::free_device_pointers(d_graph);
 }
 
-TYPED_TEST(TemporalNode2VecHelpersTest, DeviceGroupWeightFromCumulativeHandlesSubranges) {
-    if constexpr (!TypeParam::value) {
-        GTEST_SKIP() << "Device test only runs for GPU-typed variant.";
-    }
-
+TYPED_TEST(TemporalNode2VecHelpersDeviceTest, DeviceGroupWeightFromCumulativeHandlesSubranges) {
     std::vector<double> cumulative = {0.10, 0.35, 0.65, 1.00};
 
     double* d_cumulative;
@@ -366,11 +369,7 @@ TYPED_TEST(TemporalNode2VecHelpersTest, DeviceGroupWeightFromCumulativeHandlesSu
     cudaFree(d_out_3);
 }
 
-TYPED_TEST(TemporalNode2VecHelpersTest, DeviceTemporalNode2VecGroupSelectionRespectsCombinedWeightAndBeta) {
-    if constexpr (!TypeParam::value) {
-        GTEST_SKIP() << "Device test only runs for GPU-typed variant.";
-    }
-
+TYPED_TEST(TemporalNode2VecHelpersDeviceTest, DeviceTemporalNode2VecGroupSelectionRespectsCombinedWeightAndBeta) {
     const auto* host_store = this->graph.get_graph();
     auto* d_graph = temporal_graph::to_device_ptr(host_store);
 
@@ -425,11 +424,7 @@ TYPED_TEST(TemporalNode2VecHelpersTest, DeviceTemporalNode2VecGroupSelectionResp
     temporal_graph::free_device_pointers(d_graph);
 }
 
-TYPED_TEST(TemporalNode2VecHelpersTest, DeviceTemporalNode2VecEdgeSelectionMatchesBetaPrefixSampling) {
-    if constexpr (!TypeParam::value) {
-        GTEST_SKIP() << "Device test only runs for GPU-typed variant.";
-    }
-
+TYPED_TEST(TemporalNode2VecHelpersDeviceTest, DeviceTemporalNode2VecEdgeSelectionMatchesBetaPrefixSampling) {
     const auto* host_store = this->graph.get_graph();
     auto* d_graph = temporal_graph::to_device_ptr(host_store);
 
@@ -478,11 +473,7 @@ TYPED_TEST(TemporalNode2VecHelpersTest, DeviceTemporalNode2VecEdgeSelectionMatch
     temporal_graph::free_device_pointers(d_graph);
 }
 
-TYPED_TEST(TemporalNode2VecHelpersTest, DeviceInvalidTemporalNode2VecInputsReturnSentinel) {
-    if constexpr (!TypeParam::value) {
-        GTEST_SKIP() << "Device test only runs for GPU-typed variant.";
-    }
-
+TYPED_TEST(TemporalNode2VecHelpersDeviceTest, DeviceInvalidTemporalNode2VecInputsReturnSentinel) {
     const auto* host_store = this->graph.get_graph();
     auto* d_graph = temporal_graph::to_device_ptr(host_store);
 
