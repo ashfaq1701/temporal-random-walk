@@ -2,6 +2,15 @@
 
 #include <cmath>
 #include <omp.h>
+
+#include <tbb/parallel_for.h>
+#include <tbb/parallel_scan.h>
+#include <tbb/parallel_sort.h>
+#include <tbb/blocked_range.h>
+#include <vector>
+#include <atomic>
+#include <cstddef>
+
 #include "../utils/omp_utils.cuh"
 
 /**
@@ -175,52 +184,149 @@ HOST void edge_data::populate_active_nodes_std(EdgeDataStore *edge_data) {
     }
 }
 
+#include <tbb/parallel_for.h>
+#include <tbb/parallel_scan.h>
+#include <tbb/parallel_sort.h>
+#include <tbb/blocked_range.h>
+#include <vector>
+#include <atomic>
+#include <cstddef>
+
 HOST void edge_data::build_node_adjacency_csr_std(EdgeDataStore *edge_data) {
     const size_t n = active_node_count(edge_data);
     const size_t m = size(edge_data);
 
-    resize_memory(&edge_data->node_adj_offsets, edge_data->node_adj_offsets_size, n + 1, edge_data->use_gpu);
+    // Allocate CSR arrays (host)
+    resize_memory(&edge_data->node_adj_offsets,
+                  edge_data->node_adj_offsets_size,
+                  n + 1,
+                  edge_data->use_gpu);
     edge_data->node_adj_offsets_size = n + 1;
 
-    resize_memory(&edge_data->node_adj_neighbors, edge_data->node_adj_neighbors_size, 2 * m, edge_data->use_gpu);
+    resize_memory(&edge_data->node_adj_neighbors,
+                  edge_data->node_adj_neighbors_size,
+                  2 * m,
+                  edge_data->use_gpu);
     edge_data->node_adj_neighbors_size = 2 * m;
 
-    if (n == 0) {
-        if (edge_data->node_adj_offsets_size > 0) {
-            edge_data->node_adj_offsets[0] = 0;
-        }
+    // Handle empty graph
+    if (n == 0 || m == 0) {
+        // Parallel fill offsets with 0
+        tbb::parallel_for(
+            tbb::blocked_range<size_t>(0, n + 1),
+            [&](const tbb::blocked_range<size_t>& r) {
+                for (size_t i = r.begin(); i != r.end(); ++i) {
+                    edge_data->node_adj_offsets[i] = 0;
+                }
+            }
+        );
+        edge_data->node_adj_neighbors_size = 0;
         return;
     }
 
-    std::vector<size_t> degree(n, 0);
+    const int* sources = edge_data->sources;
+    const int* targets = edge_data->targets;
 
-    for (size_t i = 0; i < m; ++i) {
-        const int u = edge_data->sources[i];
-        const int v = edge_data->targets[i];
-        degree[u]++;
-        degree[v]++;
-    }
+    // ---------------------------------------------------------------------
+    // 1) Degree counting (parallel): degree[u]++, degree[v]++
+    // ---------------------------------------------------------------------
+    std::vector<std::atomic<size_t>> degree(n);
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, n),
+        [&](const tbb::blocked_range<size_t>& r) {
+            for (size_t i = r.begin(); i != r.end(); ++i) {
+                degree[i].store(0, std::memory_order_relaxed);
+            }
+        }
+    );
 
-    edge_data->node_adj_offsets[0] = 0;
-    for (size_t i = 0; i < n; ++i) {
-        edge_data->node_adj_offsets[i + 1] = edge_data->node_adj_offsets[i] + degree[i];
-    }
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, m),
+        [&](const tbb::blocked_range<size_t>& r) {
+            for (size_t i = r.begin(); i != r.end(); ++i) {
+                const int u = sources[i];
+                const int v = targets[i];
+                // Assumes u and v are valid dense node IDs in [0, n).
+                degree[static_cast<size_t>(u)].fetch_add(1, std::memory_order_relaxed);
+                degree[static_cast<size_t>(v)].fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    );
 
-    std::vector<size_t> cursor(edge_data->node_adj_offsets, edge_data->node_adj_offsets + n);
+    // ---------------------------------------------------------------------
+    // 2) Offsets via parallel prefix sum (TBB parallel_scan)
+    //    offsets[0] = 0, offsets[i+1] = offsets[i] + degree[i]
+    // ---------------------------------------------------------------------
+    edge_data->node_adj_offsets[0] = 0; // O(1) scalar assignment
 
-    for (size_t i = 0; i < m; ++i) {
-        const int u = edge_data->sources[i];
-        const int v = edge_data->targets[i];
-        edge_data->node_adj_neighbors[cursor[u]++] = v;
-        edge_data->node_adj_neighbors[cursor[v]++] = u;
-    }
+    tbb::parallel_scan(
+        tbb::blocked_range<size_t>(0, n),
+        static_cast<size_t>(0),
+        [&](const tbb::blocked_range<size_t>& r, size_t sum, bool is_final) -> size_t {
+            for (size_t i = r.begin(); i != r.end(); ++i) {
+                const size_t d = degree[i].load(std::memory_order_relaxed);
+                if (is_final) {
+                    edge_data->node_adj_offsets[i + 1] = sum + d;
+                }
+                sum += d;
+            }
+            return sum;
+        },
+        std::plus<size_t>()
+    );
 
-    for (size_t node = 0; node < n; ++node) {
-        const size_t start = edge_data->node_adj_offsets[node];
-        const size_t end = edge_data->node_adj_offsets[node + 1];
-        std::sort(edge_data->node_adj_neighbors + static_cast<long>(start),
-                  edge_data->node_adj_neighbors + static_cast<long>(end));
-    }
+    // ---------------------------------------------------------------------
+    // 3) Cursor init from offsets (parallel)
+    // ---------------------------------------------------------------------
+    std::vector<std::atomic<size_t>> cursor(n);
+
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, n),
+        [&](const tbb::blocked_range<size_t>& r) {
+            for (size_t i = r.begin(); i != r.end(); ++i) {
+                cursor[i].store(edge_data->node_adj_offsets[i], std::memory_order_relaxed);
+            }
+        }
+    );
+
+    // ---------------------------------------------------------------------
+    // 4) Fill neighbors using cursor atomics (parallel)
+    // ---------------------------------------------------------------------
+    int* neighbors = edge_data->node_adj_neighbors;
+
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, m),
+        [&](const tbb::blocked_range<size_t>& r) {
+            for (size_t i = r.begin(); i != r.end(); ++i) {
+                const int u = sources[i];
+                const int v = targets[i];
+
+                const size_t u_pos =
+                    cursor[static_cast<size_t>(u)].fetch_add(1, std::memory_order_relaxed);
+                const size_t v_pos =
+                    cursor[static_cast<size_t>(v)].fetch_add(1, std::memory_order_relaxed);
+
+                neighbors[u_pos] = v;
+                neighbors[v_pos] = u;
+            }
+        }
+    );
+
+    // ---------------------------------------------------------------------
+    // 5) Sort adjacency list per node (parallel over nodes + tbb::parallel_sort)
+    // ---------------------------------------------------------------------
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, n),
+        [&](const tbb::blocked_range<size_t>& r) {
+            for (size_t node = r.begin(); node != r.end(); ++node) {
+                const size_t start = edge_data->node_adj_offsets[node];
+                const size_t end   = edge_data->node_adj_offsets[node + 1];
+                if (end > start + 1) {
+                    tbb::parallel_sort(neighbors + start, neighbors + end);
+                }
+            }
+        }
+    );
 }
 
 HOST void edge_data::update_timestamp_groups_std(EdgeDataStore* edge_data) {
@@ -412,78 +518,114 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
     const size_t n = active_node_count(edge_data);
     const size_t m = size(edge_data);
 
-    resize_memory(&edge_data->node_adj_offsets, edge_data->node_adj_offsets_size, n + 1, edge_data->use_gpu);
+    // Allocate CSR arrays (device)
+    resize_memory(&edge_data->node_adj_offsets,
+                  edge_data->node_adj_offsets_size,
+                  n + 1,
+                  edge_data->use_gpu);
     edge_data->node_adj_offsets_size = n + 1;
 
-    resize_memory(&edge_data->node_adj_neighbors, edge_data->node_adj_neighbors_size, 2 * m, edge_data->use_gpu);
+    resize_memory(&edge_data->node_adj_neighbors,
+                  edge_data->node_adj_neighbors_size,
+                  2 * m,
+                  edge_data->use_gpu);
     edge_data->node_adj_neighbors_size = 2 * m;
 
-    if (n == 0) {
-        if (edge_data->node_adj_offsets_size > 0) {
-            thrust::fill_n(DEVICE_EXECUTION_POLICY,
-                           thrust::device_pointer_cast(edge_data->node_adj_offsets),
-                           1,
-                           0);
-            CUDA_KERNEL_CHECK("After thrust fill_n zero offsets in build_node_adjacency_csr_cuda");
-        }
+    // Handle empty graph
+    if (n == 0 || m == 0) {
+        // offsets[0] = 0 (and n==0 => size is 1)
+        thrust::fill_n(
+            DEVICE_EXECUTION_POLICY,
+            thrust::device_pointer_cast(edge_data->node_adj_offsets),
+            static_cast<long>(n + 1),
+            static_cast<size_t>(0)
+        );
+        CUDA_KERNEL_CHECK("After thrust fill_n zero offsets in build_node_adjacency_csr_cuda");
         return;
     }
 
-    unsigned int *d_degree = nullptr;
-    unsigned int *d_cursor = nullptr;
-    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_degree, n * sizeof(unsigned int)));
-    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_cursor, n * sizeof(unsigned int)));
-
-    const auto d_degree_ptr = thrust::device_pointer_cast(d_degree);
-    const auto d_offsets_ptr = thrust::device_pointer_cast(edge_data->node_adj_offsets);
-    const auto d_cursor_ptr = thrust::device_pointer_cast(d_cursor);
-    const auto d_sources = thrust::device_pointer_cast(edge_data->sources);
-    const auto d_targets = thrust::device_pointer_cast(edge_data->targets);
+    // Device pointers to input edges and output CSR arrays
+    const auto d_sources   = thrust::device_pointer_cast(edge_data->sources);
+    const auto d_targets   = thrust::device_pointer_cast(edge_data->targets);
+    const auto d_offsets   = thrust::device_pointer_cast(edge_data->node_adj_offsets);
     const auto d_neighbors = thrust::device_pointer_cast(edge_data->node_adj_neighbors);
 
-    thrust::fill(DEVICE_EXECUTION_POLICY, d_degree_ptr, d_degree_ptr + static_cast<long>(n), 0u);
-    CUDA_KERNEL_CHECK("After thrust fill degree in build_node_adjacency_csr_cuda");
+    // ---------------------------------------------------------------------
+    // 1) Degree counting (device): degree[u]++, degree[v]++
+    //    Use unsigned int for atomicAdd compatibility.
+    // ---------------------------------------------------------------------
+    thrust::device_vector<unsigned int> degree(n, 0u);
+
+    unsigned int* d_degree_raw = thrust::raw_pointer_cast(degree.data());
 
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
         thrust::make_counting_iterator<size_t>(m),
-        [d_sources, d_targets, d_degree] __device__(const size_t i) {
+        [d_sources, d_targets, d_degree_raw] __device__ (const size_t i) {
             const int u = d_sources[static_cast<long>(i)];
             const int v = d_targets[static_cast<long>(i)];
-            atomicAdd(d_degree + u, 1u);
-            atomicAdd(d_degree + v, 1u);
+            // Assumes u and v are valid dense node IDs in [0, n).
+            atomicAdd(d_degree_raw + u, 1u);
+            atomicAdd(d_degree_raw + v, 1u);
         }
     );
     CUDA_KERNEL_CHECK("After thrust for_each degree counting in build_node_adjacency_csr_cuda");
 
+    // ---------------------------------------------------------------------
+    // 2) Offsets: exclusive_scan(degree) -> offsets[0..n)
+    //    Then explicitly set offsets[n] = 2*m on device (no host memcpy).
+    // ---------------------------------------------------------------------
     thrust::exclusive_scan(
         DEVICE_EXECUTION_POLICY,
-        d_degree_ptr,
-        d_degree_ptr + static_cast<long>(n),
-        d_offsets_ptr,
+        degree.begin(),
+        degree.end(),
+        d_offsets,
         static_cast<size_t>(0)
     );
     CUDA_KERNEL_CHECK("After thrust exclusive_scan offsets in build_node_adjacency_csr_cuda");
 
-    thrust::copy(
+    // offsets[n] = 2*m (device write)
+    thrust::fill_n(
         DEVICE_EXECUTION_POLICY,
-        d_offsets_ptr,
-        d_offsets_ptr + static_cast<long>(n),
-        d_cursor_ptr
+        d_offsets + static_cast<long>(n),
+        1,
+        static_cast<size_t>(2 * m)
     );
-    CUDA_KERNEL_CHECK("After thrust copy cursor in build_node_adjacency_csr_cuda");
+    CUDA_KERNEL_CHECK("After writing offsets[n] in build_node_adjacency_csr_cuda");
 
+    // ---------------------------------------------------------------------
+    // 3) Cursor: initialize from offsets[0..n)
+    //    cursor[u] starts at offsets[u], then atomicAdd during fill.
+    // ---------------------------------------------------------------------
+    thrust::device_vector<unsigned int> cursor(n, 0u);
+
+    // Copy offsets[0..n) into cursor as unsigned int.
+    // Note: This assumes offsets fit into 32-bit (true if 2m fits in uint32).
+    thrust::transform(
+        DEVICE_EXECUTION_POLICY,
+        d_offsets,
+        d_offsets + static_cast<long>(n),
+        cursor.begin(),
+        [] __device__ (const size_t x) { return static_cast<unsigned int>(x); }
+    );
+    CUDA_KERNEL_CHECK("After cursor init transform in build_node_adjacency_csr_cuda");
+
+    unsigned int* d_cursor_raw = thrust::raw_pointer_cast(cursor.data());
+
+    // ---------------------------------------------------------------------
+    // 4) Fill neighbors using cursor atomics
+    // ---------------------------------------------------------------------
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
         thrust::make_counting_iterator<size_t>(m),
-        [d_sources, d_targets, d_cursor, d_neighbors] __device__(const size_t i) {
+        [d_sources, d_targets, d_cursor_raw, d_neighbors] __device__ (const size_t i) {
             const int u = d_sources[static_cast<long>(i)];
             const int v = d_targets[static_cast<long>(i)];
 
-            const unsigned int u_pos = atomicAdd(d_cursor + u, 1u);
-            const unsigned int v_pos = atomicAdd(d_cursor + v, 1u);
+            const unsigned int u_pos = atomicAdd(d_cursor_raw + u, 1u);
+            const unsigned int v_pos = atomicAdd(d_cursor_raw + v, 1u);
 
             d_neighbors[static_cast<long>(static_cast<size_t>(u_pos))] = v;
             d_neighbors[static_cast<long>(static_cast<size_t>(v_pos))] = u;
@@ -491,16 +633,53 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
     );
     CUDA_KERNEL_CHECK("After thrust for_each neighbor fill in build_node_adjacency_csr_cuda");
 
-    CUDA_CHECK_AND_CLEAR(cudaMemcpy(
-        edge_data->node_adj_offsets + n,
-        &edge_data->node_adj_neighbors_size,
-        sizeof(size_t),
-        cudaMemcpyHostToDevice
-    ));
+    // ---------------------------------------------------------------------
+    // 5) GPU segmented sort (thrust-only, no loops)
+    //    Build key array node_ids[i] = owning node of neighbors[i],
+    //    then sort (node_id, neighbor) pairs lexicographically.
+    // ---------------------------------------------------------------------
+    const size_t nnz = static_cast<size_t>(2 * m);
 
-    CUDA_CHECK_AND_CLEAR(cudaFree(d_degree));
-    CUDA_CHECK_AND_CLEAR(cudaFree(d_cursor));
+    thrust::device_vector<int> node_ids(nnz);
+
+    // node_ids[pos] = upper_bound(offsets, pos) - 1
+    // Search range must be offsets[0..n] inclusive => n+1 elements.
+    thrust::upper_bound(
+        DEVICE_EXECUTION_POLICY,
+        d_offsets,
+        d_offsets + static_cast<long>(n + 1),
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(nnz),
+        node_ids.begin()
+    );
+    CUDA_KERNEL_CHECK("After thrust upper_bound in build_node_adjacency_csr_cuda");
+
+    // upper_bound returns (node+1); subtract 1 to get node id
+    thrust::transform(
+        DEVICE_EXECUTION_POLICY,
+        node_ids.begin(),
+        node_ids.end(),
+        node_ids.begin(),
+        [] __device__ (int x) { return x - 1; }
+    );
+    CUDA_KERNEL_CHECK("After node_ids subtract-one transform in build_node_adjacency_csr_cuda");
+
+    // Sort pairs (node_id, neighbor)
+    auto zipped_begin = thrust::make_zip_iterator(
+        thrust::make_tuple(
+            node_ids.begin(),
+            d_neighbors
+        )
+    );
+
+    thrust::sort(
+        DEVICE_EXECUTION_POLICY,
+        zipped_begin,
+        zipped_begin + static_cast<long>(nnz)
+    );
+    CUDA_KERNEL_CHECK("After thrust segmented sort (key,neighbor) in build_node_adjacency_csr_cuda");
 }
+
 
 HOST void edge_data::update_timestamp_groups_cuda(EdgeDataStore *edge_data) {
     if (edge_data->timestamps_size == 0) {
