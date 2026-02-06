@@ -88,7 +88,7 @@ int main(int argc, char* argv[]) {
     constexpr RandomPickerType uniform_picker_type = RandomPickerType::Uniform;
     constexpr RandomPickerType temporal_node2vec_type = RandomPickerType::TemporalNode2Vec;
 
-    constexpr RandomPickerType effective_step_picker = RandomPickerType::ExponentialIndex;
+    constexpr RandomPickerType effective_step_picker = exponential_picker_type;
 
     // Generate walks with first half
     auto first_half_walks_start = std::chrono::high_resolution_clock::now();
