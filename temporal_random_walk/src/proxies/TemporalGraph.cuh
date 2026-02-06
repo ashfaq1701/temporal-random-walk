@@ -43,7 +43,8 @@ public:
         bool enable_weight_computation = false,
         double timescale_bound = -1,
         double node2vec_p = DEFAULT_NODE2VEC_P,
-        double node2vec_q = DEFAULT_NODE2VEC_Q);
+        double node2vec_q = DEFAULT_NODE2VEC_Q,
+        bool enable_temporal_node2vec = false);
 
     explicit TemporalGraph(TemporalGraphStore* existing_graph);
 

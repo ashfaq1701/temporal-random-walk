@@ -12,6 +12,7 @@ struct TemporalGraphStore {
 
     int64_t max_time_capacity;
     bool enable_weight_computation;
+    bool enable_temporal_node2vec = false;
     double timescale_bound;
     double node2vec_p;
     double node2vec_q;
@@ -26,6 +27,7 @@ struct TemporalGraphStore {
     TemporalGraphStore(): is_directed(false), use_gpu(false), owns_data(true) {
         max_time_capacity = 0;
         enable_weight_computation = false;
+        enable_temporal_node2vec = false;
         timescale_bound = -1;
         node2vec_p = DEFAULT_NODE2VEC_P;
         node2vec_q = DEFAULT_NODE2VEC_Q;
@@ -43,15 +45,23 @@ struct TemporalGraphStore {
         const bool enable_weight_computation,
         const double timescale_bound,
         const double node2vec_p = DEFAULT_NODE2VEC_P,
-        const double node2vec_q = DEFAULT_NODE2VEC_Q):
+        const double node2vec_q = DEFAULT_NODE2VEC_Q,
+        const bool enable_temporal_node2vec = false):
         is_directed(is_directed), use_gpu(use_gpu), owns_data(true),
-        max_time_capacity(max_time_capacity), enable_weight_computation(enable_weight_computation),
+        max_time_capacity(max_time_capacity),
+        enable_weight_computation(enable_weight_computation || enable_temporal_node2vec),
+        enable_temporal_node2vec(enable_temporal_node2vec),
         timescale_bound(timescale_bound),
         node2vec_p(node2vec_p), node2vec_q(node2vec_q), inv_p(1.0 / node2vec_p),
         inv_q(1.0 / node2vec_q), latest_timestamp(0) {
 
         edge_data = new EdgeDataStore(use_gpu);
         node_edge_index = new NodeEdgeIndexStore(use_gpu);
+
+        edge_data->enable_weight_computation = this->enable_weight_computation;
+        edge_data->enable_temporal_node2vec = this->enable_temporal_node2vec;
+
+        node_edge_index->enable_weight_computation = this->enable_weight_computation;
     }
 
     ~TemporalGraphStore() {

@@ -27,6 +27,7 @@ public:
         double timescale_bound=DEFAULT_TIMESCALE_BOUND,
         double node2vec_p=DEFAULT_NODE2VEC_P,
         double node2vec_q=DEFAULT_NODE2VEC_Q,
+        bool enable_temporal_node2vec=false,
         int walk_padding_value=EMPTY_NODE_VALUE,
         uint64_t global_seed=EMPTY_GLOBAL_SEED);
 
