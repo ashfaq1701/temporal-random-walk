@@ -21,10 +21,10 @@ __global__ void get_edge_at_kernel(Edge* result, const TemporalGraphStore* graph
 }
 
 template <bool IsDirected, bool Forward, RandomPickerType PickerType>
-__global__ void get_node_edge_at_kernel(Edge* result, TemporalGraphStore* graph, const int node_id, const int64_t timestamp, const double* rand_nums) {
+__global__ void get_node_edge_at_kernel(Edge* result, TemporalGraphStore* graph, const int node_id, const int64_t timestamp, const int prev_node, const double* rand_nums) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = temporal_graph::get_node_edge_at_device<Forward, PickerType, IsDirected>(
-            graph, node_id, timestamp, -1, rand_nums[0], rand_nums[1]);
+            graph, node_id, timestamp, prev_node, rand_nums[0], rand_nums[1]);
     }
 }
 
@@ -85,6 +85,14 @@ public:
     [[nodiscard]] Edge get_edge_at_with_provided_nums(RandomPickerType picker_type, const double * rand_nums, int64_t timestamp = -1, bool forward = true) const;
 
     [[nodiscard]] Edge get_edge_at(RandomPickerType picker_type, int64_t timestamp = -1, bool forward = true) const;
+
+    [[nodiscard]] Edge get_node_edge_at_with_provided_nums(
+        int node_id,
+        RandomPickerType picker_type,
+        const double *rand_nums,
+        int64_t timestamp = -1,
+        bool forward = true,
+        int prev_node = -1) const;
 
     [[nodiscard]] Edge get_node_edge_at(int node_id, RandomPickerType picker_type, int64_t timestamp = -1, bool forward = true) const;
 
