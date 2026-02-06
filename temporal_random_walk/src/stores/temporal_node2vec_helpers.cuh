@@ -104,8 +104,8 @@ namespace temporal_graph {
         }
 
         return IsDirected
-                   ? graph->node_edge_index->node_group_inbound_offsets[node_id + 1]
-                   : graph->node_edge_index->node_group_outbound_offsets[node_id + 1];
+            ? graph->node_edge_index->node_group_inbound_offsets[node_id + 1]
+            : graph->node_edge_index->node_group_outbound_offsets[node_id + 1];
     }
 
     template<bool Forward, bool IsDirected>
@@ -113,14 +113,15 @@ namespace temporal_graph {
         const TemporalGraphStore *graph,
         const int node_id,
         const size_t edge_idx) {
-        const int src = graph->edge_data->sources[edge_idx];
-        const int dst = graph->edge_data->targets[edge_idx];
+        const EdgeDataStore *const edge_data = graph->edge_data;
+        const int src = edge_data->sources[edge_idx];
+        const int dst = edge_data->targets[edge_idx];
 
         if constexpr (IsDirected) {
             return Forward ? dst : src;
         }
 
-        return src == node_id ? dst : src;
+        return (src == node_id) ? dst : src;
     }
 
     HOST DEVICE inline double get_group_exponential_weight_from_cumulative(
@@ -128,11 +129,10 @@ namespace temporal_graph {
         const size_t current_group_pos,
         const size_t range_start) {
         if (current_group_pos == range_start) {
-            return range_start > 0
-                       ? (weights[current_group_pos] - weights[range_start - 1])
-                       : weights[current_group_pos];
+            return (range_start > 0)
+                ? (weights[current_group_pos] - weights[range_start - 1])
+                : weights[current_group_pos];
         }
-
         return weights[current_group_pos] - weights[current_group_pos - 1];
     }
 
@@ -141,23 +141,29 @@ namespace temporal_graph {
     // -------------------------------------------------------------------------
 
     template<bool Forward, bool IsDirected>
-    HOST inline long pick_random_temporal_node2vec_edge_host(
-        const TemporalGraphStore *graph,
-        const int node_id,
-        const int prev_node,
-        const size_t edge_start,
-        const size_t edge_end,
-        size_t *node_ts_sorted_indices,
-        const double edge_selector_rand_num) {
+    HOST long pick_random_temporal_node2vec_edge_host(
+    const TemporalGraphStore *graph,
+    const int node_id,
+    const int prev_node,
+    const size_t edge_start,
+    const size_t edge_end,
+    const size_t * node_ts_sorted_indices,
+    const double edge_selector_rand_num) {
+
         if (prev_node == -1 || edge_start >= edge_end) {
             return -1;
+        }
+
+        if (edge_end - edge_start == 1) {
+            return static_cast<long>(node_ts_sorted_indices[edge_start]);
         }
 
         double beta_sum = 0.0;
         for (size_t i = edge_start; i < edge_end; ++i) {
             const size_t edge_idx = node_ts_sorted_indices[i];
             const int w = get_node2vec_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-            beta_sum += compute_node2vec_beta_host(graph, prev_node, w);
+            const double beta = compute_node2vec_beta_host(graph, prev_node, w);
+            beta_sum += beta;
         }
 
         if (beta_sum <= 0.0) {
@@ -170,7 +176,8 @@ namespace temporal_graph {
         for (size_t i = edge_start; i < edge_end; ++i) {
             const size_t edge_idx = node_ts_sorted_indices[i];
             const int w = get_node2vec_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-            running_sum += compute_node2vec_beta_host(graph, prev_node, w);
+            const double beta = compute_node2vec_beta_host(graph, prev_node, w);
+            running_sum += beta;
             if (running_sum >= target) {
                 return static_cast<long>(edge_idx);
             }
@@ -182,6 +189,85 @@ namespace temporal_graph {
     // -------------------------------------------------------------------------
     // Temporal-node2vec timestamp-group selection
     // -------------------------------------------------------------------------
+
+
+    template<bool Forward, bool IsDirected>
+    HOST int pick_random_temporal_node2vec_host(
+        const TemporalGraphStore *graph,
+        const int node_id,
+        const int prev_node,
+        const size_t range_start,
+        const size_t range_end,
+        const size_t group_end_offset,
+        const size_t * node_ts_groups_offsets,
+        const size_t * node_ts_sorted_indices,
+        const double * weights,
+        const double group_selector_rand_num) {
+
+        if (range_start >= range_end || prev_node == -1) {
+            return -1;
+        }
+
+        double total_weight = 0.0;
+
+        for (size_t group_pos = range_start; group_pos < range_end; ++group_pos) {
+            const size_t edge_start = node_ts_groups_offsets[group_pos];
+            const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
+                graph, node_id, node_ts_groups_offsets, group_pos, group_end_offset);
+
+            if (edge_start == edge_end) {
+                continue;
+            }
+
+            double beta_sum = 0.0;
+            for (size_t i = edge_start; i < edge_end; ++i) {
+                const size_t edge_idx = node_ts_sorted_indices[i];
+                const int w = get_node2vec_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
+                const double beta = compute_node2vec_beta_host(graph, prev_node, w);
+                beta_sum += beta;
+            }
+
+            const double exp_weight = get_group_exponential_weight_from_cumulative(weights, group_pos, range_start);
+            total_weight += exp_weight * beta_sum;
+        }
+
+        if (total_weight <= 0.0) {
+            return -1;
+        }
+
+        const double target = group_selector_rand_num * total_weight;
+        double running_sum = 0.0;
+        int selected_group = static_cast<int>(range_end - 1);
+
+        for (size_t group_pos = range_start; group_pos < range_end; ++group_pos) {
+            const size_t edge_start = node_ts_groups_offsets[group_pos];
+            const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
+                graph, node_id, node_ts_groups_offsets, group_pos, group_end_offset);
+
+            if (edge_start == edge_end) {
+                continue;
+            }
+
+            double beta_sum = 0.0;
+            for (size_t i = edge_start; i < edge_end; ++i) {
+                const size_t edge_idx = node_ts_sorted_indices[i];
+                const int w = get_node2vec_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
+                const double beta = compute_node2vec_beta_host(graph, prev_node, w);
+                beta_sum += beta;
+            }
+
+            const double exp_weight = get_group_exponential_weight_from_cumulative(weights, group_pos, range_start);
+            running_sum += exp_weight * beta_sum;
+
+            if (running_sum >= target) {
+                selected_group = static_cast<int>(group_pos);
+                break;
+            }
+        }
+
+        return selected_group;
+    }
+
 
     template<bool Forward, bool IsDirected>
     HOST inline int pick_random_temporal_node2vec_host(
@@ -265,29 +351,32 @@ namespace temporal_graph {
         const size_t range_start,
         const size_t range_end,
         const size_t group_end_offset,
-        size_t *node_ts_groups_offsets,
-        size_t *node_ts_sorted_indices,
-        double *weights,
+        const size_t * node_ts_groups_offsets,
+        const size_t * node_ts_sorted_indices,
+        const double * weights,
         const double group_selector_rand_num) {
+
         if (range_start >= range_end || prev_node == -1) {
             return -1;
         }
 
         double total_weight = 0.0;
+
         for (size_t group_pos = range_start; group_pos < range_end; ++group_pos) {
             const size_t edge_start = node_ts_groups_offsets[group_pos];
             const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
-                graph,
-                node_id,
-                node_ts_groups_offsets,
-                group_pos,
-                group_end_offset);
+                graph, node_id, node_ts_groups_offsets, group_pos, group_end_offset);
+
+            if (edge_start == edge_end) {
+                continue;
+            }
 
             double beta_sum = 0.0;
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
                 const int w = get_node2vec_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-                beta_sum += compute_node2vec_beta_device(graph, prev_node, w);
+                const double beta = compute_node2vec_beta_device(graph, prev_node, w);
+                beta_sum += beta;
             }
 
             const double exp_weight = get_group_exponential_weight_from_cumulative(weights, group_pos, range_start);
@@ -305,21 +394,23 @@ namespace temporal_graph {
         for (size_t group_pos = range_start; group_pos < range_end; ++group_pos) {
             const size_t edge_start = node_ts_groups_offsets[group_pos];
             const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
-                graph,
-                node_id,
-                node_ts_groups_offsets,
-                group_pos,
-                group_end_offset);
+                graph, node_id, node_ts_groups_offsets, group_pos, group_end_offset);
+
+            if (edge_start == edge_end) {
+                continue;
+            }
 
             double beta_sum = 0.0;
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
                 const int w = get_node2vec_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-                beta_sum += compute_node2vec_beta_device(graph, prev_node, w);
+                const double beta = compute_node2vec_beta_device(graph, prev_node, w);
+                beta_sum += beta;
             }
 
             const double exp_weight = get_group_exponential_weight_from_cumulative(weights, group_pos, range_start);
             running_sum += exp_weight * beta_sum;
+
             if (running_sum >= target) {
                 selected_group = static_cast<int>(group_pos);
                 break;
@@ -336,17 +427,23 @@ namespace temporal_graph {
         const int prev_node,
         const size_t edge_start,
         const size_t edge_end,
-        size_t *node_ts_sorted_indices,
+        const size_t * NODE2VEC_RESTRICT node_ts_sorted_indices,
         const double edge_selector_rand_num) {
+
         if (prev_node == -1 || edge_start >= edge_end) {
             return -1;
+        }
+
+        if (edge_end - edge_start == 1) {
+            return static_cast<long>(node_ts_sorted_indices[edge_start]);
         }
 
         double beta_sum = 0.0;
         for (size_t i = edge_start; i < edge_end; ++i) {
             const size_t edge_idx = node_ts_sorted_indices[i];
             const int w = get_node2vec_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-            beta_sum += compute_node2vec_beta_device(graph, prev_node, w);
+            const double beta = compute_node2vec_beta_device(graph, prev_node, w);
+            beta_sum += beta;
         }
 
         if (beta_sum <= 0.0) {
@@ -359,7 +456,8 @@ namespace temporal_graph {
         for (size_t i = edge_start; i < edge_end; ++i) {
             const size_t edge_idx = node_ts_sorted_indices[i];
             const int w = get_node2vec_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-            running_sum += compute_node2vec_beta_device(graph, prev_node, w);
+            const double beta = compute_node2vec_beta_device(graph, prev_node, w);
+            running_sum += beta;
             if (running_sum >= target) {
                 return static_cast<long>(edge_idx);
             }
