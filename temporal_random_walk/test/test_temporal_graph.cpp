@@ -197,6 +197,44 @@ TYPED_TEST(TemporalGraphTest, UndirectedGraphEdgeAdditionTest) {
     EXPECT_EQ(stored_edges[1].i, 1);
 }
 
+TYPED_TEST(TemporalGraphTest, NodeAdjacencyCsrBuildsWhenTemporalNode2VecEnabled) {
+    this->graph = std::make_unique<TemporalGraph>(
+        true,
+        TypeParam::value,
+        -1,
+        false,
+        -1,
+        DEFAULT_NODE2VEC_P,
+        DEFAULT_NODE2VEC_Q,
+        true);
+
+    std::vector<Edge> edges = {
+        Edge{0, 1, 100},
+        Edge{1, 2, 200},
+        Edge{2, 3, 300}
+    };
+
+    this->graph->add_multiple_edges(edges);
+
+    const EdgeDataStore* edge_data = this->graph->graph->edge_data;
+    EXPECT_EQ(edge_data->node_adj_offsets_size, edge_data::active_node_count(edge_data) + 1);
+    EXPECT_EQ(edge_data->node_adj_neighbors_size, 2 * edge_data::size(edge_data));
+}
+
+TYPED_TEST(TemporalGraphTest, NodeAdjacencyCsrNotBuiltWhenTemporalNode2VecDisabled) {
+    std::vector<Edge> edges = {
+        Edge{0, 1, 100},
+        Edge{1, 2, 200},
+        Edge{2, 3, 300}
+    };
+
+    this->graph->add_multiple_edges(edges);
+
+    const EdgeDataStore* edge_data = this->graph->graph->edge_data;
+    EXPECT_EQ(edge_data->node_adj_offsets_size, 0);
+    EXPECT_EQ(edge_data->node_adj_neighbors_size, 0);
+}
+
 TYPED_TEST(TemporalGraphTest, CountTimestampsTest) {
    // Set up a graph with carefully chosen timestamps
    std::vector<Edge> edges = {

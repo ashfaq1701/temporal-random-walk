@@ -184,6 +184,10 @@ HOST void temporal_graph::add_multiple_edges_std(
     // Update timestamp groups
     edge_data::update_timestamp_groups_std(graph->edge_data);
 
+    if (graph->edge_data->enable_temporal_node2vec) {
+        edge_data::build_node_adjacency_csr(graph->edge_data);
+    }
+
     // Rebuild edge indices
     node_edge_index::rebuild(graph->node_edge_index, graph->edge_data, graph->is_directed);
 
@@ -468,6 +472,10 @@ HOST void temporal_graph::add_multiple_edges_cuda(
 
     // Update timestamp groups
     edge_data::update_timestamp_groups_cuda(graph->edge_data);
+
+    if (graph->edge_data->enable_temporal_node2vec) {
+        edge_data::build_node_adjacency_csr_cuda(graph->edge_data);
+    }
 
     // Rebuild edge indices
     node_edge_index::rebuild(graph->node_edge_index, graph->edge_data, graph->is_directed);
