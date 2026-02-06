@@ -270,7 +270,7 @@ namespace temporal_graph {
 
 
     template<bool Forward, bool IsDirected>
-    HOST inline int pick_random_temporal_node2vec_host(
+    HOST int pick_random_temporal_node2vec_host(
         const TemporalGraphStore *graph,
         const int node_id,
         const int prev_node,
@@ -344,7 +344,7 @@ namespace temporal_graph {
     #ifdef HAS_CUDA
 
     template<bool Forward, bool IsDirected>
-    DEVICE inline int pick_random_temporal_node2vec_device(
+    DEVICE int pick_random_temporal_node2vec_device(
         const TemporalGraphStore *graph,
         const int node_id,
         const int prev_node,
@@ -421,13 +421,13 @@ namespace temporal_graph {
     }
 
     template<bool Forward, bool IsDirected>
-    DEVICE inline long pick_random_temporal_node2vec_edge_device(
+    DEVICE long pick_random_temporal_node2vec_edge_device(
         const TemporalGraphStore *graph,
         const int node_id,
         const int prev_node,
         const size_t edge_start,
         const size_t edge_end,
-        const size_t * NODE2VEC_RESTRICT node_ts_sorted_indices,
+        const size_t * node_ts_sorted_indices,
         const double edge_selector_rand_num) {
 
         if (prev_node == -1 || edge_start >= edge_end) {
