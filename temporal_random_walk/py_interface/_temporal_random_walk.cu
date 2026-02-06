@@ -47,24 +47,14 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                          const std::optional<int> walk_padding_value,
                          const std::optional<uint64_t> global_seed)
              {
-                 const double resolved_node2vec_p = resolve_temporal_node2vec_parameter(
-                     temporal_node2vec_p,
-                     DEFAULT_NODE2VEC_P,
-                     "temporal_node2vec_p");
-
-                 const double resolved_node2vec_q = resolve_temporal_node2vec_parameter(
-                     temporal_node2vec_q,
-                     DEFAULT_NODE2VEC_Q,
-                     "temporal_node2vec_q");
-
                  return std::make_unique<TemporalRandomWalk>(
                      is_directed,
                      use_gpu,
                      max_time_capacity.value_or(-1),
                      enable_weight_computation.value_or(false),
                      timescale_bound.value_or(DEFAULT_TIMESCALE_BOUND),
-                     resolved_node2vec_p,
-                     resolved_node2vec_q,
+                     temporal_node2vec_p.value_or(DEFAULT_NODE2VEC_P),
+                     temporal_node2vec_q.value_or(DEFAULT_NODE2VEC_Q),
                      walk_padding_value.value_or(EMPTY_NODE_VALUE),
                      global_seed.value_or(EMPTY_GLOBAL_SEED));
              }),
