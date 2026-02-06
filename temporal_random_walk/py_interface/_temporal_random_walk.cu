@@ -13,19 +13,10 @@ namespace py = pybind11;
 
 inline double resolve_temporal_node2vec_parameter(
     const std::optional<double>& temporal_param,
-    const std::optional<double>& legacy_param,
     const double default_value,
-    const char* temporal_name,
-    const char* legacy_name) {
+    const char* temporal_name) {
 
-    if (temporal_param.has_value() && legacy_param.has_value()) {
-        throw std::invalid_argument(
-            std::string("Specify only one of '") + temporal_name + "' or '" + legacy_name + "'.");
-    }
-
-    const double value = temporal_param.has_value()
-        ? *temporal_param
-        : legacy_param.value_or(default_value);
+    const double value = temporal_param.value_or(default_value);
 
     if (value <= 0.0) {
         throw std::invalid_argument(
@@ -53,24 +44,18 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                          const std::optional<bool> enable_weight_computation, const std::optional<double> timescale_bound,
                          const std::optional<double> temporal_node2vec_p,
                          const std::optional<double> temporal_node2vec_q,
-                         const std::optional<double> node2vec_p,
-                         const std::optional<double> node2vec_q,
                          const std::optional<int> walk_padding_value,
                          const std::optional<uint64_t> global_seed)
              {
                  const double resolved_node2vec_p = resolve_temporal_node2vec_parameter(
                      temporal_node2vec_p,
-                     node2vec_p,
                      DEFAULT_NODE2VEC_P,
-                     "temporal_node2vec_p",
-                     "node2vec_p");
+                     "temporal_node2vec_p");
 
                  const double resolved_node2vec_q = resolve_temporal_node2vec_parameter(
                      temporal_node2vec_q,
-                     node2vec_q,
                      DEFAULT_NODE2VEC_Q,
-                     "temporal_node2vec_q",
-                     "node2vec_q");
+                     "temporal_node2vec_q");
 
                  return std::make_unique<TemporalRandomWalk>(
                      is_directed,
@@ -94,8 +79,6 @@ PYBIND11_MODULE(_temporal_random_walk, m)
              timescale_bound (float, optional): Scale factor for temporal differences. Used to prevent numerical issues with large time differences. Defaults to -1.0.
              temporal_node2vec_p (float, optional): Temporal-node2vec return parameter p (> 0). Defaults to 1.0.
              temporal_node2vec_q (float, optional): Temporal-node2vec in-out parameter q (> 0). Defaults to 1.0.
-             node2vec_p (float, optional): Legacy alias for temporal_node2vec_p.
-             node2vec_q (float, optional): Legacy alias for temporal_node2vec_q.
              walk_padding_value (int, optional): Padding node value for prematurely broken walks. Default is -1.
              global_seed (int, optional): A global seed to have reproducibility inside random walks. Default is empty and the code in that case generates random seed in each run.
              )",
@@ -106,8 +89,6 @@ PYBIND11_MODULE(_temporal_random_walk, m)
              py::arg("timescale_bound") = py::none(),
              py::arg("temporal_node2vec_p") = py::none(),
              py::arg("temporal_node2vec_q") = py::none(),
-             py::arg("node2vec_p") = py::none(),
-             py::arg("node2vec_q") = py::none(),
              py::arg("walk_padding_value") = py::none(),
              py::arg("global_seed") = py::none())
 
