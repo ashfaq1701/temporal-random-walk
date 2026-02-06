@@ -234,7 +234,7 @@ TEST_F(TemporalNode2VecCpuTest, TemporalNode2VecBackwardFromNodeWithNoInboundRet
 
 class TemporalNode2VecGpuTest : public ::testing::Test {
 protected:
-    TemporalGraph graph{true, true, -1, true, -1, 2.0, 0.5};
+    TemporalGraph graph{true, true, -1, true, true, -1, 2.0, 0.5};
 
     void SetUp() override {
         graph.add_multiple_edges({

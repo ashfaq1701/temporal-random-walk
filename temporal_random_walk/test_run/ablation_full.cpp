@@ -93,6 +93,7 @@ int main(const int argc, char **argv) {
         use_gpu,
         -1,               // no sliding window
         use_weight,
+        false,
         timescale_bound
     );
 

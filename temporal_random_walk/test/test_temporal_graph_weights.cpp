@@ -63,7 +63,13 @@ using GPU_USAGE_TYPES = ::testing::Types<
 TYPED_TEST_SUITE(TemporalGraphWeightTest, GPU_USAGE_TYPES);
 
 TYPED_TEST(TemporalGraphWeightTest, EdgeWeightComputation) {
-    TemporalGraph graph(/*is_directed=*/false, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, -1);
+    TemporalGraph graph(
+        /*is_directed=*/false,
+        /*use_gpu=*/TypeParam::value,
+        /*max_time_capacity=*/-1,
+        /*enable_weight_computation=*/true,
+        /*enable_temporal_node2vec=*/false,
+        -1);
     graph.add_multiple_edges(this->test_edges);
 
     EdgeData edge_data_proxy(graph.graph->edge_data);
@@ -129,7 +135,13 @@ TYPED_TEST(TemporalGraphWeightTest, NodeWeightComputation) {
 }
 
 TYPED_TEST(TemporalGraphWeightTest, WeightBasedSampling) {
-    TemporalGraph graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, -1);
+    TemporalGraph graph(
+        /*is_directed=*/true,
+        /*use_gpu=*/TypeParam::value,
+        /*max_time_capacity=*/-1,
+        /*enable_weight_computation=*/true,
+        /*enable_temporal_node2vec=*/false,
+        -1);
     graph.add_multiple_edges(this->test_edges);
 
     // Test forward sampling after timestamp 20
@@ -185,7 +197,13 @@ TYPED_TEST(TemporalGraphWeightTest, EdgeCases) {
 }
 
 TYPED_TEST(TemporalGraphWeightTest, TimescaleBoundZero) {
-    TemporalGraph graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, 0);
+    TemporalGraph graph(
+        /*is_directed=*/true,
+        /*use_gpu=*/TypeParam::value,
+        /*max_time_capacity=*/-1,
+        /*enable_weight_computation=*/true,
+        /*enable_temporal_node2vec=*/false,
+        0);
     graph.add_multiple_edges(this->test_edges);
 
     // Should behave like -1 (unscaled)
@@ -195,8 +213,20 @@ TYPED_TEST(TemporalGraphWeightTest, TimescaleBoundZero) {
 }
 
 TYPED_TEST(TemporalGraphWeightTest, TimescaleBoundSampling) {
-    TemporalGraph scaled_graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, 10.0);
-    TemporalGraph unscaled_graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, -1);
+    TemporalGraph scaled_graph(
+        /*is_directed=*/true,
+        /*use_gpu=*/TypeParam::value,
+        /*max_time_capacity=*/-1,
+        /*enable_weight_computation=*/true,
+        /*enable_temporal_node2vec=*/false,
+        10.0);
+    TemporalGraph unscaled_graph(
+        /*is_directed=*/true,
+        /*use_gpu=*/TypeParam::value,
+        /*max_time_capacity=*/-1,
+        /*enable_weight_computation=*/true,
+        /*enable_temporal_node2vec=*/false,
+        -1);
 
     scaled_graph.add_multiple_edges(this->test_edges);
     unscaled_graph.add_multiple_edges(this->test_edges);
@@ -223,7 +253,13 @@ TYPED_TEST(TemporalGraphWeightTest, TimescaleBoundSampling) {
 }
 
 TYPED_TEST(TemporalGraphWeightTest, WeightScalingPrecision) {
-    TemporalGraph graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, 2.0);
+    TemporalGraph graph(
+        /*is_directed=*/true,
+        /*use_gpu=*/TypeParam::value,
+        /*max_time_capacity=*/-1,
+        /*enable_weight_computation=*/true,
+        /*enable_temporal_node2vec=*/false,
+        2.0);
 
     // Use exact timestamps for precise validation
     graph.add_multiple_edges({
@@ -274,7 +310,13 @@ TYPED_TEST(TemporalGraphWeightTest, DifferentTimescaleBounds) {
     for (double bound : bounds) {
         constexpr int num_samples = 10000;
 
-        TemporalGraph graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, bound);
+        TemporalGraph graph(
+            /*is_directed=*/true,
+            /*use_gpu=*/TypeParam::value,
+            /*max_time_capacity=*/-1,
+            /*enable_weight_computation=*/true,
+            /*enable_temporal_node2vec=*/false,
+            bound);
         graph.add_multiple_edges(this->test_edges);
 
         const double* random_nums = generate_n_random_numbers(num_samples * 2, TypeParam::value);
@@ -308,7 +350,13 @@ TYPED_TEST(TemporalGraphWeightTest, SingleTimestampWithBounds) {
 
     // Test with different bounds
     for (double bound : {-1.0, 0.0, 10.0, 50.0}) {
-        TemporalGraph graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true, bound);
+        TemporalGraph graph(
+            /*is_directed=*/true,
+            /*use_gpu=*/TypeParam::value,
+            /*max_time_capacity=*/-1,
+            /*enable_weight_computation=*/true,
+            /*enable_temporal_node2vec=*/false,
+            bound);
         graph.add_multiple_edges(single_ts_edges);
 
         auto edge_data_proxy = EdgeData(graph.graph->edge_data);

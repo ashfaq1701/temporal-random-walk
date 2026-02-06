@@ -117,6 +117,7 @@ int main(int argc, char **argv) {
         use_gpu,
         window_duration,
         use_weight,
+        false,
         timescale_bound
     );
 

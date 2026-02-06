@@ -203,10 +203,10 @@ TYPED_TEST(TemporalGraphTest, NodeAdjacencyCsrBuildsWhenTemporalNode2VecEnabled)
         TypeParam::value,
         -1,
         false,
+        true,
         -1,
         DEFAULT_NODE2VEC_P,
-        DEFAULT_NODE2VEC_Q,
-        true);
+        DEFAULT_NODE2VEC_Q);
 
     std::vector<Edge> edges = {
         Edge{0, 1, 100},

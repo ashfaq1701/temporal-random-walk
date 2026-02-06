@@ -26,7 +26,7 @@ template<typename T>
 class EmptyTemporalRandomWalkTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, -1, true, -1);
+        temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, -1, true, false, -1);
     }
 
     std::unique_ptr<TemporalRandomWalk> temporal_random_walk;
@@ -38,7 +38,7 @@ template<typename T>
 class EmptyTemporalRandomWalkTestWithMaxCapacity : public ::testing::Test {
 protected:
     void SetUp() override {
-        temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, MAX_TIME_CAPACITY, true, -1);
+        temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, MAX_TIME_CAPACITY, true, false, -1);
     }
 
     std::unique_ptr<TemporalRandomWalk> temporal_random_walk;
@@ -54,7 +54,7 @@ protected:
     }
 
     void SetUp() override {
-        temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, -1, true, -1);
+        temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, -1, true, false, -1);
         temporal_random_walk->add_multiple_edges(sample_edges);
     }
 
@@ -72,7 +72,7 @@ protected:
     }
 
     void SetUp() override {
-        temporal_random_walk = std::make_unique<TemporalRandomWalk>(false, T::value, -1, true, -1);
+        temporal_random_walk = std::make_unique<TemporalRandomWalk>(false, T::value, -1, true, false, -1);
         temporal_random_walk->add_multiple_edges(sample_edges);
     }
 
@@ -86,7 +86,7 @@ template<typename T>
 class TimescaleBoundedTemporalRandomWalkTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, -1, true, 10.0);
+        temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, -1, true, false, 10.0);
         temporal_random_walk->add_multiple_edges({
             // Node 1's outgoing edges
             {1, 2, 100},

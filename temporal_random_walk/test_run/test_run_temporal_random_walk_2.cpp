@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
 
     // Start timing for the entire process
     auto start = std::chrono::high_resolution_clock::now();
-    TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, true, 34);
+    TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, true, false, 34);
 
     // Add first half of edges
     std::vector first_half(first_half_begin, first_half_end);
