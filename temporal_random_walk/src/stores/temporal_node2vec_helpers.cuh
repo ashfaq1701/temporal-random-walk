@@ -89,7 +89,7 @@ namespace temporal_graph {
     // -------------------------------------------------------------------------
 
     template<bool Forward, bool IsDirected>
-    HOST DEVICE inline size_t get_node_group_edge_end(
+    HOST DEVICE size_t get_node_group_edge_end(
         const TemporalGraphStore *graph,
         const int node_id,
         size_t *node_ts_groups_offsets,
