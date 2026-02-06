@@ -86,7 +86,7 @@ public:
 
     [[nodiscard]] Edge get_edge_at(RandomPickerType picker_type, int64_t timestamp = -1, bool forward = true) const;
 
-    [[nodiscard]] Edge get_node_edge_at(int node_id, RandomPickerType picker_type, int64_t timestamp = -1, bool forward = true) const;
+    [[nodiscard]] Edge get_node_edge_at(int node_id, RandomPickerType picker_type, int64_t timestamp, int prev_node, bool forward = true) const;
 
     [[nodiscard]] TemporalGraphStore* get_graph() const;
 

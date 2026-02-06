@@ -122,7 +122,7 @@ protected:
 };
 
 TEST_F(TemporalNode2VecGpuTest, TemporalNode2VecWithoutPrevNodeReturnsSentinelEdge) {
-    const Edge picked = graph.get_node_edge_at(0, RandomPickerType::TemporalNode2Vec, -1, true);
+    const Edge picked = graph.get_node_edge_at(0, RandomPickerType::TemporalNode2Vec, -1, -1, true);
 
     EXPECT_EQ(picked.u, -1);
     EXPECT_EQ(picked.i, -1);
@@ -130,7 +130,7 @@ TEST_F(TemporalNode2VecGpuTest, TemporalNode2VecWithoutPrevNodeReturnsSentinelEd
 }
 
 TEST_F(TemporalNode2VecGpuTest, DeterministicPickerRunsOnGpuGraph) {
-    const Edge picked = graph.get_node_edge_at(0, RandomPickerType::TEST_LAST, -1, true);
+    const Edge picked = graph.get_node_edge_at(0, RandomPickerType::TEST_LAST, -1, -1, true);
 
     EXPECT_EQ(picked.u, 0);
     EXPECT_EQ(picked.i, 3);
