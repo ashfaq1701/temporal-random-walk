@@ -4,6 +4,10 @@
 #include <algorithm>
 #include "temporal_graph.cuh"
 
+#ifdef HAS_CUDA
+#include <cuda/std/algorithm>
+#endif
+
 namespace temporal_graph {
 
     // -------------------------------------------------------------------------
@@ -309,8 +313,7 @@ namespace temporal_graph {
     DEVICE inline bool is_node_adjacent_to_device(
         const TemporalGraphStore *graph,
         const int prev_node,
-        const int candidate_node)
-    {
+        const int candidate_node) {
         const EdgeDataStore *edge_data = graph->edge_data;
 
         if (!edge_data->enable_temporal_node2vec ||
@@ -318,14 +321,26 @@ namespace temporal_graph {
             return false;
             }
 
+        // Bounds for prev_node adjacency list
         const size_t start = edge_data->node_adj_offsets[prev_node];
         const size_t end   = edge_data->node_adj_offsets[prev_node + 1];
 
-        return cuda::std::binary_search(
-            edge_data->node_adj_neighbors + start,
-            edge_data->node_adj_neighbors + end,
+        if (start >= end) {
+            return false;
+        }
+
+        const int *begin = edge_data->node_adj_neighbors + start;
+        const int *finish = edge_data->node_adj_neighbors + end;
+
+        // Binary search via lower_bound
+        const int *it = cuda::std::lower_bound(
+            begin,
+            finish,
             candidate_node
         );
+
+        // Check exact match
+        return (it != finish && *it == candidate_node);
     }
 
     DEVICE inline double compute_node2vec_beta_device(
