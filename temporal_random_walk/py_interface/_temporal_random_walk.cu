@@ -80,10 +80,10 @@ PYBIND11_MODULE(_temporal_random_walk, m)
              py::arg("use_gpu") = false,
              py::arg("max_time_capacity") = py::none(),
              py::arg("enable_weight_computation") = py::none(),
+             py::arg("enable_temporal_node2vec") = py::none(),
              py::arg("timescale_bound") = py::none(),
              py::arg("temporal_node2vec_p") = py::none(),
              py::arg("temporal_node2vec_q") = py::none(),
-             py::arg("enable_temporal_node2vec") = py::none(),
              py::arg("walk_padding_value") = py::none(),
              py::arg("global_seed") = py::none())
 

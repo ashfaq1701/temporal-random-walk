@@ -20,7 +20,7 @@ void benchmark_exponential_index_forward(const std::vector<int> &sources,
                                          const bool use_gpu) {
     std::cout << "\n=== ExponentialIndex Forward Walks ===" << std::endl;
 
-    const TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, false, timescale_bound);
+    const TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, false, false, timescale_bound);
 
     const auto edge_addition_start = std::chrono::high_resolution_clock::now();
     temporal_random_walk.add_multiple_edges(
@@ -56,7 +56,7 @@ void benchmark_exponential_index_backward(const std::vector<int> &sources,
                                           const bool use_gpu) {
     std::cout << "\n=== ExponentialIndex Backward Walks ===" << std::endl;
 
-    const TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, false, timescale_bound);
+    const TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, false, false, timescale_bound);
 
     const auto edge_addition_start = std::chrono::high_resolution_clock::now();
     temporal_random_walk.add_multiple_edges(
@@ -92,7 +92,7 @@ void benchmark_exponential_weight_forward(const std::vector<int> &sources,
                                           const bool use_gpu) {
     std::cout << "\n=== ExponentialWeight Forward Walks ===" << std::endl;
 
-    const TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, true, timescale_bound);
+    const TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, true, false, timescale_bound);
 
     const auto edge_addition_start = std::chrono::high_resolution_clock::now();
     temporal_random_walk.add_multiple_edges(
@@ -128,7 +128,7 @@ void benchmark_exponential_weight_backward(const std::vector<int> &sources,
                                            const bool use_gpu) {
     std::cout << "\n=== ExponentialWeight Backward Walks ===" << std::endl;
 
-    const TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, true, timescale_bound);
+    const TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, true, false, timescale_bound);
 
     const auto edge_addition_start = std::chrono::high_resolution_clock::now();
     temporal_random_walk.add_multiple_edges(
@@ -164,7 +164,7 @@ void benchmark_linear_forward(const std::vector<int> &sources,
                               const bool use_gpu) {
     std::cout << "\n=== Linear Forward Walks ===" << std::endl;
 
-    const TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, false, timescale_bound);
+    const TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, false, false, timescale_bound);
 
     const auto edge_addition_start = std::chrono::high_resolution_clock::now();
     temporal_random_walk.add_multiple_edges(
@@ -200,7 +200,7 @@ void benchmark_linear_backward(const std::vector<int> &sources,
                                const bool use_gpu) {
     std::cout << "\n=== Linear Backward Walks ===" << std::endl;
 
-    const TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, false, timescale_bound);
+    const TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, false, false, timescale_bound);
 
     const auto edge_addition_start = std::chrono::high_resolution_clock::now();
     temporal_random_walk.add_multiple_edges(
