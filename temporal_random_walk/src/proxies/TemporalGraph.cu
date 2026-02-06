@@ -352,19 +352,24 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
     return result;
 }
 
-[[nodiscard]] Edge TemporalGraph::get_node_edge_at(const int node_id, const RandomPickerType picker_type, const int64_t timestamp, const bool forward) const {
-    double* rand_nums = generate_n_random_numbers(2, graph->use_gpu);
+[[nodiscard]] Edge TemporalGraph::get_node_edge_at_with_provided_nums(
+    const int node_id,
+    const RandomPickerType picker_type,
+    const double *rand_nums,
+    const int64_t timestamp,
+    const bool forward,
+    const int prev_node) const {
     Edge result;
     const bool is_directed = graph->is_directed;
 
     #define DISPATCH_HOST(FWD, PICKER, DIR) \
         result = temporal_graph::get_node_edge_at_host<FWD, PICKER, DIR>( \
-            graph, node_id, timestamp, -1, rand_nums[0], rand_nums[1]); \
+            graph, node_id, timestamp, prev_node, rand_nums[0], rand_nums[1]); \
         break;
 
     #define DISPATCH_DEVICE(FWD, PICKER, DIR) \
         get_node_edge_at_kernel<DIR, FWD, PICKER><<<1, 1>>>( \
-            d_result, d_graph, node_id, timestamp, rand_nums); \
+            d_result, d_graph, node_id, timestamp, prev_node, rand_nums); \
         CUDA_KERNEL_CHECK("After get_node_edge_at_kernel execution"); \
         break;
 
@@ -447,6 +452,12 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
     #undef HANDLE_PICKER_HOST
     #undef HANDLE_PICKER_DEVICE
 
+    return result;
+}
+
+[[nodiscard]] Edge TemporalGraph::get_node_edge_at(const int node_id, const RandomPickerType picker_type, const int64_t timestamp, const bool forward) const {
+    double* rand_nums = generate_n_random_numbers(2, graph->use_gpu);
+    auto result = get_node_edge_at_with_provided_nums(node_id, picker_type, rand_nums, timestamp, forward, -1);
     clear_memory(&rand_nums, graph->use_gpu);
     return result;
 }
