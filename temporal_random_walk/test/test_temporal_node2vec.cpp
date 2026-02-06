@@ -74,7 +74,16 @@ long expected_edge_pick_reference(
 class TemporalNode2VecCpuTest : public ::testing::Test {
 protected:
     // directed=true, gpu=false, enable_weight_computation=true, p=2.0, q=0.5
-    TemporalGraph graph{true, false, -1, true, -1, 2.0, 0.5};
+    TemporalGraph graph{
+        true,
+        false,
+        -1,
+        false,
+        true,
+        -1,
+        2.0,
+        0.5
+    };
 
     void SetUp() override {
         graph.add_multiple_edges({
