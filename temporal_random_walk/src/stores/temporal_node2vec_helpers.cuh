@@ -1,6 +1,7 @@
 #ifndef TEMPORAL_NODE2VEC_HELPERS_CUH
 #define TEMPORAL_NODE2VEC_HELPERS_CUH
 
+#include <algorithm>
 #include "temporal_graph.cuh"
 
 namespace temporal_graph {
@@ -9,45 +10,26 @@ namespace temporal_graph {
     // Node2Vec beta primitives
     // -------------------------------------------------------------------------
 
-    HOST DEVICE inline bool is_node_adjacent_to(
-        const TemporalGraphStore *graph,
-        const int prev_node,
-        const int candidate_node) {
-        if (graph == nullptr || graph->node_edge_index == nullptr || graph->edge_data == nullptr) {
+    HOST inline bool is_node_adjacent_to_host(
+    const TemporalGraphStore *graph,
+    const int prev_node,
+    const int candidate_node)
+    {
+        const EdgeDataStore *edge_data = graph->edge_data;
+
+        if (!edge_data->enable_temporal_node2vec ||
+            edge_data->node_adj_offsets == nullptr) {
             return false;
-        }
-
-        const SizeRange outbound_range = node_edge_index::get_edge_range(
-            graph->node_edge_index,
-            prev_node,
-            true,
-            graph->is_directed);
-
-        for (size_t i = outbound_range.from; i < outbound_range.to; ++i) {
-            const size_t edge_idx = graph->node_edge_index->node_ts_sorted_outbound_indices[i];
-            if (graph->edge_data->targets[edge_idx] == candidate_node) {
-                return true;
             }
-        }
 
-        if (!graph->is_directed) {
-            return false;
-        }
+        const size_t start = edge_data->node_adj_offsets[prev_node];
+        const size_t end   = edge_data->node_adj_offsets[prev_node + 1];
 
-        const SizeRange inbound_range = node_edge_index::get_edge_range(
-            graph->node_edge_index,
-            prev_node,
-            false,
-            true);
-
-        for (size_t i = inbound_range.from; i < inbound_range.to; ++i) {
-            const size_t edge_idx = graph->node_edge_index->node_ts_sorted_inbound_indices[i];
-            if (graph->edge_data->sources[edge_idx] == candidate_node) {
-                return true;
-            }
-        }
-
-        return false;
+        return std::binary_search(
+            edge_data->node_adj_neighbors + start,
+            edge_data->node_adj_neighbors + end,
+            candidate_node
+        );
     }
 
     HOST inline double compute_node2vec_beta_host(
@@ -58,31 +40,12 @@ namespace temporal_graph {
             return graph->inv_p;
         }
 
-        if (is_node_adjacent_to(graph, prev_node, w)) {
+        if (is_node_adjacent_to_host(graph, prev_node, w)) {
             return 1.0;
         }
 
         return graph->inv_q;
     }
-
-    #ifdef HAS_CUDA
-
-    DEVICE inline double compute_node2vec_beta_device(
-        const TemporalGraphStore *graph,
-        const int prev_node,
-        const int w) {
-        if (w == prev_node) {
-            return graph->inv_p;
-        }
-
-        if (is_node_adjacent_to(graph, prev_node, w)) {
-            return 1.0;
-        }
-
-        return graph->inv_q;
-    }
-
-    #endif
 
     // -------------------------------------------------------------------------
     // Temporal-node2vec group utilities
@@ -278,7 +241,7 @@ namespace temporal_graph {
         const size_t range_end,
         const size_t group_end_offset,
         size_t *node_ts_groups_offsets,
-        size_t *node_ts_sorted_indices,
+        const size_t *node_ts_sorted_indices,
         double *weights,
         const double group_selector_rand_num) {
         if (range_start >= range_end || prev_node == -1) {
@@ -342,6 +305,43 @@ namespace temporal_graph {
     }
 
     #ifdef HAS_CUDA
+
+    DEVICE inline bool is_node_adjacent_to_device(
+        const TemporalGraphStore *graph,
+        const int prev_node,
+        const int candidate_node)
+    {
+        const EdgeDataStore *edge_data = graph->edge_data;
+
+        if (!edge_data->enable_temporal_node2vec ||
+            edge_data->node_adj_offsets == nullptr) {
+            return false;
+            }
+
+        const size_t start = edge_data->node_adj_offsets[prev_node];
+        const size_t end   = edge_data->node_adj_offsets[prev_node + 1];
+
+        return cuda::std::binary_search(
+            edge_data->node_adj_neighbors + start,
+            edge_data->node_adj_neighbors + end,
+            candidate_node
+        );
+    }
+
+    DEVICE inline double compute_node2vec_beta_device(
+        const TemporalGraphStore *graph,
+        const int prev_node,
+        const int w) {
+        if (w == prev_node) {
+            return graph->inv_p;
+        }
+
+        if (is_node_adjacent_to_device(graph, prev_node, w)) {
+            return 1.0;
+        }
+
+        return graph->inv_q;
+    }
 
     template<bool Forward, bool IsDirected>
     DEVICE int pick_random_temporal_node2vec_device(
