@@ -42,8 +42,11 @@ __global__ void get_timestamp_group_count_kernel(size_t* result, const EdgeDataS
 
 #endif
 
-EdgeData::EdgeData(const bool use_gpu): owns_edge_data(true) {
-    edge_data = new EdgeDataStore(use_gpu);
+EdgeData::EdgeData(const bool use_gpu,
+                   const bool enable_weight_computation,
+                   const bool enable_temporal_node2vec)
+    : owns_edge_data(true) {
+    edge_data = new EdgeDataStore(use_gpu, enable_weight_computation, enable_temporal_node2vec);
 }
 
 EdgeData::EdgeData(EdgeDataStore* existing_edge_data) : edge_data(existing_edge_data), owns_edge_data(false) {}
@@ -62,7 +65,9 @@ EdgeData& EdgeData::operator=(const EdgeData& other) {
 
         owns_edge_data = other.owns_edge_data;
         if (other.owns_edge_data) {
-            edge_data = new EdgeDataStore(other.edge_data->use_gpu);
+            edge_data = new EdgeDataStore(other.edge_data->use_gpu,
+                                          other.edge_data->enable_weight_computation,
+                                          other.edge_data->enable_temporal_node2vec);
         } else {
             edge_data = other.edge_data;
         }

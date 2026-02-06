@@ -154,7 +154,9 @@ public:
         }
     }
 
-    explicit EdgeData(bool use_gpu);
+    explicit EdgeData(bool use_gpu,
+                      bool enable_weight_computation = false,
+                      bool enable_temporal_node2vec = false);
 
     explicit EdgeData(EdgeDataStore* existing_edge_data);
 
