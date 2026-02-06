@@ -5,7 +5,7 @@
 #include "temporal_graph.cuh"
 
 #ifdef HAS_CUDA
-#include <cuda/std/algorithm>
+#include <cuda/std/__algorithm/lower_bound.h>
 #endif
 
 namespace temporal_graph {
