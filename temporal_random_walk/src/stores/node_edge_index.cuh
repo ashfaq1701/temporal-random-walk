@@ -13,7 +13,6 @@
 struct NodeEdgeIndexStore {
     bool use_gpu;
     bool owns_data;
-    bool enable_weight_computation = false;
 
     size_t* node_group_outbound_offsets = nullptr;
     size_t node_group_outbound_offsets_size = 0;

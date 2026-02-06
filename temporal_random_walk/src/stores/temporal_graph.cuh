@@ -60,8 +60,6 @@ struct TemporalGraphStore {
 
         edge_data->enable_weight_computation = this->enable_weight_computation;
         edge_data->enable_temporal_node2vec = this->enable_temporal_node2vec;
-
-        node_edge_index->enable_weight_computation = this->enable_weight_computation;
     }
 
     ~TemporalGraphStore() {
