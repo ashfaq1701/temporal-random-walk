@@ -58,7 +58,7 @@ Classes
             int: Selected index
 
 `TemporalRandomWalk(...)`
-:   __init__(self: _temporal_random_walk.TemporalRandomWalk, is_directed: bool, use_gpu: bool = False, max_time_capacity: Optional[int] = None, enable_weight_computation: Optional[bool] = None, timescale_bound: Optional[float] = None, temporal_node2vec_p: Optional[float] = None, temporal_node2vec_q: Optional[float] = None, node2vec_p: Optional[float] = None, node2vec_q: Optional[float] = None) -> None
+:   __init__(self: _temporal_random_walk.TemporalRandomWalk, is_directed: bool, use_gpu: bool = False, max_time_capacity: Optional[int] = None, enable_weight_computation: Optional[bool] = None, timescale_bound: Optional[float] = None, temporal_node2vec_p: Optional[float] = None, temporal_node2vec_q: Optional[float] = None) -> None
     
     
     Initialize a temporal random walk generator.
@@ -71,8 +71,6 @@ Classes
     timescale_bound (float, optional): Scale factor for temporal differences. Used to prevent numerical issues with large time differences. Defaults to -1.0.
     temporal_node2vec_p (float, optional): Temporal-node2vec return parameter p (> 0). Defaults to 1.0.
     temporal_node2vec_q (float, optional): Temporal-node2vec in-out parameter q (> 0). Defaults to 1.0.
-    node2vec_p (float, optional): Legacy alias for temporal_node2vec_p.
-    node2vec_q (float, optional): Legacy alias for temporal_node2vec_q.
 
     ### Ancestors (in MRO)
 
