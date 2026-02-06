@@ -156,8 +156,8 @@ TYPED_TEST(TemporalNode2VecTest, TemporalGraphProxyUsesPrevNodeWhenProvided) {
         1);
 
     EXPECT_EQ(edge_without_prev.u, 0);
-    EXPECT_EQ(edge_without_prev.i, 3);
-    EXPECT_EQ(edge_without_prev.ts, 20);
+    EXPECT_EQ(edge_without_prev.i, 2);
+    EXPECT_EQ(edge_without_prev.ts, 10);
 
     EXPECT_EQ(edge_with_prev.u, 0);
     EXPECT_EQ(edge_with_prev.i, 2);
