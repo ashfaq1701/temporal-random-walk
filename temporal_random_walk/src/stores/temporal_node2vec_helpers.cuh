@@ -15,19 +15,25 @@ namespace temporal_graph {
     // -------------------------------------------------------------------------
 
     HOST inline bool is_node_adjacent_to_host(
-    const TemporalGraphStore *graph,
-    const int prev_node,
-    const int candidate_node)
-    {
+        const TemporalGraphStore *graph,
+        const int prev_node,
+        const int candidate_node) {
         const EdgeDataStore *edge_data = graph->edge_data;
 
-        if (!edge_data->enable_temporal_node2vec ||
-            edge_data->node_adj_offsets == nullptr) {
+        if (!edge_data->enable_temporal_node2vec || edge_data->node_adj_offsets == nullptr) {
             return false;
-            }
+        }
+
+        if (prev_node < 0 || prev_node + 1 >= edge_data->node_adj_offsets_size) {
+            return false;
+        }
 
         const size_t start = edge_data->node_adj_offsets[prev_node];
         const size_t end   = edge_data->node_adj_offsets[prev_node + 1];
+
+        if (start >= end) {
+            return false;
+        }
 
         return std::binary_search(
             edge_data->node_adj_neighbors + start,
@@ -76,7 +82,7 @@ namespace temporal_graph {
     }
 
     template<bool Forward, bool IsDirected>
-    HOST DEVICE inline int get_node2vec_candidate_node(
+    HOST DEVICE int get_node2vec_candidate_node(
         const TemporalGraphStore *graph,
         const int node_id,
         const size_t edge_idx) {
@@ -109,13 +115,13 @@ namespace temporal_graph {
 
     template<bool Forward, bool IsDirected>
     HOST long pick_random_temporal_node2vec_edge_host(
-    const TemporalGraphStore *graph,
-    const int node_id,
-    const int prev_node,
-    const size_t edge_start,
-    const size_t edge_end,
-    const size_t * node_ts_sorted_indices,
-    const double edge_selector_rand_num) {
+        const TemporalGraphStore *graph,
+        const int node_id,
+        const int prev_node,
+        const size_t edge_start,
+        const size_t edge_end,
+        const size_t * node_ts_sorted_indices,
+        const double edge_selector_rand_num) {
 
         if (prev_node == -1 || edge_start >= edge_end) {
             return -1;
@@ -235,79 +241,6 @@ namespace temporal_graph {
         return selected_group;
     }
 
-
-    template<bool Forward, bool IsDirected>
-    HOST int pick_random_temporal_node2vec_host(
-        const TemporalGraphStore *graph,
-        const int node_id,
-        const int prev_node,
-        const size_t range_start,
-        const size_t range_end,
-        const size_t group_end_offset,
-        size_t *node_ts_groups_offsets,
-        const size_t *node_ts_sorted_indices,
-        double *weights,
-        const double group_selector_rand_num) {
-        if (range_start >= range_end || prev_node == -1) {
-            return -1;
-        }
-
-        double total_weight = 0.0;
-        for (size_t group_pos = range_start; group_pos < range_end; ++group_pos) {
-            const size_t edge_start = node_ts_groups_offsets[group_pos];
-            const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
-                graph,
-                node_id,
-                node_ts_groups_offsets,
-                group_pos,
-                group_end_offset);
-
-            double beta_sum = 0.0;
-            for (size_t i = edge_start; i < edge_end; ++i) {
-                const size_t edge_idx = node_ts_sorted_indices[i];
-                const int w = get_node2vec_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-                beta_sum += compute_node2vec_beta_host(graph, prev_node, w);
-            }
-
-            const double exp_weight = get_group_exponential_weight_from_cumulative(weights, group_pos, range_start);
-            total_weight += exp_weight * beta_sum;
-        }
-
-        if (total_weight <= 0.0) {
-            return -1;
-        }
-
-        const double target = group_selector_rand_num * total_weight;
-        double running_sum = 0.0;
-        int selected_group = static_cast<int>(range_end - 1);
-
-        for (size_t group_pos = range_start; group_pos < range_end; ++group_pos) {
-            const size_t edge_start = node_ts_groups_offsets[group_pos];
-            const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
-                graph,
-                node_id,
-                node_ts_groups_offsets,
-                group_pos,
-                group_end_offset);
-
-            double beta_sum = 0.0;
-            for (size_t i = edge_start; i < edge_end; ++i) {
-                const size_t edge_idx = node_ts_sorted_indices[i];
-                const int w = get_node2vec_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-                beta_sum += compute_node2vec_beta_host(graph, prev_node, w);
-            }
-
-            const double exp_weight = get_group_exponential_weight_from_cumulative(weights, group_pos, range_start);
-            running_sum += exp_weight * beta_sum;
-            if (running_sum >= target) {
-                selected_group = static_cast<int>(group_pos);
-                break;
-            }
-        }
-
-        return selected_group;
-    }
-
     #ifdef HAS_CUDA
 
     DEVICE inline bool is_node_adjacent_to_device(
@@ -316,10 +249,13 @@ namespace temporal_graph {
         const int candidate_node) {
         const EdgeDataStore *edge_data = graph->edge_data;
 
-        if (!edge_data->enable_temporal_node2vec ||
-            edge_data->node_adj_offsets == nullptr) {
+        if (!edge_data->enable_temporal_node2vec || edge_data->node_adj_offsets == nullptr) {
             return false;
-            }
+        }
+
+        if (prev_node < 0 || prev_node + 1 >= edge_data->node_adj_offsets_size) {
+            return false;
+        }
 
         // Bounds for prev_node adjacency list
         const size_t start = edge_data->node_adj_offsets[prev_node];
