@@ -1,15 +1,29 @@
 #include "edge_data.cuh"
 
 #include <cmath>
-#include <omp.h>
-
-#include <tbb/parallel_for.h>
-#include <tbb/parallel_scan.h>
-#include <tbb/parallel_sort.h>
-#include <tbb/blocked_range.h>
 #include <vector>
 #include <atomic>
 #include <cstddef>
+
+#include <tbb/parallel_scan.h>
+#include <tbb/parallel_sort.h>
+
+#ifdef HAS_CUDA
+
+#include <thrust/device_vector.h>
+#include <thrust/device_ptr.h>
+
+#include <thrust/for_each.h>
+#include <thrust/transform.h>
+#include <thrust/fill.h>
+#include <thrust/copy.h>
+
+#include <thrust/scan.h>
+#include <thrust/sort.h>
+#include <thrust/binary_search.h>
+#include <thrust/iterator/counting_iterator.h>
+
+#endif
 
 #include "../utils/omp_utils.cuh"
 
@@ -183,14 +197,6 @@ HOST void edge_data::populate_active_nodes_std(EdgeDataStore *edge_data) {
         edge_data->active_node_ids[tgt] = 1;
     }
 }
-
-#include <tbb/parallel_for.h>
-#include <tbb/parallel_scan.h>
-#include <tbb/parallel_sort.h>
-#include <tbb/blocked_range.h>
-#include <vector>
-#include <atomic>
-#include <cstddef>
 
 HOST void edge_data::build_node_adjacency_csr_std(EdgeDataStore *edge_data) {
     const size_t n = active_node_count(edge_data);
@@ -484,7 +490,7 @@ HOST void edge_data::populate_active_nodes_cuda(EdgeDataStore *edge_data) {
         thrust::maximum<int>()
     );
 
-    int max_node_id = std::max(max_source, max_target);
+    const int max_node_id = std::max(max_source, max_target);
 
     allocate_memory(&edge_data->active_node_ids, max_node_id + 1, edge_data->use_gpu);
     edge_data->active_node_ids_size = max_node_id + 1;
@@ -638,7 +644,7 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
     //    Build key array node_ids[i] = owning node of neighbors[i],
     //    then sort (node_id, neighbor) pairs lexicographically.
     // ---------------------------------------------------------------------
-    const size_t nnz = static_cast<size_t>(2 * m);
+    const auto nnz = static_cast<size_t>(2 * m);
 
     thrust::device_vector<int> node_ids(nnz);
 
@@ -665,7 +671,7 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
     CUDA_KERNEL_CHECK("After node_ids subtract-one transform in build_node_adjacency_csr_cuda");
 
     // Sort pairs (node_id, neighbor)
-    auto zipped_begin = thrust::make_zip_iterator(
+    const auto zipped_begin = thrust::make_zip_iterator(
         thrust::make_tuple(
             node_ids.begin(),
             d_neighbors
