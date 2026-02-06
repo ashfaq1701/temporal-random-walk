@@ -20,10 +20,10 @@ TemporalRandomWalk::TemporalRandomWalk(
         const bool use_gpu,
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
+        const bool enable_temporal_node2vec,
         const double timescale_bound,
         const double node2vec_p,
         const double node2vec_q,
-        const bool enable_temporal_node2vec,
         const int walk_padding_value,
         const uint64_t global_seed): use_gpu(use_gpu) {
     temporal_random_walk = new TemporalRandomWalkStore(
@@ -31,10 +31,10 @@ TemporalRandomWalk::TemporalRandomWalk(
         use_gpu,
         max_time_capacity,
         enable_weight_computation,
+        enable_temporal_node2vec,
         timescale_bound,
         node2vec_p,
         node2vec_q,
-        enable_temporal_node2vec,
         walk_padding_value,
         global_seed);
 }

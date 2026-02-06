@@ -17,10 +17,10 @@ TemporalGraph::TemporalGraph(
     const bool use_gpu,
     const int64_t max_time_capacity,
     const bool enable_weight_computation,
+    const bool enable_temporal_node2vec,
     const double timescale_bound,
     const double node2vec_p,
-    const double node2vec_q,
-    const bool enable_temporal_node2vec)
+    const double node2vec_q)
     : owns_graph(true) {
 
     graph = new TemporalGraphStore(
@@ -28,10 +28,10 @@ TemporalGraph::TemporalGraph(
         use_gpu,
         max_time_capacity,
         enable_weight_computation,
+        enable_temporal_node2vec,
         timescale_bound,
         node2vec_p,
-        node2vec_q,
-        enable_temporal_node2vec);
+        node2vec_q);
 }
 
 TemporalGraph::TemporalGraph(TemporalGraphStore* existing_graph)
@@ -56,10 +56,10 @@ TemporalGraph& TemporalGraph::operator=(const TemporalGraph& other) {
                 other.graph->use_gpu,
                 other.graph->max_time_capacity,
                 other.graph->enable_weight_computation,
+                other.graph->enable_temporal_node2vec,
                 other.graph->timescale_bound,
                 other.graph->node2vec_p,
-                other.graph->node2vec_q,
-                other.graph->enable_temporal_node2vec);
+                other.graph->node2vec_q);
         } else {
             graph = other.graph;
         }

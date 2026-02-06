@@ -35,10 +35,10 @@ struct TemporalRandomWalkStore {
         const bool use_gpu,
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
+        const bool enable_temporal_node2vec,
         const double timescale_bound,
         const double node2vec_p = DEFAULT_NODE2VEC_P,
         const double node2vec_q = DEFAULT_NODE2VEC_Q,
-        const bool enable_temporal_node2vec = false,
         const int walk_padding_value=EMPTY_NODE_VALUE,
         const uint64_t global_seed=EMPTY_GLOBAL_SEED) {
         this->is_directed = is_directed;
@@ -57,10 +57,10 @@ struct TemporalRandomWalkStore {
             use_gpu,
             max_time_capacity,
             this->enable_weight_computation,
+            this->enable_temporal_node2vec,
             timescale_bound,
             node2vec_p,
-            node2vec_q,
-            this->enable_temporal_node2vec);
+            node2vec_q);
 
         #ifdef HAS_CUDA
         cuda_device_prop = new cudaDeviceProp();

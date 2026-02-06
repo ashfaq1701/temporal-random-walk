@@ -59,7 +59,11 @@ struct EdgeDataStore {
     double* backward_cumulative_weights_exponential = nullptr;
     size_t backward_cumulative_weights_exponential_size = 0;
 
-    explicit EdgeDataStore(const bool use_gpu): use_gpu(use_gpu), owns_data(true) {}
+    explicit EdgeDataStore(
+        const bool use_gpu,
+        const bool enable_weight_computation,
+        const bool enable_temporal_node2vec):
+    use_gpu(use_gpu), owns_data(true), enable_weight_computation(enable_weight_computation), enable_temporal_node2vec(enable_temporal_node2vec) {}
 
     ~EdgeDataStore() {
         if (owns_data) {

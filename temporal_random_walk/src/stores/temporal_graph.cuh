@@ -43,10 +43,10 @@ struct TemporalGraphStore {
         const bool use_gpu,
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
+        const bool enable_temporal_node2vec,
         const double timescale_bound,
         const double node2vec_p = DEFAULT_NODE2VEC_P,
-        const double node2vec_q = DEFAULT_NODE2VEC_Q,
-        const bool enable_temporal_node2vec = false):
+        const double node2vec_q = DEFAULT_NODE2VEC_Q):
         is_directed(is_directed), use_gpu(use_gpu), owns_data(true),
         max_time_capacity(max_time_capacity),
         enable_weight_computation(enable_weight_computation || enable_temporal_node2vec),
@@ -55,11 +55,8 @@ struct TemporalGraphStore {
         node2vec_p(node2vec_p), node2vec_q(node2vec_q), inv_p(1.0 / node2vec_p),
         inv_q(1.0 / node2vec_q), latest_timestamp(0) {
 
-        edge_data = new EdgeDataStore(use_gpu);
+        edge_data = new EdgeDataStore(use_gpu, this->enable_weight_computation, this->enable_temporal_node2vec);
         node_edge_index = new NodeEdgeIndexStore(use_gpu);
-
-        edge_data->enable_weight_computation = this->enable_weight_computation;
-        edge_data->enable_temporal_node2vec = this->enable_temporal_node2vec;
     }
 
     ~TemporalGraphStore() {
