@@ -175,7 +175,7 @@ HOST void edge_data::populate_active_nodes_std(EdgeDataStore *edge_data) {
     }
 }
 
-HOST void edge_data::build_node_adjacency_csr(EdgeDataStore *edge_data) {
+HOST void edge_data::build_node_adjacency_csr_std(EdgeDataStore *edge_data) {
     const size_t n = active_node_count(edge_data);
     const size_t m = size(edge_data);
 

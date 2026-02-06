@@ -170,7 +170,7 @@ namespace edge_data {
 
     HOST void populate_active_nodes_std(EdgeDataStore* edge_data);
 
-    HOST void build_node_adjacency_csr(EdgeDataStore *edge_data);
+    HOST void build_node_adjacency_csr_std(EdgeDataStore *edge_data);
 
     HOST void update_timestamp_groups_std(EdgeDataStore *edge_data);
 
