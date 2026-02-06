@@ -6,19 +6,9 @@
 
 namespace {
 
-#ifdef HAS_CUDA
-using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<bool, false>,
-    std::integral_constant<bool, true>>;
-#else
-using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<bool, false>>;
-#endif
-
-template<typename T>
-class TemporalNode2VecTest : public ::testing::Test {
+class TemporalNode2VecCpuTest : public ::testing::Test {
 protected:
-    TemporalGraph graph{true, T::value, -1, true, -1, 2.0, 0.5};
+    TemporalGraph graph{true, false, -1, true, -1, 2.0, 0.5};
 
     void SetUp() override {
         graph.add_multiple_edges({
@@ -57,20 +47,18 @@ protected:
     }
 };
 
-TYPED_TEST_SUITE(TemporalNode2VecTest, GPU_USAGE_TYPES);
-
-TYPED_TEST(TemporalNode2VecTest, BetaRulesAreCorrect) {
-    const auto* graph_store = this->store();
+TEST_F(TemporalNode2VecCpuTest, BetaRulesAreCorrect) {
+    const auto* graph_store = store();
 
     EXPECT_DOUBLE_EQ(temporal_graph::compute_node2vec_beta_host(graph_store, 1, 1), 0.5);
     EXPECT_DOUBLE_EQ(temporal_graph::compute_node2vec_beta_host(graph_store, 1, 2), 1.0);
     EXPECT_DOUBLE_EQ(temporal_graph::compute_node2vec_beta_host(graph_store, 1, 3), 2.0);
 }
 
-TYPED_TEST(TemporalNode2VecTest, Node2VecGroupPickerUsesBetaWeightedExponentialMass) {
-    const auto* graph_store = this->store();
-    const auto idx = this->index();
-    const auto [group_start, group_end] = this->outbound_group_range(0);
+TEST_F(TemporalNode2VecCpuTest, Node2VecGroupPickerUsesBetaWeightedExponentialMass) {
+    const auto* graph_store = store();
+    const auto idx = index();
+    const auto [group_start, group_end] = outbound_group_range(0);
     ASSERT_EQ(group_end - group_start, 2);
 
     auto group_offsets = idx.node_ts_group_outbound_offsets();
@@ -106,12 +94,12 @@ TYPED_TEST(TemporalNode2VecTest, Node2VecGroupPickerUsesBetaWeightedExponentialM
     EXPECT_EQ(second_group, static_cast<int>(group_start + 1));
 }
 
-TYPED_TEST(TemporalNode2VecTest, Node2VecEdgePickerFavorsReturnAndNeighborBeforeDistant) {
-    const auto* graph_store = this->store();
-    const auto idx = this->index();
+TEST_F(TemporalNode2VecCpuTest, Node2VecEdgePickerFavorsReturnAndNeighborBeforeDistant) {
+    const auto* graph_store = store();
+    const auto idx = index();
     auto sorted_indices = idx.node_ts_sorted_outbound_indices();
 
-    const auto [edge_start, edge_end] = this->group_edge_range(0, this->outbound_group_range(0).first);
+    const auto [edge_start, edge_end] = group_edge_range(0, outbound_group_range(0).first);
     ASSERT_EQ(edge_end - edge_start, 2);
 
     const long low_rand_pick = temporal_graph::pick_random_temporal_node2vec_edge_host<true, true>(
@@ -136,38 +124,10 @@ TYPED_TEST(TemporalNode2VecTest, Node2VecEdgePickerFavorsReturnAndNeighborBefore
     EXPECT_EQ(high_rand_pick, static_cast<long>(sorted_indices[edge_start + 1]));
 }
 
-TYPED_TEST(TemporalNode2VecTest, TemporalGraphProxyUsesPrevNodeWhenProvided) {
-    const double random_nums[2] = {0.95, 0.95};
-
-    const auto edge_without_prev = this->graph.get_node_edge_at_with_provided_nums(
-        0,
-        RandomPickerType::TemporalNode2Vec,
-        random_nums,
-        -1,
-        true,
-        -1);
-
-    const auto edge_with_prev = this->graph.get_node_edge_at_with_provided_nums(
-        0,
-        RandomPickerType::TemporalNode2Vec,
-        random_nums,
-        -1,
-        true,
-        1);
-
-    EXPECT_EQ(edge_without_prev.u, 0);
-    EXPECT_EQ(edge_without_prev.i, 2);
-    EXPECT_EQ(edge_without_prev.ts, 10);
-
-    EXPECT_EQ(edge_with_prev.u, 0);
-    EXPECT_EQ(edge_with_prev.i, 2);
-    EXPECT_EQ(edge_with_prev.ts, 10);
-}
-
-TYPED_TEST(TemporalNode2VecTest, InvalidNode2VecInputsReturnSentinel) {
-    const auto* graph_store = this->store();
-    const auto idx = this->index();
-    const auto [group_start, group_end] = this->outbound_group_range(0);
+TEST_F(TemporalNode2VecCpuTest, InvalidNode2VecInputsReturnSentinel) {
+    const auto* graph_store = store();
+    const auto idx = index();
+    const auto [group_start, group_end] = outbound_group_range(0);
 
     auto group_offsets = idx.node_ts_group_outbound_offsets();
     auto sorted_indices = idx.node_ts_sorted_outbound_indices();
@@ -203,5 +163,104 @@ TYPED_TEST(TemporalNode2VecTest, InvalidNode2VecInputsReturnSentinel) {
         sorted_indices.data(),
         0.5)), -1);
 }
+
+#ifdef HAS_CUDA
+
+class TemporalNode2VecGpuTest : public ::testing::Test {
+protected:
+    TemporalGraph cpu_graph{true, false, -1, true, -1, 2.0, 0.5};
+    TemporalGraph gpu_graph{true, true, -1, true, -1, 2.0, 0.5};
+
+    void SetUp() override {
+        const std::vector<Edge> edges{
+            Edge{0, 1, 10},
+            Edge{0, 2, 10},
+            Edge{0, 3, 20},
+            Edge{1, 2, 5},
+            Edge{4, 1, 6}
+        };
+
+        cpu_graph.add_multiple_edges(edges);
+        gpu_graph.add_multiple_edges(edges);
+    }
+};
+
+TEST_F(TemporalNode2VecGpuTest, ProxyMatchesCpuForTemporalNode2VecWithoutTimestampConstraint) {
+    const double random_nums[2] = {0.95, 0.95};
+
+    const auto cpu_edge = cpu_graph.get_node_edge_at_with_provided_nums(
+        0,
+        RandomPickerType::TemporalNode2Vec,
+        random_nums,
+        -1,
+        true,
+        1);
+
+    const auto gpu_edge = gpu_graph.get_node_edge_at_with_provided_nums(
+        0,
+        RandomPickerType::TemporalNode2Vec,
+        random_nums,
+        -1,
+        true,
+        1);
+
+    EXPECT_EQ(gpu_edge.u, cpu_edge.u);
+    EXPECT_EQ(gpu_edge.i, cpu_edge.i);
+    EXPECT_EQ(gpu_edge.ts, cpu_edge.ts);
+}
+
+TEST_F(TemporalNode2VecGpuTest, ProxyMatchesCpuForTemporalNode2VecWithTimestampConstraint) {
+    const double random_nums[2] = {0.25, 0.75};
+
+    const auto cpu_edge = cpu_graph.get_node_edge_at_with_provided_nums(
+        0,
+        RandomPickerType::TemporalNode2Vec,
+        random_nums,
+        15,
+        true,
+        1);
+
+    const auto gpu_edge = gpu_graph.get_node_edge_at_with_provided_nums(
+        0,
+        RandomPickerType::TemporalNode2Vec,
+        random_nums,
+        15,
+        true,
+        1);
+
+    EXPECT_EQ(cpu_edge.u, 0);
+    EXPECT_EQ(cpu_edge.i, 3);
+    EXPECT_EQ(cpu_edge.ts, 20);
+
+    EXPECT_EQ(gpu_edge.u, cpu_edge.u);
+    EXPECT_EQ(gpu_edge.i, cpu_edge.i);
+    EXPECT_EQ(gpu_edge.ts, cpu_edge.ts);
+}
+
+TEST_F(TemporalNode2VecGpuTest, ProxyHandlesMissingPrevNodeWithoutCrashing) {
+    const double random_nums[2] = {0.6, 0.4};
+
+    const auto cpu_edge = cpu_graph.get_node_edge_at_with_provided_nums(
+        0,
+        RandomPickerType::TemporalNode2Vec,
+        random_nums,
+        -1,
+        true,
+        -1);
+
+    const auto gpu_edge = gpu_graph.get_node_edge_at_with_provided_nums(
+        0,
+        RandomPickerType::TemporalNode2Vec,
+        random_nums,
+        -1,
+        true,
+        -1);
+
+    EXPECT_EQ(gpu_edge.u, cpu_edge.u);
+    EXPECT_EQ(gpu_edge.i, cpu_edge.i);
+    EXPECT_EQ(gpu_edge.ts, cpu_edge.ts);
+}
+
+#endif
 
 } // namespace
