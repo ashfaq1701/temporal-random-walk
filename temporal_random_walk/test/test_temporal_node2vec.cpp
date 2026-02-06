@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "../src/proxies/TemporalGraph.cuh"
+#include "../src/proxies/NodeEdgeIndex.cuh"
 #include "../src/stores/temporal_node2vec_helpers.cuh"
 
 #ifdef HAS_CUDA
@@ -25,6 +26,12 @@ using GPU_USAGE_TYPES = ::testing::Types<
 template<typename T>
 class TemporalNode2VecHelpersTest : public ::testing::Test {
 protected:
+    struct HostNode2VecIndexView {
+        std::vector<size_t> group_offsets;
+        std::vector<size_t> sorted_indices;
+        std::vector<size_t> group_ranges;
+    };
+
     TemporalGraph graph{true, T::value, -1, true, -1, 2.0, 0.5};
 
     void SetUp() override {
@@ -43,7 +50,7 @@ protected:
         const int prev_node,
         const size_t edge_start,
         const size_t edge_end,
-        size_t* node_ts_sorted_indices,
+        const size_t* node_ts_sorted_indices,
         const double edge_selector_rand_num) {
         double beta_sum = 0.0;
         for (size_t i = edge_start; i < edge_end; ++i) {
@@ -64,6 +71,15 @@ protected:
         }
 
         return static_cast<long>(node_ts_sorted_indices[edge_end - 1]);
+    }
+
+    static HostNode2VecIndexView load_host_node2vec_index(const TemporalGraphStore* graph) {
+        const NodeEdgeIndex index(graph->node_edge_index);
+        return {
+            index.node_ts_group_outbound_offsets(),
+            index.node_ts_sorted_outbound_indices(),
+            index.count_ts_group_per_node_outbound()
+        };
     }
 };
 
@@ -98,13 +114,10 @@ TYPED_TEST(TemporalNode2VecHelpersTest, GroupWeightFromCumulativeHandlesSubrange
 
 TYPED_TEST(TemporalNode2VecHelpersTest, TemporalNode2VecGroupSelectionRespectsCombinedWeightAndBeta) {
     const auto* store = this->graph.get_graph();
+    const auto host_view = this->load_host_node2vec_index(store);
 
-    auto* groups_offsets = store->node_edge_index->node_ts_group_outbound_offsets;
-    auto* sorted_indices = store->node_edge_index->node_ts_sorted_outbound_indices;
-    auto* group_ranges = store->node_edge_index->count_ts_group_per_node_outbound;
-
-    const size_t range_start = group_ranges[0];
-    const size_t range_end = group_ranges[1];
+    const size_t range_start = host_view.group_ranges[0];
+    const size_t range_end = host_view.group_ranges[1];
     ASSERT_EQ(range_end - range_start, 2);
 
     std::vector<double> synthetic_cumulative_weights = {0.20, 1.00};
@@ -116,8 +129,8 @@ TYPED_TEST(TemporalNode2VecHelpersTest, TemporalNode2VecGroupSelectionRespectsCo
         range_start,
         range_end,
         range_end,
-        groups_offsets,
-        sorted_indices,
+        host_view.group_offsets.data(),
+        host_view.sorted_indices.data(),
         synthetic_cumulative_weights.data(),
         0.10);
 
@@ -128,8 +141,8 @@ TYPED_TEST(TemporalNode2VecHelpersTest, TemporalNode2VecGroupSelectionRespectsCo
         range_start,
         range_end,
         range_end,
-        groups_offsets,
-        sorted_indices,
+        host_view.group_offsets.data(),
+        host_view.sorted_indices.data(),
         synthetic_cumulative_weights.data(),
         0.90);
 
@@ -139,14 +152,11 @@ TYPED_TEST(TemporalNode2VecHelpersTest, TemporalNode2VecGroupSelectionRespectsCo
 
 TYPED_TEST(TemporalNode2VecHelpersTest, TemporalNode2VecEdgeSelectionMatchesBetaPrefixSampling) {
     const auto* store = this->graph.get_graph();
+    const auto host_view = this->load_host_node2vec_index(store);
 
-    auto* groups_offsets = store->node_edge_index->node_ts_group_outbound_offsets;
-    auto* sorted_indices = store->node_edge_index->node_ts_sorted_outbound_indices;
-    auto* group_ranges = store->node_edge_index->count_ts_group_per_node_outbound;
-
-    const size_t range_start = group_ranges[0];
-    const size_t edge_start = groups_offsets[range_start];
-    const size_t edge_end = groups_offsets[range_start + 1];
+    const size_t range_start = host_view.group_ranges[0];
+    const size_t edge_start = host_view.group_offsets[range_start];
+    const size_t edge_end = host_view.group_offsets[range_start + 1];
     ASSERT_GT(edge_end, edge_start);
 
     const long picked_low_rand = temporal_graph::pick_random_temporal_node2vec_edge_host<true, true>(
@@ -155,7 +165,7 @@ TYPED_TEST(TemporalNode2VecHelpersTest, TemporalNode2VecEdgeSelectionMatchesBeta
         1,
         edge_start,
         edge_end,
-        sorted_indices,
+        host_view.sorted_indices.data(),
         0.10);
 
     const long picked_high_rand = temporal_graph::pick_random_temporal_node2vec_edge_host<true, true>(
@@ -164,22 +174,19 @@ TYPED_TEST(TemporalNode2VecHelpersTest, TemporalNode2VecEdgeSelectionMatchesBeta
         1,
         edge_start,
         edge_end,
-        sorted_indices,
+        host_view.sorted_indices.data(),
         0.90);
 
-    EXPECT_EQ(picked_low_rand, this->expected_edge_pick(store, 0, 1, edge_start, edge_end, sorted_indices, 0.10));
-    EXPECT_EQ(picked_high_rand, this->expected_edge_pick(store, 0, 1, edge_start, edge_end, sorted_indices, 0.90));
+    EXPECT_EQ(picked_low_rand, this->expected_edge_pick(store, 0, 1, edge_start, edge_end, host_view.sorted_indices.data(), 0.10));
+    EXPECT_EQ(picked_high_rand, this->expected_edge_pick(store, 0, 1, edge_start, edge_end, host_view.sorted_indices.data(), 0.90));
 }
 
 TYPED_TEST(TemporalNode2VecHelpersTest, InvalidTemporalNode2VecInputsReturnSentinel) {
     const auto* store = this->graph.get_graph();
+    const auto host_view = this->load_host_node2vec_index(store);
 
-    auto* groups_offsets = store->node_edge_index->node_ts_group_outbound_offsets;
-    auto* sorted_indices = store->node_edge_index->node_ts_sorted_outbound_indices;
-    auto* group_ranges = store->node_edge_index->count_ts_group_per_node_outbound;
-
-    const size_t range_start = group_ranges[0];
-    const size_t range_end = group_ranges[1];
+    const size_t range_start = host_view.group_ranges[0];
+    const size_t range_end = host_view.group_ranges[1];
 
     std::vector<double> synthetic_cumulative_weights = {0.20, 1.00};
 
@@ -190,8 +197,8 @@ TYPED_TEST(TemporalNode2VecHelpersTest, InvalidTemporalNode2VecInputsReturnSenti
         range_start,
         range_end,
         range_end,
-        groups_offsets,
-        sorted_indices,
+        host_view.group_offsets.data(),
+        host_view.sorted_indices.data(),
         synthetic_cumulative_weights.data(),
         0.5)), -1);
 
@@ -199,18 +206,18 @@ TYPED_TEST(TemporalNode2VecHelpersTest, InvalidTemporalNode2VecInputsReturnSenti
         store,
         0,
         -1,
-        groups_offsets[range_start],
-        groups_offsets[range_start + 1],
-        sorted_indices,
+        host_view.group_offsets[range_start],
+        host_view.group_offsets[range_start + 1],
+        host_view.sorted_indices.data(),
         0.5)), -1);
 
     EXPECT_EQ((temporal_graph::pick_random_temporal_node2vec_edge_host<true, true>(
         store,
         0,
         1,
-        groups_offsets[range_start],
-        groups_offsets[range_start],
-        sorted_indices,
+        host_view.group_offsets[range_start],
+        host_view.group_offsets[range_start],
+        host_view.sorted_indices.data(),
         0.5)), -1);
 }
 
@@ -372,10 +379,10 @@ TYPED_TEST(TemporalNode2VecHelpersDeviceTest, DeviceGroupWeightFromCumulativeHan
 TYPED_TEST(TemporalNode2VecHelpersDeviceTest, DeviceTemporalNode2VecGroupSelectionRespectsCombinedWeightAndBeta) {
     const auto* host_store = this->graph.get_graph();
     auto* d_graph = temporal_graph::to_device_ptr(host_store);
+    const auto host_view = this->load_host_node2vec_index(host_store);
 
-    auto* group_ranges = host_store->node_edge_index->count_ts_group_per_node_outbound;
-    const size_t range_start = group_ranges[0];
-    const size_t range_end = group_ranges[1];
+    const size_t range_start = host_view.group_ranges[0];
+    const size_t range_end = host_view.group_ranges[1];
     ASSERT_EQ(range_end - range_start, 2);
 
     std::vector<double> synthetic_cumulative_weights = {0.20, 1.00};
@@ -427,14 +434,11 @@ TYPED_TEST(TemporalNode2VecHelpersDeviceTest, DeviceTemporalNode2VecGroupSelecti
 TYPED_TEST(TemporalNode2VecHelpersDeviceTest, DeviceTemporalNode2VecEdgeSelectionMatchesBetaPrefixSampling) {
     const auto* host_store = this->graph.get_graph();
     auto* d_graph = temporal_graph::to_device_ptr(host_store);
+    const auto host_view = this->load_host_node2vec_index(host_store);
 
-    auto* groups_offsets = host_store->node_edge_index->node_ts_group_outbound_offsets;
-    auto* sorted_indices = host_store->node_edge_index->node_ts_sorted_outbound_indices;
-    auto* group_ranges = host_store->node_edge_index->count_ts_group_per_node_outbound;
-
-    const size_t range_start = group_ranges[0];
-    const size_t edge_start = groups_offsets[range_start];
-    const size_t edge_end = groups_offsets[range_start + 1];
+    const size_t range_start = host_view.group_ranges[0];
+    const size_t edge_start = host_view.group_offsets[range_start];
+    const size_t edge_end = host_view.group_offsets[range_start + 1];
     ASSERT_GT(edge_end, edge_start);
 
     long* d_out_edge_idx;
@@ -466,8 +470,8 @@ TYPED_TEST(TemporalNode2VecHelpersDeviceTest, DeviceTemporalNode2VecEdgeSelectio
     long picked_high_rand = -1;
     ASSERT_EQ(cudaMemcpy(&picked_high_rand, d_out_edge_idx, sizeof(long), cudaMemcpyDeviceToHost), cudaSuccess);
 
-    EXPECT_EQ(picked_low_rand, this->expected_edge_pick(host_store, 0, 1, edge_start, edge_end, sorted_indices, 0.10));
-    EXPECT_EQ(picked_high_rand, this->expected_edge_pick(host_store, 0, 1, edge_start, edge_end, sorted_indices, 0.90));
+    EXPECT_EQ(picked_low_rand, this->expected_edge_pick(host_store, 0, 1, edge_start, edge_end, host_view.sorted_indices.data(), 0.10));
+    EXPECT_EQ(picked_high_rand, this->expected_edge_pick(host_store, 0, 1, edge_start, edge_end, host_view.sorted_indices.data(), 0.90));
 
     cudaFree(d_out_edge_idx);
     temporal_graph::free_device_pointers(d_graph);
@@ -476,10 +480,10 @@ TYPED_TEST(TemporalNode2VecHelpersDeviceTest, DeviceTemporalNode2VecEdgeSelectio
 TYPED_TEST(TemporalNode2VecHelpersDeviceTest, DeviceInvalidTemporalNode2VecInputsReturnSentinel) {
     const auto* host_store = this->graph.get_graph();
     auto* d_graph = temporal_graph::to_device_ptr(host_store);
+    const auto host_view = this->load_host_node2vec_index(host_store);
 
-    auto* group_ranges = host_store->node_edge_index->count_ts_group_per_node_outbound;
-    const size_t range_start = group_ranges[0];
-    const size_t range_end = group_ranges[1];
+    const size_t range_start = host_view.group_ranges[0];
+    const size_t range_end = host_view.group_ranges[1];
 
     std::vector<double> synthetic_cumulative_weights = {0.20, 1.00};
     double* d_weights;
@@ -511,8 +515,8 @@ TYPED_TEST(TemporalNode2VecHelpersDeviceTest, DeviceInvalidTemporalNode2VecInput
         d_graph,
         0,
         -1,
-        host_store->node_edge_index->node_ts_group_outbound_offsets[range_start],
-        host_store->node_edge_index->node_ts_group_outbound_offsets[range_start + 1],
+        host_view.group_offsets[range_start],
+        host_view.group_offsets[range_start + 1],
         0.5,
         d_out_edge_idx);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
@@ -525,8 +529,8 @@ TYPED_TEST(TemporalNode2VecHelpersDeviceTest, DeviceInvalidTemporalNode2VecInput
         d_graph,
         0,
         1,
-        host_store->node_edge_index->node_ts_group_outbound_offsets[range_start],
-        host_store->node_edge_index->node_ts_group_outbound_offsets[range_start],
+        host_view.group_offsets[range_start],
+        host_view.group_offsets[range_start],
         0.5,
         d_out_edge_idx);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
