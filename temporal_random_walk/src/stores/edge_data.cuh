@@ -20,6 +20,8 @@
 struct EdgeDataStore {
     bool use_gpu;
     bool owns_data;
+    bool enable_weight_computation = false;
+    bool enable_temporal_node2vec = false;
 
     int* sources = nullptr;
     size_t sources_size = 0;

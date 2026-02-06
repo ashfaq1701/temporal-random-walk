@@ -18,6 +18,7 @@ struct TemporalRandomWalkStore {
     bool owns_data = true;
     int64_t max_time_capacity;
     bool enable_weight_computation;
+    bool enable_temporal_node2vec = false;
     double timescale_bound;
     double node2vec_p;
     double node2vec_q;
@@ -37,12 +38,14 @@ struct TemporalRandomWalkStore {
         const double timescale_bound,
         const double node2vec_p = DEFAULT_NODE2VEC_P,
         const double node2vec_q = DEFAULT_NODE2VEC_Q,
+        const bool enable_temporal_node2vec = false,
         const int walk_padding_value=EMPTY_NODE_VALUE,
         const uint64_t global_seed=EMPTY_GLOBAL_SEED) {
         this->is_directed = is_directed;
         this->use_gpu = use_gpu;
         this->max_time_capacity = max_time_capacity;
-        this->enable_weight_computation = enable_weight_computation;
+        this->enable_temporal_node2vec = enable_temporal_node2vec;
+        this->enable_weight_computation = enable_weight_computation || enable_temporal_node2vec;
         this->timescale_bound = timescale_bound;
         this->node2vec_p = node2vec_p;
         this->node2vec_q = node2vec_q;
@@ -53,10 +56,11 @@ struct TemporalRandomWalkStore {
             is_directed,
             use_gpu,
             max_time_capacity,
-            enable_weight_computation,
+            this->enable_weight_computation,
             timescale_bound,
             node2vec_p,
-            node2vec_q);
+            node2vec_q,
+            this->enable_temporal_node2vec);
 
         #ifdef HAS_CUDA
         cuda_device_prop = new cudaDeviceProp();
@@ -66,7 +70,7 @@ struct TemporalRandomWalkStore {
 
     TemporalRandomWalkStore()
         : is_directed(false), use_gpu(false), max_time_capacity(-1),
-          enable_weight_computation(false), timescale_bound(-1),
+          enable_weight_computation(false), enable_temporal_node2vec(false), timescale_bound(-1),
           node2vec_p(DEFAULT_NODE2VEC_P),
           node2vec_q(DEFAULT_NODE2VEC_Q), walk_padding_value(EMPTY_NODE_VALUE),
           global_seed(EMPTY_GLOBAL_SEED),
