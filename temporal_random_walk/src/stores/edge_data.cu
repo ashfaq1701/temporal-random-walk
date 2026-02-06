@@ -429,10 +429,10 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
         return;
     }
 
-    size_t *d_degree = nullptr;
-    size_t *d_cursor = nullptr;
-    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_degree, n * sizeof(size_t)));
-    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_cursor, n * sizeof(size_t)));
+    unsigned int *d_degree = nullptr;
+    unsigned int *d_cursor = nullptr;
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_degree, n * sizeof(unsigned int)));
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_cursor, n * sizeof(unsigned int)));
 
     const auto d_degree_ptr = thrust::device_pointer_cast(d_degree);
     const auto d_offsets_ptr = thrust::device_pointer_cast(edge_data->node_adj_offsets);
@@ -441,7 +441,7 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
     const auto d_targets = thrust::device_pointer_cast(edge_data->targets);
     const auto d_neighbors = thrust::device_pointer_cast(edge_data->node_adj_neighbors);
 
-    thrust::fill(DEVICE_EXECUTION_POLICY, d_degree_ptr, d_degree_ptr + static_cast<long>(n), 0);
+    thrust::fill(DEVICE_EXECUTION_POLICY, d_degree_ptr, d_degree_ptr + static_cast<long>(n), 0u);
     CUDA_KERNEL_CHECK("After thrust fill degree in build_node_adjacency_csr_cuda");
 
     thrust::for_each(
@@ -451,8 +451,8 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
         [d_sources, d_targets, d_degree] __device__(const size_t i) {
             const int u = d_sources[static_cast<long>(i)];
             const int v = d_targets[static_cast<long>(i)];
-            atomicAdd(d_degree + u, static_cast<size_t>(1));
-            atomicAdd(d_degree + v, static_cast<size_t>(1));
+            atomicAdd(d_degree + u, 1u);
+            atomicAdd(d_degree + v, 1u);
         }
     );
     CUDA_KERNEL_CHECK("After thrust for_each degree counting in build_node_adjacency_csr_cuda");
@@ -461,7 +461,8 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
         DEVICE_EXECUTION_POLICY,
         d_degree_ptr,
         d_degree_ptr + static_cast<long>(n),
-        d_offsets_ptr
+        d_offsets_ptr,
+        static_cast<size_t>(0)
     );
     CUDA_KERNEL_CHECK("After thrust exclusive_scan offsets in build_node_adjacency_csr_cuda");
 
@@ -481,11 +482,11 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
             const int u = d_sources[static_cast<long>(i)];
             const int v = d_targets[static_cast<long>(i)];
 
-            const size_t u_pos = atomicAdd(d_cursor + u, static_cast<size_t>(1));
-            const size_t v_pos = atomicAdd(d_cursor + v, static_cast<size_t>(1));
+            const unsigned int u_pos = atomicAdd(d_cursor + u, 1u);
+            const unsigned int v_pos = atomicAdd(d_cursor + v, 1u);
 
-            d_neighbors[static_cast<long>(u_pos)] = v;
-            d_neighbors[static_cast<long>(v_pos)] = u;
+            d_neighbors[static_cast<long>(static_cast<size_t>(u_pos))] = v;
+            d_neighbors[static_cast<long>(static_cast<size_t>(v_pos))] = u;
         }
     );
     CUDA_KERNEL_CHECK("After thrust for_each neighbor fill in build_node_adjacency_csr_cuda");
