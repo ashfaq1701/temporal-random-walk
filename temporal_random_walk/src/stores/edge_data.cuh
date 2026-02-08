@@ -84,8 +84,6 @@ struct EdgeDataStore {
             active_node_ids = nullptr;
             node_adj_offsets = nullptr;
             node_adj_neighbors = nullptr;
-            node_adj_offsets = nullptr;
-            node_adj_neighbors = nullptr;
             timestamp_group_offsets = nullptr;
             unique_timestamps = nullptr;
             forward_cumulative_weights_exponential = nullptr;
