@@ -194,21 +194,12 @@ std::vector<Edge> EdgeData::get_edges() const {
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(host_edges, edges_block.data, edges_block.size * sizeof(Edge), cudaMemcpyDeviceToHost));
 
         result.assign(host_edges, host_edges + edges_block.size);
-        delete[] host_edges;
-
-        // Free device memory for DataBlock
-        if (edges_block.data) {
-            CUDA_CHECK_AND_CLEAR(cudaFree(edges_block.data));
-        }
     }
     else
     #endif
     {
         // For CPU data, can directly copy
         result.assign(edges_block.data, edges_block.data + edges_block.size);
-
-        // Free host memory for DataBlock
-        delete[] edges_block.data;
     }
 
     return result;

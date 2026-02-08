@@ -154,6 +154,50 @@ public:
         }
     }
 
+    std::vector<size_t> node_adj_offsets() const {
+        if (!edge_data->node_adj_offsets) {
+            return std::vector<size_t>();
+        }
+
+        #ifdef HAS_CUDA
+        if (edge_data->use_gpu) {
+            std::vector<size_t> result(edge_data->node_adj_offsets_size);
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), edge_data->node_adj_offsets,
+                      edge_data->node_adj_offsets_size * sizeof(size_t),
+                      cudaMemcpyDeviceToHost));
+            return result;
+        }
+        else
+        #endif
+        {
+            return std::vector<size_t>(edge_data->node_adj_offsets,
+                                     edge_data->node_adj_offsets +
+                                     edge_data->node_adj_offsets_size);
+        }
+    }
+
+    std::vector<int> node_adj_neighbors() const {
+        if (!edge_data->node_adj_neighbors) {
+            return std::vector<int>();
+        }
+
+        #ifdef HAS_CUDA
+        if (edge_data->use_gpu) {
+            std::vector<int> result(edge_data->node_adj_neighbors_size);
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), edge_data->node_adj_neighbors,
+                      edge_data->node_adj_neighbors_size * sizeof(int),
+                      cudaMemcpyDeviceToHost));
+            return result;
+        }
+        else
+        #endif
+        {
+            return std::vector<int>(edge_data->node_adj_neighbors,
+                                     edge_data->node_adj_neighbors +
+                                     edge_data->node_adj_neighbors_size);
+        }
+    }
+
     explicit EdgeData(bool use_gpu,
                       bool enable_weight_computation = false,
                       bool enable_temporal_node2vec = false);
