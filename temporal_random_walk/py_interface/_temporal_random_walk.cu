@@ -1,6 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
+#include <cstdlib>
 #include <optional>
 #include "../src/proxies/TemporalRandomWalk.cuh"
 #include "../src/proxies/RandomPicker.cuh"
@@ -160,19 +161,21 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     py::array::ShapeContainer{static_cast<ssize_t>(walk_set.num_walks), static_cast<ssize_t>(max_walk_len)},
                     py::array::StridesContainer{static_cast<ssize_t>(sizeof(int) * max_walk_len), static_cast<ssize_t>(sizeof(int))},
                     walk_set.nodes,
-                    py::capsule(walk_set.nodes, [](void* p) { delete[] static_cast<int*>(p); }));
+                    py::capsule(walk_set.nodes, [](void* p) { std::free(p); })
+                );
 
                 py::array_t timestamps_array(
                     py::array::ShapeContainer{static_cast<ssize_t>(walk_set.num_walks), static_cast<ssize_t>(max_walk_len)},
                     py::array::StridesContainer{static_cast<ssize_t>(sizeof(int64_t) * max_walk_len), static_cast<ssize_t>(sizeof(int64_t))},
                     walk_set.timestamps,
-                    py::capsule(walk_set.timestamps, [](void* p) { delete[] static_cast<int64_t*>(p); }));
+                    py::capsule(walk_set.timestamps, [](void* p) { std::free(p); })
+                );
 
                 py::array_t lens_array(
                     py::array::ShapeContainer{static_cast<ssize_t>(walk_set.num_walks)},
                     py::array::StridesContainer{static_cast<ssize_t>(sizeof(size_t))},
                     walk_set.walk_lens,
-                    py::capsule(walk_set.walk_lens, [](void* p) { delete[] static_cast<size_t*>(p); })
+                    py::capsule(walk_set.walk_lens, [](void* p) { std::free(p); })
                 );
 
                 walk_set.owns_data = false;
@@ -234,19 +237,21 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     py::array::ShapeContainer{static_cast<ssize_t>(walk_set.num_walks), static_cast<ssize_t>(max_walk_len)},
                     py::array::StridesContainer{static_cast<ssize_t>(sizeof(int) * max_walk_len), static_cast<ssize_t>(sizeof(int))},
                     walk_set.nodes,
-                    py::capsule(walk_set.nodes, [](void* p) { delete[] static_cast<int*>(p); }));
+                    py::capsule(walk_set.nodes, [](void* p) { std::free(p); })
+                );
 
                 py::array_t timestamps_array(
                     py::array::ShapeContainer{static_cast<ssize_t>(walk_set.num_walks), static_cast<ssize_t>(max_walk_len)},
                     py::array::StridesContainer{static_cast<ssize_t>(sizeof(int64_t) * max_walk_len), static_cast<ssize_t>(sizeof(int64_t))},
                     walk_set.timestamps,
-                    py::capsule(walk_set.timestamps, [](void* p) { delete[] static_cast<int64_t*>(p); }));
+                    py::capsule(walk_set.timestamps, [](void* p) { std::free(p); })
+                );
 
                 py::array_t lens_array(
                     py::array::ShapeContainer{static_cast<ssize_t>(walk_set.num_walks)},
                     py::array::StridesContainer{static_cast<ssize_t>(sizeof(size_t))},
                     walk_set.walk_lens,
-                    py::capsule(walk_set.walk_lens, [](void* p) { delete[] static_cast<size_t*>(p); })
+                    py::capsule(walk_set.walk_lens, [](void* p) { std::free(p); })
                 );
 
                 walk_set.owns_data = false;

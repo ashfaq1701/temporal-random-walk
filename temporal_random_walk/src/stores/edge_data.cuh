@@ -73,8 +73,6 @@ struct EdgeDataStore {
             clear_memory(&active_node_ids, use_gpu);
             clear_memory(&node_adj_offsets, use_gpu);
             clear_memory(&node_adj_neighbors, use_gpu);
-            clear_memory(&node_adj_offsets, use_gpu);
-            clear_memory(&node_adj_neighbors, use_gpu);
             clear_memory(&timestamp_group_offsets, use_gpu);
             clear_memory(&unique_timestamps, use_gpu);
             clear_memory(&forward_cumulative_weights_exponential, use_gpu);
