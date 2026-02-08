@@ -30,7 +30,7 @@ __global__ void get_node_edge_at_kernel(Edge* result, TemporalGraphStore* graph,
 
 __global__ void compute_node2vec_beta_kernel(
     double* result,
-    TemporalGraphStore* graph,
+    const TemporalGraphStore* graph,
     int prev_node,
     int w);
 
