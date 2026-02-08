@@ -94,21 +94,20 @@ namespace {
     // ------------------------------------------------------------
 
     TYPED_TEST(TemporalNode2VecTest, BetaRulesFollowNode2VecDefinition) {
-        const auto *s = this->store();
         const int prev = 5;
 
         EXPECT_DOUBLE_EQ(
-            temporal_graph::compute_node2vec_beta_host(s, prev, prev),
+            this->graph.compute_node2vec_beta(prev, prev),
             1.0 / 2.0
         );
 
         EXPECT_DOUBLE_EQ(
-            temporal_graph::compute_node2vec_beta_host(s, prev, 42),
+            this->graph.compute_node2vec_beta(prev, 42),
             1.0
         );
 
         EXPECT_DOUBLE_EQ(
-            temporal_graph::compute_node2vec_beta_host(s, prev, 7),
+            this->graph.compute_node2vec_beta(prev, 7),
             1.0 / 0.5
         );
     }

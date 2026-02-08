@@ -28,6 +28,17 @@ __global__ void get_node_edge_at_kernel(Edge* result, TemporalGraphStore* graph,
     }
 }
 
+__global__ void compute_node2vec_beta_kernel(
+    double* result,
+    TemporalGraphStore* graph,
+    const int prev_node,
+    const int w)
+{
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        *result = temporal_graph::compute_node2vec_beta_device(
+            graph, prev_node, w);
+    }
+}
 
 #endif
 
@@ -82,6 +93,8 @@ public:
     [[nodiscard]] size_t count_node_timestamps_less_than(int node_id, int64_t timestamp) const;
 
     [[nodiscard]] size_t count_node_timestamps_greater_than(int node_id, int64_t timestamp) const;
+
+    [[nodiscard]] double compute_node2vec_beta(int prev_node, int w) const;
 
     [[nodiscard]] Edge get_edge_at_with_provided_nums(RandomPickerType picker_type, const double * rand_nums, int64_t timestamp = -1, bool forward = true) const;
 

@@ -269,6 +269,39 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
     }
 }
 
+[[nodiscard]] double TemporalGraph::compute_node2vec_beta(
+    const int prev_node,
+    const int w) const {
+    const auto* graph = this->graph;   // TemporalGraphStore*
+    double result = 0.0;
+
+    #ifdef HAS_CUDA
+    if (graph->use_gpu) {
+        double* d_result = nullptr;
+        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(double)));
+
+        TemporalGraphStore* d_graph = temporal_graph::to_device_ptr(graph);
+
+        compute_node2vec_beta_kernel<<<1,1>>>(
+            d_result, d_graph, prev_node, w);
+        CUDA_KERNEL_CHECK("compute_node2vec_beta_kernel");
+
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+            &result, d_result, sizeof(double), cudaMemcpyDeviceToHost));
+
+        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
+        temporal_graph::free_device_pointers(d_graph);
+    }
+    else
+    #endif
+    {
+        result = temporal_graph::compute_node2vec_beta_host(
+            graph, prev_node, w);
+    }
+
+    return result;
+}
+
 [[nodiscard]] Edge TemporalGraph::get_edge_at_with_provided_nums(const RandomPickerType picker_type, const double * rand_nums, const int64_t timestamp, const bool forward) const {
     Edge result;
 
