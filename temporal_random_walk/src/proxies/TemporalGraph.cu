@@ -10,6 +10,19 @@ __global__ void get_total_edges_kernel(size_t* result, const TemporalGraphStore*
         *result = temporal_graph::get_total_edges(graph);
     }
 }
+
+__global__ void compute_node2vec_beta_kernel(
+    double* result,
+    TemporalGraphStore* graph,
+    const int prev_node,
+    const int w)
+{
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        *result = temporal_graph::compute_node2vec_beta_device(
+            graph, prev_node, w);
+    }
+}
+
 #endif
 
 TemporalGraph::TemporalGraph(

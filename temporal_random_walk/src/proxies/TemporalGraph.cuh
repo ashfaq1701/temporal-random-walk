@@ -31,14 +31,8 @@ __global__ void get_node_edge_at_kernel(Edge* result, TemporalGraphStore* graph,
 __global__ void compute_node2vec_beta_kernel(
     double* result,
     TemporalGraphStore* graph,
-    const int prev_node,
-    const int w)
-{
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = temporal_graph::compute_node2vec_beta_device(
-            graph, prev_node, w);
-    }
-}
+    int prev_node,
+    int w);
 
 #endif
 
