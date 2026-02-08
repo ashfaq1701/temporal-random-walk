@@ -198,7 +198,7 @@ HOST void edge_data::populate_active_nodes_std(EdgeDataStore *edge_data) {
     }
 }
 
-HOST void edge_data::build_node_adjacency_csr_std(EdgeDataStore* edge_data) {
+HOST void edge_data::build_node_adjacency_csr_std(EdgeDataStore *edge_data) {
     const size_t n = active_node_count(edge_data);
     const size_t m = size(edge_data);
 
@@ -215,14 +215,17 @@ HOST void edge_data::build_node_adjacency_csr_std(EdgeDataStore* edge_data) {
                   edge_data->use_gpu);
     edge_data->node_adj_neighbors_size = 2 * m;
 
-    // ---------------------------------------------------------------------
-    // Empty graph
-    // ---------------------------------------------------------------------
+    // Handle empty graph
     if (n == 0 || m == 0) {
-        #pragma omp parallel for
-        for (size_t i = 0; i < n + 1; ++i) {
-            edge_data->node_adj_offsets[i] = 0;
-        }
+        // Parallel fill offsets with 0
+        tbb::parallel_for(
+            tbb::blocked_range<size_t>(0, n + 1),
+            [&](const tbb::blocked_range<size_t>& r) {
+                for (size_t i = r.begin(); i != r.end(); ++i) {
+                    edge_data->node_adj_offsets[i] = 0;
+                }
+            }
+        );
         edge_data->node_adj_neighbors_size = 0;
         return;
     }
@@ -231,28 +234,36 @@ HOST void edge_data::build_node_adjacency_csr_std(EdgeDataStore* edge_data) {
     const int* targets = edge_data->targets;
 
     // ---------------------------------------------------------------------
-    // 1) Degree counting
+    // 1) Degree counting (parallel): degree[u]++, degree[v]++
     // ---------------------------------------------------------------------
     std::vector<std::atomic<size_t>> degree(n);
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, n),
+        [&](const tbb::blocked_range<size_t>& r) {
+            for (size_t i = r.begin(); i != r.end(); ++i) {
+                degree[i].store(0, std::memory_order_relaxed);
+            }
+        }
+    );
 
-    #pragma omp parallel for
-    for (size_t i = 0; i < n; ++i) {
-        degree[i].store(0, std::memory_order_relaxed);
-    }
-
-    #pragma omp parallel for
-    for (size_t i = 0; i < m; ++i) {
-        const int u = sources[i];
-        const int v = targets[i];
-
-        degree[static_cast<size_t>(u)].fetch_add(1, std::memory_order_relaxed);
-        degree[static_cast<size_t>(v)].fetch_add(1, std::memory_order_relaxed);
-    }
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, m),
+        [&](const tbb::blocked_range<size_t>& r) {
+            for (size_t i = r.begin(); i != r.end(); ++i) {
+                const int u = sources[i];
+                const int v = targets[i];
+                // Assumes u and v are valid dense node IDs in [0, n).
+                degree[static_cast<size_t>(u)].fetch_add(1, std::memory_order_relaxed);
+                degree[static_cast<size_t>(v)].fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    );
 
     // ---------------------------------------------------------------------
-    // 2) Offsets via TBB parallel_scan
+    // 2) Offsets via parallel prefix sum (TBB parallel_scan)
+    //    offsets[0] = 0, offsets[i+1] = offsets[i] + degree[i]
     // ---------------------------------------------------------------------
-    edge_data->node_adj_offsets[0] = 0;
+    edge_data->node_adj_offsets[0] = 0; // O(1) scalar assignment
 
     tbb::parallel_scan(
         tbb::blocked_range<size_t>(0, n),
@@ -271,46 +282,57 @@ HOST void edge_data::build_node_adjacency_csr_std(EdgeDataStore* edge_data) {
     );
 
     // ---------------------------------------------------------------------
-    // 3) Cursor init
+    // 3) Cursor init from offsets (parallel)
     // ---------------------------------------------------------------------
     std::vector<std::atomic<size_t>> cursor(n);
 
-    #pragma omp parallel for
-    for (size_t i = 0; i < n; ++i) {
-        cursor[i].store(edge_data->node_adj_offsets[i], std::memory_order_relaxed);
-    }
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, n),
+        [&](const tbb::blocked_range<size_t>& r) {
+            for (size_t i = r.begin(); i != r.end(); ++i) {
+                cursor[i].store(edge_data->node_adj_offsets[i], std::memory_order_relaxed);
+            }
+        }
+    );
 
     // ---------------------------------------------------------------------
-    // 4) Fill neighbors
+    // 4) Fill neighbors using cursor atomics (parallel)
     // ---------------------------------------------------------------------
     int* neighbors = edge_data->node_adj_neighbors;
 
-    #pragma omp parallel for
-    for (size_t i = 0; i < m; ++i) {
-        const int u = sources[i];
-        const int v = targets[i];
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, m),
+        [&](const tbb::blocked_range<size_t>& r) {
+            for (size_t i = r.begin(); i != r.end(); ++i) {
+                const int u = sources[i];
+                const int v = targets[i];
 
-        const size_t u_pos =
-            cursor[static_cast<size_t>(u)].fetch_add(1, std::memory_order_relaxed);
-        const size_t v_pos =
-            cursor[static_cast<size_t>(v)].fetch_add(1, std::memory_order_relaxed);
+                const size_t u_pos =
+                    cursor[static_cast<size_t>(u)].fetch_add(1, std::memory_order_relaxed);
+                const size_t v_pos =
+                    cursor[static_cast<size_t>(v)].fetch_add(1, std::memory_order_relaxed);
 
-        neighbors[u_pos] = v;
-        neighbors[v_pos] = u;
-    }
-
-    // ---------------------------------------------------------------------
-    // 5) Sort adjacency lists (OpenMP outer, TBB inner)
-    // ---------------------------------------------------------------------
-    #pragma omp parallel for schedule(dynamic)
-    for (size_t node = 0; node < n; ++node) {
-        const size_t start = edge_data->node_adj_offsets[node];
-        const size_t end   = edge_data->node_adj_offsets[node + 1];
-
-        if (end > start + 1) {
-            tbb::parallel_sort(neighbors + start, neighbors + end);
+                neighbors[u_pos] = v;
+                neighbors[v_pos] = u;
+            }
         }
-    }
+    );
+
+    // ---------------------------------------------------------------------
+    // 5) Sort adjacency list per node (parallel over nodes + tbb::parallel_sort)
+    // ---------------------------------------------------------------------
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, n),
+        [&](const tbb::blocked_range<size_t>& r) {
+            for (size_t node = r.begin(); node != r.end(); ++node) {
+                const size_t start = edge_data->node_adj_offsets[node];
+                const size_t end   = edge_data->node_adj_offsets[node + 1];
+                if (end > start + 1) {
+                    tbb::parallel_sort(neighbors + start, neighbors + end);
+                }
+            }
+        }
+    );
 }
 
 HOST void edge_data::update_timestamp_groups_std(EdgeDataStore* edge_data) {
