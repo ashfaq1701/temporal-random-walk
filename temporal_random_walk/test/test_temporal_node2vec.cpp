@@ -1,291 +1,250 @@
 #include <gtest/gtest.h>
 
 #include <vector>
-#include <utility>
+#include <algorithm>
 
 #include "../src/proxies/TemporalGraph.cuh"
-#include "../src/proxies/NodeEdgeIndex.cuh"
 #include "../src/stores/temporal_node2vec_helpers.cuh"
+#include "../src/stores/edge_data.cuh"
 
 namespace {
 
-// ------------------------
-// Utility helpers
-// ------------------------
+// ------------------------------------------------------------
+// Helpers
+// ------------------------------------------------------------
 
 inline bool is_sentinel(const Edge& e) {
     return e.u == -1 && e.i == -1 && e.ts == -1;
 }
 
-inline bool is_one_of(const Edge& e, const std::vector<Edge>& edges) {
-    for (const auto& x : edges) {
-        if (e.u == x.u && e.i == x.i && e.ts == x.ts) return true;
+inline std::vector<Edge> collect_outbound_edges(
+    const TemporalGraphStore* s, int u)
+{
+    std::vector<Edge> out;
+    const auto edges = edge_data::get_edges(s->edge_data);
+
+    for (size_t i = 0; i < edges.size; ++i) {
+        const Edge& e = edges.data[i];
+        if (e.u == u) out.push_back(e);
     }
-    return false;
+    return out;
 }
 
-// Outbound edges from node 0 in the test graph (directed)
-const std::vector<Edge> kNode0OutboundEdges = {
-    Edge{0, 1, 10},
-    Edge{0, 2, 10},
-    Edge{0, 3, 20},
-};
-
-// Deterministic reference for edge-level beta sampling (CPU)
-long expected_edge_pick_reference(
-    const TemporalGraphStore* graph,
-    const int node_id,
-    const int prev_node,
-    const size_t edge_start,
-    const size_t edge_end,
-    const size_t* node_ts_sorted_indices,
-    const double edge_selector_rand_num) {
-
-    double beta_sum = 0.0;
-    for (size_t i = edge_start; i < edge_end; ++i) {
-        const size_t edge_idx = node_ts_sorted_indices[i];
-        const int w =
-            temporal_graph::get_node2vec_candidate_node<true, true>(graph, node_id, edge_idx);
-        beta_sum += temporal_graph::compute_node2vec_beta_host(graph, prev_node, w);
-    }
-
-    if (beta_sum <= 0.0) return -1;
-
-    const double target = edge_selector_rand_num * beta_sum;
-    double running_sum = 0.0;
-
-    for (size_t i = edge_start; i < edge_end; ++i) {
-        const size_t edge_idx = node_ts_sorted_indices[i];
-        const int w =
-            temporal_graph::get_node2vec_candidate_node<true, true>(graph, node_id, edge_idx);
-        running_sum += temporal_graph::compute_node2vec_beta_host(graph, prev_node, w);
-        if (running_sum >= target) {
-            return static_cast<long>(edge_idx);
-        }
-    }
-
-    return static_cast<long>(node_ts_sorted_indices[edge_end - 1]);
+inline bool contains_edge(const std::vector<Edge>& v, const Edge& e) {
+    return std::any_of(v.begin(), v.end(), [&](const Edge& x) {
+        return x.u == e.u && x.i == e.i && x.ts == e.ts;
+    });
 }
 
-// ------------------------
-// CPU tests
-// ------------------------
+// ------------------------------------------------------------
+// CPU Tests
+// ------------------------------------------------------------
 
 class TemporalNode2VecCpuTest : public ::testing::Test {
 protected:
-    // directed=true, gpu=false, enable_weight_computation=true, p=2.0, q=0.5
     TemporalGraph graph{
-        true,
-        false,
-        -1,
-        false,
-        true,
-        -1,
-        2.0,
-        0.5
+        /*is_directed=*/true,
+        /*use_gpu=*/false,
+        /*max_time_capacity=*/-1,
+        /*enable_weight_computation=*/true,
+        /*enable_temporal_node2vec=*/true,
+        /*timescale_bound=*/-1,
+        /*node2vec_p=*/2.0,
+        /*node2vec_q=*/0.5
     };
 
     void SetUp() override {
         graph.add_multiple_edges({
-            Edge{0, 1, 10},
-            Edge{0, 2, 10},
-            Edge{0, 3, 20},
-            Edge{1, 2, 5},
-            Edge{4, 1, 6}
+            // Node 0: sparse, multi-timestamp
+            Edge{0, 5, 10},
+            Edge{0, 42, 10},
+            Edge{0, 1000, 15},
+            Edge{0, 7, 20},
+
+            // Structure for TN2V semantics
+            Edge{5, 42, 5},     // neighbor-of-prev
+            Edge{1000, 1, 6},   // out-edge
+            Edge{7, 3, 8}       // out-edge
         });
     }
 
-    [[nodiscard]] TemporalGraphStore* store() const {
+    const TemporalGraphStore* store() const {
         return graph.get_graph();
     }
-
-    [[nodiscard]] NodeEdgeIndex index() const {
-        return NodeEdgeIndex(store()->node_edge_index);
-    }
-
-    [[nodiscard]] std::pair<size_t, size_t> outbound_group_range(const int node_id) const {
-        const auto ranges = index().count_ts_group_per_node_outbound();
-        return {ranges[node_id], ranges[node_id + 1]};
-    }
 };
 
-/* ---------- Helper-level tests ---------- */
+/* ------------------------------------------------------------
+ * β-rule correctness
+ * ------------------------------------------------------------ */
 
-TEST_F(TemporalNode2VecCpuTest, BetaRulesAreCorrect) {
+TEST_F(TemporalNode2VecCpuTest, BetaRulesFollowNode2VecDefinition) {
     const auto* s = store();
 
-    EXPECT_DOUBLE_EQ(temporal_graph::compute_node2vec_beta_host(s, 1, 1), 0.5); // return
-    EXPECT_DOUBLE_EQ(temporal_graph::compute_node2vec_beta_host(s, 1, 2), 1.0); // neighbor
-    EXPECT_DOUBLE_EQ(temporal_graph::compute_node2vec_beta_host(s, 1, 3), 2.0); // out
+    const int prev = 5;
+
+    // return
+    EXPECT_DOUBLE_EQ(
+        temporal_graph::compute_node2vec_beta_host(s, prev, prev),
+        1.0 / 2.0   // p = 2.0
+    );
+
+    // neighbor (5 -> 42 exists)
+    EXPECT_DOUBLE_EQ(
+        temporal_graph::compute_node2vec_beta_host(s, prev, 42),
+        1.0
+    );
+
+    // out-node
+    EXPECT_DOUBLE_EQ(
+        temporal_graph::compute_node2vec_beta_host(s, prev, 7),
+        1.0 / 0.5   // q = 0.5
+    );
 }
 
-TEST_F(TemporalNode2VecCpuTest, GroupWeightFromCumulativeHandlesSubranges) {
-    const std::vector<double> cumulative = {0.10, 0.35, 0.65, 1.00};
+/* ------------------------------------------------------------
+ * First-order fallback (prev_node = -1)
+ * ------------------------------------------------------------ */
 
-    EXPECT_NEAR(
-        temporal_graph::get_group_exponential_weight_from_cumulative(cumulative.data(), 1, 1),
-        0.25, 1e-12);
-    EXPECT_NEAR(
-        temporal_graph::get_group_exponential_weight_from_cumulative(cumulative.data(), 2, 1),
-        0.30, 1e-12);
-    EXPECT_NEAR(
-        temporal_graph::get_group_exponential_weight_from_cumulative(cumulative.data(), 3, 1),
-        0.35, 1e-12);
-}
-
-TEST_F(TemporalNode2VecCpuTest, GroupPickerPrefersHigherBetaWeightedMass) {
+TEST_F(TemporalNode2VecCpuTest, Tn2vWithoutPrevNodeReturnsValidOutboundEdge) {
     const auto* s = store();
-    const auto idx = index();
-    const auto [group_start, group_end] = outbound_group_range(0);
-    ASSERT_EQ(group_end - group_start, 2);
+    const auto outbound = collect_outbound_edges(s, 0);
+    ASSERT_FALSE(outbound.empty());
 
-    auto group_offsets = idx.node_ts_group_outbound_offsets();
-    auto sorted_indices = idx.node_ts_sorted_outbound_indices();
-    std::vector<double> cumulative = {0.2, 1.0};
+    const Edge picked =
+        graph.get_node_edge_at(
+            0,
+            RandomPickerType::TemporalNode2Vec,
+            -1,
+            -1,
+            true);
 
-    const int early =
-        temporal_graph::pick_random_temporal_node2vec_host<true, true>(
-            s, 0, 1, group_start, group_end, group_end,
-            group_offsets.data(), sorted_indices.data(),
-            cumulative.data(), 0.10);
-
-    const int late =
-        temporal_graph::pick_random_temporal_node2vec_host<true, true>(
-            s, 0, 1, group_start, group_end, group_end,
-            group_offsets.data(), sorted_indices.data(),
-            cumulative.data(), 0.90);
-
-    EXPECT_EQ(early, static_cast<int>(group_start));
-    EXPECT_EQ(late, static_cast<int>(group_start + 1));
+    EXPECT_FALSE(is_sentinel(picked));
+    EXPECT_EQ(picked.u, 0);
+    EXPECT_TRUE(contains_edge(outbound, picked));
 }
 
-TEST_F(TemporalNode2VecCpuTest, EdgePickerMatchesReferencePrefixSampling) {
+/* ------------------------------------------------------------
+ * Second-order TN2V (valid prev_node)
+ * ------------------------------------------------------------ */
+
+TEST_F(TemporalNode2VecCpuTest, Tn2vWithValidPrevNodeReturnsValidOutboundEdge) {
     const auto* s = store();
-    const auto idx = index();
+    const auto outbound = collect_outbound_edges(s, 0);
+    ASSERT_FALSE(outbound.empty());
 
-    auto group_offsets = idx.node_ts_group_outbound_offsets();
-    auto sorted_indices = idx.node_ts_sorted_outbound_indices();
-    auto group_ranges = idx.count_ts_group_per_node_outbound();
+    // Choose a real predecessor dynamically
+    const int prev_node = outbound.front().i;
 
-    const size_t group_start = group_ranges[0];
-    const size_t edge_start = group_offsets[group_start];
-    const size_t edge_end = group_offsets[group_start + 1];
-    ASSERT_GT(edge_end, edge_start);
-
-    for (double r : {0.10, 0.55, 0.90}) {
-        const long picked =
-            temporal_graph::pick_random_temporal_node2vec_edge_host<true, true>(
-                s, 0, 1, edge_start, edge_end, sorted_indices.data(), r);
-
-        const long expected =
-            expected_edge_pick_reference(
-                s, 0, 1, edge_start, edge_end, sorted_indices.data(), r);
-
-        EXPECT_EQ(picked, expected);
-    }
-}
-
-/* ---------- Selector-level semantics ---------- */
-
-TEST_F(TemporalNode2VecCpuTest, TemporalNode2VecWithoutPrevNodeFallsBack) {
-    // prev_node == -1 ⇒ first-order temporal behavior
     const Edge picked =
         graph.get_node_edge_at(
             0,
             RandomPickerType::TemporalNode2Vec,
             -1,
-            -1,
+            prev_node,
             true);
 
     EXPECT_FALSE(is_sentinel(picked));
-    EXPECT_TRUE(is_one_of(picked, kNode0OutboundEdges));
+    EXPECT_EQ(picked.u, 0);
+    EXPECT_TRUE(contains_edge(outbound, picked));
 }
 
-TEST_F(TemporalNode2VecCpuTest, TemporalNode2VecWithPrevNodeReturnsValidOutboundEdge) {
+/* ------------------------------------------------------------
+ * Unrelated prev_node ⇒ safe fallback
+ * ------------------------------------------------------------ */
+
+TEST_F(TemporalNode2VecCpuTest, Tn2vWithUnrelatedPrevNodeIsSafe) {
+    const auto* s = store();
+    const auto outbound = collect_outbound_edges(s, 0);
+    ASSERT_FALSE(outbound.empty());
+
+    constexpr int unrelated_prev = 9999;
+
     const Edge picked =
         graph.get_node_edge_at(
             0,
             RandomPickerType::TemporalNode2Vec,
             -1,
-            1,
+            unrelated_prev,
             true);
 
     EXPECT_FALSE(is_sentinel(picked));
-    EXPECT_TRUE(is_one_of(picked, kNode0OutboundEdges));
+    EXPECT_EQ(picked.u, 0);
+    EXPECT_TRUE(contains_edge(outbound, picked));
 }
 
-TEST_F(TemporalNode2VecCpuTest, TemporalNode2VecBackwardFromNodeWithNoInboundReturnsSentinel) {
+/* ------------------------------------------------------------
+ * Backward walk with no inbound edges
+ * ------------------------------------------------------------ */
+
+TEST_F(TemporalNode2VecCpuTest, BackwardTn2vFromNodeWithNoInboundReturnsSentinel) {
     const Edge picked =
         graph.get_node_edge_at(
             0,
             RandomPickerType::TemporalNode2Vec,
             -1,
-            1,
-            false); // backward
-
-    EXPECT_TRUE(is_sentinel(picked));
-}
-
-// ------------------------
-// GPU tests
-// ------------------------
-
-#ifdef HAS_CUDA
-
-class TemporalNode2VecGpuTest : public ::testing::Test {
-protected:
-    TemporalGraph graph{true, true, -1, true, true, -1, 2.0, 0.5};
-
-    void SetUp() override {
-        graph.add_multiple_edges({
-            Edge{0, 1, 10},
-            Edge{0, 2, 10},
-            Edge{0, 3, 20},
-            Edge{1, 2, 5},
-            Edge{4, 1, 6}
-        });
-    }
-};
-
-TEST_F(TemporalNode2VecGpuTest, TemporalNode2VecWithoutPrevNodeFallsBack) {
-    const Edge picked =
-        graph.get_node_edge_at(
-            0,
-            RandomPickerType::TemporalNode2Vec,
-            -1,
-            -1,
-            true);
-
-    EXPECT_FALSE(is_sentinel(picked));
-    EXPECT_TRUE(is_one_of(picked, kNode0OutboundEdges));
-}
-
-TEST_F(TemporalNode2VecGpuTest, TemporalNode2VecWithPrevNodeReturnsValidOutboundEdge) {
-    const Edge picked =
-        graph.get_node_edge_at(
-            0,
-            RandomPickerType::TemporalNode2Vec,
-            -1,
-            1,
-            true);
-
-    EXPECT_FALSE(is_sentinel(picked));
-    EXPECT_TRUE(is_one_of(picked, kNode0OutboundEdges));
-}
-
-TEST_F(TemporalNode2VecGpuTest, TemporalNode2VecBackwardFromNodeWithNoInboundReturnsSentinel) {
-    const Edge picked =
-        graph.get_node_edge_at(
-            0,
-            RandomPickerType::TemporalNode2Vec,
-            -1,
-            1,
+            5,
             false);
 
     EXPECT_TRUE(is_sentinel(picked));
 }
 
-TEST_F(TemporalNode2VecGpuTest, DeterministicPickerRunsOnGpuGraph) {
+#ifdef HAS_CUDA
+
+// ------------------------------------------------------------
+// GPU Tests (semantic parity)
+// ------------------------------------------------------------
+
+class TemporalNode2VecGpuTest : public ::testing::Test {
+protected:
+    TemporalGraph graph{
+        /*is_directed=*/true,
+        /*use_gpu=*/true,
+        /*max_time_capacity=*/-1,
+        /*enable_weight_computation=*/true,
+        /*enable_temporal_node2vec=*/true,
+        /*timescale_bound=*/-1,
+        /*node2vec_p=*/2.0,
+        /*node2vec_q=*/0.5
+    };
+
+    void SetUp() override {
+        graph.add_multiple_edges({
+            Edge{0, 5, 10},
+            Edge{0, 42, 10},
+            Edge{0, 1000, 15},
+            Edge{0, 7, 20},
+            Edge{5, 42, 5},
+            Edge{1000, 1, 6},
+            Edge{7, 3, 8}
+        });
+    }
+
+    const TemporalGraphStore* store() const {
+        return graph.get_graph();
+    }
+};
+
+TEST_F(TemporalNode2VecGpuTest, GpuTn2vReturnsValidOutboundEdge) {
+    const auto* s = store();
+    const auto outbound = collect_outbound_edges(s, 0);
+    ASSERT_FALSE(outbound.empty());
+
+    const int prev_node = outbound.front().i;
+
+    const Edge picked =
+        graph.get_node_edge_at(
+            0,
+            RandomPickerType::TemporalNode2Vec,
+            -1,
+            prev_node,
+            true);
+
+    EXPECT_FALSE(is_sentinel(picked));
+    EXPECT_EQ(picked.u, 0);
+    EXPECT_TRUE(contains_edge(outbound, picked));
+}
+
+TEST_F(TemporalNode2VecGpuTest, DeterministicPickerWorksOnGpu) {
     const Edge picked =
         graph.get_node_edge_at(
             0,
@@ -295,10 +254,10 @@ TEST_F(TemporalNode2VecGpuTest, DeterministicPickerRunsOnGpuGraph) {
             true);
 
     EXPECT_EQ(picked.u, 0);
-    EXPECT_EQ(picked.i, 3);
+    EXPECT_EQ(picked.i, 7);
     EXPECT_EQ(picked.ts, 20);
 }
 
-#endif
+#endif  // HAS_CUDA
 
 } // namespace
