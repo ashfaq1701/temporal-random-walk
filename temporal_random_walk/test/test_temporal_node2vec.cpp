@@ -68,8 +68,12 @@ protected:
         });
     }
 
-    const TemporalGraphStore* store() const {
+    [[nodiscard]] const TemporalGraphStore* store() const {
         return graph.get_graph();
+    }
+
+    [[nodiscard]] const EdgeDataStore* edge_store() const {
+        return store()->edge_data;
     }
 };
 
@@ -187,6 +191,71 @@ TEST_F(TemporalNode2VecCpuTest, BackwardTn2vFromNodeWithNoInboundReturnsSentinel
 
     EXPECT_TRUE(is_sentinel(picked));
 }
+
+TEST_F(TemporalNode2VecCpuTest, NodeAdjacencyCSRIsValid) {
+    const EdgeDataStore* ed = edge_store();
+    ASSERT_NE(ed, nullptr);
+
+    ASSERT_NE(ed->node_adj_offsets, nullptr);
+    ASSERT_NE(ed->node_adj_neighbors, nullptr);
+
+    const size_t n = ed->active_node_ids_size;  // CSR node-id domain
+    const size_t m = ed->timestamps_size;       // #edges
+
+    ASSERT_EQ(ed->node_adj_offsets_size, n + 1);
+    ASSERT_EQ(ed->node_adj_offsets[0], 0u);
+    ASSERT_EQ(ed->node_adj_offsets[n], 2 * m);
+
+    // Offsets monotone
+    for (size_t i = 0; i < n; ++i) {
+        ASSERT_LE(ed->node_adj_offsets[i], ed->node_adj_offsets[i + 1]);
+    }
+
+    // Neighbor IDs valid
+    const size_t nnz = ed->node_adj_offsets[n];
+    ASSERT_EQ(nnz, 2 * m);
+    for (size_t i = 0; i < nnz; ++i) {
+        const int v = ed->node_adj_neighbors[i];
+        ASSERT_GE(v, 0);
+        ASSERT_LT(static_cast<size_t>(v), n);
+    }
+
+    // Helper: does u's adjacency contain v?
+    auto has_neighbor = [&](const int u, const int v) -> bool {
+        if (u < 0) return false;
+        if (static_cast<size_t>(u) >= n) return false;
+
+        const size_t start = ed->node_adj_offsets[static_cast<size_t>(u)];
+        const size_t end   = ed->node_adj_offsets[static_cast<size_t>(u) + 1];
+
+        return std::find(ed->node_adj_neighbors + start,
+                         ed->node_adj_neighbors + end,
+                         v) != ed->node_adj_neighbors + end;
+    };
+
+    // Check symmetry for edges we inserted (undirected adjacency construction)
+    EXPECT_TRUE(has_neighbor(0, 5));
+    EXPECT_TRUE(has_neighbor(5, 0));
+
+    EXPECT_TRUE(has_neighbor(0, 42));
+    EXPECT_TRUE(has_neighbor(42, 0));
+
+    EXPECT_TRUE(has_neighbor(0, 1000));
+    EXPECT_TRUE(has_neighbor(1000, 0));
+
+    EXPECT_TRUE(has_neighbor(0, 7));
+    EXPECT_TRUE(has_neighbor(7, 0));
+
+    EXPECT_TRUE(has_neighbor(5, 42));
+    EXPECT_TRUE(has_neighbor(42, 5));
+
+    EXPECT_TRUE(has_neighbor(1000, 1));
+    EXPECT_TRUE(has_neighbor(1, 1000));
+
+    EXPECT_TRUE(has_neighbor(7, 3));
+    EXPECT_TRUE(has_neighbor(3, 7));
+}
+
 
 #ifdef HAS_CUDA
 
