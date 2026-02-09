@@ -13,7 +13,7 @@ __global__ void get_total_edges_kernel(size_t* result, const TemporalGraphStore*
 
 __global__ void compute_node2vec_beta_kernel(
     double* result,
-    TemporalGraphStore* graph,
+    const TemporalGraphStore* graph,
     const int prev_node,
     const int w)
 {
