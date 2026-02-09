@@ -4,7 +4,7 @@ echo "Starting build process..."
 # Directory to store repaired wheels
 mkdir -p /project/wheelhouse
 # Python versions to build for
-PYTHON_VERSIONS=("python3.8" "python3.9" "3.10" "python3.11")
+PYTHON_VERSIONS=("python3.8" "python3.9" "python3.10" "python3.11")
 # Set vcpkg environment variables
 export VCPKG_ROOT=/opt/vcpkg
 export PATH=$VCPKG_ROOT:$PATH
