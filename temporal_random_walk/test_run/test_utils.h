@@ -5,6 +5,9 @@
 #include <filesystem>
 #include <regex>
 #include <algorithm>
+#include <fstream>
+
+#include "../src/data/walk_set/walk_set.cuh"
 
 inline void print_temporal_random_walks_with_times(
     const WalkSet& walk_set,
@@ -57,7 +60,7 @@ convert_edge_tuples_to_components(const std::vector<std::tuple<int, int, int64_t
     return std::make_tuple(sources, targets, timestamps);
 }
 
-std::vector<std::string> get_sorted_data_files(const std::string& base_path) {
+inline std::vector<std::string> get_sorted_data_files(const std::string& base_path) {
     std::vector<std::string> file_paths;
     std::regex pattern("processed_data_(\\d+)\\.csv");
 
@@ -90,6 +93,43 @@ std::vector<std::string> get_sorted_data_files(const std::string& base_path) {
     }
 
     return file_paths;
+}
+
+inline void dump_walks_to_file(const WalkSet& walk_set,
+                               const int max_walk_len,
+                               const std::string& output_file_path)
+{
+    if (output_file_path.empty()) {
+        return;
+    }
+
+    std::ofstream out(output_file_path);
+    if (!out.is_open()) {
+        std::cerr << "Failed to open walk dump file: "
+                  << output_file_path << std::endl;
+        return;
+    }
+
+    for (size_t i = 0; i < walk_set.num_walks; ++i) {
+        const size_t walk_len = walk_set.walk_lens[i];
+
+        for (size_t j = 0; j < walk_len; ++j) {
+            const int node = walk_set.nodes[i * max_walk_len + j];
+            const int64_t ts = walk_set.timestamps[i * max_walk_len + j];
+
+            out << node << "|" << ts;
+
+            if (j + 1 < walk_len) {
+                out << " ";
+            }
+        }
+
+        out << "\n";
+    }
+
+    out.close();
+
+    std::cout << "Walks dumped to: " << output_file_path << std::endl;
 }
 
 #endif //TEST_RUN_UTILS_H
