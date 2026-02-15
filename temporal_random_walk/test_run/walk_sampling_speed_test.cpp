@@ -79,41 +79,42 @@ int main(int argc, char* argv[])
         std::cerr << "Usage:\n"
                   << argv[0]
                   << " <edge_file_path>"
+                  << " [walk_dump_file]"
                   << " [is_directed (0|1, default=0)]"
                   << " [num_total_walks]"
                   << " [num_walks_per_node]"
                   << " [max_walk_length]"
                   << " [edge_picker]"
-                  << " [start_picker]"
-                  << " [walk_dump_file]\n";
+                  << " [start_picker]\n";
         return 1;
     }
 
     const std::string file_path = argv[1];
 
-    // Optional is_directed (default = false)
+    // NEW: walk_dump_file is now immediately after edge_file_path
+    const std::string walk_dump_file =
+        (argc > 2) ? argv[2] : "";
+
+    // Shifted argument positions by +1
     const bool is_directed =
-        (argc > 2)
-            ? (std::stoi(argv[2]) != 0)
+        (argc > 3)
+            ? (std::stoi(argv[3]) != 0)
             : DEFAULT_IS_DIRECTED;
 
     const int num_total_walks =
-        (argc > 3) ? std::stoi(argv[3]) : DEFAULT_NUM_TOTAL_WALKS;
+        (argc > 4) ? std::stoi(argv[4]) : DEFAULT_NUM_TOTAL_WALKS;
 
     const int num_walks_per_node =
-        (argc > 4) ? std::stoi(argv[4]) : DEFAULT_NUM_WALKS_PER_NODE;
+        (argc > 5) ? std::stoi(argv[5]) : DEFAULT_NUM_WALKS_PER_NODE;
 
     const int max_walk_length =
-        (argc > 5) ? std::stoi(argv[5]) : DEFAULT_MAX_WALK_LENGTH;
+        (argc > 6) ? std::stoi(argv[6]) : DEFAULT_MAX_WALK_LENGTH;
 
     const std::string edge_picker =
-        (argc > 6) ? argv[6] : DEFAULT_EDGE_PICKER;
+        (argc > 7) ? argv[7] : DEFAULT_EDGE_PICKER;
 
     const std::string start_picker =
-        (argc > 7) ? argv[7] : DEFAULT_START_PICKER;
-
-    const std::string walk_dump_file =
-        (argc > 8) ? argv[8] : "";
+        (argc > 8) ? argv[8] : DEFAULT_START_PICKER;
 
     std::cout << "Running on: " << (USE_GPU ? "GPU" : "CPU") << "\n";
     std::cout << "Graph type: "
