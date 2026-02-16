@@ -115,10 +115,7 @@ inline void dump_walks_to_file(const WalkSet& walk_set,
 
         for (size_t j = 0; j < walk_len; ++j) {
             const int node = walk_set.nodes[i * max_walk_len + j];
-            const int64_t ts = walk_set.timestamps[i * max_walk_len + j];
-
-            out << node << "|" << ts;
-
+            out << node;
             if (j + 1 < walk_len) {
                 out << " ";
             }
