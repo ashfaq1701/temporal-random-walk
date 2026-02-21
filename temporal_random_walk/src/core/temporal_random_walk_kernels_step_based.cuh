@@ -19,25 +19,27 @@ namespace temporal_random_walk {
         const int max_walk_len,
         const size_t num_walks,
         const double *__restrict__ rand_nums) {
+
         const size_t walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
         if (walk_idx >= num_walks) return;
 
         const size_t rand_nums_start_offset =
-            static_cast<size_t>(walk_idx) +                                           // To account extra value in all previous walk's start pickers.
-            (static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) * 2);  // To account all 2 rand numbers for all other steps in the previous walks.
+            static_cast<size_t>(walk_idx) +
+            (static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) * 2);
 
         Edge start_edge;
         if (start_node_ids[walk_idx] == -1) {
             start_edge = temporal_graph::get_edge_at_device<Forward, StartPickerType>(
                 temporal_graph,
-                -1, // timestamp
+                -1,
                 rand_nums[rand_nums_start_offset],
                 rand_nums[rand_nums_start_offset + 1]);
         } else {
             start_edge = temporal_graph::get_node_edge_at_device<Forward, StartPickerType, IsDirected>(
                 temporal_graph,
                 start_node_ids[walk_idx],
-                -1, // timestamp
+                -1,
+                -1,
                 rand_nums[rand_nums_start_offset],
                 rand_nums[rand_nums_start_offset + 1]);
         }
@@ -60,11 +62,14 @@ namespace temporal_random_walk {
                 walk_set->add_hop(walk_idx, start_src, start_ts);
             }
         } else {
-            // For undirected graphs, use specified start node or pick a random node
-            const int picked_node = (start_node_ids[walk_idx] != -1)
-                                        ? start_node_ids[walk_idx]
-                                        : pick_random_number(start_src, start_dst, rand_nums[rand_nums_start_offset + 2]);
-            const int other_node = pick_other_number(start_src, start_dst, picked_node);
+            const int picked_node =
+                (start_node_ids[walk_idx] != -1)
+                    ? start_node_ids[walk_idx]
+                    : pick_random_number(start_src, start_dst,
+                                        rand_nums[rand_nums_start_offset + 2]);
+
+            const int other_node =
+                pick_other_number(start_src, start_dst, picked_node);
 
             walk_set->add_hop(walk_idx, picked_node, sentinel_timestamp);
             walk_set->add_hop(walk_idx, other_node, start_ts);
@@ -87,19 +92,30 @@ namespace temporal_random_walk {
             return;
         }
 
-        const size_t offset = static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) + static_cast<size_t>(step_number); // Get endpoint of previous step (step_number - 1). And endpoint is (step_number - 1 + 1).
+        const size_t offset =
+            static_cast<size_t>(walk_idx) *
+                static_cast<size_t>(max_walk_len) +
+                static_cast<size_t>(step_number);
+
         const int last_node = walk_set->nodes[offset];
-        const int last_ts = walk_set->timestamps[offset];
+        const int last_ts   = walk_set->timestamps[offset];
+
+        // ---- integrate prev_node exactly like reference ----
+        const int prev_node =
+            step_number > 0 ? walk_set->nodes[offset - 1] : -1;
 
         const size_t rand_nums_start_offset =
-            static_cast<size_t>(walk_idx) +                                               // To account extra value in all previous walk's start pickers.
-            (static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) * 2) +     // To account all 2 rand numbers for all other steps in the previous walks.
-            (static_cast<size_t>(step_number) * 2 + 1);                                   // To account for random numbers used in the current walk.
+            static_cast<size_t>(walk_idx) +
+                (static_cast<size_t>(walk_idx) *
+                static_cast<size_t>(max_walk_len) * 2) +
+                (static_cast<size_t>(step_number) * 2 + 1);
 
-        const Edge next_edge = temporal_graph::get_node_edge_at_device<Forward, EdgePickerType, IsDirected>(
+        const Edge next_edge =
+            temporal_graph::get_node_edge_at_device<Forward, EdgePickerType, IsDirected>(
                 temporal_graph,
                 last_node,
                 last_ts,
+                prev_node,
                 rand_nums[rand_nums_start_offset],
                 rand_nums[rand_nums_start_offset + 1]);
 
@@ -108,9 +124,14 @@ namespace temporal_random_walk {
         }
 
         if constexpr (IsDirected) {
-            walk_set->add_hop(walk_idx, Forward ? next_edge.i : next_edge.u, next_edge.ts);
+            walk_set->add_hop(
+                walk_idx,
+                Forward ? next_edge.i : next_edge.u,
+                next_edge.ts);
         } else {
-            const auto node_to_add = pick_other_number(next_edge.u, next_edge.i, last_node);
+            const int node_to_add =
+                pick_other_number(next_edge.u, next_edge.i, last_node);
+
             walk_set->add_hop(walk_idx, node_to_add, next_edge.ts);
         }
     }

@@ -23,11 +23,11 @@ namespace temporal_random_walk {
         const size_t walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
         if (walk_idx >= num_walks) return;
 
-        // Optimize rand_nums access - use direct formula instead of storing offset
-        // Calculate indices directly to reduce register usage
-        const size_t base_idx = static_cast<size_t>(walk_idx) * (1 + static_cast<size_t>(max_walk_len) * 2);
+        const size_t base_idx =
+            static_cast<size_t>(walk_idx) *
+            (1 + static_cast<size_t>(max_walk_len) * 2);
 
-        // Get start edge based on whether we have a starting node
+        // ---- Start edge selection ----
         Edge start_edge;
         if (start_node_ids[walk_idx] == -1) {
             start_edge = temporal_graph::get_edge_at_device<Forward, StartPickerType>(
@@ -39,7 +39,8 @@ namespace temporal_random_walk {
             start_edge = temporal_graph::get_node_edge_at_device<Forward, StartPickerType, IsDirected>(
                 temporal_graph,
                 start_node_ids[walk_idx],
-                -1, // timestamp
+                -1,   // timestamp
+                -1,   // prev_node (same as previous version)
                 rand_nums[base_idx],
                 rand_nums[base_idx + 1]);
         }
@@ -49,12 +50,14 @@ namespace temporal_random_walk {
         }
 
         int current_node;
+        int prev_node = -1;
         int64_t current_timestamp = Forward ? INT64_MIN : INT64_MAX;
+
         const int start_src = start_edge.u;
         const int start_dst = start_edge.i;
         const int64_t start_ts = start_edge.ts;
 
-        // Set initial node and add first hop - use template conditions
+        // ---- Initialize first hop ----
         if constexpr (IsDirected) {
             if constexpr (Forward) {
                 walk_set->add_hop(walk_idx, start_src, current_timestamp);
@@ -64,50 +67,57 @@ namespace temporal_random_walk {
                 current_node = start_src;
             }
         } else {
-            // For undirected graphs, use specified start node or pick a random node
-            const int picked_node = (start_node_ids[walk_idx] != -1)
-                                        ? start_node_ids[walk_idx]
-                                        : pick_random_number(start_src, start_dst, rand_nums[base_idx + 2]);
+            const int picked_node =
+                (start_node_ids[walk_idx] != -1)
+                    ? start_node_ids[walk_idx]
+                    : pick_random_number(start_src, start_dst,
+                                        rand_nums[base_idx + 2]);
 
             walk_set->add_hop(walk_idx, picked_node, current_timestamp);
-            current_node = pick_other_number(start_src, start_dst, picked_node);
+            current_node =
+                pick_other_number(start_src, start_dst, picked_node);
         }
 
         current_timestamp = start_ts;
 
-        // Main walk loop
-        int walk_len = 1; // Start at 1 since we already added first hop
+        // ---- Main walk loop ----
+        int walk_len = 1;
+
         while (walk_len < max_walk_len && current_node != -1) {
-            // Calculate random number indices directly based on walk_len
-            const size_t step_base_idx = base_idx + static_cast<size_t>(walk_len) * 2 + 1;
+
+            const size_t step_base_idx =
+                base_idx + static_cast<size_t>(walk_len) * 2 + 1;
 
             walk_set->add_hop(walk_idx, current_node, current_timestamp);
 
-            // Use templated edge selector function
-            Edge next_edge = temporal_graph::get_node_edge_at_device<Forward, EdgePickerType, IsDirected>(
-                temporal_graph,
-                current_node,
-                current_timestamp,
-                rand_nums[step_base_idx],
-                rand_nums[step_base_idx + 1]);
+            Edge next_edge =
+                temporal_graph::get_node_edge_at_device<Forward, EdgePickerType, IsDirected>(
+                    temporal_graph,
+                    current_node,
+                    current_timestamp,
+                    prev_node,
+                    rand_nums[step_base_idx],
+                    rand_nums[step_base_idx + 1]);
 
             if (next_edge.ts == -1) {
                 current_node = -1;
                 continue;
             }
 
-            // Update current node based on template parameters
+            // Update prev_node and current_node exactly like previous version
             if constexpr (IsDirected) {
+                prev_node = current_node;
                 current_node = Forward ? next_edge.i : next_edge.u;
             } else {
-                current_node = pick_other_number(next_edge.u, next_edge.i, current_node);
+                prev_node = current_node;
+                current_node =
+                    pick_other_number(next_edge.u, next_edge.i, current_node);
             }
 
             current_timestamp = next_edge.ts;
             walk_len++;
         }
 
-        // Reverse walk only when walking backward
         if constexpr (!Forward) {
             walk_set->reverse_walk(walk_idx);
         }
