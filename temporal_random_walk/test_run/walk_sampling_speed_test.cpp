@@ -222,5 +222,9 @@ int main(int argc, char* argv[])
         );
     }
 
+    size_t memory_footprint_bytes = walker.get_memory_used() + walk_set.get_memory_used();
+    double memory_gb = static_cast<double>(memory_footprint_bytes) / (1024.0 * 1024.0 * 1024.0);
+    std::cout << "Memory used (GB): " << memory_gb << std::endl;
+
     return 0;
 }
