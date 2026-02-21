@@ -26,6 +26,7 @@ constexpr int DEFAULT_NUM_TOTAL_WALKS = 10'000'000;
 constexpr int DEFAULT_NUM_WALKS_PER_NODE = -1;
 constexpr auto DEFAULT_EDGE_PICKER = "ExponentialIndex";
 constexpr auto DEFAULT_START_PICKER = "Uniform";
+constexpr auto DEFAULT_KERNEL_LAUNCH_TYPE = "FULL_WALK";
 
 // ============================
 // Performance Stats
@@ -85,7 +86,8 @@ int main(int argc, char* argv[])
                   << " [num_walks_per_node]"
                   << " [max_walk_length]"
                   << " [edge_picker]"
-                  << " [start_picker]\n";
+                  << " [start_picker]"
+                  << " [kernel_launch_type]";
         return 1;
     }
 
@@ -116,6 +118,9 @@ int main(int argc, char* argv[])
     const std::string start_picker =
         (argc > 8) ? argv[8] : DEFAULT_START_PICKER;
 
+    const std::string kernel_launch_type_str =
+        (argc > 9) ? argv[9] : DEFAULT_KERNEL_LAUNCH_TYPE;
+
     std::cout << "Running on: " << (USE_GPU ? "GPU" : "CPU") << "\n";
     std::cout << "Graph type: "
               << (is_directed ? "Directed" : "Undirected")
@@ -134,16 +139,31 @@ int main(int argc, char* argv[])
               << edge_infos.size() << "\n";
 
     // ============================
+    // Resolve Pickers
+    // ============================
+
+    const RandomPickerType edge_picker_enum =
+        picker_type_from_string(edge_picker);
+
+    const RandomPickerType start_picker_enum =
+        picker_type_from_string(start_picker);
+
+    // ============================
     // Construct Walker
     // ============================
+
+    bool enable_temporal_node2vec = edge_picker_enum == RandomPickerType::TemporalNode2Vec;
+    bool enable_weight_computation = edge_picker_enum == RandomPickerType::ExponentialWeight || RandomPickerType::ExponentialWeight;
+
+    KernelLaunchType kernel_launch_type = kernel_launch_type_str == "FULL_WALK" ? KernelLaunchType::FULL_WALK : KernelLaunchType::STEP_BASED;
 
     TemporalRandomWalk walker(
         is_directed,
         USE_GPU,
-        -1,     // max_time_capacity
-        true,   // enable_weight_computation
-        true,   // enable_temporal_node2vec
-        34      // timescale_bound
+        -1,                          // max_time_capacity
+        enable_weight_computation,   // enable_weight_computation
+        enable_temporal_node2vec,    // enable_temporal_node2vec
+        34                           // timescale_bound
     );
 
     walker.add_multiple_edges(
@@ -158,16 +178,6 @@ int main(int argc, char* argv[])
               << " Edges: "
               << walker.get_edge_count()
               << "\n";
-
-    // ============================
-    // Resolve Pickers
-    // ============================
-
-    const RandomPickerType edge_picker_enum =
-        picker_type_from_string(edge_picker);
-
-    const RandomPickerType start_picker_enum =
-        picker_type_from_string(start_picker);
 
     // ============================
     // Generate Walks (Timed)
@@ -186,7 +196,8 @@ int main(int argc, char* argv[])
             &edge_picker_enum,
             num_total_walks,
             &start_picker_enum,
-            WalkDirection::Forward_In_Time
+            WalkDirection::Forward_In_Time,
+            kernel_launch_type
         );
     } else {
         walk_set = walker.get_random_walks_and_times_for_all_nodes(
@@ -194,7 +205,8 @@ int main(int argc, char* argv[])
             &edge_picker_enum,
             num_walks_per_node,
             &start_picker_enum,
-            WalkDirection::Forward_In_Time
+            WalkDirection::Forward_In_Time,
+            kernel_launch_type
         );
     }
 
