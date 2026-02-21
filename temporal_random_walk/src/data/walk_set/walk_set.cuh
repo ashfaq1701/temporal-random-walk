@@ -305,6 +305,7 @@ struct WalkSet {
         total_memory += nodes_size * sizeof(int);
         total_memory += timestamps_size * sizeof(int64_t);
         total_memory += walk_lens_size * sizeof(size_t);
+        total_memory += nodes_size * sizeof(double);
         return total_memory;
     }
 
