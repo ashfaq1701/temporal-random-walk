@@ -72,6 +72,7 @@ namespace temporal_random_walk {
         }
 
         current_timestamp = start_ts;
+        int64_t current_edge_id = start_edge.edge_id;
 
         // Perform the walk
         int walk_len = 1; // Starting at 1 since we already added first hop
@@ -80,7 +81,7 @@ namespace temporal_random_walk {
             const auto group_selector_rand_num = rand_nums[step_start_idx];
             const auto edge_selector_rand_num = rand_nums[step_start_idx + 1];
 
-            walk_set->add_hop(walk_idx, current_node, current_timestamp);
+            walk_set->add_hop(walk_idx, current_node, current_timestamp, current_edge_id);
 
             InternalEdge next_edge = temporal_graph::get_node_edge_at_host<Forward, EdgePickerType, IsDirected
             >
@@ -108,6 +109,7 @@ namespace temporal_random_walk {
             }
 
             current_timestamp = next_edge.ts;
+            current_edge_id = next_edge.edge_id;
             walk_len++;
         }
 
