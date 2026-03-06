@@ -25,6 +25,16 @@ struct Edge {
     }
 };
 
+struct InternalEdge : Edge {
+    int64_t edge_id;
+
+    HOST DEVICE InternalEdge()
+        : Edge(), edge_id(-1) {}
+
+    HOST DEVICE InternalEdge(const int u, const int i, const int64_t ts, const int64_t edge_id)
+        : Edge(u, i, ts), edge_id(edge_id) {}
+};
+
 struct SizeRange {
     size_t from;
     size_t to;

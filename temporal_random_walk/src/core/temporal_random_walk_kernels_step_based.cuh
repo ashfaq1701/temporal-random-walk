@@ -26,7 +26,7 @@ namespace temporal_random_walk {
             static_cast<size_t>(walk_idx) +                                           // To account extra value in all previous walk's start pickers.
             (static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) * 2);  // To account all 2 rand numbers for all other steps in the previous walks.
 
-        Edge start_edge;
+        InternalEdge start_edge;
         if (start_node_ids[walk_idx] == -1) {
             start_edge = temporal_graph::get_edge_at_device<Forward, StartPickerType>(
                 temporal_graph,
@@ -98,7 +98,7 @@ namespace temporal_random_walk {
             (static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) * 2) +     // To account all 2 rand numbers for all other steps in the previous walks.
             (static_cast<size_t>(step_number) * 2 + 1);                                   // To account for random numbers used in the current walk.
 
-        const Edge next_edge = temporal_graph::get_node_edge_at_device<Forward, EdgePickerType, IsDirected>(
+        const InternalEdge next_edge = temporal_graph::get_node_edge_at_device<Forward, EdgePickerType, IsDirected>(
                 temporal_graph,
                 last_node,
                 last_ts,

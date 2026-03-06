@@ -21,7 +21,7 @@ namespace temporal_random_walk {
         const size_t rand_nums_start_idx_for_walk = static_cast<size_t>(walk_idx)
             + static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) * 2;
 
-        Edge start_edge;
+        InternalEdge start_edge;
         if (start_node_ids[walk_idx] == -1) {
             start_edge = temporal_graph::get_edge_at_host<Forward, StartPickerType>(
                 temporal_graph,
@@ -82,7 +82,7 @@ namespace temporal_random_walk {
 
             walk_set->add_hop(walk_idx, current_node, current_timestamp);
 
-            Edge next_edge = temporal_graph::get_node_edge_at_host<Forward, EdgePickerType, IsDirected
+            InternalEdge next_edge = temporal_graph::get_node_edge_at_host<Forward, EdgePickerType, IsDirected
             >
             (
                 temporal_graph,

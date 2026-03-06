@@ -19,30 +19,30 @@ namespace temporal_graph {
      */
 
     template<bool Forward, RandomPickerType PickerType>
-    HOST Edge get_edge_at_host(
+    HOST InternalEdge get_edge_at_host(
         const TemporalGraphStore *graph,
         const int64_t timestamp,
         const double group_selector_rand_num,
         const double edge_selector_rand_num) {
-        if (edge_data::empty(graph->edge_data)) return Edge{-1, -1, -1};
+        if (edge_data::empty(graph->edge_data)) return InternalEdge{-1, -1, -1, -1};
 
         const size_t num_groups = edge_data::get_timestamp_group_count(graph->edge_data);
-        if (num_groups == 0) return Edge{-1, -1, -1};
+        if (num_groups == 0) return InternalEdge{-1, -1, -1, -1};
 
         long group_idx;
         if (timestamp != -1) {
             if constexpr (Forward) {
                 const size_t first_group = edge_data::find_group_after_timestamp(graph->edge_data, timestamp);
                 const size_t available_groups = num_groups - first_group;
-                if (available_groups == 0) return Edge{-1, -1, -1};
+                if (available_groups == 0) return InternalEdge{-1, -1, -1, -1};
 
                 if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available_groups),
                         false, group_selector_rand_num);
-                    if (index == -1) return Edge{-1, -1, -1};
+                    if (index == -1) return InternalEdge{-1, -1, -1, -1};
 
-                    if (index >= available_groups) return Edge{-1, -1, -1};
+                    if (index >= available_groups) return InternalEdge{-1, -1, -1, -1};
                     group_idx = static_cast<long>(first_group + index);
                 } else {
                     group_idx = random_pickers::pick_using_weight_based_picker_host(
@@ -50,20 +50,20 @@ namespace temporal_graph {
                         graph->edge_data->forward_cumulative_weights_exponential,
                         graph->edge_data->forward_cumulative_weights_exponential_size,
                         first_group, num_groups, group_selector_rand_num);
-                    if (group_idx == -1) return Edge{-1, -1, -1};
+                    if (group_idx == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             } else {
                 const size_t last_group = edge_data::find_group_before_timestamp(graph->edge_data, timestamp);
-                if (last_group == static_cast<size_t>(-1)) return Edge{-1, -1, -1};
+                if (last_group == static_cast<size_t>(-1)) return InternalEdge{-1, -1, -1, -1};
 
                 const size_t available_groups = last_group + 1;
                 if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available_groups),
                         true, group_selector_rand_num);
-                    if (index == -1) return Edge{-1, -1, -1};
+                    if (index == -1) return InternalEdge{-1, -1, -1, -1};
 
-                    if (index >= available_groups) return Edge{-1, -1, -1};
+                    if (index >= available_groups) return InternalEdge{-1, -1, -1, -1};
                     group_idx = static_cast<long>(last_group) - static_cast<long>(available_groups - index - 1);
                 } else {
                     group_idx = random_pickers::pick_using_weight_based_picker_host(
@@ -71,7 +71,7 @@ namespace temporal_graph {
                         graph->edge_data->backward_cumulative_weights_exponential,
                         graph->edge_data->backward_cumulative_weights_exponential_size,
                         0, last_group + 1, group_selector_rand_num);
-                    if (group_idx == -1) return Edge{-1, -1, -1};
+                    if (group_idx == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             }
         } else {
@@ -79,9 +79,9 @@ namespace temporal_graph {
             if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                 const auto index = random_pickers::pick_using_index_based_picker(
                     PickerType, 0, static_cast<int>(num_groups), !Forward, group_selector_rand_num);
-                if (index == -1) return Edge{-1, -1, -1};
+                if (index == -1) return InternalEdge{-1, -1, -1, -1};
 
-                if (index >= num_groups) return Edge{-1, -1, -1};
+                if (index >= num_groups) return InternalEdge{-1, -1, -1, -1};
                 group_idx = index;
             } else {
                 if constexpr (Forward) {
@@ -90,14 +90,14 @@ namespace temporal_graph {
                         graph->edge_data->forward_cumulative_weights_exponential,
                         graph->edge_data->forward_cumulative_weights_exponential_size,
                         0, num_groups, group_selector_rand_num);
-                    if (group_idx == -1) return Edge{-1, -1, -1};
+                    if (group_idx == -1) return InternalEdge{-1, -1, -1, -1};
                 } else {
                     group_idx = random_pickers::pick_using_weight_based_picker_host(
                         PickerType,
                         graph->edge_data->backward_cumulative_weights_exponential,
                         graph->edge_data->backward_cumulative_weights_exponential_size,
                         0, num_groups, group_selector_rand_num);
-                    if (group_idx == -1) return Edge{-1, -1, -1};
+                    if (group_idx == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             }
         }
@@ -105,7 +105,7 @@ namespace temporal_graph {
         // Get selected group's boundaries
         const SizeRange group_range = edge_data::get_timestamp_group_range(graph->edge_data, group_idx);
         if (group_range.from == group_range.to) {
-            return Edge{-1, -1, -1};
+            return InternalEdge{-1, -1, -1, -1};
         }
 
         // Random selection from the chosen group
@@ -114,16 +114,17 @@ namespace temporal_graph {
                                       static_cast<int>(group_range.to - group_range.from),
                                       edge_selector_rand_num);
 
-        return Edge{
+        return InternalEdge{
             graph->edge_data->sources[random_idx],
             graph->edge_data->targets[random_idx],
-            graph->edge_data->timestamps[random_idx]
+            graph->edge_data->timestamps[random_idx],
+            static_cast<int64_t>(random_idx)
         };
     }
 
 
     template<bool Forward, RandomPickerType PickerType, bool IsDirected>
-    HOST Edge get_node_edge_at_host(
+    HOST InternalEdge get_node_edge_at_host(
         const TemporalGraphStore *graph,
         const int node_id,
         const int64_t timestamp,
@@ -131,7 +132,7 @@ namespace temporal_graph {
         const double group_selector_rand_num,
         const double edge_selector_rand_num) {
         if (!edge_data::is_node_active_host(graph->edge_data, node_id)) {
-            return Edge{-1, -1, -1};
+            return InternalEdge{-1, -1, -1, -1};
         }
 
         // Get appropriate node indices based on direction and graph type
@@ -156,7 +157,7 @@ namespace temporal_graph {
         // Get node's group range
         const size_t group_start_offset = count_ts_group_per_node[node_id];
         const size_t group_end_offset = count_ts_group_per_node[node_id + 1];
-        if (group_start_offset == group_end_offset) return Edge{-1, -1, -1};
+        if (group_start_offset == group_end_offset) return InternalEdge{-1, -1, -1, -1};
 
         long group_pos;
         if (timestamp != -1) {
@@ -174,15 +175,15 @@ namespace temporal_graph {
                 const size_t available = std::distance(
                     it,
                     node_ts_groups_offsets + static_cast<int>(group_end_offset));
-                if (available == 0) return Edge{-1, -1, -1};
+                if (available == 0) return InternalEdge{-1, -1, -1, -1};
 
                 const size_t start_pos = it - node_ts_groups_offsets;
                 if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available), false, group_selector_rand_num);
-                    if (index == -1) return Edge{-1, -1, -1};
+                    if (index == -1) return InternalEdge{-1, -1, -1, -1};
 
-                    if (index >= available) return Edge{-1, -1, -1};
+                    if (index >= available) return InternalEdge{-1, -1, -1, -1};
                     group_pos = static_cast<long>(start_pos) + index;
                 } else {
                     if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
@@ -212,7 +213,7 @@ namespace temporal_graph {
                             graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
                             start_pos, group_end_offset, group_selector_rand_num);
                     }
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             } else {
                 // Find first group >= timestamp
@@ -227,15 +228,15 @@ namespace temporal_graph {
                 const size_t available = std::distance(
                     node_ts_groups_offsets + static_cast<int>(group_start_offset),
                     it);
-                if (available == 0) return Edge{-1, -1, -1};
+                if (available == 0) return InternalEdge{-1, -1, -1, -1};
 
                 if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available),
                         true, group_selector_rand_num);
-                    if (index == -1) return Edge{-1, -1, -1};
+                    if (index == -1) return InternalEdge{-1, -1, -1, -1};
 
-                    if (index >= available) return Edge{-1, -1, -1};
+                    if (index >= available) return InternalEdge{-1, -1, -1, -1};
                     group_pos = static_cast<long>((it - node_ts_groups_offsets) - 1 - (available - index - 1));
                 } else {
                     double *weights = IsDirected
@@ -282,20 +283,20 @@ namespace temporal_graph {
                             group_selector_rand_num
                         );
                     }
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             }
         } else {
             // No timestamp constraint - select from all groups
             const size_t num_groups = group_end_offset - group_start_offset;
-            if (num_groups == 0) return Edge{-1, -1, -1};
+            if (num_groups == 0) return InternalEdge{-1, -1, -1, -1};
 
             if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                 const auto index = random_pickers::pick_using_index_based_picker(
                     PickerType, 0, static_cast<int>(num_groups), !Forward, group_selector_rand_num);
-                if (index == -1) return Edge{-1, -1, -1};
+                if (index == -1) return InternalEdge{-1, -1, -1, -1};
 
-                if (index >= num_groups) return Edge{-1, -1, -1};
+                if (index >= num_groups) return InternalEdge{-1, -1, -1, -1};
                 group_pos = Forward
                                 ? static_cast<long>(group_start_offset + index)
                                 : static_cast<long>(group_end_offset - 1 - (num_groups - index - 1));
@@ -332,7 +333,7 @@ namespace temporal_graph {
                             group_end_offset,
                             group_selector_rand_num);
                     }
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
                 } else {
                     double *weights = IsDirected
                                           ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential
@@ -375,7 +376,7 @@ namespace temporal_graph {
                             group_end_offset,
                             group_selector_rand_num);
                     }
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             }
         }
@@ -404,7 +405,7 @@ namespace temporal_graph {
                                                     : graph->node_edge_index->node_ts_sorted_outbound_indices_size);
 
         if (edge_start >= edge_end || edge_start >= edge_indices_size || edge_end > edge_indices_size) {
-            return Edge{-1, -1, -1};
+            return InternalEdge{-1, -1, -1, -1};
         }
 
         long edge_idx;
@@ -422,7 +423,7 @@ namespace temporal_graph {
                     edge_end,
                     node_ts_sorted_indices,
                     edge_selector_rand_num);
-                if (edge_idx == -1) return Edge{-1, -1, -1};
+                if (edge_idx == -1) return InternalEdge{-1, -1, -1, -1};
             }
         } else {
             edge_idx = static_cast<long>(node_ts_sorted_indices[
@@ -430,10 +431,11 @@ namespace temporal_graph {
                 generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), edge_selector_rand_num)]);
         }
 
-        return Edge{
+        return InternalEdge{
             graph->edge_data->sources[edge_idx],
             graph->edge_data->targets[edge_idx],
-            graph->edge_data->timestamps[edge_idx]
+            graph->edge_data->timestamps[edge_idx],
+            edge_idx
         };
     }
 
@@ -444,30 +446,30 @@ namespace temporal_graph {
     #ifdef HAS_CUDA
 
     template<bool Forward, RandomPickerType PickerType>
-    DEVICE Edge get_edge_at_device(
+    DEVICE InternalEdge get_edge_at_device(
         const TemporalGraphStore *graph,
         const int64_t timestamp,
         const double group_selector_rand_num,
         const double edge_selector_rand_num) {
-        if (edge_data::empty(graph->edge_data)) return Edge{-1, -1, -1};
+        if (edge_data::empty(graph->edge_data)) return InternalEdge{-1, -1, -1, -1};
 
         const size_t num_groups = edge_data::get_timestamp_group_count(graph->edge_data);
-        if (num_groups == 0) return Edge{-1, -1, -1};
+        if (num_groups == 0) return InternalEdge{-1, -1, -1, -1};
 
         long group_idx;
         if (timestamp != -1) {
             if constexpr (Forward) {
                 const size_t first_group = edge_data::find_group_after_timestamp_device(graph->edge_data, timestamp);
                 const size_t available_groups = num_groups - first_group;
-                if (available_groups == 0) return Edge{-1, -1, -1};
+                if (available_groups == 0) return InternalEdge{-1, -1, -1, -1};
 
                 if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available_groups),
                         false, group_selector_rand_num);
-                    if (index == -1) return Edge{-1, -1, -1};
+                    if (index == -1) return InternalEdge{-1, -1, -1, -1};
 
-                    if (index >= available_groups) return Edge{-1, -1, -1};
+                    if (index >= available_groups) return InternalEdge{-1, -1, -1, -1};
                     group_idx = static_cast<long>(first_group + index);
                 } else {
                     group_idx = random_pickers::pick_using_weight_based_picker_device(
@@ -475,20 +477,20 @@ namespace temporal_graph {
                         graph->edge_data->forward_cumulative_weights_exponential,
                         graph->edge_data->forward_cumulative_weights_exponential_size,
                         first_group, num_groups, group_selector_rand_num);
-                    if (group_idx == -1) return Edge{-1, -1, -1};
+                    if (group_idx == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             } else {
                 const size_t last_group = edge_data::find_group_before_timestamp_device(graph->edge_data, timestamp);
-                if (last_group == static_cast<size_t>(-1)) return Edge{-1, -1, -1};
+                if (last_group == static_cast<size_t>(-1)) return InternalEdge{-1, -1, -1, -1};
 
                 const size_t available_groups = last_group + 1;
                 if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available_groups),
                         true, group_selector_rand_num);
-                    if (index == -1) return Edge{-1, -1, -1};
+                    if (index == -1) return InternalEdge{-1, -1, -1, -1};
 
-                    if (index >= available_groups) return Edge{-1, -1, -1};
+                    if (index >= available_groups) return InternalEdge{-1, -1, -1, -1};
                     group_idx = static_cast<long>(last_group) - static_cast<long>(available_groups - index - 1);
                 } else {
                     group_idx = random_pickers::pick_using_weight_based_picker_device(
@@ -496,7 +498,7 @@ namespace temporal_graph {
                         graph->edge_data->backward_cumulative_weights_exponential,
                         graph->edge_data->backward_cumulative_weights_exponential_size,
                         0, last_group + 1, group_selector_rand_num);
-                    if (group_idx == -1) return Edge{-1, -1, -1};
+                    if (group_idx == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             }
         } else {
@@ -504,9 +506,9 @@ namespace temporal_graph {
             if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                 const auto index = random_pickers::pick_using_index_based_picker(
                     PickerType, 0, static_cast<int>(num_groups), !Forward, group_selector_rand_num);
-                if (index == -1) return Edge{-1, -1, -1};
+                if (index == -1) return InternalEdge{-1, -1, -1, -1};
 
-                if (index >= num_groups) return Edge{-1, -1, -1};
+                if (index >= num_groups) return InternalEdge{-1, -1, -1, -1};
                 group_idx = index;
             } else {
                 if constexpr (Forward) {
@@ -515,14 +517,14 @@ namespace temporal_graph {
                         graph->edge_data->forward_cumulative_weights_exponential,
                         graph->edge_data->forward_cumulative_weights_exponential_size,
                         0, num_groups, group_selector_rand_num);
-                    if (group_idx == -1) return Edge{-1, -1, -1};
+                    if (group_idx == -1) return InternalEdge{-1, -1, -1, -1};
                 } else {
                     group_idx = random_pickers::pick_using_weight_based_picker_device(
                         PickerType,
                         graph->edge_data->backward_cumulative_weights_exponential,
                         graph->edge_data->backward_cumulative_weights_exponential_size,
                         0, num_groups, group_selector_rand_num);
-                    if (group_idx == -1) return Edge{-1, -1, -1};
+                    if (group_idx == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             }
         }
@@ -530,7 +532,7 @@ namespace temporal_graph {
         // Get selected group's boundaries
         const SizeRange group_range = edge_data::get_timestamp_group_range(graph->edge_data, group_idx);
         if (group_range.from == group_range.to) {
-            return Edge{-1, -1, -1};
+            return InternalEdge{-1, -1, -1, -1};
         }
 
         // Random selection from the chosen group
@@ -539,16 +541,17 @@ namespace temporal_graph {
                                       static_cast<int>(group_range.to - group_range.from),
                                       edge_selector_rand_num);
 
-        return Edge{
+        return InternalEdge{
             graph->edge_data->sources[random_idx],
             graph->edge_data->targets[random_idx],
-            graph->edge_data->timestamps[random_idx]
+            graph->edge_data->timestamps[random_idx],
+            static_cast<int64_t>(random_idx),
         };
     }
 
 
     template<bool Forward, RandomPickerType PickerType, bool IsDirected>
-    DEVICE Edge get_node_edge_at_device(
+    DEVICE InternalEdge get_node_edge_at_device(
         const TemporalGraphStore *graph,
         const int node_id,
         int64_t timestamp,
@@ -556,7 +559,7 @@ namespace temporal_graph {
         const double group_selector_rand_num,
         const double edge_selector_rand_num) {
         if (!edge_data::is_node_active_device(graph->edge_data, node_id)) {
-            return Edge{-1, -1, -1};
+            return InternalEdge{-1, -1, -1, -1};
         }
 
         // Get appropriate node indices based on direction and graph type
@@ -581,7 +584,7 @@ namespace temporal_graph {
         // Get node's group range
         const size_t group_start_offset = count_ts_group_per_node[node_id];
         const size_t group_end_offset = count_ts_group_per_node[node_id + 1];
-        if (group_start_offset == group_end_offset) return Edge{-1, -1, -1};
+        if (group_start_offset == group_end_offset) return InternalEdge{-1, -1, -1, -1};
 
         long group_pos;
         if (timestamp != -1) {
@@ -599,15 +602,15 @@ namespace temporal_graph {
                 const size_t available = std::distance(
                     it,
                     node_ts_groups_offsets + static_cast<int>(group_end_offset));
-                if (available == 0) return Edge{-1, -1, -1};
+                if (available == 0) return InternalEdge{-1, -1, -1, -1};
 
                 const size_t start_pos = it - node_ts_groups_offsets;
                 if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available), false, group_selector_rand_num);
-                    if (index == -1) return Edge{-1, -1, -1};
+                    if (index == -1) return InternalEdge{-1, -1, -1, -1};
 
-                    if (index >= available) return Edge{-1, -1, -1};
+                    if (index >= available) return InternalEdge{-1, -1, -1, -1};
                     group_pos = static_cast<long>(start_pos) + index;
                 } else {
                     if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
@@ -637,7 +640,7 @@ namespace temporal_graph {
                             graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
                             start_pos, group_end_offset, group_selector_rand_num);
                     }
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             } else {
                 // Find first group >= timestamp
@@ -652,15 +655,15 @@ namespace temporal_graph {
                 const size_t available = std::distance(
                     node_ts_groups_offsets + static_cast<int>(group_start_offset),
                     it);
-                if (available == 0) return Edge{-1, -1, -1};
+                if (available == 0) return InternalEdge{-1, -1, -1, -1};
 
                 if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available),
                         true, group_selector_rand_num);
-                    if (index == -1) return Edge{-1, -1, -1};
+                    if (index == -1) return InternalEdge{-1, -1, -1, -1};
 
-                    if (index >= available) return Edge{-1, -1, -1};
+                    if (index >= available) return InternalEdge{-1, -1, -1, -1};
                     group_pos = static_cast<long>((it - node_ts_groups_offsets) - 1 - (available - index - 1));
                 } else {
                     double *weights = IsDirected
@@ -707,20 +710,20 @@ namespace temporal_graph {
                             group_selector_rand_num
                         );
                     }
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             }
         } else {
             // No timestamp constraint - select from all groups
             const size_t num_groups = group_end_offset - group_start_offset;
-            if (num_groups == 0) return Edge{-1, -1, -1};
+            if (num_groups == 0) return InternalEdge{-1, -1, -1, -1};
 
             if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                 const auto index = random_pickers::pick_using_index_based_picker(
                     PickerType, 0, static_cast<int>(num_groups), !Forward, group_selector_rand_num);
-                if (index == -1) return Edge{-1, -1, -1};
+                if (index == -1) return InternalEdge{-1, -1, -1, -1};
 
-                if (index >= num_groups) return Edge{-1, -1, -1};
+                if (index >= num_groups) return InternalEdge{-1, -1, -1, -1};
                 group_pos = Forward
                                 ? static_cast<long>(group_start_offset + index)
                                 : static_cast<long>(group_end_offset - 1 - (num_groups - index - 1));
@@ -757,7 +760,7 @@ namespace temporal_graph {
                             group_end_offset,
                             group_selector_rand_num);
                     }
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
                 } else {
                     double *weights = IsDirected
                                           ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential
@@ -800,7 +803,7 @@ namespace temporal_graph {
                             group_end_offset,
                             group_selector_rand_num);
                     }
-                    if (group_pos == -1) return Edge{-1, -1, -1};
+                    if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             }
         }
@@ -829,7 +832,7 @@ namespace temporal_graph {
                                                     : graph->node_edge_index->node_ts_sorted_outbound_indices_size);
 
         if (edge_start >= edge_end || edge_start >= edge_indices_size || edge_end > edge_indices_size) {
-            return Edge{-1, -1, -1};
+            return InternalEdge{-1, -1, -1, -1};
         }
 
         long edge_idx;
@@ -847,7 +850,7 @@ namespace temporal_graph {
                     edge_end,
                     node_ts_sorted_indices,
                     edge_selector_rand_num);
-                if (edge_idx == -1) return Edge{-1, -1, -1};
+                if (edge_idx == -1) return InternalEdge{-1, -1, -1, -1};
             }
         } else {
             edge_idx = static_cast<long>(node_ts_sorted_indices[
@@ -855,10 +858,11 @@ namespace temporal_graph {
                 generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), edge_selector_rand_num)]);
         }
 
-        return Edge{
+        return InternalEdge{
             graph->edge_data->sources[edge_idx],
             graph->edge_data->targets[edge_idx],
-            graph->edge_data->timestamps[edge_idx]
+            graph->edge_data->timestamps[edge_idx],
+            edge_idx
         };
     }
 

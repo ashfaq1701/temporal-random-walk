@@ -31,7 +31,7 @@ namespace temporal_random_walk {
         const double r1 = rng_u01_philox(base_seed, walk_idx, base_idx + 1);
 
         // Get start edge based on whether we have a starting node
-        Edge start_edge;
+        InternalEdge start_edge;
         if (start_node_ids[walk_idx] == -1) {
             start_edge = temporal_graph::get_edge_at_device<Forward, StartPickerType>(
                 temporal_graph,
@@ -94,7 +94,7 @@ namespace temporal_random_walk {
             walk_set->add_hop(walk_idx, current_node, current_timestamp);
 
             // Use templated edge selector function
-            Edge next_edge = temporal_graph::get_node_edge_at_device<Forward, EdgePickerType, IsDirected>(
+            InternalEdge next_edge = temporal_graph::get_node_edge_at_device<Forward, EdgePickerType, IsDirected>(
                 temporal_graph,
                 current_node,
                 current_timestamp,
