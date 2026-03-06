@@ -81,13 +81,17 @@ struct WalkSet {
         allocate_memory(&walk_lens, other.walk_lens_size, use_gpu);
         walk_lens_size = other.walk_lens_size;
         copy_memory(walk_lens, other.walk_lens, walk_lens_size, use_gpu, other.use_gpu);
+
+        allocate_memory(&edge_ids, total_len - num_walks, use_gpu);
+        edge_ids_size = other.edge_ids_size;
+        copy_memory(edge_ids, other.edge_ids, edge_ids_size, use_gpu, other.use_gpu);
     }
 
     HOST WalkSet(WalkSet &&other) noexcept
         : num_walks(other.num_walks), max_len(other.max_len), walk_padding_value(other.walk_padding_value),
         use_gpu(other.use_gpu), nodes(other.nodes), timestamps(other.timestamps), walk_lens(other.walk_lens),
-        nodes_size(other.nodes_size), timestamps_size(other.timestamps_size), walk_lens_size(other.walk_lens_size),
-        total_len(other.total_len) {
+        edge_ids(other.edge_ids), nodes_size(other.nodes_size), timestamps_size(other.timestamps_size),
+        walk_lens_size(other.walk_lens_size), edge_ids_size(other.edge_ids_size), total_len(other.total_len) {
 
         // Reset the source object to prevent double-free issues
         other.num_walks = 0;
@@ -96,9 +100,11 @@ struct WalkSet {
         other.nodes = nullptr;
         other.timestamps = nullptr;
         other.walk_lens = nullptr;
+        other.edge_ids = nullptr;
         other.nodes_size = 0;
         other.timestamps_size = 0;
         other.walk_lens_size = 0;
+        other.edge_ids_size = 0;
     }
 
     HOST WalkSet& operator=(const WalkSet& other) {
@@ -107,6 +113,7 @@ struct WalkSet {
             clear_memory(&nodes, use_gpu);
             clear_memory(&timestamps, use_gpu);
             clear_memory(&walk_lens, use_gpu);
+            clear_memory(&edge_ids, use_gpu);
 
             num_walks = other.num_walks;
             max_len = other.max_len;
@@ -128,6 +135,11 @@ struct WalkSet {
             allocate_memory(&walk_lens, other.walk_lens_size, use_gpu);
             walk_lens_size = other.walk_lens_size;
             copy_memory(walk_lens, other.walk_lens, walk_lens_size, use_gpu, other.use_gpu);
+
+            // Allocate and copy edge_ids
+            allocate_memory(&edge_ids, other.edge_ids_size, use_gpu);
+            edge_ids_size = other.edge_ids_size;
+            copy_memory(edge_ids, other.edge_ids, edge_ids_size, use_gpu, other.use_gpu);
         }
         return *this;
     }
@@ -138,6 +150,7 @@ struct WalkSet {
             clear_memory(&nodes, use_gpu);
             clear_memory(&timestamps, use_gpu);
             clear_memory(&walk_lens, use_gpu);
+            clear_memory(&edge_ids, use_gpu);
 
             num_walks = other.num_walks;
             max_len = other.max_len;
@@ -149,10 +162,12 @@ struct WalkSet {
             nodes = other.nodes;
             timestamps = other.timestamps;
             walk_lens = other.walk_lens;
+            edge_ids = other.edge_ids;
 
             nodes_size = other.nodes_size;
             timestamps_size = other.timestamps_size;
             walk_lens_size = other.walk_lens_size;
+            edge_ids_size = other.edge_ids_size;
 
             // Reset the source object
             other.num_walks = 0;
@@ -161,9 +176,11 @@ struct WalkSet {
             other.nodes = nullptr;
             other.timestamps = nullptr;
             other.walk_lens = nullptr;
+            other.edge_ids = nullptr;
             other.nodes_size = 0;
             other.timestamps_size = 0;
             other.walk_lens_size = 0;
+            other.edge_ids_size = 0;
         }
         return *this;
     }
@@ -173,10 +190,12 @@ struct WalkSet {
             clear_memory(&nodes, use_gpu);
             clear_memory(&timestamps, use_gpu);
             clear_memory(&walk_lens, use_gpu);
+            clear_memory(&edge_ids, use_gpu);
         } else {
             nodes = nullptr;
             timestamps = nullptr;
             walk_lens = nullptr;
+            edge_ids = nullptr;
         }
     }
 
@@ -213,6 +232,12 @@ struct WalkSet {
             walk_lens_size = temp_walk_set.walk_lens_size;
         }
 
+        if (edge_ids_size < temp_walk_set.edge_ids_size) {
+            clear_memory(&edge_ids, use_gpu);
+            allocate_memory(&edge_ids, temp_walk_set.edge_ids_size, false); // Allocate on host
+            edge_ids_size = temp_walk_set.edge_ids_size;
+        }
+
         // Copy data from device memory to host memory
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(nodes, temp_walk_set.nodes,
             sizeof(int) * temp_walk_set.nodes_size, cudaMemcpyDeviceToHost));
@@ -222,6 +247,9 @@ struct WalkSet {
 
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(walk_lens, temp_walk_set.walk_lens,
             sizeof(size_t) * temp_walk_set.walk_lens_size, cudaMemcpyDeviceToHost));
+
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(edge_ids, temp_walk_set.edge_ids,
+            sizeof(int64_t) * temp_walk_set.edge_ids_size, cudaMemcpyDeviceToHost));
 
         // Update metadata
         num_walks = temp_walk_set.num_walks;
@@ -233,11 +261,28 @@ struct WalkSet {
     #endif
 
     // Walk operations
-    HOST DEVICE void add_hop(const int walk_number, const int node, const int64_t timestamp) const {
-        const size_t offset = walk_number * max_len + walk_lens[walk_number];
-        nodes[offset] = node;
-        timestamps[offset] = timestamp;
-        walk_lens[walk_number] += 1;
+    HOST DEVICE void add_hop(
+    const int walk_number,
+    const int node,
+    const int64_t timestamp,
+    const int64_t edge_id = EMPTY_EDGE_ID) const
+    {
+        // hop_pos is the position we are writing now (before increment)
+        const size_t hop_pos = walk_lens[walk_number];
+        const size_t hop_offset = static_cast<size_t>(walk_number) * max_len + hop_pos;
+
+        nodes[hop_offset] = node;
+        timestamps[hop_offset] = timestamp;
+
+        // edge_id corresponds to transition into this hop:
+        // hop 0 has no incoming edge, hop 1 maps to edge index 0, etc.
+        if (edge_id != EMPTY_EDGE_ID && hop_pos > 0) {
+            const size_t edge_base = static_cast<size_t>(walk_number) * (max_len - 1);
+            const size_t edge_offset = edge_base + (hop_pos - 1);
+            edge_ids[edge_offset] = edge_id;
+        }
+
+        walk_lens[walk_number] = hop_pos + 1;
     }
 
     HOST size_t get_walk_len(const int walk_number) const {
@@ -260,21 +305,39 @@ struct WalkSet {
 
     HOST DEVICE void reverse_walk(const int walk_number) const {
         const size_t walk_length = walk_lens[walk_number];
-        if (walk_length <= 1) return; // No need to reverse if walk is empty or has one hop
+        if (walk_length <= 1) return;
 
-        const size_t start = walk_number * max_len;
-        const size_t end = start + walk_length - 1;
+        // Reverse nodes + timestamps
+        const size_t node_start = static_cast<size_t>(walk_number) * max_len;
+        const size_t node_end = node_start + walk_length - 1;
 
         for (size_t i = 0; i < walk_length / 2; ++i) {
-            // Swap nodes
-            const int temp_node = nodes[start + i];
-            nodes[start + i] = nodes[end - i];
-            nodes[end - i] = temp_node;
+            const size_t l = node_start + i;
+            const size_t r = node_end - i;
 
-            // Swap timestamps
-            const int64_t temp_time = timestamps[start + i];
-            timestamps[start + i] = timestamps[end - i];
-            timestamps[end - i] = temp_time;
+            const int tmp_node = nodes[l];
+            nodes[l] = nodes[r];
+            nodes[r] = tmp_node;
+
+            const int64_t tmp_ts = timestamps[l];
+            timestamps[l] = timestamps[r];
+            timestamps[r] = tmp_ts;
+        }
+
+        // Reverse edge_ids for this walk too.
+        // If walk has L nodes, it has (L - 1) edges.
+        if (const size_t edge_count = walk_length - 1; edge_count > 1) {
+            const size_t edge_start = static_cast<size_t>(walk_number) * (max_len - 1);
+            const size_t edge_end = edge_start + edge_count - 1;
+
+            for (size_t i = 0; i < edge_count / 2; ++i) {
+                const size_t l = edge_start + i;
+                const size_t r = edge_end - i;
+
+                const int64_t tmp_e = edge_ids[l];
+                edge_ids[l] = edge_ids[r];
+                edge_ids[r] = tmp_e;
+            }
         }
     }
 
