@@ -300,6 +300,14 @@ struct WalkSet {
         return non_empty_count;
     }
 
+    HOST size_t get_memory_used() const {
+        size_t total_memory = 0;
+        total_memory += nodes_size * sizeof(int);
+        total_memory += timestamps_size * sizeof(int64_t);
+        total_memory += walk_lens_size * sizeof(size_t);
+        return total_memory;
+    }
+
     // Iterator support
     HOST Walk get_walk(const int walk_number) const {
         const size_t walk_len = get_walk_len(walk_number);

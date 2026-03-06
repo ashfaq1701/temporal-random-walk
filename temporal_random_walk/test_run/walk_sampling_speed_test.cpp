@@ -20,11 +20,17 @@ constexpr bool USE_GPU = false;
 // Defaults
 // ============================
 
+constexpr bool DEFAULT_IS_DIRECTED = false;
 constexpr int DEFAULT_MAX_WALK_LENGTH = 80;
 constexpr int DEFAULT_NUM_TOTAL_WALKS = 10'000'000;
 constexpr int DEFAULT_NUM_WALKS_PER_NODE = -1;
 constexpr auto DEFAULT_EDGE_PICKER = "ExponentialIndex";
 constexpr auto DEFAULT_START_PICKER = "Uniform";
+constexpr auto DEFAULT_KERNEL_LAUNCH_TYPE = "FULL_WALK";
+
+// ============================
+// Performance Stats
+// ============================
 
 void print_walk_performance_stats(
     const size_t num_walks,
@@ -36,7 +42,6 @@ void print_walk_performance_stats(
         return;
     }
 
-    // Compute total steps
     size_t total_steps = 0;
     for (size_t i = 0; i < num_walks; ++i) {
         total_steps += walk_lens[i];
@@ -49,9 +54,9 @@ void print_walk_performance_stats(
         static_cast<double>(total_steps) / duration_seconds;
 
     const double avg_walk_length =
-        num_walks > 0 ?
-        static_cast<double>(total_steps) / static_cast<double>(num_walks) :
-        0.0;
+        num_walks > 0
+            ? static_cast<double>(total_steps) / static_cast<double>(num_walks)
+            : 0.0;
 
     std::cout << std::fixed << std::setprecision(4);
 
@@ -65,7 +70,6 @@ void print_walk_performance_stats(
               << "  Steps/sec: " << steps_per_sec << "\n";
 }
 
-
 // ============================
 // Main
 // ============================
@@ -76,58 +80,90 @@ int main(int argc, char* argv[])
         std::cerr << "Usage:\n"
                   << argv[0]
                   << " <edge_file_path>"
+                  << " [walk_dump_file]"
+                  << " [is_directed (0|1, default=0)]"
                   << " [num_total_walks]"
                   << " [num_walks_per_node]"
                   << " [max_walk_length]"
                   << " [edge_picker]"
                   << " [start_picker]"
-                  << " [walk_dump_file]\n";
+                  << " [kernel_launch_type]";
         return 1;
     }
 
     const std::string file_path = argv[1];
 
+    // NEW: walk_dump_file is now immediately after edge_file_path
+    const std::string walk_dump_file =
+        (argc > 2) ? argv[2] : "";
+
+    // Shifted argument positions by +1
+    const bool is_directed =
+        (argc > 3)
+            ? (std::stoi(argv[3]) != 0)
+            : DEFAULT_IS_DIRECTED;
+
     const int num_total_walks =
-        (argc > 2) ? std::stoi(argv[2]) : DEFAULT_NUM_TOTAL_WALKS;
+        (argc > 4) ? std::stoi(argv[4]) : DEFAULT_NUM_TOTAL_WALKS;
 
     const int num_walks_per_node =
-        (argc > 3) ? std::stoi(argv[3]) : DEFAULT_NUM_WALKS_PER_NODE;
+        (argc > 5) ? std::stoi(argv[5]) : DEFAULT_NUM_WALKS_PER_NODE;
 
     const int max_walk_length =
-        (argc > 4) ? std::stoi(argv[4]) : DEFAULT_MAX_WALK_LENGTH;
+        (argc > 6) ? std::stoi(argv[6]) : DEFAULT_MAX_WALK_LENGTH;
 
     const std::string edge_picker =
-        (argc > 5) ? argv[5] : DEFAULT_EDGE_PICKER;
+        (argc > 7) ? argv[7] : DEFAULT_EDGE_PICKER;
 
     const std::string start_picker =
-        (argc > 6) ? argv[6] : DEFAULT_START_PICKER;
+        (argc > 8) ? argv[8] : DEFAULT_START_PICKER;
 
-    const std::string walk_dump_file =
-        (argc > 7) ? argv[7] : "";
+    const std::string kernel_launch_type_str =
+        (argc > 9) ? argv[9] : DEFAULT_KERNEL_LAUNCH_TYPE;
 
-    std::cout << "Running on: " << (USE_GPU ? "GPU" : "CPU") << std::endl;
+    std::cout << "Running on: " << (USE_GPU ? "GPU" : "CPU") << "\n";
+    std::cout << "Graph type: "
+              << (is_directed ? "Directed" : "Undirected")
+              << "\n";
 
     // ============================
     // Load Edges
     // ============================
 
     const auto edge_infos = read_edges_from_csv(file_path);
+
     auto [sources, targets, timestamps] =
         convert_edge_tuples_to_components(edge_infos);
 
-    std::cout << "Edges loaded: " << edge_infos.size() << std::endl;
+    std::cout << "Edges loaded: "
+              << edge_infos.size() << "\n";
+
+    // ============================
+    // Resolve Pickers
+    // ============================
+
+    const RandomPickerType edge_picker_enum =
+        picker_type_from_string(edge_picker);
+
+    const RandomPickerType start_picker_enum =
+        picker_type_from_string(start_picker);
 
     // ============================
     // Construct Walker
     // ============================
 
+    bool enable_temporal_node2vec = edge_picker_enum == RandomPickerType::TemporalNode2Vec;
+    bool enable_weight_computation = edge_picker_enum == RandomPickerType::ExponentialWeight || start_picker_enum == RandomPickerType::ExponentialWeight;
+
+    KernelLaunchType kernel_launch_type = kernel_launch_type_str == "FULL_WALK" ? KernelLaunchType::FULL_WALK : KernelLaunchType::STEP_BASED;
+
     TemporalRandomWalk walker(
-        false,              // is_directed
-        USE_GPU,            // use_gpu
-        -1,                 // max_time_capacity
-        true,              // enable_weight_computation
-        true,              // enable_temporal_node2vec
-        34                  // timescale_bound
+        is_directed,
+        USE_GPU,
+        -1,                          // max_time_capacity
+        enable_weight_computation,   // enable_weight_computation
+        enable_temporal_node2vec,    // enable_temporal_node2vec
+        34                           // timescale_bound
     );
 
     walker.add_multiple_edges(
@@ -141,25 +177,16 @@ int main(int argc, char* argv[])
               << walker.get_node_count()
               << " Edges: "
               << walker.get_edge_count()
-              << std::endl;
-
-    // ============================
-    // Resolve Pickers
-    // ============================
-
-    const RandomPickerType edge_picker_enum =
-        picker_type_from_string(edge_picker);
-
-    const RandomPickerType start_picker_enum =
-        picker_type_from_string(start_picker);
+              << "\n";
 
     // ============================
     // Generate Walks (Timed)
     // ============================
 
-    std::cout << "\nGenerating walks..." << std::endl;
+    std::cout << "\nGenerating walks...\n";
 
-    const auto start_time = std::chrono::high_resolution_clock::now();
+    const auto start_time =
+        std::chrono::high_resolution_clock::now();
 
     WalkSet walk_set;
 
@@ -169,7 +196,8 @@ int main(int argc, char* argv[])
             &edge_picker_enum,
             num_total_walks,
             &start_picker_enum,
-            WalkDirection::Forward_In_Time
+            WalkDirection::Forward_In_Time,
+            kernel_launch_type
         );
     } else {
         walk_set = walker.get_random_walks_and_times_for_all_nodes(
@@ -177,11 +205,13 @@ int main(int argc, char* argv[])
             &edge_picker_enum,
             num_walks_per_node,
             &start_picker_enum,
-            WalkDirection::Forward_In_Time
+            WalkDirection::Forward_In_Time,
+            kernel_launch_type
         );
     }
 
-    const auto end_time = std::chrono::high_resolution_clock::now();
+    const auto end_time =
+        std::chrono::high_resolution_clock::now();
 
     const std::chrono::duration<double> duration =
         end_time - start_time;
@@ -197,8 +227,16 @@ int main(int argc, char* argv[])
     // ============================
 
     if (!walk_dump_file.empty()) {
-        dump_walks_to_file(walk_set, max_walk_length, walk_dump_file);
+        dump_walks_to_file(
+            walk_set,
+            max_walk_length,
+            walk_dump_file
+        );
     }
+
+    size_t memory_footprint_bytes = walker.get_memory_used() + walk_set.get_memory_used();
+    double memory_gb = static_cast<double>(memory_footprint_bytes) / (1024.0 * 1024.0 * 1024.0);
+    std::cout << "Memory used (GB): " << memory_gb << std::endl;
 
     return 0;
 }

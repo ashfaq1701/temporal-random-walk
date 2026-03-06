@@ -5,19 +5,8 @@ Tempest ablation runner (Python harness)
 Runs 4 variants × N repetitions, storing:
 - stdout.txt
 - nsys.qdrep
-- ncu.ncu-rep
 
 Then parses stdout summaries and prints mean ± std per variant.
-
-IMPORTANT (for Nsight Compute):
-
-You must provide the Nsight Compute section folder explicitly.
-
-Find it using:
-    find /opt/nvidia/nsight-compute/ -name "sections" -type d
-
-Then pass it via:
-    --ncu-section-folder /opt/nvidia/nsight-compute/2025.1.1/sections
 """
 
 from __future__ import annotations
@@ -140,7 +129,6 @@ def format_mean_std(values):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cuda-tools-path", default=None)
-    ap.add_argument("--ncu-section-folder", required=True)
     ap.add_argument("--dataset-base-path", required=True)
     ap.add_argument("--code-path", default=str(Path.home()))
     ap.add_argument("--results-path", default=str(Path.cwd() / "ablation-results"))
@@ -158,7 +146,6 @@ def main() -> int:
         return 2
 
     nsys = tool_path(args.cuda_tools_path, "nsys")
-    ncu = tool_path(args.cuda_tools_path, "ncu")
 
     variants = [
         Variant("v0_fullwalk_index_inkernel", "in-kernel RNG + full_walk + index (exponential_index)",
@@ -181,7 +168,6 @@ def main() -> int:
     print(f"Results: {results_base}")
     print(f"Runs per variant: {args.runs}")
     print(f"nsys: {nsys}")
-    print(f"ncu:  {ncu}")
     print("")
 
     print("\n========================================")
@@ -230,23 +216,6 @@ def main() -> int:
             if rc != 0:
                 print(f"ERROR: nsys failed (rc={rc}) for {v.key} run-{run_id}", file=sys.stderr)
                 return 4
-
-            ncu_cmd = [
-                ncu,
-                "--target-processes", "all",
-                "--replay-mode", "kernel",
-                "--force-overwrite",
-                "-o", str(var_dir / "ncu"),
-                "--section-folder", args.ncu_section_folder,
-                "--set", "speedOfLight",
-                "--kernel-name", "regex:generate_random_walks_kernel|pick_start_edges_kernel|pick_intermediate_edges_kernel",
-                "--kernel-name-base", "demangled",
-                *cmd,
-            ]
-            rc = run_cmd(ncu_cmd, None, var_dir / "ncu_stdout.txt", var_dir / "ncu_stderr.txt", args.dry_run)
-            if rc != 0:
-                print(f"ERROR: ncu failed (rc={rc}) for {v.key} run-{run_id}", file=sys.stderr)
-                return 5
 
             parsed = parse_stdout_summary(var_dir / "stdout.txt")
             for k, vval in parsed.items():
