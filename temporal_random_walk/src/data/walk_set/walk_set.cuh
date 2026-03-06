@@ -26,10 +26,12 @@ struct WalkSet {
     int* nodes = nullptr;
     int64_t* timestamps = nullptr;
     size_t* walk_lens = nullptr;
+    int64_t* edge_ids = nullptr;
 
     size_t nodes_size = 0;
     size_t timestamps_size = 0;
     size_t walk_lens_size = 0;
+    size_t edge_ids_size = 0;
 
     size_t total_len = 0;
     bool owns_data = true;
@@ -55,6 +57,10 @@ struct WalkSet {
         allocate_memory(&walk_lens, num_walks, use_gpu);
         fill_memory(walk_lens, num_walks, static_cast<size_t>(0), use_gpu);
         walk_lens_size = num_walks;
+
+        allocate_memory(&edge_ids, total_len - num_walks, use_gpu);
+        fill_memory(edge_ids, total_len - num_walks, EMPTY_EDGE_ID, use_gpu);
+        edge_ids_size = total_len - num_walks;
     }
 
     HOST WalkSet(const WalkSet &other)
@@ -305,6 +311,7 @@ struct WalkSet {
         total_memory += nodes_size * sizeof(int);
         total_memory += timestamps_size * sizeof(int64_t);
         total_memory += walk_lens_size * sizeof(size_t);
+        total_memory += edge_ids_size * sizeof(int64_t);
         return total_memory;
     }
 
