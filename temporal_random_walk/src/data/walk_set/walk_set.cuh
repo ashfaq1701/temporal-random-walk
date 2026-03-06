@@ -381,7 +381,10 @@ struct WalkSet {
     // Iterator support
     HOST Walk get_walk(const int walk_number) const {
         const size_t walk_len = get_walk_len(walk_number);
-        const size_t offset = walk_number * max_len;
+        const size_t node_offset = static_cast<size_t>(walk_number) * max_len;
+
+        const size_t edge_stride = (max_len > 0) ? (max_len - 1) : 0;
+        const size_t edge_offset = static_cast<size_t>(walk_number) * edge_stride;
 
         #ifdef HAS_CUDA
         if (use_gpu) {
@@ -390,7 +393,12 @@ struct WalkSet {
         }
         #endif
 
-        return {nodes + offset, timestamps + offset, walk_len};
+        return {
+            nodes + node_offset,
+            timestamps + node_offset,
+            edge_ids + edge_offset,
+            walk_len
+        };
     }
 
     HOST WalksIterator walks_begin() const {

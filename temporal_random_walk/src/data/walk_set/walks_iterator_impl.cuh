@@ -16,9 +16,18 @@ inline WalksIterator::WalksIterator(const WalkSet* walk_set, const size_t start_
 
 // Iterator operations
 inline Walk WalksIterator::operator*() const {
-    size_t len = walk_set_->walk_lens[walk_index_];
-    const size_t offset = walk_index_ * walk_set_->max_len;
-    return {walk_set_->nodes + offset, walk_set_->timestamps + offset, len};
+    const size_t len = walk_set_->walk_lens[walk_index_];
+    const size_t node_offset = walk_index_ * walk_set_->max_len;
+
+    const size_t edge_stride = (walk_set_->max_len > 0) ? (walk_set_->max_len - 1) : 0;
+    const size_t edge_offset = walk_index_ * edge_stride;
+
+    return {
+        walk_set_->nodes + node_offset,
+        walk_set_->timestamps + node_offset,
+        walk_set_->edge_ids + edge_offset,
+        len
+    };
 }
 
 inline WalksIterator& WalksIterator::operator++() {
