@@ -55,10 +55,10 @@ namespace temporal_random_walk {
         if constexpr (IsDirected) {
             if constexpr (Forward) {
                 walk_set->add_hop(walk_idx, start_src, sentinel_timestamp);
-                walk_set->add_hop(walk_idx, start_dst, start_ts);
+                walk_set->add_hop(walk_idx, start_dst, start_ts, start_edge.edge_id);
             } else {
                 walk_set->add_hop(walk_idx, start_dst, sentinel_timestamp);
-                walk_set->add_hop(walk_idx, start_src, start_ts);
+                walk_set->add_hop(walk_idx, start_src, start_ts, start_edge.edge_id);
             }
         } else {
             // For undirected graphs, use specified start node or pick a random node
@@ -68,7 +68,7 @@ namespace temporal_random_walk {
             const int other_node = pick_other_number(start_src, start_dst, picked_node);
 
             walk_set->add_hop(walk_idx, picked_node, sentinel_timestamp);
-            walk_set->add_hop(walk_idx, other_node, start_ts);
+            walk_set->add_hop(walk_idx, other_node, start_ts, start_edge.edge_id);
         }
     }
 
@@ -111,10 +111,10 @@ namespace temporal_random_walk {
         }
 
         if constexpr (IsDirected) {
-            walk_set->add_hop(walk_idx, Forward ? next_edge.i : next_edge.u, next_edge.ts);
+            walk_set->add_hop(walk_idx, Forward ? next_edge.i : next_edge.u, next_edge.ts, next_edge.edge_id);
         } else {
             const auto node_to_add = pick_other_number(next_edge.u, next_edge.i, last_node);
-            walk_set->add_hop(walk_idx, node_to_add, next_edge.ts);
+            walk_set->add_hop(walk_idx, node_to_add, next_edge.ts, next_edge.edge_id);
         }
     }
 
