@@ -182,25 +182,11 @@ void EdgeData::push_back(const int source, const int target, const int64_t times
 }
 
 std::vector<Edge> EdgeData::get_edges() const {
-    // Call the optimized edge_data::get_edges function directly
+    // edge_data::get_edges always returns a CPU-resident snapshot.
     const DataBlock<Edge> edges_block = edge_data::get_edges(edge_data);
     std::vector<Edge> result;
 
-    // Copy data from DataBlock to std::vector
-    #ifdef HAS_CUDA
-    if (edge_data->use_gpu) {
-        // For GPU data, need to copy from device to host
-        const auto host_edges = new Edge[edges_block.size];
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(host_edges, edges_block.data, edges_block.size * sizeof(Edge), cudaMemcpyDeviceToHost));
-
-        result.assign(host_edges, host_edges + edges_block.size);
-    }
-    else
-    #endif
-    {
-        // For CPU data, can directly copy
-        result.assign(edges_block.data, edges_block.data + edges_block.size);
-    }
+    result.assign(edges_block.data, edges_block.data + edges_block.size);
 
     return result;
 }

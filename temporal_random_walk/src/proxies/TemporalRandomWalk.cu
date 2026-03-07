@@ -206,35 +206,17 @@ std::vector<int> TemporalRandomWalk::get_node_ids() const {
 }
 
 std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() const {
+    // temporal_random_walk::get_edges ultimately delegates to edge_data::get_edges,
+    // which always returns CPU-resident edges.
     const DataBlock<Edge> edges = temporal_random_walk::get_edges(temporal_random_walk);
     std::vector<std::tuple<int, int, int64_t>> result;
     result.reserve(edges.size);
 
-    #ifdef HAS_CUDA
-    if (edges.use_gpu) {
-        auto host_edges = new Edge[edges.size];
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(host_edges, edges.data,
-                                    edges.size * sizeof(Edge),
-                                    cudaMemcpyDeviceToHost));
-
-        for (size_t i = 0; i < edges.size; i++) {
-            result.emplace_back(
-                host_edges[i].u,
-                host_edges[i].i,
-                host_edges[i].ts);
-        }
-
-        delete[] host_edges;
-    }
-    else
-    #endif
-    {
-        for (size_t i = 0; i < edges.size; i++) {
-            result.emplace_back(
-                edges.data[i].u,
-                edges.data[i].i,
-                edges.data[i].ts);
-        }
+    for (size_t i = 0; i < edges.size; i++) {
+        result.emplace_back(
+            edges.data[i].u,
+            edges.data[i].i,
+            edges.data[i].ts);
     }
 
     return result;
