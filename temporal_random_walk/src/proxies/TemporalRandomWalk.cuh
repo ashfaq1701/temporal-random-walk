@@ -37,7 +37,9 @@ public:
         const int* sources,
         const int* targets,
         const int64_t* timestamps,
-        size_t edges_size) const;
+        size_t edges_size,
+        const float* edge_features = nullptr,
+        size_t feature_dim = 0) const;
 
     void add_multiple_edges(
         const std::vector<std::tuple<int, int, int64_t>>& edges) const;

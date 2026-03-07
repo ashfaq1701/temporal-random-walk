@@ -107,7 +107,9 @@ namespace temporal_random_walk {
         const int* sources,
         const int* targets,
         const int64_t* timestamps,
-        size_t num_edges);
+        size_t num_edges,
+        const float* edge_features = nullptr,
+        size_t feature_dim = 0);
 
     HOST size_t get_node_count(const TemporalRandomWalkStore *temporal_random_walk);
     
