@@ -90,7 +90,7 @@ HOST void edge_data::add_edges(
 
 HOST DataBlock<Edge> edge_data::get_edges(const EdgeDataStore *edge_data) {
     // Always return CPU-resident edge snapshots. This is required because
-    // Edge::weights points to CPU-resident edge_features rows.
+    // Edge::features points to CPU-resident edge_features rows.
     DataBlock<Edge> result(edge_data->timestamps_size, false);
 
     if (edge_data->timestamps_size == 0) {
@@ -125,15 +125,15 @@ HOST DataBlock<Edge> edge_data::get_edges(const EdgeDataStore *edge_data) {
     }
 
     for (size_t i = 0; i < edge_data->timestamps_size; i++) {
-        const float* edge_weights = nullptr;
-        int edge_weights_size = 0;
+        const float* edge_features = nullptr;
+        int edge_feature_dim = 0;
 
         if (edge_data->feature_dim > 0 && edge_data->edge_features != nullptr) {
-            edge_weights = edge_data->edge_features + (i * edge_data->feature_dim);
-            edge_weights_size = static_cast<int>(edge_data->feature_dim);
+            edge_features = edge_data->edge_features + (i * edge_data->feature_dim);
+            edge_feature_dim = static_cast<int>(edge_data->feature_dim);
         }
 
-        result.data[i] = Edge{sources[i], targets[i], timestamps[i], edge_weights, edge_weights_size};
+        result.data[i] = Edge{sources[i], targets[i], timestamps[i], edge_features, edge_feature_dim};
     }
 
     return result;
