@@ -143,24 +143,12 @@ std::vector<int> TemporalGraph::get_node_ids() const {
 }
 
 std::vector<Edge> TemporalGraph::get_edges() const {
-    DataBlock<Edge> edges = temporal_graph::get_edges(graph);
+    // temporal_graph::get_edges delegates to edge_data::get_edges, which now
+    // always returns a CPU-resident snapshot.
+    const DataBlock<Edge> edges = temporal_graph::get_edges(graph);
     std::vector<Edge> result;
 
-    #ifdef HAS_CUDA
-    if (graph->use_gpu) {
-        // For GPU data, need to copy from device to host
-        const auto host_edges = new Edge[edges.size];
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(host_edges, edges.data, edges.size * sizeof(Edge), cudaMemcpyDeviceToHost));
-
-        result.assign(host_edges, host_edges + edges.size);
-        delete[] host_edges;
-    }
-    else
-    #endif
-    {
-        // For CPU data, can directly copy
-        result.assign(edges.data, edges.data + edges.size);
-    }
+    result.assign(edges.data, edges.data + edges.size);
 
     return result;
 }
