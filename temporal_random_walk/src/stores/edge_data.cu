@@ -89,36 +89,51 @@ HOST void edge_data::add_edges(
 }
 
 HOST DataBlock<Edge> edge_data::get_edges(const EdgeDataStore *edge_data) {
-    DataBlock<Edge> result(edge_data->timestamps_size, edge_data->use_gpu);
+    // Always return CPU-resident edge snapshots. This is required because
+    // Edge::weights points to CPU-resident edge_features rows.
+    DataBlock<Edge> result(edge_data->timestamps_size, false);
+
+    if (edge_data->timestamps_size == 0) {
+        return result;
+    }
+
+    std::vector<int> host_sources;
+    std::vector<int> host_targets;
+    std::vector<int64_t> host_timestamps;
+
+    const int* sources = edge_data->sources;
+    const int* targets = edge_data->targets;
+    const int64_t* timestamps = edge_data->timestamps;
 
     #ifdef HAS_CUDA
     if (edge_data->use_gpu) {
-        thrust::device_ptr<int> d_sources(edge_data->sources);
-        thrust::device_ptr<int> d_targets(edge_data->targets);
-        thrust::device_ptr<int64_t> d_timestamps(edge_data->timestamps);
-        const thrust::device_ptr<Edge> d_result(result.data);
+        host_sources.resize(edge_data->sources_size);
+        host_targets.resize(edge_data->targets_size);
+        host_timestamps.resize(edge_data->timestamps_size);
 
-        thrust::transform(
-            DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(edge_data->timestamps_size),
-            d_result,
-            [d_sources, d_targets, d_timestamps] __device__ (const size_t i) {
-                return Edge{
-                    d_sources[static_cast<long>(i)],
-                    d_targets[static_cast<long>(i)],
-                    d_timestamps[static_cast<long>(i)]
-                };
-            }
-        );
+        copy_memory(host_sources.data(), edge_data->sources, edge_data->sources_size, false, true);
+        copy_memory(host_targets.data(), edge_data->targets, edge_data->targets_size, false, true);
+        copy_memory(host_timestamps.data(), edge_data->timestamps, edge_data->timestamps_size, false, true);
 
-        CUDA_KERNEL_CHECK("After thrust transform in get_edges");
+        sources = host_sources.data();
+        targets = host_targets.data();
+        timestamps = host_timestamps.data();
     } else
     #endif
     {
-        for (size_t i = 0; i < edge_data->timestamps_size; i++) {
-            result.data[i] = Edge{edge_data->sources[i], edge_data->targets[i], edge_data->timestamps[i]};
+        // CPU pointers already assigned above.
+    }
+
+    for (size_t i = 0; i < edge_data->timestamps_size; i++) {
+        const float* edge_weights = nullptr;
+        int edge_weights_size = 0;
+
+        if (edge_data->feature_dim > 0 && edge_data->edge_features != nullptr) {
+            edge_weights = edge_data->edge_features + (i * edge_data->feature_dim);
+            edge_weights_size = static_cast<int>(edge_data->feature_dim);
         }
+
+        result.data[i] = Edge{sources[i], targets[i], timestamps[i], edge_weights, edge_weights_size};
     }
 
     return result;
