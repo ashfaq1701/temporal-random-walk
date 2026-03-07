@@ -60,7 +60,10 @@ void TemporalRandomWalk::add_multiple_edges(
         feature_dim);
 }
 
-void TemporalRandomWalk::add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges) const {
+void TemporalRandomWalk::add_multiple_edges(
+    const std::vector<std::tuple<int, int, int64_t>>& edges,
+    const float* edge_features,
+    const size_t feature_dim) const {
     std::vector<int> sources;
     std::vector<int> targets;
     std::vector<int64_t> timestamps;
@@ -75,7 +78,7 @@ void TemporalRandomWalk::add_multiple_edges(const std::vector<std::tuple<int, in
         timestamps.push_back(std::get<2>(edge));
     }
 
-    add_multiple_edges(sources.data(), targets.data(), timestamps.data(), timestamps.size());
+    add_multiple_edges(sources.data(), targets.data(), timestamps.data(), timestamps.size(), edge_features, feature_dim);
 }
 
 WalkSet TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(

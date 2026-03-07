@@ -42,7 +42,9 @@ public:
         size_t feature_dim = 0) const;
 
     void add_multiple_edges(
-        const std::vector<std::tuple<int, int, int64_t>>& edges) const;
+        const std::vector<std::tuple<int, int, int64_t>>& edges,
+        const float* edge_features = nullptr,
+        size_t feature_dim = 0) const;
 
     WalkSet get_random_walks_and_times_for_all_nodes(
         int max_walk_len,
