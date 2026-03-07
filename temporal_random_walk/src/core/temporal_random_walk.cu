@@ -68,10 +68,10 @@ HOST void temporal_random_walk::clear(TemporalRandomWalkStore *temporal_random_w
         temporal_random_walk->use_gpu,
         temporal_random_walk->max_time_capacity,
         temporal_random_walk->enable_weight_computation,
+        temporal_random_walk->enable_temporal_node2vec,
         temporal_random_walk->timescale_bound,
         temporal_random_walk->node2vec_p,
-        temporal_random_walk->node2vec_q,
-        temporal_random_walk->enable_temporal_node2vec);
+        temporal_random_walk->node2vec_q);
 }
 
 /**
