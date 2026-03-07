@@ -98,7 +98,9 @@ namespace temporal_graph {
         const int *sources,
         const int *targets,
         const int64_t *timestamps,
-        size_t num_new_edges);
+        size_t num_new_edges,
+        const float *edge_features = nullptr,
+        size_t feature_dim = 0);
 
     HOST size_t count_timestamps_less_than_std(const TemporalGraphStore* graph, int64_t timestamp);
 
@@ -123,7 +125,9 @@ namespace temporal_graph {
         const int* sources,
         const int* targets,
         const int64_t* timestamps,
-        size_t num_new_edges);
+        size_t num_new_edges,
+        const float *edge_features = nullptr,
+        size_t feature_dim = 0);
 
     HOST size_t count_timestamps_less_than_cuda(const TemporalGraphStore* graph, int64_t timestamp);
 

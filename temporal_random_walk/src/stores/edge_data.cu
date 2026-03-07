@@ -4,6 +4,8 @@
 #include <vector>
 #include <atomic>
 #include <cstddef>
+#include <cstring>
+#include <stdexcept>
 
 #include <tbb/parallel_scan.h>
 #include <tbb/parallel_sort.h>
@@ -39,13 +41,51 @@ HOST void edge_data::set_size(EdgeDataStore *edge_data, const size_t size) {
     edge_data->sources_size = size;
     edge_data->targets_size = size;
     edge_data->timestamps_size = size;
+
+    edge_data->edge_features_size = size * edge_data->feature_dim;
 }
 
 HOST void edge_data::add_edges(EdgeDataStore *edge_data, const int *sources, const int *targets, const int64_t *timestamps,
                            const size_t size) {
+    edge_data::add_edges(edge_data, sources, targets, timestamps, size, nullptr, 0);
+}
+
+HOST void edge_data::add_edges(
+    EdgeDataStore *edge_data,
+    const int *sources,
+    const int *targets,
+    const int64_t *timestamps,
+    const size_t size,
+    const float *edge_features,
+    const size_t feature_dim) {
+    if (edge_features != nullptr && feature_dim == 0) {
+        throw std::runtime_error("edge_features provided but feature_dim is 0");
+    }
+
+    if (edge_data->sources_size != 0 && feature_dim != edge_data->feature_dim) {
+        throw std::runtime_error("feature_dim mismatch with existing edge_data->feature_dim");
+    }
+
+    if (edge_data->sources_size == 0) {
+        edge_data->feature_dim = feature_dim;
+    }
+
+    if (edge_features == nullptr && feature_dim != 0) {
+        throw std::runtime_error("feature_dim must be 0 when edge_features is not provided");
+    }
+
+    if (edge_data->feature_dim > 0 && edge_features == nullptr && size > 0) {
+        throw std::runtime_error("edge features enabled; non-empty ingestion must provide edge_features");
+    }
+
     append_memory(&edge_data->sources, edge_data->sources_size, sources, size, edge_data->use_gpu);
     append_memory(&edge_data->targets, edge_data->targets_size, targets, size, edge_data->use_gpu);
     append_memory(&edge_data->timestamps, edge_data->timestamps_size, timestamps, size, edge_data->use_gpu);
+
+    if (edge_data->feature_dim > 0 && edge_features != nullptr && size > 0) {
+        const size_t feature_values = size * edge_data->feature_dim;
+        append_memory(&edge_data->edge_features, edge_data->edge_features_size, edge_features, feature_values, false);
+    }
 }
 
 HOST DataBlock<Edge> edge_data::get_edges(const EdgeDataStore *edge_data) {
@@ -897,6 +937,8 @@ HOST EdgeDataStore* edge_data::to_device_ptr(const EdgeDataStore *edge_data) {
     // Create a temporary copy to modify for device pointers
     EdgeDataStore temp_edge_data = *edge_data;
     temp_edge_data.owns_data = false;
+    // Edge features stay CPU-resident even for CUDA ingestion/topology paths.
+    temp_edge_data.edge_features = nullptr;
 
     // If already using GPU, just copy the struct with its pointers
     if (!edge_data->use_gpu) {
@@ -1020,6 +1062,9 @@ HOST size_t edge_data::get_memory_used(EdgeDataStore* edge_data) {
     total_memory += edge_data->sources_size * sizeof(int);
     total_memory += edge_data->targets_size * sizeof(int);
     total_memory += edge_data->timestamps_size * sizeof(int64_t);
+
+    // Optional edge feature matrix
+    total_memory += edge_data->edge_features_size * sizeof(float);
 
     // Active nodes array
     total_memory += edge_data->active_node_ids_size * sizeof(int);

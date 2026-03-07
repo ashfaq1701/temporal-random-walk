@@ -13,6 +13,9 @@
 #include "../common/comparators.cuh"
 #include "../common/parallel_algorithms.cuh"
 
+#include <vector>
+#include <cstring>
+
 HOST void temporal_graph::update_temporal_weights(const TemporalGraphStore *graph) {
 #ifdef HAS_CUDA
     if (graph->use_gpu) {
@@ -89,6 +92,14 @@ HOST void temporal_graph::sort_and_merge_edges_std(TemporalGraphStore* graph, co
     auto* merged_targets = new int[total_size];
     auto* merged_timestamps = new int64_t[total_size];
 
+    float* merged_edge_features = nullptr;
+    float* edge_features = graph->edge_data->edge_features;
+    const size_t feature_dim = graph->edge_data->feature_dim;
+
+    if (feature_dim > 0) {
+        merged_edge_features = new float[total_size * feature_dim];
+    }
+
     // === Step 5: Gather edge data using merged indices ===
     #pragma omp parallel for
     for (int i = 0; i < total_size; ++i) {
@@ -96,6 +107,13 @@ HOST void temporal_graph::sort_and_merge_edges_std(TemporalGraphStore* graph, co
         merged_sources[i] = sources[idx];
         merged_targets[i] = targets[idx];
         merged_timestamps[i] = timestamps[idx];
+
+        if (feature_dim > 0) {
+            std::memcpy(
+                merged_edge_features + (static_cast<size_t>(i) * feature_dim),
+                edge_features + (static_cast<size_t>(idx) * feature_dim),
+                feature_dim * sizeof(float));
+        }
     }
 
     // === Step 6: Copy merged data back to graph ===
@@ -103,10 +121,15 @@ HOST void temporal_graph::sort_and_merge_edges_std(TemporalGraphStore* graph, co
     std::memcpy(targets, merged_targets, total_size * sizeof(int));
     std::memcpy(timestamps, merged_timestamps, total_size * sizeof(int64_t));
 
+    if (feature_dim > 0) {
+        std::memcpy(edge_features, merged_edge_features, total_size * feature_dim * sizeof(float));
+    }
+
     // === Step 7: Cleanup ===
     delete[] merged_sources;
     delete[] merged_targets;
     delete[] merged_timestamps;
+    delete[] merged_edge_features;
 }
 
 HOST void temporal_graph::delete_old_edges_std(TemporalGraphStore *graph) {
@@ -140,6 +163,15 @@ HOST void temporal_graph::delete_old_edges_std(TemporalGraphStore *graph) {
             graph->edge_data->timestamps_size,
             delete_count,
             graph->use_gpu);
+
+        if (graph->edge_data->feature_dim > 0) {
+            const size_t feature_values_to_delete = static_cast<size_t>(delete_count) * graph->edge_data->feature_dim;
+            remove_first_n_memory(
+                &graph->edge_data->edge_features,
+                graph->edge_data->edge_features_size,
+                feature_values_to_delete,
+                false);
+        }
     }
 
     edge_data::set_size(graph->edge_data, remaining);
@@ -150,7 +182,9 @@ HOST void temporal_graph::add_multiple_edges_std(
     const int *sources,
     const int *targets,
     const int64_t *timestamps,
-    const size_t num_new_edges) {
+    const size_t num_new_edges,
+    const float *edge_features,
+    const size_t feature_dim) {
 
     if (num_new_edges == 0) return;
 
@@ -168,7 +202,7 @@ HOST void temporal_graph::add_multiple_edges_std(
     graph->latest_timestamp = max_timestamp;
 
     // Add edges to edge data
-    edge_data::add_edges(graph->edge_data, sources, targets, timestamps, num_new_edges);
+    edge_data::add_edges(graph->edge_data, sources, targets, timestamps, num_new_edges, edge_features, feature_dim);
 
     // Sort and merge new edges
     sort_and_merge_edges_std(graph, start_idx);
@@ -358,6 +392,33 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(TemporalGraphStore* graph, c
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_targets, d_merged_targets, total_size * sizeof(int), cudaMemcpyDeviceToDevice));
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_timestamps, d_merged_timestamps, total_size * sizeof(int64_t), cudaMemcpyDeviceToDevice));
 
+    if (graph->edge_data->feature_dim > 0) {
+        std::vector<int> host_merged_indices(total_size);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+            host_merged_indices.data(),
+            thrust::raw_pointer_cast(merged_indices.data()),
+            total_size * sizeof(int),
+            cudaMemcpyDeviceToHost));
+
+        const size_t feature_dim = graph->edge_data->feature_dim;
+        float* edge_features = graph->edge_data->edge_features;
+        std::vector<float> merged_edge_features(total_size * feature_dim);
+
+        #pragma omp parallel for
+        for (int i = 0; i < static_cast<int>(total_size); ++i) {
+            const int idx = host_merged_indices[i];
+            std::memcpy(
+                merged_edge_features.data() + (static_cast<size_t>(i) * feature_dim),
+                edge_features + (static_cast<size_t>(idx) * feature_dim),
+                feature_dim * sizeof(float));
+        }
+
+        std::memcpy(
+            edge_features,
+            merged_edge_features.data(),
+            total_size * feature_dim * sizeof(float));
+    }
+
     // === Step 7: Cleanup ===
     clear_memory(&d_merged_sources, true);
     clear_memory(&d_merged_targets, true);
@@ -387,6 +448,15 @@ HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphStore *graph) {
     const size_t remaining = graph->edge_data->timestamps_size - delete_count;
 
     if (remaining > 0) {
+        if (graph->edge_data->feature_dim > 0) {
+            const size_t feature_values_to_delete = static_cast<size_t>(delete_count) * graph->edge_data->feature_dim;
+            remove_first_n_memory(
+                &graph->edge_data->edge_features,
+                graph->edge_data->edge_features_size,
+                feature_values_to_delete,
+                false);
+        }
+
         // Move edges using thrust::copy
         thrust::copy(
             DEVICE_EXECUTION_POLICY,
@@ -422,7 +492,9 @@ HOST void temporal_graph::add_multiple_edges_cuda(
     const int *sources,
     const int *targets,
     const int64_t *timestamps,
-    const size_t num_new_edges) {
+    const size_t num_new_edges,
+    const float *edge_features,
+    const size_t feature_dim) {
     if (num_new_edges == 0) return;
 
     // Get start index for new edges
@@ -457,7 +529,7 @@ HOST void temporal_graph::add_multiple_edges_cuda(
     graph->latest_timestamp = timestamps_max;
 
     // Add edges to edge data
-    edge_data::add_edges(graph->edge_data, d_sources, d_targets, d_timestamps, num_new_edges);
+    edge_data::add_edges(graph->edge_data, d_sources, d_targets, d_timestamps, num_new_edges, edge_features, feature_dim);
 
     // Sort and merge new edges
     sort_and_merge_edges_cuda(graph, start_idx);

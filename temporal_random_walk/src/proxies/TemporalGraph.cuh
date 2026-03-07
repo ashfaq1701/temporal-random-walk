@@ -72,7 +72,9 @@ public:
     void add_multiple_edges(
         const std::vector<int>& sources,
         const std::vector<int>& targets,
-        const std::vector<int64_t>& timestamps) const;
+        const std::vector<int64_t>& timestamps,
+        const float* edge_features = nullptr,
+        size_t feature_dim = 0) const;
 
     void add_multiple_edges(const std::vector<Edge>& edges) const;
 

@@ -168,7 +168,9 @@ std::vector<Edge> TemporalGraph::get_edges() const {
 void TemporalGraph::add_multiple_edges(
     const std::vector<int>& sources,
     const std::vector<int>& targets,
-    const std::vector<int64_t>& timestamps) const {
+    const std::vector<int64_t>& timestamps,
+    const float* edge_features,
+    const size_t feature_dim) const {
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         // Call CUDA implementation
@@ -177,7 +179,9 @@ void TemporalGraph::add_multiple_edges(
             sources.data(),
             targets.data(),
             timestamps.data(),
-            timestamps.size());
+            timestamps.size(),
+            edge_features,
+            feature_dim);
     }
     else
     #endif
@@ -188,7 +192,9 @@ void TemporalGraph::add_multiple_edges(
             sources.data(),
             targets.data(),
             timestamps.data(),
-            timestamps.size());
+            timestamps.size(),
+            edge_features,
+            feature_dim);
     }
 }
 
@@ -207,7 +213,7 @@ void TemporalGraph::add_multiple_edges(const std::vector<Edge>& edges) const {
         timestamps.push_back(edge.ts);
     }
 
-    add_multiple_edges(sources, targets, timestamps);
+    add_multiple_edges(sources, targets, timestamps, nullptr, 0);
 }
 
 void TemporalGraph::sort_and_merge_edges(size_t start_idx) const {

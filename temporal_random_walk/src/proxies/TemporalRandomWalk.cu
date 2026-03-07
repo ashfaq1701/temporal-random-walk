@@ -47,13 +47,17 @@ void TemporalRandomWalk::add_multiple_edges(
     const int* sources,
     const int* targets,
     const int64_t* timestamps,
-    const size_t edges_size) const {
+    const size_t edges_size,
+    const float* edge_features,
+    const size_t feature_dim) const {
     temporal_random_walk::add_multiple_edges(
         temporal_random_walk,
         sources,
         targets,
         timestamps,
-        edges_size);
+        edges_size,
+        edge_features,
+        feature_dim);
 }
 
 void TemporalRandomWalk::add_multiple_edges(const std::vector<std::tuple<int, int, int64_t>>& edges) const {

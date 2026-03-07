@@ -37,6 +37,11 @@ struct EdgeDataStore {
     int64_t* timestamps = nullptr;
     size_t timestamps_size = 0;
 
+    // Optional per-edge feature matrix (always CPU-resident), row-major [E x D]
+    float* edge_features = nullptr;
+    size_t edge_features_size = 0;
+    size_t feature_dim = 0;
+
     int* active_node_ids = nullptr;
     size_t active_node_ids_size = 0;
 
@@ -70,6 +75,7 @@ struct EdgeDataStore {
             clear_memory(&sources, use_gpu);
             clear_memory(&targets, use_gpu);
             clear_memory(&timestamps, use_gpu);
+            clear_memory(&edge_features, false);
             clear_memory(&active_node_ids, use_gpu);
             clear_memory(&node_adj_offsets, use_gpu);
             clear_memory(&node_adj_neighbors, use_gpu);
@@ -81,6 +87,7 @@ struct EdgeDataStore {
             sources = nullptr;
             targets = nullptr;
             timestamps = nullptr;
+            edge_features = nullptr;
             active_node_ids = nullptr;
             node_adj_offsets = nullptr;
             node_adj_neighbors = nullptr;
@@ -106,6 +113,15 @@ namespace edge_data {
     }
 
     HOST void add_edges(EdgeDataStore *edge_data, const int *sources, const int *targets, const int64_t *timestamps, size_t size);
+
+    HOST void add_edges(
+        EdgeDataStore *edge_data,
+        const int *sources,
+        const int *targets,
+        const int64_t *timestamps,
+        size_t size,
+        const float *edge_features,
+        size_t feature_dim);
 
     HOST DataBlock<Edge> get_edges(const EdgeDataStore *edge_data);
 
