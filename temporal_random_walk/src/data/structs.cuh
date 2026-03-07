@@ -11,15 +11,24 @@ struct Edge {
     int i;
     int64_t ts;
 
-    HOST DEVICE Edge(): u(-1), i(-1), ts(-1) {}
+    const float* weights;
+    int weights_size;
 
-    HOST DEVICE explicit Edge(const int u, const int i, const int64_t ts) : u(u), i(i), ts(ts) {}
+    HOST DEVICE Edge(): u(-1), i(-1), ts(-1), weights(nullptr), weights_size(0) {}
+
+    HOST DEVICE explicit Edge(const int u, const int i, const int64_t ts, const float* weights, const int weights_size)
+        : u(u), i(i), ts(ts), weights(weights), weights_size(weights_size) {}
+
+    HOST DEVICE explicit Edge(const int u, const int i, const int64_t ts)
+        : u(u), i(i), ts(ts), weights(nullptr), weights_size(0) {}
 
     HOST DEVICE Edge& operator=(const Edge& other) {
         if (this != &other) {
             u = other.u;
             i = other.i;
             ts = other.ts;
+            weights = other.weights;
+            weights_size = other.weights_size;
         }
         return *this;
     }

@@ -147,9 +147,9 @@ TYPED_TEST(TemporalGraphWeightTest, WeightBasedSampling) {
     // Test forward sampling after timestamp 20
     std::map<int64_t, int> forward_samples;
     for (int i = 0; i < 100; i++) {
-        auto [src, tgt, ts] = graph.get_edge_at(RandomPickerType::ExponentialWeight, 20, true);
-        EXPECT_GT(ts, 20) << "Forward sampled timestamp should be > 20";
-        forward_samples[ts]++;
+        auto edge = graph.get_edge_at(RandomPickerType::ExponentialWeight, 20, true);
+        EXPECT_GT(edge.ts, 20) << "Forward sampled timestamp should be > 20";
+        forward_samples[edge.ts]++;
     }
     EXPECT_GT(forward_samples[30], forward_samples[40])
         << "Earlier timestamp 30 should be sampled more than 40";
@@ -157,17 +157,17 @@ TYPED_TEST(TemporalGraphWeightTest, WeightBasedSampling) {
     // Test backward sampling before timestamp 30
     std::map<int64_t, int> backward_samples;
     for (int i = 0; i < 100; i++) {
-        auto [src, tgt, ts] = graph.get_edge_at(RandomPickerType::ExponentialWeight, 30, false);
-        EXPECT_LT(ts, 30) << "Backward sampled timestamp should be < 30";
-        backward_samples[ts]++;
+        auto edge = graph.get_edge_at(RandomPickerType::ExponentialWeight, 30, false);
+        EXPECT_LT(edge.ts, 30) << "Backward sampled timestamp should be < 30";
+        backward_samples[edge.ts]++;
     }
     EXPECT_GT(backward_samples[20], backward_samples[10])
         << "Later timestamp 30 should be sampled more than 10";
 
     backward_samples.clear();
     for (int i = 0; i < 100; i++) {
-        auto [src, tgt, ts] = graph.get_edge_at(RandomPickerType::ExponentialWeight, 50, false);
-        backward_samples[ts]++;
+        auto edge = graph.get_edge_at(RandomPickerType::ExponentialWeight, 50, false);
+        backward_samples[edge.ts]++;
     }
     EXPECT_GT(backward_samples[40], backward_samples[30])
         << "Later timestamp 40 should be sampled more than 30";
@@ -239,10 +239,10 @@ TYPED_TEST(TemporalGraphWeightTest, TimescaleBoundSampling) {
 
     // Forward sampling
     for (int i = 0; i < num_samples; i++) {
-        auto [u1, i1, ts1] = scaled_graph.get_edge_at_with_provided_nums(RandomPickerType::ExponentialWeight, random_nums + i * 4, 20, true);
-        auto [u2, i2, ts2] = unscaled_graph.get_edge_at_with_provided_nums(RandomPickerType::ExponentialWeight, random_nums + i * 4 + 2, 20, true);
-        ++scaled_samples[ts1];
-        ++unscaled_samples[ts2];
+        auto edge1 = scaled_graph.get_edge_at_with_provided_nums(RandomPickerType::ExponentialWeight, random_nums + i * 4, 20, true);
+        auto edge2 = unscaled_graph.get_edge_at_with_provided_nums(RandomPickerType::ExponentialWeight, random_nums + i * 4 + 2, 20, true);
+        ++scaled_samples[edge1.ts];
+        ++unscaled_samples[edge2.ts];
     }
 
     // Both should maintain same ordering of preferences
@@ -323,8 +323,8 @@ TYPED_TEST(TemporalGraphWeightTest, DifferentTimescaleBounds) {
 
         std::map<int64_t, int> samples;
         for (int i = 0; i < num_samples; i++) {
-            auto [u1, i1, ts] = graph.get_edge_at_with_provided_nums(RandomPickerType::ExponentialWeight, random_nums + i * 2, -1, true);
-            ++samples[ts];
+            auto edge = graph.get_edge_at_with_provided_nums(RandomPickerType::ExponentialWeight, random_nums + i * 2, -1, true);
+            ++samples[edge.ts];
         }
 
         // Compare consecutive timestamps

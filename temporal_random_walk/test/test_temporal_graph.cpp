@@ -388,39 +388,39 @@ TYPED_TEST(TemporalGraphTest, GetEdgeAtTest) {
     // Test forward direction (looking for timestamps > given)
 
     // Test with timestamp = -1 (no constraint)
-    auto [src1, tgt1, ts1] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, -1, true);
-    EXPECT_EQ(ts1, 100);  // Should select from first group
+    auto edge1 = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, -1, true);
+    EXPECT_EQ(edge1.ts, 100);  // Should select from first group
 
-    auto [src2, tgt2, ts2] = this->graph->get_edge_at(RandomPickerType::TEST_LAST, -1, true);
-    EXPECT_EQ(ts2, 400);  // Should select from last group
+    auto edge2 = this->graph->get_edge_at(RandomPickerType::TEST_LAST, -1, true);
+    EXPECT_EQ(edge2.ts, 400);  // Should select from last group
 
     // Test with timestamp constraints
-    auto [src3, tgt3, ts3] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 100, true);
-    EXPECT_EQ(ts3, 200);  // Should select first group after 100
+    auto edge3 = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 100, true);
+    EXPECT_EQ(edge3.ts, 200);  // Should select first group after 100
 
-    auto [src4, tgt4, ts4] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 300, true);
-    EXPECT_EQ(ts4, 400);  // Should select first group after 300
+    auto edge4 = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 300, true);
+    EXPECT_EQ(edge4.ts, 400);  // Should select first group after 300
 
     // Test backward direction (looking for timestamps < given)
-    auto [src5, tgt5, ts5] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 400, false);
-    EXPECT_EQ(ts5, 100);  // Should select first group before 400
+    auto edge5 = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 400, false);
+    EXPECT_EQ(edge5.ts, 100);  // Should select first group before 400
 
-    auto [src6, tgt6, ts6] = this->graph->get_edge_at(RandomPickerType::TEST_LAST, 250, false);
-    EXPECT_EQ(ts6, 200);  // Should select latest group before 250
+    auto edge6 = this->graph->get_edge_at(RandomPickerType::TEST_LAST, 250, false);
+    EXPECT_EQ(edge6.ts, 200);  // Should select latest group before 250
 
     // Test edge cases
     // No groups after timestamp
-    auto [src7, tgt7, ts7] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 500, true);
-    EXPECT_EQ(ts7, -1);  // Should return -1 when no valid groups
+    auto edge7 = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 500, true);
+    EXPECT_EQ(edge7.ts, -1);  // Should return -1 when no valid groups
 
     // No groups before timestamp
-    auto [src8, tgt8, ts8] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 50, false);
-    EXPECT_EQ(ts8, -1);
+    auto edge8 = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 50, false);
+    EXPECT_EQ(edge8.ts, -1);
 
     // Test with empty graph
     this->graph = std::make_unique<TemporalGraph>(true, TypeParam::value);
-    auto [src9, tgt9, ts9] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 100, true);
-    EXPECT_EQ(ts9, -1);
+    auto edge9 = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 100, true);
+    EXPECT_EQ(edge9.ts, -1);
 }
 
 TYPED_TEST(TemporalGraphTest, GetEdgeAtDuplicateTimestampsTest) {
@@ -436,18 +436,18 @@ TYPED_TEST(TemporalGraphTest, GetEdgeAtDuplicateTimestampsTest) {
     this->graph->add_multiple_edges(edges);
 
     // Test forward selection
-    auto [src1, tgt1, ts1] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 50, true);
-    EXPECT_EQ(ts1, 100);
-    EXPECT_TRUE((src1 == 10 && tgt1 == 20) ||
-                (src1 == 30 && tgt1 == 40) ||
-                (src1 == 50 && tgt1 == 60));  // Should be one of the t=100 edges
+    auto edge1 = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 50, true);
+    EXPECT_EQ(edge1.ts, 100);
+    EXPECT_TRUE((edge1.u == 10 && edge1.i == 20) ||
+                (edge1.u == 30 && edge1.i == 40) ||
+                (edge1.u == 50 && edge1.i == 60));  // Should be one of the t=100 edges
 
     // Test backward selection
-    auto [src2, tgt2, ts2] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 250, false);
-    EXPECT_EQ(ts2, 100);
-    EXPECT_TRUE((src2 == 10 && tgt2 == 20) ||
-                (src2 == 30 && tgt2 == 40) ||
-                (src2 == 50 && tgt2 == 60));  // Should be one of the t=100 edges
+    auto edge2 = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 250, false);
+    EXPECT_EQ(edge2.ts, 100);
+    EXPECT_TRUE((edge2.u == 10 && edge2.i == 20) ||
+                (edge2.u == 30 && edge2.i == 40) ||
+                (edge2.u == 50 && edge2.i == 60));  // Should be one of the t=100 edges
 }
 
 TYPED_TEST(TemporalGraphTest, GetEdgeAtBoundaryConditionsTest) {
@@ -460,18 +460,18 @@ TYPED_TEST(TemporalGraphTest, GetEdgeAtBoundaryConditionsTest) {
     this->graph->add_multiple_edges(edges);
 
     // Forward direction
-    auto [src1, tgt1, ts1] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 100, true);
-    EXPECT_EQ(ts1, 200);  // Should get next timestamp
+    auto edge1 = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 100, true);
+    EXPECT_EQ(edge1.ts, 200);  // Should get next timestamp
 
-    auto [src2, tgt2, ts2] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 300, true);
-    EXPECT_EQ(ts2, -1);   // No timestamps after 300
+    auto edge2 = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 300, true);
+    EXPECT_EQ(edge2.ts, -1);   // No timestamps after 300
 
     // Backward direction
-    auto [src3, tgt3, ts3] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 200, false);
-    EXPECT_EQ(ts3, 100);  // Should get previous timestamp
+    auto edge3 = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 200, false);
+    EXPECT_EQ(edge3.ts, 100);  // Should get previous timestamp
 
-    auto [src4, tgt4, ts4] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 100, false);
-    EXPECT_EQ(ts4, -1);   // No timestamps before 100
+    auto edge4 = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 100, false);
+    EXPECT_EQ(edge4.ts, -1);   // No timestamps before 100
 }
 
 TYPED_TEST(TemporalGraphTest, GetEdgeAtRandomSelectionTest) {
@@ -488,9 +488,9 @@ TYPED_TEST(TemporalGraphTest, GetEdgeAtRandomSelectionTest) {
     constexpr int NUM_TRIES = 50;
 
     for (int i = 0; i < NUM_TRIES; i++) {
-        auto [src, tgt, ts] = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 50, true);
-        EXPECT_EQ(ts, 100);
-        seen_edges.insert({src, tgt});
+        auto edge = this->graph->get_edge_at(RandomPickerType::TEST_FIRST, 50, true);
+        EXPECT_EQ(edge.ts, 100);
+        seen_edges.insert({edge.u, edge.i});
     }
 
     // We should see more than one edge (due to random selection within group)
