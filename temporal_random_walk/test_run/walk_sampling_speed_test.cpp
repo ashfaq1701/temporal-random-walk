@@ -188,27 +188,26 @@ int main(int argc, char* argv[])
     const auto start_time =
         std::chrono::high_resolution_clock::now();
 
-    WalkSet walk_set;
+    const WalksWithEdgeFeatures walks_with_edge_features =
+        (num_walks_per_node == -1)
+            ? walker.get_random_walks_and_times(
+                max_walk_length,
+                &edge_picker_enum,
+                num_total_walks,
+                &start_picker_enum,
+                WalkDirection::Forward_In_Time,
+                kernel_launch_type
+            )
+            : walker.get_random_walks_and_times_for_all_nodes(
+                max_walk_length,
+                &edge_picker_enum,
+                num_walks_per_node,
+                &start_picker_enum,
+                WalkDirection::Forward_In_Time,
+                kernel_launch_type
+            );
 
-    if (num_walks_per_node == -1) {
-        walk_set = walker.get_random_walks_and_times(
-            max_walk_length,
-            &edge_picker_enum,
-            num_total_walks,
-            &start_picker_enum,
-            WalkDirection::Forward_In_Time,
-            kernel_launch_type
-        );
-    } else {
-        walk_set = walker.get_random_walks_and_times_for_all_nodes(
-            max_walk_length,
-            &edge_picker_enum,
-            num_walks_per_node,
-            &start_picker_enum,
-            WalkDirection::Forward_In_Time,
-            kernel_launch_type
-        );
-    }
+    const auto& walk_set = walks_with_edge_features.walk_set;
 
     const auto end_time =
         std::chrono::high_resolution_clock::now();
