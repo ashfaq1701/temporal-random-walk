@@ -91,7 +91,8 @@ PYBIND11_MODULE(_temporal_random_walk, m)
         .def("add_multiple_edges", [](TemporalRandomWalk& tw,
                              const py::array_t<int>& sources,
                              const py::array_t<int>& targets,
-                             const py::array_t<int64_t>& timestamps)
+                             const py::array_t<int64_t>& timestamps,
+                             const py::object& edge_weights_obj)
         {
             // Request buffer access to numpy arrays
             const auto sources_info = sources.request();
@@ -112,8 +113,39 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             const auto targets_ptr = static_cast<int*>(targets_info.ptr);
             const auto* timestamps_ptr = static_cast<int64_t*>(timestamps_info.ptr);
 
+            const float* edge_weights_ptr = nullptr;
+            size_t feature_dim = 0;
+            std::optional<py::array_t<float, py::array::c_style | py::array::forcecast>> edge_weights = std::nullopt;
+
+            if (!edge_weights_obj.is_none()) {
+                edge_weights = edge_weights_obj.cast<py::array_t<float, py::array::c_style | py::array::forcecast>>();
+                const auto edge_weights_info = edge_weights->request();
+
+                if (edge_weights_info.ndim != 1 && edge_weights_info.ndim != 2) {
+                    throw std::runtime_error("edge_weights must be a 1D or 2D NumPy array");
+                }
+
+                const size_t num_edge_weight_values = static_cast<size_t>(edge_weights_info.size);
+                if (num_edges == 0 && num_edge_weight_values > 0) {
+                    throw std::runtime_error("edge_weights must be empty when there are no edges");
+                }
+
+                if (num_edges > 0 && num_edge_weight_values % num_edges != 0) {
+                    throw std::runtime_error("edge_weights size must be num_edges * feature_dim");
+                }
+
+                feature_dim = (num_edges == 0) ? 0 : num_edge_weight_values / num_edges;
+                edge_weights_ptr = static_cast<float*>(edge_weights_info.ptr);
+            }
+
             // Call the C++ function with raw pointers and size
-            tw.add_multiple_edges(sources_ptr, targets_ptr, timestamps_ptr, num_edges);
+            tw.add_multiple_edges(
+                sources_ptr,
+                targets_ptr,
+                timestamps_ptr,
+                num_edges,
+                edge_weights_ptr,
+                feature_dim);
         },
         R"(
         Add multiple directed edges to the temporal graph.
@@ -126,16 +158,21 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             sources: List or NumPy array of source node IDs (or first node in undirected graphs).
             targets: List or NumPy array of target node IDs (or second node in undirected graph).
             timestamps: List or NumPy array of timestamps representing when interactions occurred.
+            edge_weights: Optional NumPy array of edge features/weights. The flattened size
+                must equal num_edges * feature_dim. Can be either 1D (already flattened)
+                or 2D with shape [num_edges, feature_dim].
 
         Raises:
-            RuntimeError: If arrays are not 1-dimensional or have different lengths.
+            RuntimeError: If arrays have invalid dimensions, different edge lengths,
+                or edge_weights has an invalid total size.
 
         Note:
             For large datasets, NumPy arrays will provide better performance than Python lists.
         )",
         py::arg("sources"),
         py::arg("targets"),
-        py::arg("timestamps")
+        py::arg("timestamps"),
+        py::arg("edge_weights") = py::none()
         )
         .def("get_random_walks_and_times_for_all_nodes", [](TemporalRandomWalk& tw,
                                                const int max_walk_len,
