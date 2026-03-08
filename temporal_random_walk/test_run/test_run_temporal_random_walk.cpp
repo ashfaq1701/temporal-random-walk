@@ -39,13 +39,30 @@ int main(const int argc, char* argv[]) {
         {3, 2, 106}, {4, 3, 107}
     };
 
-    auto [sources, targets, timestamps] = convert_edge_tuples_to_components(edges);
+    const std::vector<float> edge_weights = {
+        0.1f, 0.2f, 0.3f,
+        0.4f, 0.5f, 0.6f,
+        0.7f, 0.8f, 0.9f,
+        1.0f, 1.1f, 1.2f,
+        1.3f, 1.4f, 1.5f,
+        1.6f, 1.7f, 1.8f,
+        1.9f, 2.0f, 2.1f,
+        2.2f, 2.3f, 2.4f,
+        2.5f, 2.6f, 2.7f,
+        2.8f, 2.9f, 3.0f,
+        3.1f, 3.2f, 3.3f,
+        3.4f, 3.5f, 3.6f,
+        3.7f, 3.8f, 3.9f,
+        4.0f, 4.1f, 4.2f,
+        4.3f, 4.4f, 4.5f,
+        4.6f, 4.7f, 4.8f,
+        4.9f, 5.0f, 5.1f,
+        5.2f, 5.3f, 5.4f,
+        5.5f, 5.6f, 5.7f,
+        5.8f, 5.9f, 6.0f
+    };
 
-    std::vector<float> edge_weights;
-    edge_weights.reserve(edges.size());
-    for (size_t i = 0; i < edges.size(); ++i) {
-        edge_weights.push_back(static_cast<float>(i + 1));
-    }
+    auto [sources, targets, timestamps] = convert_edge_tuples_to_components(edges);
 
     const TemporalRandomWalk temporal_random_walk(true, use_gpu);
     temporal_random_walk.add_multiple_edges(
@@ -54,7 +71,7 @@ int main(const int argc, char* argv[]) {
         timestamps.data(),
         timestamps.size(),
         edge_weights.data(),
-        1);
+        3);
 
     constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;
     constexpr RandomPickerType exponential_picker_type = RandomPickerType::ExponentialIndex;
