@@ -41,12 +41,20 @@ int main(const int argc, char* argv[]) {
 
     auto [sources, targets, timestamps] = convert_edge_tuples_to_components(edges);
 
+    std::vector<float> edge_weights;
+    edge_weights.reserve(edges.size());
+    for (size_t i = 0; i < edges.size(); ++i) {
+        edge_weights.push_back(static_cast<float>(i + 1));
+    }
+
     const TemporalRandomWalk temporal_random_walk(true, use_gpu);
     temporal_random_walk.add_multiple_edges(
         sources.data(),
         targets.data(),
         timestamps.data(),
-        timestamps.size());
+        timestamps.size(),
+        edge_weights.data(),
+        1);
 
     constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;
     constexpr RandomPickerType exponential_picker_type = RandomPickerType::ExponentialIndex;
@@ -59,7 +67,7 @@ int main(const int argc, char* argv[]) {
         Forward_In_Time);
 
     std::cout << "Forward walks:" << std::endl;
-    print_temporal_random_walks_with_times(walks_forward_with_edge_feats.walk_set);
+    print_temporal_random_walks_with_times_and_weights(walks_forward_with_edge_feats);
 
     const auto walks_backward_with_edge_feats = temporal_random_walk.get_random_walks_and_times_for_all_nodes(
         20,
@@ -69,7 +77,7 @@ int main(const int argc, char* argv[]) {
         WalkDirection::Backward_In_Time);
 
     std::cout << "Backward walks:" << std::endl;
-    print_temporal_random_walks_with_times(walks_backward_with_edge_feats.walk_set);
+    print_temporal_random_walks_with_times_and_weights(walks_backward_with_edge_feats);
 
     return 0;
 }
