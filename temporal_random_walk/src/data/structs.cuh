@@ -2,9 +2,10 @@
 #define STRUCTS_H
 
 #include <cstddef>
-
+#include <cstring>
 #include "../common/memory.cuh"
 #include "../common/macros.cuh"
+#include "walk_set/walk_set.cuh"
 
 struct Edge {
     int u;
@@ -103,6 +104,31 @@ template <typename T>
 struct MemoryView {
     T* data;
     size_t size;
+};
+
+struct WalksWithEdgeFeatures {
+    WalkSet* walk_set;
+    float* walk_edge_weights;
+    int feature_dim;
+
+    HOST WalksWithEdgeFeatures(WalkSet* walk_set, const int feature_dim)
+        : walk_set(walk_set), walk_edge_weights(nullptr), feature_dim(feature_dim) {
+        if (walk_set == nullptr || feature_dim <= 0) {
+            return;
+        }
+
+        const size_t walk_edge_weights_size = walk_set->edge_ids_size * static_cast<size_t>(feature_dim);
+        if (walk_edge_weights_size == 0) {
+            return;
+        }
+
+        allocate_memory(&walk_edge_weights, walk_edge_weights_size, false);
+        std::memset(walk_edge_weights, 0, walk_edge_weights_size * sizeof(float));
+    }
+
+    HOST ~WalksWithEdgeFeatures() {
+        clear_memory(&walk_edge_weights, false);
+    }
 };
 
 #endif // STRUCTS_H
