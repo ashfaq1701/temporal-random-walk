@@ -5,6 +5,7 @@
 #include <thread>
 #include "../core/temporal_random_walk.cuh"
 #include "../data/walk_set/walk_set.cuh"
+#include "../data/structs.cuh"
 #include "../data/enums.cuh"
 #include "../common/const.cuh"
 
@@ -46,7 +47,7 @@ public:
         const float* edge_features = nullptr,
         size_t feature_dim = 0) const;
 
-    WalkSet get_random_walks_and_times_for_all_nodes(
+    WalksWithEdgeFeatures get_random_walks_and_times_for_all_nodes(
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_per_node,
@@ -54,7 +55,7 @@ public:
         WalkDirection walk_direction=WalkDirection::Forward_In_Time,
         KernelLaunchType kernel_launch_type=KernelLaunchType::FULL_WALK) const;
 
-    WalkSet get_random_walks_and_times(
+    WalksWithEdgeFeatures get_random_walks_and_times(
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_total,
