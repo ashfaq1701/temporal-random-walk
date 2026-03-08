@@ -129,6 +129,23 @@ struct WalksWithEdgeFeatures {
     HOST ~WalksWithEdgeFeatures() {
         clear_memory(&walk_edge_features, false);
     }
+
+    HOST void populate_walk_edge_features(const float* edge_features) {
+        if (walk_set == nullptr || walk_edge_features == nullptr || edge_features == nullptr || feature_dim <= 0) {
+            return;
+        }
+
+        const size_t feature_dim_size_t = static_cast<size_t>(feature_dim);
+        const size_t walk_edges_count = walk_set->edge_ids_size;
+
+        #pragma omp parallel for schedule(static)
+        for (size_t i = 0; i < walk_edges_count; ++i) {
+            const size_t edge_id = static_cast<size_t>(walk_set->edge_ids[i]);
+            float* dst = walk_edge_features + (i * feature_dim_size_t);
+            const float* src = edge_features + (edge_id * feature_dim_size_t);
+            std::memcpy(dst, src, feature_dim_size_t * sizeof(float));
+        }
+    }
 };
 
 #endif // STRUCTS_H
