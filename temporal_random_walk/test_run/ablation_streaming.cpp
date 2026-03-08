@@ -191,7 +191,7 @@ int main(int argc, char **argv) {
             NvtxRange r("walk_sampling_batch");
             const auto t0 = std::chrono::high_resolution_clock::now();
 
-            const auto walks = trw.get_random_walks_and_times_for_all_nodes(
+            const auto walks_with_edge_feats = trw.get_random_walks_and_times_for_all_nodes(
                 max_walk_len,
                 &hop_picker,
                 num_walks_per_node,
@@ -199,16 +199,16 @@ int main(int argc, char **argv) {
                 WalkDirection::Forward_In_Time,
                 kernel_launch_type);
 
-#ifdef HAS_CUDA
+            #ifdef HAS_CUDA
             if (use_gpu) cudaDeviceSynchronize();
-#endif
+            #endif
 
             const auto t1 = std::chrono::high_resolution_clock::now();
             walk_time =
                 std::chrono::duration<double>(t1 - t0).count();
 
-            walks_this_batch = walks.size();
-            avg_len_batch = get_average_walk_length(walks);
+            walks_this_batch = walks_with_edge_feats.walk_set.size();
+            avg_len_batch = get_average_walk_length(walks_with_edge_feats.walk_set);
 
             total_walks += walks_this_batch;
             total_walk_len_sum += avg_len_batch * walks_this_batch;

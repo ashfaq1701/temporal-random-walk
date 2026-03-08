@@ -93,14 +93,14 @@ int main(int argc, char* argv[]) {
     // Generate walks with first half
     auto first_half_walks_start = std::chrono::high_resolution_clock::now();
 
-    const auto walks_backward_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
+    const auto walks_backward_with_edge_feats_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
         80,
         &effective_step_picker,
         NUM_WALKS_TOTAL,
         &uniform_picker_type,
         WalkDirection::Backward_In_Time);
 
-    const auto walks_forward_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
+    const auto walks_forward_with_edge_feats_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
         80,
         &effective_step_picker,
         NUM_WALKS_TOTAL,
@@ -131,14 +131,14 @@ int main(int argc, char* argv[]) {
     // Generate walks with all edges
     auto second_half_walks_start = std::chrono::high_resolution_clock::now();
 
-    const auto walks_backward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
+    const auto walks_backward_with_edge_feats_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
         80,
         &effective_step_picker,
         NUM_WALKS_TOTAL,
         &uniform_picker_type,
         WalkDirection::Backward_In_Time);
 
-    const auto walks_forward_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
+    const auto walks_forward_for_with_edge_feats_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
         80,
         &effective_step_picker,
         NUM_WALKS_TOTAL,
@@ -150,12 +150,16 @@ int main(int argc, char* argv[]) {
     std::cout << "Second half walk generation time: " << second_half_walks_duration.count() << " seconds" << std::endl;
 
     std::cout << "\nWalks with first half edges:" << std::endl;
-    std::cout << "  Forward walks: " << walks_forward_for_all_nodes_1.size() << ", average length " << get_average_walk_length(walks_forward_for_all_nodes_1) << std::endl;
-    std::cout << "  Backward walks: " << walks_backward_for_all_nodes_1.size() << ", average length " << get_average_walk_length(walks_backward_for_all_nodes_1) << std::endl;
+    std::cout << "  Forward walks: " << walks_forward_with_edge_feats_for_all_nodes_1.walk_set.size() << ", average length "
+        << get_average_walk_length(walks_forward_with_edge_feats_for_all_nodes_1.walk_set) << std::endl;
+    std::cout << "  Backward walks: " << walks_backward_with_edge_feats_for_all_nodes_1.size() << ", average length "
+        << get_average_walk_length(walks_backward_with_edge_feats_for_all_nodes_1.walk_set) << std::endl;
 
     std::cout << "\nWalks with all edges:" << std::endl;
-    std::cout << "  Forward walks: " << walks_forward_for_all_nodes_2.size() << ", average length " << get_average_walk_length(walks_forward_for_all_nodes_2) << std::endl;
-    std::cout << "  Backward walks: " << walks_backward_for_all_nodes_2.size() << ", average length " << get_average_walk_length(walks_backward_for_all_nodes_2) << std::endl;
+    std::cout << "  Forward walks: " << walks_forward_for_with_edge_feats_all_nodes_2.walk_set.size() << ", average length "
+        << get_average_walk_length(walks_forward_for_with_edge_feats_all_nodes_2.walk_set) << std::endl;
+    std::cout << "  Backward walks: " << walks_backward_with_edge_feats_for_all_nodes_2.size() << ", average length "
+        << get_average_walk_length(walks_backward_with_edge_feats_for_all_nodes_2.walk_set) << std::endl;
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> total_duration = end - start;
@@ -164,7 +168,7 @@ int main(int argc, char* argv[]) {
     size_t inserted_edge_count = temporal_random_walk.get_edge_count();
     std::cout << "Inserted edge count: " << inserted_edge_count << std::endl;
 
-    print_temporal_random_walks_with_times(walks_backward_for_all_nodes_2, 100);
+    print_temporal_random_walks_with_times(walks_backward_with_edge_feats_for_all_nodes_2.walk_set, 100);
 
     return 0;
 }

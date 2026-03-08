@@ -51,7 +51,7 @@ int main(const int argc, char* argv[]) {
     constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;
     constexpr RandomPickerType exponential_picker_type = RandomPickerType::ExponentialIndex;
 
-    const auto walks_forward = temporal_random_walk.get_random_walks_and_times_for_all_nodes(
+    const auto walks_forward_with_edge_feats = temporal_random_walk.get_random_walks_and_times_for_all_nodes(
         20,
         &linear_picker_type,
         10,
@@ -59,9 +59,9 @@ int main(const int argc, char* argv[]) {
         Forward_In_Time);
 
     std::cout << "Forward walks:" << std::endl;
-    print_temporal_random_walks_with_times(walks_forward);
+    print_temporal_random_walks_with_times(walks_forward_with_edge_feats.walk_set);
 
-    const auto walks_backward = temporal_random_walk.get_random_walks_and_times_for_all_nodes(
+    const auto walks_backward_with_edge_feats = temporal_random_walk.get_random_walks_and_times_for_all_nodes(
         20,
         &linear_picker_type,
         10,
@@ -69,7 +69,7 @@ int main(const int argc, char* argv[]) {
         WalkDirection::Backward_In_Time);
 
     std::cout << "Backward walks:" << std::endl;
-    print_temporal_random_walks_with_times(walks_backward);
+    print_temporal_random_walks_with_times(walks_backward_with_edge_feats.walk_set);
 
     return 0;
 }
