@@ -108,26 +108,26 @@ struct MemoryView {
 
 struct WalksWithEdgeFeatures {
     WalkSet* walk_set;
-    float* walk_edge_weights;
+    float* walk_edge_features;
     int feature_dim;
 
     HOST WalksWithEdgeFeatures(WalkSet* walk_set, const int feature_dim)
-        : walk_set(walk_set), walk_edge_weights(nullptr), feature_dim(feature_dim) {
+        : walk_set(walk_set), walk_edge_features(nullptr), feature_dim(feature_dim) {
         if (walk_set == nullptr || feature_dim <= 0) {
             return;
         }
 
-        const size_t walk_edge_weights_size = walk_set->edge_ids_size * static_cast<size_t>(feature_dim);
-        if (walk_edge_weights_size == 0) {
+        const size_t walk_edge_features_size = walk_set->edge_ids_size * static_cast<size_t>(feature_dim);
+        if (walk_edge_features_size == 0) {
             return;
         }
 
-        allocate_memory(&walk_edge_weights, walk_edge_weights_size, false);
-        std::memset(walk_edge_weights, 0, walk_edge_weights_size * sizeof(float));
+        allocate_memory(&walk_edge_features, walk_edge_features_size, false);
+        std::memset(walk_edge_features, 0, walk_edge_features_size * sizeof(float));
     }
 
     HOST ~WalksWithEdgeFeatures() {
-        clear_memory(&walk_edge_weights, false);
+        clear_memory(&walk_edge_features, false);
     }
 };
 
