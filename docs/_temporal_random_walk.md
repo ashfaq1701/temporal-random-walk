@@ -116,7 +116,7 @@ Classes
             np.ndarray: A NumPy array with all node IDs.
 
     `get_random_walks_and_times(...)`
-    :   get_random_walks_and_times(self: _temporal_random_walk.TemporalRandomWalk, max_walk_len: int, walk_bias: str, num_walks_total: int, initial_edge_bias: Optional[str] = None, walk_direction: str = 'Forward_In_Time') -> tuple[numpy.ndarray[numpy.int32], numpy.ndarray[numpy.int64], numpy.ndarray[numpy.uint64]]
+    :   get_random_walks_and_times(self: _temporal_random_walk.TemporalRandomWalk, max_walk_len: int, walk_bias: str, num_walks_total: int, initial_edge_bias: Optional[str] = None, walk_direction: str = 'Forward_In_Time') -> tuple[numpy.ndarray[numpy.int32], numpy.ndarray[numpy.int64], numpy.ndarray[numpy.uint64], Optional[numpy.ndarray[numpy.float32]]]
         
         
         Generate temporal random walks with timestamps.
@@ -137,13 +137,15 @@ Classes
                 Either "Forward_In_Time" (default) or "Backward_In_Time".
         
         Returns:
-            Tuple[np.ndarray, np.ndarray, np.ndarray]:
+            Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
                 - 2D array of node ids (shape: [num_walks, max_walk_len])
                 - 2D array of timestamps (shape: [num_walks, max_walk_len])
                 - 1D array of actual walk lengths (shape: [num_walks])
+                - 3D array of edge features (shape: [num_walks, max_walk_len - 1, feature_dim]),
+                  or None if feature_dim is 0
 
     `get_random_walks_and_times_for_all_nodes(...)`
-    :   get_random_walks_and_times_for_all_nodes(self: _temporal_random_walk.TemporalRandomWalk, max_walk_len: int, walk_bias: str, num_walks_per_node: int, initial_edge_bias: Optional[str] = None, walk_direction: str = 'Forward_In_Time') -> tuple[numpy.ndarray[numpy.int32], numpy.ndarray[numpy.int64], numpy.ndarray[numpy.uint64]]
+    :   get_random_walks_and_times_for_all_nodes(self: _temporal_random_walk.TemporalRandomWalk, max_walk_len: int, walk_bias: str, num_walks_per_node: int, initial_edge_bias: Optional[str] = None, walk_direction: str = 'Forward_In_Time') -> tuple[numpy.ndarray[numpy.int32], numpy.ndarray[numpy.int64], numpy.ndarray[numpy.uint64], Optional[numpy.ndarray[numpy.float32]]]
         
         
         Generate temporal random walks with timestamps starting from all nodes.
@@ -164,10 +166,12 @@ Classes
                 Either "Forward_In_Time" (default) or "Backward_In_Time".
         
         Returns:
-            Tuple[np.ndarray, np.ndarray, np.ndarray]:
+            Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
                 - 2D array of node ids (shape: [num_walks, max_walk_len])
                 - 2D array of timestamps (shape: [num_walks, max_walk_len])
                 - 1D array of actual walk lengths (shape: [num_walks])
+                - 3D array of edge features (shape: [num_walks, max_walk_len - 1, feature_dim]),
+                  or None if feature_dim is 0
 
     `to_networkx(self: _temporal_random_walk.TemporalRandomWalk)`
     :   Export graph to NetworkX format.
