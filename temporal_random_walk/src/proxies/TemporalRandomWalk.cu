@@ -81,7 +81,7 @@ void TemporalRandomWalk::add_multiple_edges(
     add_multiple_edges(sources.data(), targets.data(), timestamps.data(), timestamps.size(), edge_features, feature_dim);
 }
 
-WalkSet TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
+WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
         const int max_walk_len,
         const RandomPickerType* walk_bias,
         const int num_walks_per_node,
@@ -113,10 +113,15 @@ WalkSet TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
             walk_direction);
     }
 
-    return walk_set;
+    WalksWithEdgeFeatures walks_with_edge_features(
+        std::move(walk_set),
+        static_cast<int>(temporal_random_walk->temporal_graph->edge_data->feature_dim));
+    walks_with_edge_features.populate_walk_edge_features(temporal_random_walk->temporal_graph->edge_data->edge_features);
+
+    return walks_with_edge_features;
 }
 
-WalkSet TemporalRandomWalk::get_random_walks_and_times(
+WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times(
         const int max_walk_len,
         const RandomPickerType* walk_bias,
         const int num_walks_total,
@@ -149,7 +154,12 @@ WalkSet TemporalRandomWalk::get_random_walks_and_times(
             walk_direction);
     }
 
-    return walk_set;
+    WalksWithEdgeFeatures walks_with_edge_features(
+        std::move(walk_set),
+        static_cast<int>(temporal_random_walk->temporal_graph->edge_data->feature_dim));
+    walks_with_edge_features.populate_walk_edge_features(temporal_random_walk->temporal_graph->edge_data->edge_features);
+
+    return walks_with_edge_features;
 }
 
 size_t TemporalRandomWalk::get_node_count() const {
