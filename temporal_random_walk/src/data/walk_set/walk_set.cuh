@@ -33,7 +33,7 @@ struct WalkSet {
     size_t walk_lens_size = 0;
     size_t edge_ids_size = 0;
 
-    size_t total_len = 0;
+    size_t total_walk_len = 0;
     bool owns_data = true;
 
     // Constructors and assignment operators
@@ -44,28 +44,28 @@ struct WalkSet {
         const size_t max_len,
         const int walk_padding_value,
         const bool use_gpu): num_walks(num_walks), max_len(max_len), walk_padding_value(walk_padding_value), use_gpu(use_gpu) {
-        total_len = num_walks * max_len;
+        total_walk_len = num_walks * max_len;
 
-        allocate_memory(&nodes, total_len, use_gpu);
-        fill_memory(nodes, total_len, walk_padding_value, use_gpu);
-        nodes_size = total_len;
+        allocate_memory(&nodes, total_walk_len, use_gpu);
+        fill_memory(nodes, total_walk_len, walk_padding_value, use_gpu);
+        nodes_size = total_walk_len;
 
-        allocate_memory(&timestamps, total_len, use_gpu);
-        fill_memory(timestamps, total_len, EMPTY_TIMESTAMP_VALUE, use_gpu);
-        timestamps_size = total_len;
+        allocate_memory(&timestamps, total_walk_len, use_gpu);
+        fill_memory(timestamps, total_walk_len, EMPTY_TIMESTAMP_VALUE, use_gpu);
+        timestamps_size = total_walk_len;
 
         allocate_memory(&walk_lens, num_walks, use_gpu);
         fill_memory(walk_lens, num_walks, static_cast<size_t>(0), use_gpu);
         walk_lens_size = num_walks;
 
-        allocate_memory(&edge_ids, total_len - num_walks, use_gpu);
-        fill_memory(edge_ids, total_len - num_walks, EMPTY_EDGE_ID, use_gpu);
-        edge_ids_size = total_len - num_walks;
+        edge_ids_size = total_walk_len - num_walks;
+        allocate_memory(&edge_ids, edge_ids_size, use_gpu);
+        fill_memory(edge_ids, edge_ids_size, EMPTY_EDGE_ID, use_gpu);
     }
 
     HOST WalkSet(const WalkSet &other)
         : num_walks(other.num_walks), max_len(other.max_len), walk_padding_value(other.walk_padding_value), use_gpu(other.use_gpu),
-        total_len(other.total_len) {
+        total_walk_len(other.total_walk_len) {
 
         // Allocate and copy nodes
         allocate_memory(&nodes, other.nodes_size, use_gpu);
@@ -82,8 +82,8 @@ struct WalkSet {
         walk_lens_size = other.walk_lens_size;
         copy_memory(walk_lens, other.walk_lens, walk_lens_size, use_gpu, other.use_gpu);
 
-        allocate_memory(&edge_ids, total_len - num_walks, use_gpu);
         edge_ids_size = other.edge_ids_size;
+        allocate_memory(&edge_ids, edge_ids_size, use_gpu);
         copy_memory(edge_ids, other.edge_ids, edge_ids_size, use_gpu, other.use_gpu);
     }
 
@@ -91,12 +91,12 @@ struct WalkSet {
         : num_walks(other.num_walks), max_len(other.max_len), walk_padding_value(other.walk_padding_value),
         use_gpu(other.use_gpu), nodes(other.nodes), timestamps(other.timestamps), walk_lens(other.walk_lens),
         edge_ids(other.edge_ids), nodes_size(other.nodes_size), timestamps_size(other.timestamps_size),
-        walk_lens_size(other.walk_lens_size), edge_ids_size(other.edge_ids_size), total_len(other.total_len) {
+        walk_lens_size(other.walk_lens_size), edge_ids_size(other.edge_ids_size), total_walk_len(other.total_walk_len) {
 
         // Reset the source object to prevent double-free issues
         other.num_walks = 0;
         other.max_len = 0;
-        other.total_len = 0;
+        other.total_walk_len = 0;
         other.nodes = nullptr;
         other.timestamps = nullptr;
         other.walk_lens = nullptr;
@@ -119,7 +119,7 @@ struct WalkSet {
             max_len = other.max_len;
             walk_padding_value = other.walk_padding_value;
             use_gpu = other.use_gpu;
-            total_len = other.total_len;
+            total_walk_len = other.total_walk_len;
 
             // Allocate and copy nodes
             allocate_memory(&nodes, other.nodes_size, use_gpu);
@@ -156,7 +156,7 @@ struct WalkSet {
             max_len = other.max_len;
             walk_padding_value = other.walk_padding_value;
             use_gpu = other.use_gpu;
-            total_len = other.total_len;
+            total_walk_len = other.total_walk_len;
 
             // Move pointers
             nodes = other.nodes;
@@ -172,7 +172,7 @@ struct WalkSet {
             // Reset the source object
             other.num_walks = 0;
             other.max_len = 0;
-            other.total_len = 0;
+            other.total_walk_len = 0;
             other.nodes = nullptr;
             other.timestamps = nullptr;
             other.walk_lens = nullptr;
@@ -254,7 +254,7 @@ struct WalkSet {
         // Update metadata
         num_walks = temp_walk_set.num_walks;
         max_len = temp_walk_set.max_len;
-        total_len = temp_walk_set.total_len;
+        total_walk_len = temp_walk_set.total_walk_len;
         walk_padding_value = temp_walk_set.walk_padding_value;
         use_gpu = false; // We copied to host memory
     }
