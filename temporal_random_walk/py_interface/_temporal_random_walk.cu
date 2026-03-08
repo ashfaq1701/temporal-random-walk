@@ -2,6 +2,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 #include <cstdlib>
+#include <algorithm>
 #include <optional>
 #include "../src/proxies/TemporalRandomWalk.cuh"
 #include "../src/proxies/RandomPicker.cuh"
@@ -217,9 +218,27 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     py::capsule(walk_set.walk_lens, [](void* p) { std::free(p); })
                 );
 
+                py::object edge_features_array = py::none();
+                if (walks_with_edge_features.feature_dim > 0 && walks_with_edge_features.walk_edge_features != nullptr) {
+                    const ssize_t num_walks = static_cast<ssize_t>(walk_set.num_walks);
+                    const ssize_t edges_per_walk = static_cast<ssize_t>(std::max(0, max_walk_len - 1));
+                    const ssize_t feature_dim = static_cast<ssize_t>(walks_with_edge_features.feature_dim);
+
+                    edge_features_array = py::array_t<float>(
+                        py::array::ShapeContainer{num_walks, edges_per_walk, feature_dim},
+                        py::array::StridesContainer{
+                            static_cast<ssize_t>(sizeof(float) * edges_per_walk * feature_dim),
+                            static_cast<ssize_t>(sizeof(float) * feature_dim),
+                            static_cast<ssize_t>(sizeof(float))},
+                        walks_with_edge_features.walk_edge_features,
+                        py::capsule(walks_with_edge_features.walk_edge_features, [](void* p) { std::free(p); })
+                    );
+                    walks_with_edge_features.walk_edge_features = nullptr;
+                }
+
                 walk_set.owns_data = false;
 
-                return std::make_tuple(nodes_array, timestamps_array, lens_array);
+                return std::make_tuple(nodes_array, timestamps_array, lens_array, edge_features_array);
             },
             R"(
             Generate temporal random walks with timestamps starting from all nodes.
@@ -240,10 +259,12 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     Either "Forward_In_Time" (default) or "Backward_In_Time".
 
             Returns:
-                Tuple[np.ndarray, np.ndarray, np.ndarray]:
+                Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
                     - 2D array of node ids (shape: [num_walks, max_walk_len])
                     - 2D array of timestamps (shape: [num_walks, max_walk_len])
                     - 1D array of actual walk lengths (shape: [num_walks])
+                    - 3D array of edge features (shape: [num_walks, max_walk_len - 1, feature_dim]),
+                      or None if feature_dim is 0
             )",
             py::arg("max_walk_len"),
             py::arg("walk_bias"),
@@ -295,9 +316,27 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     py::capsule(walk_set.walk_lens, [](void* p) { std::free(p); })
                 );
 
+                py::object edge_features_array = py::none();
+                if (walks_with_edge_features.feature_dim > 0 && walks_with_edge_features.walk_edge_features != nullptr) {
+                    const ssize_t num_walks = static_cast<ssize_t>(walk_set.num_walks);
+                    const ssize_t edges_per_walk = static_cast<ssize_t>(std::max(0, max_walk_len - 1));
+                    const ssize_t feature_dim = static_cast<ssize_t>(walks_with_edge_features.feature_dim);
+
+                    edge_features_array = py::array_t<float>(
+                        py::array::ShapeContainer{num_walks, edges_per_walk, feature_dim},
+                        py::array::StridesContainer{
+                            static_cast<ssize_t>(sizeof(float) * edges_per_walk * feature_dim),
+                            static_cast<ssize_t>(sizeof(float) * feature_dim),
+                            static_cast<ssize_t>(sizeof(float))},
+                        walks_with_edge_features.walk_edge_features,
+                        py::capsule(walks_with_edge_features.walk_edge_features, [](void* p) { std::free(p); })
+                    );
+                    walks_with_edge_features.walk_edge_features = nullptr;
+                }
+
                 walk_set.owns_data = false;
 
-                return std::make_tuple(nodes_array, timestamps_array, lens_array);
+                return std::make_tuple(nodes_array, timestamps_array, lens_array, edge_features_array);
             },
             R"(
             Generate temporal random walks with timestamps.
@@ -318,10 +357,12 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     Either "Forward_In_Time" (default) or "Backward_In_Time".
 
             Returns:
-                Tuple[np.ndarray, np.ndarray, np.ndarray]:
+                Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
                     - 2D array of node ids (shape: [num_walks, max_walk_len])
                     - 2D array of timestamps (shape: [num_walks, max_walk_len])
                     - 1D array of actual walk lengths (shape: [num_walks])
+                    - 3D array of edge features (shape: [num_walks, max_walk_len - 1, feature_dim]),
+                      or None if feature_dim is 0
             )",
             py::arg("max_walk_len"),
             py::arg("walk_bias"),
