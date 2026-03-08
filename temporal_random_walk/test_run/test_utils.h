@@ -8,6 +8,7 @@
 #include <fstream>
 
 #include "../src/data/walk_set/walk_set.cuh"
+#include "../src/data/structs.cuh"
 
 inline void print_temporal_random_walks_with_times(
     const WalkSet& walk_set,
@@ -22,6 +23,48 @@ inline void print_temporal_random_walks_with_times(
             std::cout << "(" << step.node << ", " << step.timestamp << "), ";
         }
         std::cout << std::endl;
+    }
+}
+
+inline void print_temporal_random_walks_with_times_and_weights(
+    const WalksWithEdgeFeatures& walks_with_edge_features,
+    const size_t n = 10)
+{
+    const WalkSet& walk_set = walks_with_edge_features.walk_set;
+    const int feature_dim = walks_with_edge_features.feature_dim;
+
+    size_t count = 0;
+    for (size_t walk_idx = 0; walk_idx < walk_set.num_walks && count < n; ++walk_idx, ++count) {
+        const size_t walk_len = walk_set.walk_lens[walk_idx];
+        const size_t node_base = walk_idx * walk_set.max_len;
+        const size_t edge_base = walk_idx * (walk_set.max_len - 1);
+
+        std::cout << "Length: " << walk_len << ", Walk: ";
+        for (size_t hop = 0; hop < walk_len; ++hop) {
+            const size_t hop_offset = node_base + hop;
+            std::cout << "(" << walk_set.nodes[hop_offset] << ", " << walk_set.timestamps[hop_offset] << "), ";
+        }
+
+        std::cout << "Weights: [";
+        if (feature_dim > 0 && walks_with_edge_features.walk_edge_features != nullptr) {
+            for (size_t hop = 1; hop < walk_len; ++hop) {
+                const size_t edge_offset = edge_base + (hop - 1);
+                std::cout << "[";
+                for (int feat_idx = 0; feat_idx < feature_dim; ++feat_idx) {
+                    const size_t feature_offset = edge_offset * static_cast<size_t>(feature_dim) +
+                                                  static_cast<size_t>(feat_idx);
+                    std::cout << walks_with_edge_features.walk_edge_features[feature_offset];
+                    if (feat_idx + 1 < feature_dim) {
+                        std::cout << ", ";
+                    }
+                }
+                std::cout << "]";
+                if (hop + 1 < walk_len) {
+                    std::cout << ", ";
+                }
+            }
+        }
+        std::cout << "]" << std::endl;
     }
 }
 
