@@ -48,7 +48,6 @@ walk_nodes, walk_timestamps, walk_lens, edge_features = walker.get_random_walks_
 - 🔄 **Forward & backward** temporal walks
 - 📡 **Rolling window support** for streaming data
 - 🏷️ **Optional edge feature propagation** from input edges to sampled walks
-- 🧩 **Node feature storage** via `set_node_features(...)` and `get_node_features()`
 - 🔗 **NetworkX integration**
 - 🛠️ **Efficient memory management**
 - ⚙️ Uses **C++ std libraries** or **Thrust API** selectively based on hardware availability and configuration. 
@@ -90,7 +89,7 @@ walk_nodes, walk_timestamps, walk_lens, walk_edge_features = walker.get_random_w
 
 `walk_edge_features` is `None` when no edge features are provided.
 
-## Node Features
+## 🏷️ Node Features
 
 The library can also store dense node features. Use `set_node_features(node_ids, node_features)`
 to populate features for specific nodes, then `get_node_features()` to retrieve the dense matrix.
