@@ -198,6 +198,14 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 throw std::runtime_error("node_features row count must match node_ids length");
             }
 
+            if (feature_dim == 0 && num_nodes > 0) {
+                throw std::runtime_error("node_features must have at least one column when node_ids is non-empty");
+            }
+
+            if (num_nodes == 0) {
+                return;
+            }
+
             tw.set_node_features(
                 static_cast<const int*>(node_ids_info.ptr),
                 num_nodes,
@@ -223,7 +231,10 @@ PYBIND11_MODULE(_temporal_random_walk, m)
         {
             const NodeFeaturesStore* node_feature_store = tw.get_node_features();
 
-            if (node_feature_store == nullptr || node_feature_store->node_feature_dim == 0 || node_feature_store->max_node_id < 0) {
+            if (node_feature_store == nullptr ||
+                node_feature_store->node_feature_dim == 0 ||
+                node_feature_store->max_node_id < 0 ||
+                node_feature_store->node_features == nullptr) {
                 return py::array_t<float>(
                     py::array::ShapeContainer{0, 0},
                     py::array::StridesContainer{0, 0});
