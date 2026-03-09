@@ -90,7 +90,7 @@ walk_nodes, walk_timestamps, walk_lens, walk_edge_features = walker.get_random_w
 
 `walk_edge_features` is `None` when no edge features are provided.
 
-## 🧠 Node Features Fact
+## Node Features
 
 The library can also store dense node features. Use `set_node_features(node_ids, node_features)`
 to populate features for specific nodes, then `get_node_features()` to retrieve the dense matrix.
