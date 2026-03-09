@@ -39,7 +39,7 @@ int main(const int argc, char* argv[]) {
         {3, 2, 106}, {4, 3, 107}
     };
 
-    const std::vector<float> edge_weights = {
+    const std::vector<float> edge_features = {
         0.1f, 0.2f, 0.3f,
         0.4f, 0.5f, 0.6f,
         0.7f, 0.8f, 0.9f,
@@ -70,7 +70,7 @@ int main(const int argc, char* argv[]) {
         targets.data(),
         timestamps.data(),
         timestamps.size(),
-        edge_weights.data(),
+        edge_features.data(),
         3);
 
     constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;
