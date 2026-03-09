@@ -44,11 +44,60 @@ walk_nodes, walk_timestamps, walk_lens, edge_features = walker.get_random_walks_
 ## ✨ Key Features
 - ⚡ **GPU acceleration** for large graphs   
 - 🎯 **Multiple sampling strategies** – Uniform, Linear, Exponential
+- 🧠 **Advanced temporal biases** – ExponentialWeight (CTDNE-style) and TemporalNode2Vec *(p, q)*
 - 🔄 **Forward & backward** temporal walks
 - 📡 **Rolling window support** for streaming data
+- 🏷️ **Optional edge feature propagation** from input edges to sampled walks
 - 🔗 **NetworkX integration**
 - 🛠️ **Efficient memory management**
 - ⚙️ Uses **C++ std libraries** or **Thrust API** selectively based on hardware availability and configuration. 
+
+---
+
+## 🏷️ Edge Features (Optional)
+
+If your edges carry attributes (weights, embeddings, types, etc.), you can pass them to
+`add_multiple_edges(...)` and receive aligned edge features for each sampled transition.
+
+```python
+import numpy as np
+from temporal_random_walk import TemporalRandomWalk
+
+walker = TemporalRandomWalk(is_directed=True, use_gpu=False)
+
+sources = np.array([0, 0, 1], dtype=np.int32)
+targets = np.array([1, 2, 2], dtype=np.int32)
+timestamps = np.array([10, 20, 30], dtype=np.int64)
+
+# shape: [num_edges, feature_dim]
+edge_features = np.array([
+    [0.1, 1.0],
+    [0.2, 0.5],
+    [0.9, 0.3],
+], dtype=np.float32)
+
+walker.add_multiple_edges(sources, targets, timestamps, edge_features=edge_features)
+
+walk_nodes, walk_timestamps, walk_lens, walk_edge_features = walker.get_random_walks_and_times(
+    max_walk_len=4,
+    walk_bias="Uniform",
+    num_walks_total=5,
+)
+
+# walk_edge_features.shape == [num_walks, max_walk_len - 1, feature_dim]
+```
+
+`walk_edge_features` is `None` when no edge features are provided.
+
+---
+
+## 🧭 Bias Selection Notes
+
+- Use `ExponentialIndex` or `Linear` for recency-aware sampling with no extra setup.
+- Use `ExponentialWeight` when you want CTDNE-style weight computation
+  (`enable_weight_computation=True`, optionally tune `timescale_bound`).
+- Use `TemporalNode2Vec` when you need return/in-out control via
+  `temporal_node2vec_p` and `temporal_node2vec_q`.
 
 ---
 
@@ -87,4 +136,3 @@ pip install temporal-random-walk
 ## 👨‍🔬 Built by [Packets Research Lab](https://packets-lab.github.io/)
 
 🚀 **Contributions welcome!** Open a PR or issue if you have suggestions.  
-
