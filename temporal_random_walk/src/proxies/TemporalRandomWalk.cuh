@@ -68,10 +68,12 @@ public:
     void set_node_features(
         const int* node_ids,
         size_t num_nodes,
-        const float* node_features,
+        const float* node_features_data,
         size_t feature_dim) const;
 
     [[nodiscard]] size_t get_node_count() const;
+
+    [[nodiscard]] NodeFeaturesStore* get_node_features() const;
 
     [[nodiscard]] size_t get_edge_count() const;
 

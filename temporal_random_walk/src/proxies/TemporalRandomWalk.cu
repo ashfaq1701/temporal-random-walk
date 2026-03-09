@@ -96,6 +96,10 @@ void TemporalRandomWalk::set_node_features(
         feature_dim);
 }
 
+NodeFeaturesStore* TemporalRandomWalk::get_node_features() const {
+    return node_features->get_node_features();
+}
+
 WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
         const int max_walk_len,
         const RandomPickerType* walk_bias,

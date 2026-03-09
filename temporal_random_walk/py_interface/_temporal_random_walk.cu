@@ -175,6 +175,85 @@ PYBIND11_MODULE(_temporal_random_walk, m)
         py::arg("timestamps"),
         py::arg("edge_features") = py::none()
         )
+
+        .def("set_node_features", [](TemporalRandomWalk& tw,
+                              const py::array_t<int>& node_ids,
+                              const py::array_t<float, py::array::c_style | py::array::forcecast>& node_features)
+        {
+            const auto node_ids_info = node_ids.request();
+            const auto node_features_info = node_features.request();
+
+            if (node_ids_info.ndim != 1) {
+                throw std::runtime_error("node_ids must be a 1D NumPy array");
+            }
+
+            if (node_features_info.ndim != 2) {
+                throw std::runtime_error("node_features must be a 2D NumPy array");
+            }
+
+            const auto num_nodes = static_cast<size_t>(node_ids_info.shape[0]);
+            const auto feature_dim = static_cast<size_t>(node_features_info.shape[1]);
+
+            if (static_cast<size_t>(node_features_info.shape[0]) != num_nodes) {
+                throw std::runtime_error("node_features row count must match node_ids length");
+            }
+
+            tw.set_node_features(
+                static_cast<const int*>(node_ids_info.ptr),
+                num_nodes,
+                static_cast<const float*>(node_features_info.ptr),
+                feature_dim);
+        },
+        R"(
+        Set dense feature vectors for specific node IDs.
+
+        Args:
+            node_ids: 1D NumPy array of node IDs.
+            node_features: 2D NumPy array with shape [num_nodes, feature_dim].
+
+        Raises:
+            RuntimeError: If node_ids is not 1D, node_features is not 2D,
+                or row count does not match number of node IDs.
+        )",
+        py::arg("node_ids"),
+        py::arg("node_features")
+        )
+
+        .def("get_node_features", [](const TemporalRandomWalk& tw)
+        {
+            const NodeFeaturesStore* node_feature_store = tw.get_node_features();
+
+            if (node_feature_store == nullptr || node_feature_store->node_feature_dim == 0 || node_feature_store->max_node_id < 0) {
+                return py::array_t<float>(
+                    py::array::ShapeContainer{0, 0},
+                    py::array::StridesContainer{0, 0});
+            }
+
+            const auto num_rows = static_cast<ssize_t>(node_feature_store->max_node_id + 1);
+            const auto feature_dim = static_cast<ssize_t>(node_feature_store->node_feature_dim);
+
+            py::array_t<float> dense_node_features(
+                py::array::ShapeContainer{num_rows, feature_dim},
+                py::array::StridesContainer{
+                    static_cast<ssize_t>(sizeof(float) * feature_dim),
+                    static_cast<ssize_t>(sizeof(float))});
+
+            const size_t total_values = static_cast<size_t>(num_rows) * static_cast<size_t>(feature_dim);
+            std::copy_n(
+                node_feature_store->node_features,
+                total_values,
+                static_cast<float*>(dense_node_features.request().ptr));
+
+            return dense_node_features;
+        },
+        R"(
+        Return dense node features for all node IDs from 0 to max_node_id.
+
+        Returns:
+            np.ndarray: 2D float array with shape [max_node_id + 1, feature_dim],
+                where row index corresponds to node ID.
+        )")
+
         .def("get_random_walks_and_times_for_all_nodes", [](TemporalRandomWalk& tw,
                                                const int max_walk_len,
                                                const std::string& walk_bias,
