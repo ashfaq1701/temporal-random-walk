@@ -1,9 +1,27 @@
 #include <gtest/gtest.h>
-#include <cmath>
+
+#include <array>
+#include <map>
+#include <stdexcept>
+#include <tuple>
+#include <vector>
 
 #include "test_utils.h"
 #include "../src/proxies/TemporalRandomWalk.cuh"
 
+constexpr int MAX_WALK_LEN = 10;
+constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;
+
+#ifdef HAS_CUDA
+using GPU_USAGE_TYPES = ::testing::Types<
+    std::integral_constant<bool, false>,
+    std::integral_constant<bool, true>
+>;
+#else
+using GPU_USAGE_TYPES = ::testing::Types<
+    std::integral_constant<bool, false>
+>;
+#endif
 
 template<typename T>
 class TimescaleBoundedTemporalRandomWalkTest : public ::testing::Test {
@@ -11,8 +29,7 @@ protected:
     void SetUp() override {
         temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, -1, true, false, 10.0);
 
-        // Note: Each directional edge has occured once, for checking unambigous edge features.
-        temporal_random_walk->add_multiple_edges({
+        edges = {
             {1, 2, 100},
             {2, 3, 101},
             {3, 5, 101},
@@ -28,10 +45,9 @@ protected:
             {5, 3, 160},
             {3, 2, 160},
             {4, 2, 170}
-        });
+        };
 
-        // Note: Each feature set is unique.
-        std::vector<float> edge_feats = {
+        edge_features = {
             0.1f, 0.2f, 0.3f,
             0.4f, 0.5f, 0.6f,
             0.7f, 0.8f, 0.9f,
@@ -49,8 +65,120 @@ protected:
             4.3f, 4.4f, 4.5f
         };
 
-        size_t feature_dim = 3;
+        temporal_random_walk->add_multiple_edges(edges, edge_features.data(), feature_dim);
+
+        for (size_t i = 0; i < edges.size(); ++i) {
+            const auto edge = edges[i];
+            expected_feature_by_edge[edge] = {
+                edge_features[i * feature_dim],
+                edge_features[i * feature_dim + 1],
+                edge_features[i * feature_dim + 2]
+            };
+        }
     }
 
+    size_t edge_slot_index(const WalksWithEdgeFeatures& walks, size_t walk_idx, size_t step_idx) const {
+        return walk_idx * (walks.walk_set.max_len - 1) + step_idx;
+    }
+
+    static constexpr size_t feature_dim = 3;
+
+    std::vector<std::tuple<int, int, int64_t>> edges;
+    std::vector<float> edge_features;
+    std::map<std::tuple<int, int, int64_t>, std::array<float, feature_dim>> expected_feature_by_edge;
     std::unique_ptr<TemporalRandomWalk> temporal_random_walk;
 };
+
+TYPED_TEST_SUITE(TimescaleBoundedTemporalRandomWalkTest, GPU_USAGE_TYPES);
+
+TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, ReturnsFeatureMetadata) {
+    const auto walks = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+        MAX_WALK_LEN, &linear_picker_type, 20);
+
+    EXPECT_EQ(walks.feature_dim, static_cast<int>(this->feature_dim));
+    EXPECT_NE(walks.walk_edge_features, nullptr);
+}
+
+TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, PopulatesWalkEdgeFeaturesForTraversedEdges) {
+    const auto walks = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+        MAX_WALK_LEN, &linear_picker_type, 40, nullptr, WalkDirection::Forward_In_Time);
+
+    const auto& walk_set = walks.walk_set;
+    ASSERT_GT(walk_set.num_walks, 0);
+
+    for (size_t walk_idx = 0; walk_idx < walk_set.num_walks; ++walk_idx) {
+        const size_t walk_len = walk_set.walk_lens[walk_idx];
+        if (walk_len < 2) {
+            continue;
+        }
+
+        const size_t node_offset = walk_idx * walk_set.max_len;
+
+        for (size_t step_idx = 0; step_idx + 1 < walk_len; ++step_idx) {
+            const auto edge_slot = this->edge_slot_index(walks, walk_idx, step_idx);
+            const int64_t edge_id = walk_set.edge_ids[edge_slot];
+            ASSERT_NE(edge_id, EMPTY_EDGE_ID);
+
+            const auto edge = std::make_tuple(
+                walk_set.nodes[node_offset + step_idx],
+                walk_set.nodes[node_offset + step_idx + 1],
+                walk_set.timestamps[node_offset + step_idx + 1]);
+
+            const auto it = this->expected_feature_by_edge.find(edge);
+            ASSERT_NE(it, this->expected_feature_by_edge.end())
+                << "Traversed edge missing in expected-feature map";
+
+            const float* sampled = walks.walk_edge_features + (edge_slot * this->feature_dim);
+            EXPECT_FLOAT_EQ(sampled[0], it->second[0]);
+            EXPECT_FLOAT_EQ(sampled[1], it->second[1]);
+            EXPECT_FLOAT_EQ(sampled[2], it->second[2]);
+        }
+    }
+}
+
+TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, KeepsUnusedEdgeSlotsAsEmptyAndZeroedFeatures) {
+    const auto walks = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
+        MAX_WALK_LEN, &linear_picker_type, 20);
+
+    const auto& walk_set = walks.walk_set;
+
+    for (size_t walk_idx = 0; walk_idx < walk_set.num_walks; ++walk_idx) {
+        const size_t walk_len = walk_set.walk_lens[walk_idx];
+
+        for (size_t step_idx = walk_len > 0 ? walk_len - 1 : 0; step_idx < walk_set.max_len - 1; ++step_idx) {
+            const size_t edge_slot = this->edge_slot_index(walks, walk_idx, step_idx);
+            EXPECT_EQ(walk_set.edge_ids[edge_slot], EMPTY_EDGE_ID);
+
+            const float* sampled = walks.walk_edge_features + (edge_slot * this->feature_dim);
+            EXPECT_FLOAT_EQ(sampled[0], 0.0f);
+            EXPECT_FLOAT_EQ(sampled[1], 0.0f);
+            EXPECT_FLOAT_EQ(sampled[2], 0.0f);
+        }
+    }
+}
+
+TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, RejectsFeatureDimMismatchOnSubsequentIngestion) {
+    const std::vector<std::tuple<int, int, int64_t>> new_edges = {
+        {7, 8, 200},
+        {8, 9, 201}
+    };
+
+    std::vector<float> mismatched_features = {
+        0.1f, 0.2f,
+        0.3f, 0.4f
+    };
+
+    EXPECT_THROW(
+        this->temporal_random_walk->add_multiple_edges(new_edges, mismatched_features.data(), 2),
+        std::runtime_error);
+}
+
+TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, RejectsMissingFeaturesWhenFeatureModeIsEnabled) {
+    const std::vector<std::tuple<int, int, int64_t>> new_edges = {
+        {7, 8, 200}
+    };
+
+    EXPECT_THROW(
+        this->temporal_random_walk->add_multiple_edges(new_edges),
+        std::runtime_error);
+}
