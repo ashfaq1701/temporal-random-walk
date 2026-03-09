@@ -93,7 +93,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                              const py::array_t<int>& sources,
                              const py::array_t<int>& targets,
                              const py::array_t<int64_t>& timestamps,
-                             const py::object& edge_weights_obj)
+                             const py::object& edge_features_obj)
         {
             // Request buffer access to numpy arrays
             const auto sources_info = sources.request();
@@ -114,29 +114,29 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             const auto targets_ptr = static_cast<int*>(targets_info.ptr);
             const auto* timestamps_ptr = static_cast<int64_t*>(timestamps_info.ptr);
 
-            const float* edge_weights_ptr = nullptr;
+            const float* edge_features_ptr = nullptr;
             size_t feature_dim = 0;
-            std::optional<py::array_t<float, py::array::c_style | py::array::forcecast>> edge_weights = std::nullopt;
+            std::optional<py::array_t<float, py::array::c_style | py::array::forcecast>> edge_features = std::nullopt;
 
-            if (!edge_weights_obj.is_none()) {
-                edge_weights = edge_weights_obj.cast<py::array_t<float, py::array::c_style | py::array::forcecast>>();
-                const auto edge_weights_info = edge_weights->request();
+            if (!edge_features_obj.is_none()) {
+                edge_features = edge_features_obj.cast<py::array_t<float, py::array::c_style | py::array::forcecast>>();
+                const auto edge_features_info = edge_features->request();
 
-                if (edge_weights_info.ndim != 1 && edge_weights_info.ndim != 2) {
-                    throw std::runtime_error("edge_weights must be a 1D or 2D NumPy array");
+                if (edge_features_info.ndim != 1 && edge_features_info.ndim != 2) {
+                    throw std::runtime_error("edge_features must be a 1D or 2D NumPy array");
                 }
 
-                const size_t num_edge_weight_values = static_cast<size_t>(edge_weights_info.size);
-                if (num_edges == 0 && num_edge_weight_values > 0) {
-                    throw std::runtime_error("edge_weights must be empty when there are no edges");
+                const size_t num_edge_feature_values = static_cast<size_t>(edge_features_info.size);
+                if (num_edges == 0 && num_edge_feature_values > 0) {
+                    throw std::runtime_error("edge_features must be empty when there are no edges");
                 }
 
-                if (num_edges > 0 && num_edge_weight_values % num_edges != 0) {
-                    throw std::runtime_error("edge_weights size must be num_edges * feature_dim");
+                if (num_edges > 0 && num_edge_feature_values % num_edges != 0) {
+                    throw std::runtime_error("edge_features size must be num_edges * feature_dim");
                 }
 
-                feature_dim = (num_edges == 0) ? 0 : num_edge_weight_values / num_edges;
-                edge_weights_ptr = static_cast<float*>(edge_weights_info.ptr);
+                feature_dim = (num_edges == 0) ? 0 : num_edge_feature_values / num_edges;
+                edge_features_ptr = static_cast<float*>(edge_features_info.ptr);
             }
 
             // Call the C++ function with raw pointers and size
@@ -145,7 +145,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 targets_ptr,
                 timestamps_ptr,
                 num_edges,
-                edge_weights_ptr,
+                edge_features_ptr,
                 feature_dim);
         },
         R"(
@@ -159,13 +159,13 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             sources: List or NumPy array of source node IDs (or first node in undirected graphs).
             targets: List or NumPy array of target node IDs (or second node in undirected graph).
             timestamps: List or NumPy array of timestamps representing when interactions occurred.
-            edge_weights: Optional NumPy array of edge features/weights. The flattened size
+            edge_features: Optional NumPy array of edge features/weights. The flattened size
                 must equal num_edges * feature_dim. Can be either 1D (already flattened)
                 or 2D with shape [num_edges, feature_dim].
 
         Raises:
             RuntimeError: If arrays have invalid dimensions, different edge lengths,
-                or edge_weights has an invalid total size.
+                or edge_features has an invalid total size.
 
         Note:
             For large datasets, NumPy arrays will provide better performance than Python lists.
@@ -173,7 +173,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
         py::arg("sources"),
         py::arg("targets"),
         py::arg("timestamps"),
-        py::arg("edge_weights") = py::none()
+        py::arg("edge_features") = py::none()
         )
         .def("get_random_walks_and_times_for_all_nodes", [](TemporalRandomWalk& tw,
                                                const int max_walk_len,
