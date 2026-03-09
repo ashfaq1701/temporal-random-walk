@@ -1,28 +1,12 @@
 #include "NodeFeatures.cuh"
 #include "../stores/edge_data.cuh"
 
-NodeFeatures::NodeFeatures(EdgeDataStore* edge_data) {
-    (void)edge_data;
+NodeFeatures::NodeFeatures() {
     node_features = new NodeFeaturesStore();
-    owns_node_features = true;
 }
 
 NodeFeatures::~NodeFeatures() {
-    if (owns_node_features && node_features) {
-        delete node_features;
-    }
-}
-
-NodeFeatures& NodeFeatures::operator=(const NodeFeatures& other) {
-    if (this != &other) {
-        if (owns_node_features && node_features) {
-            delete node_features;
-        }
-
-        node_features = other.node_features;
-        owns_node_features = false;
-    }
-    return *this;
+    delete node_features;
 }
 
 void NodeFeatures::set_node_features(

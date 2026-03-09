@@ -8,7 +8,7 @@ TEST(NodeFeaturesTest, SetNodeFeaturesPreservesOldDataOnGrow) {
     EdgeDataStore edge_data(false, false, false);
     edge_data.max_node_id = 3;
 
-    NodeFeatures nf(&edge_data);
+    NodeFeatures nf;
 
     std::vector<int> first_ids{1, 3};
     std::vector<float> first_features{1.0f, 2.0f, 3.0f, 4.0f};
@@ -36,7 +36,7 @@ TEST(NodeFeaturesTest, SetNodeFeaturesWithPointers) {
     EdgeDataStore edge_data(false, false, false);
     edge_data.max_node_id = 2;
 
-    NodeFeatures nf(&edge_data);
+    NodeFeatures nf;
 
     std::vector<int> node_ids{0, 2};
     std::vector<float> node_features{7.0f, 8.0f, 9.0f, 1.0f, 2.0f, 3.0f};

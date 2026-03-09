@@ -8,13 +8,9 @@ struct EdgeDataStore;
 class NodeFeatures {
 public:
     NodeFeaturesStore* node_features;
-    bool owns_node_features;
-
-    explicit NodeFeatures(EdgeDataStore* edge_data);
+    explicit NodeFeatures();
 
     ~NodeFeatures();
-
-    NodeFeatures& operator=(const NodeFeatures& other);
 
     void set_node_features(
         const EdgeDataStore* edge_data,

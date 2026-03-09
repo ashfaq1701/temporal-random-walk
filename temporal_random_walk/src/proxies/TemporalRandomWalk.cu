@@ -37,7 +37,7 @@ TemporalRandomWalk::TemporalRandomWalk(
         node2vec_q,
         walk_padding_value,
         global_seed);
-    node_features = new NodeFeatures(temporal_random_walk->temporal_graph->edge_data);
+    node_features = new NodeFeatures();
 }
 
 TemporalRandomWalk::~TemporalRandomWalk() {
