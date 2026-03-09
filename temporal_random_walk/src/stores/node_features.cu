@@ -1,13 +1,10 @@
 #include "node_features.cuh"
 
-#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 #include <omp.h>
 
-namespace node_features {
-
-void ensure_size(NodeFeaturesStore* node_features_store, const int max_node_id) {
+void node_features::ensure_size(NodeFeaturesStore* node_features_store, const int max_node_id) {
     if (max_node_id <= node_features_store->max_node_id) {
         return;
     }
@@ -34,7 +31,7 @@ void ensure_size(NodeFeaturesStore* node_features_store, const int max_node_id) 
     node_features_store->max_node_id = max_node_id;
 }
 
-void set_node_features(
+void node_features::set_node_features(
     NodeFeaturesStore* store,
     const int max_node_id,
     const int* node_ids,
@@ -65,6 +62,4 @@ void set_node_features(
         const float* src = node_features + (i * feature_dim);
         std::memcpy(dst, src, feature_dim * sizeof(float));
     }
-}
-
 }
