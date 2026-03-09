@@ -8,6 +8,7 @@
 #include "../data/structs.cuh"
 #include "../data/enums.cuh"
 #include "../common/const.cuh"
+#include "NodeFeatures.cuh"
 
 #ifdef HAS_CUDA
 
@@ -18,6 +19,7 @@ __global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalkSt
 class TemporalRandomWalk {
     bool use_gpu;
     TemporalRandomWalkStore* temporal_random_walk;
+    NodeFeatures* node_features;
 
 public:
     explicit TemporalRandomWalk(
@@ -62,6 +64,12 @@ public:
         const RandomPickerType* initial_edge_bias=nullptr,
         WalkDirection walk_direction=WalkDirection::Forward_In_Time,
         KernelLaunchType kernel_launch_type=KernelLaunchType::FULL_WALK) const;
+
+    void set_node_features(
+        const int* node_ids,
+        size_t num_nodes,
+        const float* node_features,
+        size_t feature_dim) const;
 
     [[nodiscard]] size_t get_node_count() const;
 
