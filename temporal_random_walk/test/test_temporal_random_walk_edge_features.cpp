@@ -24,7 +24,7 @@ using GPU_USAGE_TYPES = ::testing::Types<
 #endif
 
 template<typename T>
-class TimescaleBoundedTemporalRandomWalkTest : public ::testing::Test {
+class TemporalWalkTestWithEdgeFeatures : public ::testing::Test {
 protected:
     void SetUp() override {
         temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, -1, true, false, 10.0);
@@ -77,7 +77,7 @@ protected:
         }
     }
 
-    size_t edge_slot_index(const WalksWithEdgeFeatures& walks, size_t walk_idx, size_t step_idx) const {
+    [[nodiscard]] static size_t edge_slot_index(const WalksWithEdgeFeatures& walks, size_t walk_idx, size_t step_idx) {
         return walk_idx * (walks.walk_set.max_len - 1) + step_idx;
     }
 
@@ -89,9 +89,9 @@ protected:
     std::unique_ptr<TemporalRandomWalk> temporal_random_walk;
 };
 
-TYPED_TEST_SUITE(TimescaleBoundedTemporalRandomWalkTest, GPU_USAGE_TYPES);
+TYPED_TEST_SUITE(TemporalWalkTestWithEdgeFeatures, GPU_USAGE_TYPES);
 
-TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, ReturnsFeatureMetadata) {
+TYPED_TEST(TemporalWalkTestWithEdgeFeatures, ReturnsFeatureMetadata) {
     const auto walks = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &linear_picker_type, 20);
 
@@ -99,7 +99,7 @@ TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, ReturnsFeatureMetadata) {
     EXPECT_NE(walks.walk_edge_features, nullptr);
 }
 
-TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, PopulatesWalkEdgeFeaturesForTraversedEdges) {
+TYPED_TEST(TemporalWalkTestWithEdgeFeatures, PopulatesWalkEdgeFeaturesForTraversedEdges) {
     const auto walks = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &linear_picker_type, 40, nullptr, WalkDirection::Forward_In_Time);
 
@@ -136,7 +136,7 @@ TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, PopulatesWalkEdgeFeaturesForT
     }
 }
 
-TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, KeepsUnusedEdgeSlotsAsEmptyAndZeroedFeatures) {
+TYPED_TEST(TemporalWalkTestWithEdgeFeatures, KeepsUnusedEdgeSlotsAsEmptyAndZeroedFeatures) {
     const auto walks = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &linear_picker_type, 20);
 
@@ -157,7 +157,7 @@ TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, KeepsUnusedEdgeSlotsAsEmptyAn
     }
 }
 
-TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, RejectsFeatureDimMismatchOnSubsequentIngestion) {
+TYPED_TEST(TemporalWalkTestWithEdgeFeatures, RejectsFeatureDimMismatchOnSubsequentIngestion) {
     const std::vector<std::tuple<int, int, int64_t>> new_edges = {
         {7, 8, 200},
         {8, 9, 201}
@@ -173,7 +173,7 @@ TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, RejectsFeatureDimMismatchOnSu
         std::runtime_error);
 }
 
-TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, RejectsMissingFeaturesWhenFeatureModeIsEnabled) {
+TYPED_TEST(TemporalWalkTestWithEdgeFeatures, RejectsMissingFeaturesWhenFeatureModeIsEnabled) {
     const std::vector<std::tuple<int, int, int64_t>> new_edges = {
         {7, 8, 200}
     };
