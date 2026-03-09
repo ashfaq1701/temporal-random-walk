@@ -89,7 +89,7 @@ void TemporalRandomWalk::set_node_features(
     const float* node_features_data,
     const size_t feature_dim) const {
     node_features->set_node_features(
-        temporal_random_walk->temporal_graph->edge_data,
+        temporal_random_walk->temporal_graph->edge_data->max_node_id,
         node_ids,
         num_nodes,
         node_features_data,

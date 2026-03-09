@@ -3,8 +3,6 @@
 
 #include "../stores/node_features.cuh"
 
-struct EdgeDataStore;
-
 class NodeFeatures {
 public:
     NodeFeaturesStore* node_features;
@@ -13,7 +11,7 @@ public:
     ~NodeFeatures();
 
     void set_node_features(
-        const EdgeDataStore* edge_data,
+        int max_node_id,
         const int* node_ids,
         size_t num_nodes,
         const float* node_features,

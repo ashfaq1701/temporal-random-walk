@@ -1,5 +1,4 @@
 #include "NodeFeatures.cuh"
-#include "../stores/edge_data.cuh"
 
 NodeFeatures::NodeFeatures() {
     node_features = new NodeFeaturesStore();
@@ -10,14 +9,14 @@ NodeFeatures::~NodeFeatures() {
 }
 
 void NodeFeatures::set_node_features(
-    const EdgeDataStore* edge_data,
+    const int max_node_id,
     const int* node_ids,
     const size_t num_nodes,
     const float* node_features,
     const size_t feature_dim) const {
     node_features::set_node_features(
         this->node_features,
-        edge_data->max_node_id,
+        max_node_id,
         node_ids,
         num_nodes,
         node_features,
