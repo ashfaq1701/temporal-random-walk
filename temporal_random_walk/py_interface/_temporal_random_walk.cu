@@ -126,7 +126,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     throw std::runtime_error("edge_features must be a 1D or 2D NumPy array");
                 }
 
-                const size_t num_edge_feature_values = static_cast<size_t>(edge_features_info.size);
+                const auto num_edge_feature_values = static_cast<size_t>(edge_features_info.size);
                 if (num_edges == 0 && num_edge_feature_values > 0) {
                     throw std::runtime_error("edge_features must be empty when there are no edges");
                 }
