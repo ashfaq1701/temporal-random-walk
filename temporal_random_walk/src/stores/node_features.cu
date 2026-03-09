@@ -36,6 +36,7 @@ void ensure_size(NodeFeaturesStore* node_features_store, const int max_node_id) 
 
 void set_node_features(
     NodeFeaturesStore* store,
+    const int max_node_id,
     const int* node_ids,
     const size_t num_nodes,
     const float* node_features,
@@ -48,13 +49,6 @@ void set_node_features(
 
     if (feature_dim == 0) {
         throw std::runtime_error("feature_dim must be greater than 0 when setting node features");
-    }
-
-    int max_node_id = node_ids[0];
-    for (size_t i = 1; i < num_nodes; ++i) {
-        if (node_ids[i] > max_node_id) {
-            max_node_id = node_ids[i];
-        }
     }
 
     if (store->node_feature_dim != 0 && store->node_feature_dim != feature_dim) {

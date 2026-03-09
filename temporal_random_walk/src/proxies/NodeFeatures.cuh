@@ -3,22 +3,21 @@
 
 #include "../stores/node_features.cuh"
 
+struct EdgeDataStore;
+
 class NodeFeatures {
 public:
     NodeFeaturesStore* node_features;
     bool owns_node_features;
 
-    explicit NodeFeatures();
-
-    explicit NodeFeatures(NodeFeaturesStore* existing_node_features);
+    explicit NodeFeatures(EdgeDataStore* edge_data);
 
     ~NodeFeatures();
 
     NodeFeatures& operator=(const NodeFeatures& other);
 
-    void ensure_size(int max_node_id) const;
-
     void set_node_features(
+        const EdgeDataStore* edge_data,
         const int* node_ids,
         size_t num_nodes,
         const float* node_features,

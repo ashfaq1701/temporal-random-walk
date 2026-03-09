@@ -37,9 +37,11 @@ TemporalRandomWalk::TemporalRandomWalk(
         node2vec_q,
         walk_padding_value,
         global_seed);
+    node_features = new NodeFeatures(temporal_random_walk->temporal_graph->edge_data);
 }
 
 TemporalRandomWalk::~TemporalRandomWalk() {
+    delete node_features;
     delete temporal_random_walk;
 }
 
@@ -79,6 +81,19 @@ void TemporalRandomWalk::add_multiple_edges(
     }
 
     add_multiple_edges(sources.data(), targets.data(), timestamps.data(), timestamps.size(), edge_features, feature_dim);
+}
+
+void TemporalRandomWalk::set_node_features(
+    const int* node_ids,
+    const size_t num_nodes,
+    const float* node_features_data,
+    const size_t feature_dim) const {
+    node_features->set_node_features(
+        temporal_random_walk->temporal_graph->edge_data,
+        node_ids,
+        num_nodes,
+        node_features_data,
+        feature_dim);
 }
 
 WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(

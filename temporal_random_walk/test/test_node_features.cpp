@@ -4,30 +4,24 @@
 
 #include "../src/proxies/NodeFeatures.cuh"
 
-TEST(NodeFeaturesTest, EnsureSizeOnlyGrows) {
-    NodeFeatures nf;
-
-    nf.ensure_size(3);
-    EXPECT_EQ(nf.max_node_id(), 3);
-
-    nf.ensure_size(1);
-    EXPECT_EQ(nf.max_node_id(), 3);
-}
-
 TEST(NodeFeaturesTest, SetNodeFeaturesPreservesOldDataOnGrow) {
-    NodeFeatures nf;
+    EdgeDataStore edge_data(false, false, false);
+    edge_data.max_node_id = 3;
+
+    NodeFeatures nf(&edge_data);
 
     std::vector<int> first_ids{1, 3};
     std::vector<float> first_features{1.0f, 2.0f, 3.0f, 4.0f};
-    nf.set_node_features(first_ids.data(), first_ids.size(), first_features.data(), 2);
+    nf.set_node_features(&edge_data, first_ids.data(), first_ids.size(), first_features.data(), 2);
 
     const auto* store = nf.get_node_features();
     EXPECT_FLOAT_EQ(store->node_features[1 * 2], 1.0f);
     EXPECT_FLOAT_EQ(store->node_features[1 * 2 + 1], 2.0f);
 
+    edge_data.max_node_id = 5;
     std::vector<int> second_ids{5};
     std::vector<float> second_features{9.0f, 10.0f};
-    nf.set_node_features(second_ids.data(), second_ids.size(), second_features.data(), 2);
+    nf.set_node_features(&edge_data, second_ids.data(), second_ids.size(), second_features.data(), 2);
 
     EXPECT_FLOAT_EQ(store->node_features[1 * 2], 1.0f);
     EXPECT_FLOAT_EQ(store->node_features[1 * 2 + 1], 2.0f);
@@ -39,12 +33,15 @@ TEST(NodeFeaturesTest, SetNodeFeaturesPreservesOldDataOnGrow) {
 }
 
 TEST(NodeFeaturesTest, SetNodeFeaturesWithPointers) {
-    NodeFeatures nf;
+    EdgeDataStore edge_data(false, false, false);
+    edge_data.max_node_id = 2;
+
+    NodeFeatures nf(&edge_data);
 
     std::vector<int> node_ids{0, 2};
     std::vector<float> node_features{7.0f, 8.0f, 9.0f, 1.0f, 2.0f, 3.0f};
 
-    nf.set_node_features(node_ids.data(), node_ids.size(), node_features.data(), 3);
+    nf.set_node_features(&edge_data, node_ids.data(), node_ids.size(), node_features.data(), 3);
 
     const auto* store = nf.get_node_features();
     EXPECT_FLOAT_EQ(store->node_features[2], 9.0f);

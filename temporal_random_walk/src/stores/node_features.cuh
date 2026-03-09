@@ -40,6 +40,7 @@ namespace node_features {
 
     HOST void set_node_features(
         NodeFeaturesStore* store,
+        int max_node_id,
         const int* node_ids,
         size_t num_nodes,
         const float* node_features,
