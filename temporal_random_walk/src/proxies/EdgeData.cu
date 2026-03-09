@@ -244,6 +244,11 @@ std::pair<size_t, size_t> EdgeData::get_timestamp_group_range(size_t group_idx) 
     }
 }
 
+int EdgeData::max_node_id() const {
+    return edge_data::get_max_node_id(edge_data);
+}
+
+
 size_t EdgeData::get_timestamp_group_count() const {
     #ifdef HAS_CUDA
     if (edge_data->use_gpu) {

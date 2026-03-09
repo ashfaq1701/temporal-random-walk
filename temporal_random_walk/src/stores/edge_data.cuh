@@ -27,6 +27,7 @@ struct EdgeDataStore {
     bool owns_data;
     bool enable_weight_computation = false;
     bool enable_temporal_node2vec = false;
+    int max_node_id = -1;
 
     int* sources = nullptr;
     size_t sources_size = 0;
@@ -183,6 +184,10 @@ namespace edge_data {
     HOST DataBlock<int> get_active_node_ids(const EdgeDataStore* edge_data);
 
     HOST size_t active_node_count(const EdgeDataStore* edge_data);
+
+    HOST DEVICE inline int get_max_node_id(const EdgeDataStore* edge_data) {
+        return edge_data->max_node_id;
+    }
 
     /**
      * Std implementations

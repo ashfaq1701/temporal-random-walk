@@ -35,7 +35,9 @@ TYPED_TEST(EdgeDataTest, EmptyStateTest) {
     EXPECT_EQ(this->edges.size(), 0);
     EXPECT_TRUE(this->edges.timestamp_group_offsets().empty());
     EXPECT_TRUE(this->edges.unique_timestamps().empty());
+    EXPECT_EQ(this->edges.max_node_id(), -1);
 }
+
 
 // Test single edge
 TYPED_TEST(EdgeDataTest, SingleEdgeTest) {
@@ -49,7 +51,9 @@ TYPED_TEST(EdgeDataTest, SingleEdgeTest) {
     EXPECT_EQ(this->edges.timestamp_group_offsets().size(), 2);  // n+1 offsets for n groups
     EXPECT_EQ(this->edges.timestamp_group_offsets()[0], 0);
     EXPECT_EQ(this->edges.timestamp_group_offsets()[1], 1);
+    EXPECT_EQ(this->edges.max_node_id(), 200);
 }
+
 
 // Test multiple edges with same timestamp
 TYPED_TEST(EdgeDataTest, SameTimestampEdgesTest) {
@@ -77,7 +81,9 @@ TYPED_TEST(EdgeDataTest, DifferentTimestampEdgesTest) {
     EXPECT_EQ(this->edges.timestamp_group_offsets()[1], 1);
     EXPECT_EQ(this->edges.timestamp_group_offsets()[2], 2);
     EXPECT_EQ(this->edges.timestamp_group_offsets()[3], 3);
+    EXPECT_EQ(this->edges.max_node_id(), 4);
 }
+
 
 // Test find_group functions
 TYPED_TEST(EdgeDataTest, FindGroupTest) {
@@ -127,4 +133,16 @@ TYPED_TEST(EdgeDataTest, TimestampGroupRangeTest) {
     auto [invalid_start, invalid_end] = this->edges.get_timestamp_group_range(3);
     EXPECT_EQ(invalid_start, 0);
     EXPECT_EQ(invalid_end, 0);
+}
+
+
+TYPED_TEST(EdgeDataTest, MaxNodeIdResetsWhenGroupsCleared) {
+    this->edges.push_back(2, 7, 10);
+    this->edges.update_timestamp_groups();
+    EXPECT_EQ(this->edges.max_node_id(), 7);
+
+    this->edges.set_size(0);
+    this->edges.update_timestamp_groups();
+
+    EXPECT_EQ(this->edges.max_node_id(), -1);
 }

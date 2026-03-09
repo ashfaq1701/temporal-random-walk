@@ -224,6 +224,9 @@ HOST size_t edge_data::active_node_count(const EdgeDataStore *edge_data) {
 HOST void edge_data::populate_active_nodes_std(EdgeDataStore *edge_data) {
     const size_t num_edges = size(edge_data);
     if (num_edges == 0) {
+        edge_data->max_node_id = -1;
+        clear_memory(&edge_data->active_node_ids, edge_data->use_gpu);
+        edge_data->active_node_ids_size = 0;
         return;
     }
 
@@ -236,6 +239,8 @@ HOST void edge_data::populate_active_nodes_std(EdgeDataStore *edge_data) {
         int tgt_node = edge_data->targets[i];
         max_node_id = std::max({max_node_id, src_node, tgt_node});
     }
+
+    edge_data->max_node_id = max_node_id;
 
     allocate_memory(&edge_data->active_node_ids, max_node_id + 1, edge_data->use_gpu);
     edge_data->active_node_ids_size = max_node_id + 1;
@@ -375,6 +380,10 @@ HOST void edge_data::update_timestamp_groups_std(EdgeDataStore* edge_data) {
 
         clear_memory(&edge_data->unique_timestamps, edge_data->use_gpu);
         edge_data->unique_timestamps_size = 0;
+
+        edge_data->max_node_id = -1;
+        clear_memory(&edge_data->active_node_ids, edge_data->use_gpu);
+        edge_data->active_node_ids_size = 0;
         return;
     }
 
@@ -501,6 +510,9 @@ HOST void edge_data::update_temporal_weights_std(EdgeDataStore* edge_data, const
 HOST void edge_data::populate_active_nodes_cuda(EdgeDataStore *edge_data) {
     const size_t num_edges = size(edge_data);
     if (num_edges == 0) {
+        edge_data->max_node_id = -1;
+        clear_memory(&edge_data->active_node_ids, edge_data->use_gpu);
+        edge_data->active_node_ids_size = 0;
         return;
     }
 
@@ -524,6 +536,7 @@ HOST void edge_data::populate_active_nodes_cuda(EdgeDataStore *edge_data) {
     );
 
     const int max_node_id = std::max(max_source, max_target);
+    edge_data->max_node_id = max_node_id;
 
     allocate_memory(&edge_data->active_node_ids, max_node_id + 1, edge_data->use_gpu);
     edge_data->active_node_ids_size = max_node_id + 1;
@@ -728,6 +741,10 @@ HOST void edge_data::update_timestamp_groups_cuda(EdgeDataStore *edge_data) {
 
         clear_memory(&edge_data->unique_timestamps, edge_data->use_gpu);
         edge_data->unique_timestamps_size = 0;
+
+        edge_data->max_node_id = -1;
+        clear_memory(&edge_data->active_node_ids, edge_data->use_gpu);
+        edge_data->active_node_ids_size = 0;
         return;
     }
 
