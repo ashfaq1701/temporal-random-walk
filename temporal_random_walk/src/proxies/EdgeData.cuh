@@ -228,6 +228,8 @@ public:
 
     [[nodiscard]] size_t get_timestamp_group_count() const;
 
+    [[nodiscard]] int max_node_id() const;
+
     [[nodiscard]] size_t find_group_after_timestamp(int64_t timestamp) const;
 
     [[nodiscard]] size_t find_group_before_timestamp(int64_t timestamp) const;
