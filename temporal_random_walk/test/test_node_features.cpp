@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "../src/proxies/NodeFeatures.cuh"
+#include "../src/stores/edge_data.cuh"
 
 TEST(NodeFeaturesTest, SetNodeFeaturesPreservesOldDataOnGrow) {
     EdgeDataStore edge_data(false, false, false);
@@ -36,10 +37,10 @@ TEST(NodeFeaturesTest, SetNodeFeaturesWithPointers) {
     EdgeDataStore edge_data(false, false, false);
     edge_data.max_node_id = 2;
 
-    NodeFeatures nf;
+    const NodeFeatures nf;
 
-    std::vector<int> node_ids{0, 2};
-    std::vector<float> node_features{7.0f, 8.0f, 9.0f, 1.0f, 2.0f, 3.0f};
+    const std::vector<int> node_ids{0, 2};
+    const std::vector<float> node_features{7.0f, 8.0f, 9.0f, 1.0f, 2.0f, 3.0f};
 
     nf.set_node_features(edge_data.max_node_id, node_ids.data(), node_ids.size(), node_features.data(), 3);
 
