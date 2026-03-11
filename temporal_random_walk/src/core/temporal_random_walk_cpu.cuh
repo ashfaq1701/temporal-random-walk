@@ -133,287 +133,54 @@ namespace temporal_random_walk {
         const double *rand_nums,
         const RandomPickerType edge_picker_type,
         const RandomPickerType start_picker_type) {
+        #define DISPATCH(EDGE, START) \
+            generate_random_walk_and_time_std<IsDirected, Forward, EDGE, START>( \
+                temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums)
+
+        #define HANDLE_START_PICKER(EDGE) \
+            switch (start_picker_type) { \
+                case RandomPickerType::Uniform: DISPATCH(EDGE, RandomPickerType::Uniform); break; \
+                case RandomPickerType::Linear: DISPATCH(EDGE, RandomPickerType::Linear); break; \
+                case RandomPickerType::ExponentialIndex: DISPATCH(EDGE, RandomPickerType::ExponentialIndex); break; \
+                case RandomPickerType::ExponentialWeight: DISPATCH(EDGE, RandomPickerType::ExponentialWeight); break; \
+                case RandomPickerType::TemporalNode2Vec: DISPATCH(EDGE, RandomPickerType::TemporalNode2Vec); break; \
+                case RandomPickerType::SpatioTemporal: DISPATCH(EDGE, RandomPickerType::SpatioTemporal); break; \
+                case RandomPickerType::TEST_FIRST: DISPATCH(EDGE, RandomPickerType::TEST_FIRST); break; \
+                case RandomPickerType::TEST_LAST: DISPATCH(EDGE, RandomPickerType::TEST_LAST); break; \
+                default: break; \
+            }
+
         switch (edge_picker_type) {
             case RandomPickerType::Uniform:
-                switch (start_picker_type) {
-                    case RandomPickerType::Uniform:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Uniform,
-                            RandomPickerType::Uniform>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::Linear:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Uniform,
-                            RandomPickerType::Linear>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::ExponentialIndex:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Uniform,
-                            RandomPickerType::ExponentialIndex>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::ExponentialWeight:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Uniform,
-                            RandomPickerType::ExponentialWeight>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TemporalNode2Vec:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Uniform,
-                            RandomPickerType::TemporalNode2Vec>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TEST_FIRST:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Uniform,
-                            RandomPickerType::TEST_FIRST>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TEST_LAST:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Uniform,
-                            RandomPickerType::TEST_LAST>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                }
+                HANDLE_START_PICKER(RandomPickerType::Uniform);
                 break;
-
             case RandomPickerType::Linear:
-                switch (start_picker_type) {
-                    case RandomPickerType::Uniform:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Linear,
-                            RandomPickerType::Uniform>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::Linear:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Linear,
-                            RandomPickerType::Linear>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::ExponentialIndex:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Linear,
-                            RandomPickerType::ExponentialIndex>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::ExponentialWeight:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Linear,
-                            RandomPickerType::ExponentialWeight>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TemporalNode2Vec:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Linear,
-                            RandomPickerType::TemporalNode2Vec>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TEST_FIRST:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Linear,
-                            RandomPickerType::TEST_FIRST>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TEST_LAST:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::Linear,
-                            RandomPickerType::TEST_LAST>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                }
+                HANDLE_START_PICKER(RandomPickerType::Linear);
                 break;
-
             case RandomPickerType::ExponentialIndex:
-                switch (start_picker_type) {
-                    case RandomPickerType::Uniform:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialIndex,
-                            RandomPickerType::Uniform>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::Linear:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialIndex,
-                            RandomPickerType::Linear>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::ExponentialIndex:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialIndex,
-                            RandomPickerType::ExponentialIndex>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::ExponentialWeight:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialIndex,
-                            RandomPickerType::ExponentialWeight>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TemporalNode2Vec:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialIndex,
-                            RandomPickerType::TemporalNode2Vec>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TEST_FIRST:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialIndex,
-                            RandomPickerType::TEST_FIRST>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TEST_LAST:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialIndex,
-                            RandomPickerType::TEST_LAST>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                }
+                HANDLE_START_PICKER(RandomPickerType::ExponentialIndex);
                 break;
-
             case RandomPickerType::ExponentialWeight:
-                switch (start_picker_type) {
-                    case RandomPickerType::Uniform:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialWeight,
-                            RandomPickerType::Uniform>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::Linear:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialWeight,
-                            RandomPickerType::Linear>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::ExponentialIndex:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialWeight,
-                            RandomPickerType::ExponentialIndex>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::ExponentialWeight:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialWeight,
-                            RandomPickerType::ExponentialWeight>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TemporalNode2Vec:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialWeight,
-                            RandomPickerType::TemporalNode2Vec>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TEST_FIRST:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialWeight,
-                            RandomPickerType::TEST_FIRST>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TEST_LAST:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::ExponentialWeight,
-                            RandomPickerType::TEST_LAST>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                }
+                HANDLE_START_PICKER(RandomPickerType::ExponentialWeight);
                 break;
-
             case RandomPickerType::TemporalNode2Vec:
-                switch (start_picker_type) {
-                    case RandomPickerType::Uniform:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TemporalNode2Vec,
-                            RandomPickerType::Uniform>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::Linear:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TemporalNode2Vec,
-                            RandomPickerType::Linear>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::ExponentialIndex:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TemporalNode2Vec,
-                            RandomPickerType::ExponentialIndex>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::ExponentialWeight:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TemporalNode2Vec,
-                            RandomPickerType::ExponentialWeight>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TemporalNode2Vec:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TemporalNode2Vec,
-                            RandomPickerType::TemporalNode2Vec>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TEST_FIRST:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TemporalNode2Vec,
-                            RandomPickerType::TEST_FIRST>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TEST_LAST:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TemporalNode2Vec,
-                            RandomPickerType::TEST_LAST>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                }
+                HANDLE_START_PICKER(RandomPickerType::TemporalNode2Vec);
                 break;
-
+            case RandomPickerType::SpatioTemporal:
+                HANDLE_START_PICKER(RandomPickerType::SpatioTemporal);
+                break;
             case RandomPickerType::TEST_FIRST:
-                switch (start_picker_type) {
-                    case RandomPickerType::Uniform:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_FIRST,
-                            RandomPickerType::Uniform>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::Linear:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_FIRST,
-                            RandomPickerType::Linear>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::ExponentialIndex:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_FIRST,
-                            RandomPickerType::ExponentialIndex>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::ExponentialWeight:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_FIRST,
-                            RandomPickerType::ExponentialWeight>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TemporalNode2Vec:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_FIRST,
-                            RandomPickerType::TemporalNode2Vec>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TEST_FIRST:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_FIRST,
-                            RandomPickerType::TEST_FIRST>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TEST_LAST:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_FIRST,
-                            RandomPickerType::TEST_LAST>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                }
+                HANDLE_START_PICKER(RandomPickerType::TEST_FIRST);
                 break;
-
             case RandomPickerType::TEST_LAST:
-                switch (start_picker_type) {
-                    case RandomPickerType::Uniform:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_LAST,
-                            RandomPickerType::Uniform>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::Linear:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_LAST,
-                            RandomPickerType::Linear>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::ExponentialIndex:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_LAST,
-                            RandomPickerType::ExponentialIndex>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::ExponentialWeight:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_LAST,
-                            RandomPickerType::ExponentialWeight>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TemporalNode2Vec:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_LAST,
-                            RandomPickerType::TemporalNode2Vec>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TEST_FIRST:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_LAST,
-                            RandomPickerType::TEST_FIRST>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                    case RandomPickerType::TEST_LAST:
-                        generate_random_walk_and_time_std<IsDirected, Forward, RandomPickerType::TEST_LAST,
-                            RandomPickerType::TEST_LAST>(
-                            temporal_graph, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums);
-                        break;
-                }
+                HANDLE_START_PICKER(RandomPickerType::TEST_LAST);
+                break;
+            default:
                 break;
         }
+
+        #undef HANDLE_START_PICKER
+        #undef DISPATCH
     }
 
     HOST inline void launch_random_walk_cpu(
