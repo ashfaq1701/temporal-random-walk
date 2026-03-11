@@ -35,7 +35,9 @@ namespace temporal_random_walk {
                 -1,
                 -1,
                 rand_nums[rand_nums_start_idx_for_walk],
-                rand_nums[rand_nums_start_idx_for_walk + 1]
+                rand_nums[rand_nums_start_idx_for_walk + 1],
+                walk_set->nodes + walk_idx * max_walk_len,
+                walk_set->walk_lens[walk_idx]
             );
         }
 
@@ -91,7 +93,9 @@ namespace temporal_random_walk {
                 current_timestamp,
                 prev_node,
                 group_selector_rand_num,
-                edge_selector_rand_num
+                edge_selector_rand_num,
+                walk_set->nodes + walk_idx * max_walk_len,
+                walk_set->walk_lens[walk_idx]
             );
 
             if (next_edge.ts == -1) {

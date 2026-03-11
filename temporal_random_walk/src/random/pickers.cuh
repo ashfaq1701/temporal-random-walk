@@ -105,7 +105,7 @@ namespace random_pickers {
     }
 
     HOST inline int pick_random_exponential_weights_host(
-        double* weights,
+        const double* weights,
         const size_t weights_size,
         const size_t group_start,
         const size_t group_end,
@@ -136,7 +136,7 @@ namespace random_pickers {
     #ifdef HAS_CUDA
 
     DEVICE inline int pick_random_exponential_weights_device(
-        double* weights,
+        const double* weights,
         const size_t weights_size,
         const size_t group_start,
         const size_t group_end,
@@ -207,7 +207,7 @@ namespace random_pickers {
 
     HOST inline int pick_using_weight_based_picker_host(
         const RandomPickerType random_picker,
-        double* weights,
+        const double* weights,
         const size_t weights_size,
         const size_t group_start,
         const size_t group_end,
@@ -224,7 +224,7 @@ namespace random_pickers {
 
     DEVICE inline int pick_using_weight_based_picker_device(
         const RandomPickerType random_picker,
-        double* weights,
+        const double* weights,
         const size_t weights_size,
         const size_t group_start,
         const size_t group_end,

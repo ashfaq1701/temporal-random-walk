@@ -645,8 +645,8 @@ HOST void node_edge_index::update_temporal_weights_std(
             const double f_scaled = (timescale_bound > 0) ? static_cast<double>(max_ts - group_ts) * time_scale : static_cast<double>(max_ts - group_ts);
             const double b_scaled = (timescale_bound > 0) ? static_cast<double>(group_ts - min_ts) * time_scale : static_cast<double>(group_ts - min_ts);
 
-            raw_forward_weights[pos] = std::exp(f_scaled);
-            raw_backward_weights[pos] = std::exp(b_scaled);
+            raw_forward_weights[pos] = std::exp(node_edge_index->spatiotemporal_alpha * f_scaled);
+            raw_backward_weights[pos] = std::exp(node_edge_index->spatiotemporal_alpha * b_scaled);
         }
 
         // Step 4: Compute normalization sums per node
@@ -761,7 +761,7 @@ HOST void node_edge_index::update_temporal_weights_std(
             const double time_scale = node_time_scale[node];
 
             const double b_scaled = (timescale_bound > 0) ? static_cast<double>(group_ts - min_ts) * time_scale : static_cast<double>(group_ts - min_ts);
-            raw_backward_weights[pos] = std::exp(b_scaled);
+            raw_backward_weights[pos] = std::exp(node_edge_index->spatiotemporal_alpha * b_scaled);
         }
 
         // Step 4: Compute normalization sums per node
@@ -1369,8 +1369,8 @@ HOST void node_edge_index::update_temporal_weights_cuda(
                 const double tf = static_cast<double>(max_ts - group_ts) * scale;
                 const double tb = static_cast<double>(group_ts - min_ts) * scale;
 
-                raw_forward_weights_ptr[pos]  = exp(tf);
-                raw_backward_weights_ptr[pos] = exp(tb);
+                raw_forward_weights_ptr[pos]  = exp(node_edge_index->spatiotemporal_alpha * tf);
+                raw_backward_weights_ptr[pos] = exp(node_edge_index->spatiotemporal_alpha * tb);
             }
         );
 
@@ -1509,7 +1509,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
                 const double  scale  = node_time_scale_ptr[node];
 
                 const double tb = static_cast<double>(group_ts - min_ts) * scale;
-                raw_backward_weights_ptr[pos] = exp(tb);
+                raw_backward_weights_ptr[pos] = exp(node_edge_index->spatiotemporal_alpha * tb);
             }
         );
 

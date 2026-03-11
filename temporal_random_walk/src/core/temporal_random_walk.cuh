@@ -39,6 +39,9 @@ struct TemporalRandomWalkStore {
         const double timescale_bound,
         const double node2vec_p = DEFAULT_NODE2VEC_P,
         const double node2vec_q = DEFAULT_NODE2VEC_Q,
+        const double spatiotemporal_alpha = DEFAULT_SPATIOTEMPORAL_ALPHA,
+        const double spatiotemporal_beta = DEFAULT_SPATIOTEMPORAL_BETA,
+        const double spatiotemporal_gamma = DEFAULT_SPATIOTEMPORAL_GAMMA,
         const int walk_padding_value=EMPTY_NODE_VALUE,
         const uint64_t global_seed=EMPTY_GLOBAL_SEED) {
         this->is_directed = is_directed;

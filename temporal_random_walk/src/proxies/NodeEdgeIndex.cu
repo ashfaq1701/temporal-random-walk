@@ -26,8 +26,8 @@ __global__ void get_timestamp_group_count_kernel(size_t* result, const NodeEdgeI
 
 #endif
 
-NodeEdgeIndex::NodeEdgeIndex(bool use_gpu): owns_node_edge_index(true) {
-    node_edge_index = new NodeEdgeIndexStore(use_gpu);
+NodeEdgeIndex::NodeEdgeIndex(const bool use_gpu, const double spatiotemporal_alpha): owns_node_edge_index(true) {
+    node_edge_index = new NodeEdgeIndexStore(use_gpu, spatiotemporal_alpha);
 }
 
 NodeEdgeIndex::NodeEdgeIndex(NodeEdgeIndexStore* existing_node_edge_index)
@@ -47,7 +47,7 @@ NodeEdgeIndex& NodeEdgeIndex::operator=(const NodeEdgeIndex& other) {
 
         owns_node_edge_index = other.owns_node_edge_index;
         if (other.owns_node_edge_index) {
-            node_edge_index = new NodeEdgeIndexStore(other.node_edge_index->use_gpu);
+            node_edge_index = new NodeEdgeIndexStore(other.node_edge_index->use_gpu, other.node_edge_index->spatiotemporal_alpha);
         } else {
             node_edge_index = other.node_edge_index;
         }
@@ -59,7 +59,7 @@ void NodeEdgeIndex::clear() const {
     node_edge_index::clear(node_edge_index);
 }
 
-void NodeEdgeIndex::rebuild(EdgeDataStore* edge_data, bool is_directed) const {
+void NodeEdgeIndex::rebuild(const EdgeDataStore* edge_data, const bool is_directed) const {
     node_edge_index::rebuild(node_edge_index, edge_data, is_directed);
 }
 

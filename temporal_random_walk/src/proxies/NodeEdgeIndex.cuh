@@ -235,7 +235,7 @@ public:
         }
     }
 
-    explicit NodeEdgeIndex(bool use_gpu);
+    explicit NodeEdgeIndex(bool use_gpu, double spatiotemporal_alpha=DEFAULT_SPATIOTEMPORAL_ALPHA);
 
     explicit NodeEdgeIndex(NodeEdgeIndexStore* existing_node_edge_index);
 
@@ -245,7 +245,7 @@ public:
 
     void clear() const;
 
-    void rebuild(EdgeDataStore* edge_data, bool is_directed) const;
+    void rebuild(const EdgeDataStore* edge_data, bool is_directed) const;
 
     [[nodiscard]] std::pair<size_t, size_t> get_edge_range(int dense_node_id, bool forward, bool is_directed) const;
 

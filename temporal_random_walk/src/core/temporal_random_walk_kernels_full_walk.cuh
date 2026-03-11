@@ -9,6 +9,7 @@
 #include "../stores/edge_selectors.cuh"
 
 namespace temporal_random_walk {
+
     #ifdef HAS_CUDA
 
     template<bool IsDirected, bool Forward, RandomPickerType EdgePickerType, RandomPickerType StartPickerType>
@@ -45,7 +46,9 @@ namespace temporal_random_walk {
                 -1, // timestamp
                 -1,
                 r0,
-                r1);
+                r1,
+                walk_set->nodes + walk_idx * max_walk_len,
+                walk_set->walk_lens[walk_idx]);
         }
 
         if (start_edge.i == -1) {
@@ -101,7 +104,9 @@ namespace temporal_random_walk {
                 current_timestamp,
                 prev_node,
                 r_step0,
-                r_step1);
+                r_step1,
+                walk_set->nodes + walk_idx * max_walk_len,
+                walk_set->walk_lens[walk_idx]);
 
             if (next_edge.ts == -1) {
                 current_node = -1;

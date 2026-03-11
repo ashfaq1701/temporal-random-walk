@@ -16,6 +16,11 @@ struct TemporalGraphStore {
     double timescale_bound;
     double node2vec_p;
     double node2vec_q;
+
+    double spatiotemporal_alpha;
+    double spatiotemporal_beta;
+    double spatiotemporal_gamma;
+
     double inv_p;
     double inv_q;
 
@@ -31,6 +36,11 @@ struct TemporalGraphStore {
         timescale_bound = -1;
         node2vec_p = DEFAULT_NODE2VEC_P;
         node2vec_q = DEFAULT_NODE2VEC_Q;
+
+        spatiotemporal_alpha = DEFAULT_SPATIOTEMPORAL_ALPHA;
+        spatiotemporal_beta = DEFAULT_SPATIOTEMPORAL_BETA;
+        spatiotemporal_gamma = DEFAULT_SPATIOTEMPORAL_GAMMA;
+
         inv_p = 1.0 / node2vec_p;
         inv_q = 1.0 / node2vec_q;
         edge_data = nullptr;
@@ -46,17 +56,21 @@ struct TemporalGraphStore {
         const bool enable_temporal_node2vec,
         const double timescale_bound,
         const double node2vec_p = DEFAULT_NODE2VEC_P,
-        const double node2vec_q = DEFAULT_NODE2VEC_Q):
+        const double node2vec_q = DEFAULT_NODE2VEC_Q,
+        const double spatiotemporal_alpha = DEFAULT_SPATIOTEMPORAL_ALPHA,
+        const double spatiotemporal_beta = DEFAULT_SPATIOTEMPORAL_BETA,
+        const double spatiotemporal_gamma = DEFAULT_SPATIOTEMPORAL_GAMMA):
         is_directed(is_directed), use_gpu(use_gpu), owns_data(true),
         max_time_capacity(max_time_capacity),
         enable_weight_computation(enable_weight_computation || enable_temporal_node2vec),
         enable_temporal_node2vec(enable_temporal_node2vec),
         timescale_bound(timescale_bound),
-        node2vec_p(node2vec_p), node2vec_q(node2vec_q), inv_p(1.0 / node2vec_p),
-        inv_q(1.0 / node2vec_q), latest_timestamp(0) {
+        node2vec_p(node2vec_p), node2vec_q(node2vec_q), spatiotemporal_alpha(spatiotemporal_alpha),
+        spatiotemporal_beta(spatiotemporal_beta), spatiotemporal_gamma(spatiotemporal_gamma),
+        inv_p(1.0 / node2vec_p), inv_q(1.0 / node2vec_q), latest_timestamp(0) {
 
         edge_data = new EdgeDataStore(use_gpu, this->enable_weight_computation, this->enable_temporal_node2vec);
-        node_edge_index = new NodeEdgeIndexStore(use_gpu);
+        node_edge_index = new NodeEdgeIndexStore(use_gpu, spatiotemporal_alpha);
     }
 
     ~TemporalGraphStore() {

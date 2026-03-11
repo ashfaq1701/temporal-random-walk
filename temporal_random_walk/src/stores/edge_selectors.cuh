@@ -3,6 +3,7 @@
 
 #include "temporal_graph.cuh"
 #include "temporal_node2vec_helpers.cuh"
+#include "spatiotemporal_helpers.cuh"
 
 #ifdef HAS_CUDA
 #include <cuda/std/__algorithm/lower_bound.h>
@@ -130,7 +131,9 @@ namespace temporal_graph {
         const int64_t timestamp,
         const int prev_node,
         const double group_selector_rand_num,
-        const double edge_selector_rand_num) {
+        const double edge_selector_rand_num,
+        const int* walk_nodes=nullptr,
+        const int walk_len=0) {
         if (!edge_data::is_node_active_host(graph->edge_data, node_id)) {
             return InternalEdge{-1, -1, -1, -1};
         }
@@ -142,30 +145,56 @@ namespace temporal_graph {
                                                            ? graph->node_edge_index->count_ts_group_per_node_inbound
                                                            : graph->node_edge_index->count_ts_group_per_node_outbound);
 
-        size_t *node_ts_groups_offsets = Forward
+        const size_t *node_ts_groups_offsets = Forward
                                               ? graph->node_edge_index->node_ts_group_outbound_offsets
                                               : (IsDirected
                                                      ? graph->node_edge_index->node_ts_group_inbound_offsets
                                                      : graph->node_edge_index->node_ts_group_outbound_offsets);
 
-        size_t *node_ts_sorted_indices = Forward
+        const size_t *node_ts_sorted_indices = Forward
                                    ? graph->node_edge_index->node_ts_sorted_outbound_indices
                                    : (IsDirected
                                           ? graph->node_edge_index->node_ts_sorted_inbound_indices
                                           : graph->node_edge_index->node_ts_sorted_outbound_indices);
 
+        const size_t node_ts_sorted_indices_size = Forward
+                                   ? graph->node_edge_index->node_ts_sorted_outbound_indices_size
+                                   : (IsDirected
+                                          ? graph->node_edge_index->node_ts_sorted_inbound_indices_size
+                                          : graph->node_edge_index->node_ts_sorted_outbound_indices_size);
+
+        // Node edge boundaries
+        const size_t *node_edge_offsets = Forward
+                                    ? graph->node_edge_index->node_group_outbound_offsets
+                                    : (IsDirected
+                                        ? graph->node_edge_index->node_group_inbound_offsets
+                                        : graph->node_edge_index->node_group_outbound_offsets);
+
+        // Temporal exponential cumulative weights
+        const double *weights = Forward
+                                    ? graph->node_edge_index->outbound_forward_cumulative_weights_exponential
+                                    : (IsDirected
+                                        ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential
+                                        : graph->node_edge_index->outbound_backward_cumulative_weights_exponential);
+
+        const size_t weights_size = Forward
+                                    ? graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size
+                                    : (IsDirected
+                                        ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential_size
+                                        : graph->node_edge_index->outbound_backward_cumulative_weights_exponential_size);
+
         // Get node's group range
-        const size_t group_start_offset = count_ts_group_per_node[node_id];
-        const size_t group_end_offset = count_ts_group_per_node[node_id + 1];
-        if (group_start_offset == group_end_offset) return InternalEdge{-1, -1, -1, -1};
+        const size_t node_group_start_offset = count_ts_group_per_node[node_id];
+        const size_t node_group_end_offset = count_ts_group_per_node[node_id + 1];
+        if (node_group_start_offset == node_group_end_offset) return InternalEdge{-1, -1, -1, -1};
 
         long group_pos;
         if (timestamp != -1) {
             if constexpr (Forward) {
                 // Find first group after timestamp
                 const auto it = std::upper_bound(
-                    node_ts_groups_offsets + static_cast<int>(group_start_offset),
-                    node_ts_groups_offsets + static_cast<int>(group_end_offset),
+                    node_ts_groups_offsets + static_cast<int>(node_group_start_offset),
+                    node_ts_groups_offsets + static_cast<int>(node_group_end_offset),
                     timestamp,
                     [graph, node_ts_sorted_indices](const int64_t ts, const size_t pos) {
                         return ts < graph->edge_data->timestamps[node_ts_sorted_indices[pos]];
@@ -174,59 +203,77 @@ namespace temporal_graph {
                 // Count available groups after timestamp
                 const size_t available = std::distance(
                     it,
-                    node_ts_groups_offsets + static_cast<int>(group_end_offset));
+                    node_ts_groups_offsets + static_cast<int>(node_group_end_offset));
                 if (available == 0) return InternalEdge{-1, -1, -1, -1};
 
-                const size_t start_pos = it - node_ts_groups_offsets;
+                const size_t valid_node_ts_slice_start_pos = it - node_ts_groups_offsets;
                 if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available), false, group_selector_rand_num);
                     if (index == -1) return InternalEdge{-1, -1, -1, -1};
 
                     if (index >= available) return InternalEdge{-1, -1, -1, -1};
-                    group_pos = static_cast<long>(start_pos) + index;
+                    group_pos = static_cast<long>(valid_node_ts_slice_start_pos) + index;
                 } else {
                     if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
                         if (prev_node == -1) {
                             group_pos = random_pickers::pick_using_weight_based_picker_host(
                                 RandomPickerType::ExponentialWeight,
-                                graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
-                                graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
-                                start_pos, group_end_offset, group_selector_rand_num);
+                                weights,
+                                weights_size,
+                                valid_node_ts_slice_start_pos, node_group_end_offset, group_selector_rand_num);
                         } else {
                             group_pos = pick_random_temporal_node2vec_host<Forward, IsDirected>(
                                 graph,
                                 node_id,
                                 prev_node,
-                                start_pos,
-                                group_end_offset,
-                                group_end_offset,
+                                valid_node_ts_slice_start_pos,
+                                node_group_end_offset,
+                                node_group_start_offset,
+                                node_group_end_offset,
                                 node_ts_groups_offsets,
                                 node_ts_sorted_indices,
-                                graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
+                                weights,
                                 group_selector_rand_num);
                         }
+                    } else if (PickerType == RandomPickerType::SpatioTemporal) {
+                        group_pos = pick_random_spatiotemporal_edge_host<Forward, IsDirected>(
+                            graph,
+                            node_id,
+                            timestamp,
+                            valid_node_ts_slice_start_pos,
+                            node_group_end_offset,
+                            node_group_start_offset,
+                            node_group_end_offset,
+                            count_ts_group_per_node,
+                            node_edge_offsets,
+                            node_ts_groups_offsets,
+                            node_ts_sorted_indices,
+                            weights,
+                            walk_nodes,
+                            walk_len,
+                            edge_selector_rand_num);
                     } else {
                         group_pos = random_pickers::pick_using_weight_based_picker_host(
                             PickerType,
-                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
-                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
-                            start_pos, group_end_offset, group_selector_rand_num);
+                            weights,
+                            weights_size,
+                            valid_node_ts_slice_start_pos, node_group_end_offset, group_selector_rand_num);
                     }
                     if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             } else {
                 // Find first group >= timestamp
                 auto it = std::lower_bound(
-                    node_ts_groups_offsets + static_cast<int>(group_start_offset),
-                    node_ts_groups_offsets + static_cast<int>(group_end_offset),
+                    node_ts_groups_offsets + static_cast<int>(node_group_start_offset),
+                    node_ts_groups_offsets + static_cast<int>(node_group_end_offset),
                     timestamp,
                     [graph, node_ts_sorted_indices](const size_t pos, const int64_t ts) {
                         return graph->edge_data->timestamps[node_ts_sorted_indices[pos]] < ts;
                     });
 
                 const size_t available = std::distance(
-                    node_ts_groups_offsets + static_cast<int>(group_start_offset),
+                    node_ts_groups_offsets + static_cast<int>(node_group_start_offset),
                     it);
                 if (available == 0) return InternalEdge{-1, -1, -1, -1};
 
@@ -239,25 +286,15 @@ namespace temporal_graph {
                     if (index >= available) return InternalEdge{-1, -1, -1, -1};
                     group_pos = static_cast<long>((it - node_ts_groups_offsets) - 1 - (available - index - 1));
                 } else {
-                    double *weights = IsDirected
-                                          ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential
-                                          : graph->node_edge_index->outbound_backward_cumulative_weights_exponential;
-
-                    const size_t weights_size = IsDirected
-                                                    ? graph->node_edge_index->
-                                                    inbound_backward_cumulative_weights_exponential_size
-                                                    : graph->node_edge_index->
-                                                    outbound_backward_cumulative_weights_exponential_size;
-
-                    const size_t range_end = static_cast<size_t>(it - node_ts_groups_offsets);
+                    const auto valid_node_ts_slice_end_pos = static_cast<size_t>(it - node_ts_groups_offsets);
                     if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
                         if (prev_node == -1) {
                             group_pos = random_pickers::pick_using_weight_based_picker_host(
                                 RandomPickerType::ExponentialWeight,
                                 weights,
                                 weights_size,
-                                group_start_offset,
-                                range_end,
+                                node_group_start_offset,
+                                valid_node_ts_slice_end_pos,
                                 group_selector_rand_num
                             );
                         } else {
@@ -265,21 +302,39 @@ namespace temporal_graph {
                                 graph,
                                 node_id,
                                 prev_node,
-                                group_start_offset,
-                                range_end,
-                                group_end_offset,
+                                node_group_start_offset,
+                                valid_node_ts_slice_end_pos,
+                                node_group_start_offset,
+                                node_group_end_offset,
                                 node_ts_groups_offsets,
                                 node_ts_sorted_indices,
                                 weights,
                                 group_selector_rand_num);
                         }
+                    } else if (PickerType == RandomPickerType::SpatioTemporal) {
+                        group_pos = pick_random_spatiotemporal_edge_host<Forward, IsDirected>(
+                            graph,
+                            node_id,
+                            timestamp,
+                            node_group_start_offset,
+                            valid_node_ts_slice_end_pos,
+                            node_group_start_offset,
+                            node_group_end_offset,
+                            count_ts_group_per_node,
+                            node_edge_offsets,
+                            node_ts_groups_offsets,
+                            node_ts_sorted_indices,
+                            weights,
+                            walk_nodes,
+                            walk_len,
+                            edge_selector_rand_num);
                     } else {
                         group_pos = random_pickers::pick_using_weight_based_picker_host(
                             PickerType,
                             weights,
                             weights_size,
-                            group_start_offset,
-                            range_end,
+                            node_group_start_offset,
+                            valid_node_ts_slice_end_pos,
                             group_selector_rand_num
                         );
                     }
@@ -288,7 +343,7 @@ namespace temporal_graph {
             }
         } else {
             // No timestamp constraint - select from all groups
-            const size_t num_groups = group_end_offset - group_start_offset;
+            const size_t num_groups = node_group_end_offset - node_group_start_offset;
             if (num_groups == 0) return InternalEdge{-1, -1, -1, -1};
 
             if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
@@ -298,113 +353,75 @@ namespace temporal_graph {
 
                 if (index >= num_groups) return InternalEdge{-1, -1, -1, -1};
                 group_pos = Forward
-                                ? static_cast<long>(group_start_offset + index)
-                                : static_cast<long>(group_end_offset - 1 - (num_groups - index - 1));
+                                ? static_cast<long>(node_group_start_offset + index)
+                                : static_cast<long>(node_group_end_offset - 1 - (num_groups - index - 1));
             } else {
-                if constexpr (Forward) {
-                    if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-                        if (prev_node == -1) {
-                            group_pos = random_pickers::pick_using_weight_based_picker_host(
-                                RandomPickerType::ExponentialWeight,
-                                graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
-                                graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
-                                group_start_offset,
-                                group_end_offset,
-                                group_selector_rand_num);
-                        } else {
-                            group_pos = pick_random_temporal_node2vec_host<Forward, IsDirected>(
-                                graph,
-                                node_id,
-                                prev_node,
-                                group_start_offset,
-                                group_end_offset,
-                                group_end_offset,
-                                node_ts_groups_offsets,
-                                node_ts_sorted_indices,
-                                graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
-                                group_selector_rand_num);
-                        }
-                    } else {
-                        group_pos = random_pickers::pick_using_weight_based_picker_host(
-                            PickerType,
-                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
-                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
-                            group_start_offset,
-                            group_end_offset,
-                            group_selector_rand_num);
-                    }
-                    if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
-                } else {
-                    double *weights = IsDirected
-                                          ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential
-                                          : graph->node_edge_index->outbound_backward_cumulative_weights_exponential;
 
-                    const size_t weights_size = IsDirected
-                                                    ? graph->node_edge_index->
-                                                    inbound_backward_cumulative_weights_exponential_size
-                                                    : graph->node_edge_index->
-                                                    outbound_backward_cumulative_weights_exponential_size;
-
-                    if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-                        if (prev_node == -1) {
-                            group_pos = random_pickers::pick_using_weight_based_picker_host(
-                                RandomPickerType::ExponentialWeight,
-                                weights,
-                                weights_size,
-                                group_start_offset,
-                                group_end_offset,
-                                group_selector_rand_num);
-                        } else {
-                            group_pos = pick_random_temporal_node2vec_host<Forward, IsDirected>(
-                                graph,
-                                node_id,
-                                prev_node,
-                                group_start_offset,
-                                group_end_offset,
-                                group_end_offset,
-                                node_ts_groups_offsets,
-                                node_ts_sorted_indices,
-                                weights,
-                                group_selector_rand_num);
-                        }
-                    } else {
+                if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
+                    if (prev_node == -1) {
                         group_pos = random_pickers::pick_using_weight_based_picker_host(
-                            PickerType,
+                            RandomPickerType::ExponentialWeight,
                             weights,
                             weights_size,
-                            group_start_offset,
-                            group_end_offset,
+                            node_group_start_offset,
+                            node_group_end_offset,
+                            group_selector_rand_num);
+                    } else {
+                        group_pos = pick_random_temporal_node2vec_host<Forward, IsDirected>(
+                            graph,
+                            node_id,
+                            prev_node,
+                            node_group_start_offset,
+                            node_group_end_offset,
+                            node_group_start_offset,
+                            node_group_end_offset,
+                            node_ts_groups_offsets,
+                            node_ts_sorted_indices,
+                            weights,
                             group_selector_rand_num);
                     }
-                    if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
+                } else if (PickerType == RandomPickerType::SpatioTemporal) {
+                    group_pos = pick_random_spatiotemporal_edge_host<Forward, IsDirected>(
+                            graph,
+                            node_id,
+                            timestamp,
+                            node_group_start_offset,
+                            node_group_start_offset,
+                            node_group_start_offset,
+                            node_group_end_offset,
+                            count_ts_group_per_node,
+                            node_edge_offsets,
+                            node_ts_groups_offsets,
+                            node_ts_sorted_indices,
+                            weights,
+                            walk_nodes,
+                            walk_len,
+                            edge_selector_rand_num);
+                } else {
+                    group_pos = random_pickers::pick_using_weight_based_picker_host(
+                        PickerType,
+                        weights,
+                        weights_size,
+                        node_group_start_offset,
+                        node_group_end_offset,
+                        group_selector_rand_num);
                 }
+                if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
             }
         }
 
         // Get edge range for selected group
-        const size_t edge_start = node_ts_groups_offsets[group_pos];
-        size_t edge_end;
+        const size_t valid_edge_start = node_ts_groups_offsets[group_pos];
+        size_t valid_edge_end;
 
-        if (group_pos + 1 < group_end_offset) {
-            edge_end = node_ts_groups_offsets[group_pos + 1];
+        if (group_pos + 1 < node_group_end_offset) {
+            valid_edge_end = node_ts_groups_offsets[group_pos + 1];
         } else {
-            if constexpr (Forward) {
-                edge_end = graph->node_edge_index->node_group_outbound_offsets[node_id + 1];
-            } else {
-                edge_end = IsDirected
-                               ? graph->node_edge_index->node_group_inbound_offsets[node_id + 1]
-                               : graph->node_edge_index->node_group_outbound_offsets[node_id + 1];
-            }
+            valid_edge_end = node_edge_offsets[node_id + 1];
         }
 
         // Validate range before random selection
-        size_t const edge_indices_size = Forward
-                                             ? graph->node_edge_index->node_ts_sorted_outbound_indices_size
-                                             : (IsDirected
-                                                    ? graph->node_edge_index->node_ts_sorted_inbound_indices_size
-                                                    : graph->node_edge_index->node_ts_sorted_outbound_indices_size);
-
-        if (edge_start >= edge_end || edge_start >= edge_indices_size || edge_end > edge_indices_size) {
+        if (valid_edge_start >= valid_edge_end || valid_edge_start >= node_ts_sorted_indices_size || valid_edge_end > node_ts_sorted_indices_size) {
             return InternalEdge{-1, -1, -1, -1};
         }
 
@@ -412,23 +429,23 @@ namespace temporal_graph {
         if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
             if (prev_node == -1) {
                 edge_idx = static_cast<long>(node_ts_sorted_indices[
-                    edge_start +
-                    generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), edge_selector_rand_num)]);
+                    valid_edge_start +
+                    generate_random_number_bounded_by(static_cast<int>(valid_edge_end - valid_edge_start), edge_selector_rand_num)]);
             } else {
                 edge_idx = pick_random_temporal_node2vec_edge_host<Forward, IsDirected>(
                     graph,
                     node_id,
                     prev_node,
-                    edge_start,
-                    edge_end,
+                    valid_edge_start,
+                    valid_edge_end,
                     node_ts_sorted_indices,
                     edge_selector_rand_num);
                 if (edge_idx == -1) return InternalEdge{-1, -1, -1, -1};
             }
         } else {
             edge_idx = static_cast<long>(node_ts_sorted_indices[
-                edge_start +
-                generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), edge_selector_rand_num)]);
+                valid_edge_start +
+                generate_random_number_bounded_by(static_cast<int>(valid_edge_end - valid_edge_start), edge_selector_rand_num)]);
         }
 
         return InternalEdge{
@@ -549,15 +566,16 @@ namespace temporal_graph {
         };
     }
 
-
     template<bool Forward, RandomPickerType PickerType, bool IsDirected>
     DEVICE InternalEdge get_node_edge_at_device(
         const TemporalGraphStore *graph,
         const int node_id,
-        int64_t timestamp,
+        const int64_t timestamp,
         const int prev_node,
         const double group_selector_rand_num,
-        const double edge_selector_rand_num) {
+        const double edge_selector_rand_num,
+        const int* walk_nodes=nullptr,
+        const int walk_len=0) {
         if (!edge_data::is_node_active_device(graph->edge_data, node_id)) {
             return InternalEdge{-1, -1, -1, -1};
         }
@@ -569,30 +587,56 @@ namespace temporal_graph {
                                                            ? graph->node_edge_index->count_ts_group_per_node_inbound
                                                            : graph->node_edge_index->count_ts_group_per_node_outbound);
 
-        size_t *node_ts_groups_offsets = Forward
+        const size_t *node_ts_groups_offsets = Forward
                                               ? graph->node_edge_index->node_ts_group_outbound_offsets
                                               : (IsDirected
                                                      ? graph->node_edge_index->node_ts_group_inbound_offsets
                                                      : graph->node_edge_index->node_ts_group_outbound_offsets);
 
-        size_t *node_ts_sorted_indices = Forward
+        const size_t *node_ts_sorted_indices = Forward
                                    ? graph->node_edge_index->node_ts_sorted_outbound_indices
                                    : (IsDirected
                                           ? graph->node_edge_index->node_ts_sorted_inbound_indices
                                           : graph->node_edge_index->node_ts_sorted_outbound_indices);
 
+        const size_t node_ts_sorted_indices_size = Forward
+                                   ? graph->node_edge_index->node_ts_sorted_outbound_indices_size
+                                   : (IsDirected
+                                          ? graph->node_edge_index->node_ts_sorted_inbound_indices_size
+                                          : graph->node_edge_index->node_ts_sorted_outbound_indices_size);
+
+        // Node edge boundaries
+        const size_t *node_edge_offsets = Forward
+                                    ? graph->node_edge_index->node_group_outbound_offsets
+                                    : (IsDirected
+                                        ? graph->node_edge_index->node_group_inbound_offsets
+                                        : graph->node_edge_index->node_group_outbound_offsets);
+
+        // Temporal exponential cumulative weights
+        const double *weights = Forward
+                                    ? graph->node_edge_index->outbound_forward_cumulative_weights_exponential
+                                    : (IsDirected
+                                        ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential
+                                        : graph->node_edge_index->outbound_backward_cumulative_weights_exponential);
+
+        const size_t weights_size = Forward
+                                    ? graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size
+                                    : (IsDirected
+                                        ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential_size
+                                        : graph->node_edge_index->outbound_backward_cumulative_weights_exponential_size);
+
         // Get node's group range
-        const size_t group_start_offset = count_ts_group_per_node[node_id];
-        const size_t group_end_offset = count_ts_group_per_node[node_id + 1];
-        if (group_start_offset == group_end_offset) return InternalEdge{-1, -1, -1, -1};
+        const size_t node_group_start_offset = count_ts_group_per_node[node_id];
+        const size_t node_group_end_offset = count_ts_group_per_node[node_id + 1];
+        if (node_group_start_offset == node_group_end_offset) return InternalEdge{-1, -1, -1, -1};
 
         long group_pos;
         if (timestamp != -1) {
             if constexpr (Forward) {
                 // Find first group after timestamp
                 const auto it = cuda::std::upper_bound(
-                    node_ts_groups_offsets + static_cast<int>(group_start_offset),
-                    node_ts_groups_offsets + static_cast<int>(group_end_offset),
+                    node_ts_groups_offsets + static_cast<int>(node_group_start_offset),
+                    node_ts_groups_offsets + static_cast<int>(node_group_end_offset),
                     timestamp,
                     [graph, node_ts_sorted_indices](const int64_t ts, const size_t pos) {
                         return ts < graph->edge_data->timestamps[node_ts_sorted_indices[pos]];
@@ -601,59 +645,77 @@ namespace temporal_graph {
                 // Count available groups after timestamp
                 const size_t available = std::distance(
                     it,
-                    node_ts_groups_offsets + static_cast<int>(group_end_offset));
+                    node_ts_groups_offsets + static_cast<int>(node_group_end_offset));
                 if (available == 0) return InternalEdge{-1, -1, -1, -1};
 
-                const size_t start_pos = it - node_ts_groups_offsets;
+                const size_t valid_node_ts_slice_start_pos = it - node_ts_groups_offsets;
                 if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available), false, group_selector_rand_num);
                     if (index == -1) return InternalEdge{-1, -1, -1, -1};
 
                     if (index >= available) return InternalEdge{-1, -1, -1, -1};
-                    group_pos = static_cast<long>(start_pos) + index;
+                    group_pos = static_cast<long>(valid_node_ts_slice_start_pos) + index;
                 } else {
                     if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
                         if (prev_node == -1) {
                             group_pos = random_pickers::pick_using_weight_based_picker_device(
                                 RandomPickerType::ExponentialWeight,
-                                graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
-                                graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
-                                start_pos, group_end_offset, group_selector_rand_num);
+                                weights,
+                                weights_size,
+                                valid_node_ts_slice_start_pos, node_group_end_offset, group_selector_rand_num);
                         } else {
                             group_pos = pick_random_temporal_node2vec_device<Forward, IsDirected>(
                                 graph,
                                 node_id,
                                 prev_node,
-                                start_pos,
-                                group_end_offset,
-                                group_end_offset,
+                                valid_node_ts_slice_start_pos,
+                                node_group_end_offset,
+                                node_group_start_offset,
+                                node_group_end_offset,
                                 node_ts_groups_offsets,
                                 node_ts_sorted_indices,
-                                graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
+                                weights,
                                 group_selector_rand_num);
                         }
+                    } else if (PickerType == RandomPickerType::SpatioTemporal) {
+                        group_pos = pick_random_spatiotemporal_edge_device<Forward, IsDirected>(
+                            graph,
+                            node_id,
+                            timestamp,
+                            valid_node_ts_slice_start_pos,
+                            node_group_end_offset,
+                            node_group_start_offset,
+                            node_group_end_offset,
+                            count_ts_group_per_node,
+                            node_edge_offsets,
+                            node_ts_groups_offsets,
+                            node_ts_sorted_indices,
+                            weights,
+                            walk_nodes,
+                            walk_len,
+                            edge_selector_rand_num);
                     } else {
                         group_pos = random_pickers::pick_using_weight_based_picker_device(
                             PickerType,
-                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
-                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
-                            start_pos, group_end_offset, group_selector_rand_num);
+                            weights,
+                            weights_size,
+                            valid_node_ts_slice_start_pos, node_group_end_offset, group_selector_rand_num);
                     }
                     if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             } else {
                 // Find first group >= timestamp
                 auto it = cuda::std::lower_bound(
-                    node_ts_groups_offsets + static_cast<int>(group_start_offset),
-                    node_ts_groups_offsets + static_cast<int>(group_end_offset),
+                    node_ts_groups_offsets + static_cast<int>(node_group_start_offset),
+                    node_ts_groups_offsets + static_cast<int>(node_group_end_offset),
                     timestamp,
                     [graph, node_ts_sorted_indices](const size_t pos, const int64_t ts) {
                         return graph->edge_data->timestamps[node_ts_sorted_indices[pos]] < ts;
                     });
 
                 const size_t available = std::distance(
-                    node_ts_groups_offsets + static_cast<int>(group_start_offset),
+                    node_ts_groups_offsets + static_cast<int>(node_group_start_offset),
                     it);
                 if (available == 0) return InternalEdge{-1, -1, -1, -1};
 
@@ -666,25 +728,15 @@ namespace temporal_graph {
                     if (index >= available) return InternalEdge{-1, -1, -1, -1};
                     group_pos = static_cast<long>((it - node_ts_groups_offsets) - 1 - (available - index - 1));
                 } else {
-                    double *weights = IsDirected
-                                          ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential
-                                          : graph->node_edge_index->outbound_backward_cumulative_weights_exponential;
-
-                    size_t weights_size = IsDirected
-                                              ? graph->node_edge_index->
-                                              inbound_backward_cumulative_weights_exponential_size
-                                              : graph->node_edge_index->
-                                              outbound_backward_cumulative_weights_exponential_size;
-
-                    const size_t range_end = static_cast<size_t>(it - node_ts_groups_offsets);
+                    const auto valid_node_ts_slice_end_pos = static_cast<size_t>(it - node_ts_groups_offsets);
                     if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
                         if (prev_node == -1) {
                             group_pos = random_pickers::pick_using_weight_based_picker_device(
                                 RandomPickerType::ExponentialWeight,
                                 weights,
                                 weights_size,
-                                group_start_offset,
-                                range_end,
+                                node_group_start_offset,
+                                valid_node_ts_slice_end_pos,
                                 group_selector_rand_num
                             );
                         } else {
@@ -692,21 +744,39 @@ namespace temporal_graph {
                                 graph,
                                 node_id,
                                 prev_node,
-                                group_start_offset,
-                                range_end,
-                                group_end_offset,
+                                node_group_start_offset,
+                                valid_node_ts_slice_end_pos,
+                                node_group_start_offset,
+                                node_group_end_offset,
                                 node_ts_groups_offsets,
                                 node_ts_sorted_indices,
                                 weights,
                                 group_selector_rand_num);
                         }
+                    } else if (PickerType == RandomPickerType::SpatioTemporal) {
+                        group_pos = pick_random_spatiotemporal_edge_device<Forward, IsDirected>(
+                            graph,
+                            node_id,
+                            timestamp,
+                            node_group_start_offset,
+                            valid_node_ts_slice_end_pos,
+                            node_group_start_offset,
+                            node_group_end_offset,
+                            count_ts_group_per_node,
+                            node_edge_offsets,
+                            node_ts_groups_offsets,
+                            node_ts_sorted_indices,
+                            weights,
+                            walk_nodes,
+                            walk_len,
+                            edge_selector_rand_num);
                     } else {
                         group_pos = random_pickers::pick_using_weight_based_picker_device(
                             PickerType,
                             weights,
                             weights_size,
-                            group_start_offset,
-                            range_end,
+                            node_group_start_offset,
+                            valid_node_ts_slice_end_pos,
                             group_selector_rand_num
                         );
                     }
@@ -715,7 +785,7 @@ namespace temporal_graph {
             }
         } else {
             // No timestamp constraint - select from all groups
-            const size_t num_groups = group_end_offset - group_start_offset;
+            const size_t num_groups = node_group_end_offset - node_group_start_offset;
             if (num_groups == 0) return InternalEdge{-1, -1, -1, -1};
 
             if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
@@ -725,113 +795,75 @@ namespace temporal_graph {
 
                 if (index >= num_groups) return InternalEdge{-1, -1, -1, -1};
                 group_pos = Forward
-                                ? static_cast<long>(group_start_offset + index)
-                                : static_cast<long>(group_end_offset - 1 - (num_groups - index - 1));
+                                ? static_cast<long>(node_group_start_offset + index)
+                                : static_cast<long>(node_group_end_offset - 1 - (num_groups - index - 1));
             } else {
-                if constexpr (Forward) {
-                    if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-                        if (prev_node == -1) {
-                            group_pos = random_pickers::pick_using_weight_based_picker_device(
-                                RandomPickerType::ExponentialWeight,
-                                graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
-                                graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
-                                group_start_offset,
-                                group_end_offset,
-                                group_selector_rand_num);
-                        } else {
-                            group_pos = pick_random_temporal_node2vec_device<Forward, IsDirected>(
-                                graph,
-                                node_id,
-                                prev_node,
-                                group_start_offset,
-                                group_end_offset,
-                                group_end_offset,
-                                node_ts_groups_offsets,
-                                node_ts_sorted_indices,
-                                graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
-                                group_selector_rand_num);
-                        }
-                    } else {
-                        group_pos = random_pickers::pick_using_weight_based_picker_device(
-                            PickerType,
-                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential,
-                            graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size,
-                            group_start_offset,
-                            group_end_offset,
-                            group_selector_rand_num);
-                    }
-                    if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
-                } else {
-                    double *weights = IsDirected
-                                          ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential
-                                          : graph->node_edge_index->outbound_backward_cumulative_weights_exponential;
 
-                    size_t weights_size = IsDirected
-                                              ? graph->node_edge_index->
-                                              inbound_backward_cumulative_weights_exponential_size
-                                              : graph->node_edge_index->
-                                              outbound_backward_cumulative_weights_exponential_size;
-
-                    if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-                        if (prev_node == -1) {
-                            group_pos = random_pickers::pick_using_weight_based_picker_device(
-                                RandomPickerType::ExponentialWeight,
-                                weights,
-                                weights_size,
-                                group_start_offset,
-                                group_end_offset,
-                                group_selector_rand_num);
-                        } else {
-                            group_pos = pick_random_temporal_node2vec_device<Forward, IsDirected>(
-                                graph,
-                                node_id,
-                                prev_node,
-                                group_start_offset,
-                                group_end_offset,
-                                group_end_offset,
-                                node_ts_groups_offsets,
-                                node_ts_sorted_indices,
-                                weights,
-                                group_selector_rand_num);
-                        }
-                    } else {
+                if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
+                    if (prev_node == -1) {
                         group_pos = random_pickers::pick_using_weight_based_picker_device(
-                            PickerType,
+                            RandomPickerType::ExponentialWeight,
                             weights,
                             weights_size,
-                            group_start_offset,
-                            group_end_offset,
+                            node_group_start_offset,
+                            node_group_end_offset,
+                            group_selector_rand_num);
+                    } else {
+                        group_pos = pick_random_temporal_node2vec_device<Forward, IsDirected>(
+                            graph,
+                            node_id,
+                            prev_node,
+                            node_group_start_offset,
+                            node_group_end_offset,
+                            node_group_start_offset,
+                            node_group_end_offset,
+                            node_ts_groups_offsets,
+                            node_ts_sorted_indices,
+                            weights,
                             group_selector_rand_num);
                     }
-                    if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
+                } else if (PickerType == RandomPickerType::SpatioTemporal) {
+                    group_pos = pick_random_spatiotemporal_edge_device<Forward, IsDirected>(
+                            graph,
+                            node_id,
+                            timestamp,
+                            node_group_start_offset,
+                            node_group_start_offset,
+                            node_group_end_offset,
+                            node_group_start_offset,
+                            node_group_end_offset,
+                            node_edge_offsets,
+                            node_ts_groups_offsets,
+                            node_ts_sorted_indices,
+                            weights,
+                            walk_nodes,
+                            walk_len,
+                            edge_selector_rand_num);
+                } else {
+                    group_pos = random_pickers::pick_using_weight_based_picker_device(
+                        PickerType,
+                        weights,
+                        weights_size,
+                        node_group_start_offset,
+                        node_group_end_offset,
+                        group_selector_rand_num);
                 }
+                if (group_pos == -1) return InternalEdge{-1, -1, -1, -1};
             }
         }
 
         // Get edge range for selected group
-        const size_t edge_start = node_ts_groups_offsets[group_pos];
-        size_t edge_end;
+        const size_t valid_edge_start = node_ts_groups_offsets[group_pos];
+        size_t valid_edge_end;
 
-        if (group_pos + 1 < group_end_offset) {
-            edge_end = node_ts_groups_offsets[group_pos + 1];
+        if (group_pos + 1 < node_group_end_offset) {
+            valid_edge_end = node_ts_groups_offsets[group_pos + 1];
         } else {
-            if constexpr (Forward) {
-                edge_end = graph->node_edge_index->node_group_outbound_offsets[node_id + 1];
-            } else {
-                edge_end = IsDirected
-                               ? graph->node_edge_index->node_group_inbound_offsets[node_id + 1]
-                               : graph->node_edge_index->node_group_outbound_offsets[node_id + 1];
-            }
+            valid_edge_end = node_edge_offsets[node_id + 1];
         }
 
         // Validate range before random selection
-        const size_t edge_indices_size = Forward
-                                             ? graph->node_edge_index->node_ts_sorted_outbound_indices_size
-                                             : (IsDirected
-                                                    ? graph->node_edge_index->node_ts_sorted_inbound_indices_size
-                                                    : graph->node_edge_index->node_ts_sorted_outbound_indices_size);
-
-        if (edge_start >= edge_end || edge_start >= edge_indices_size || edge_end > edge_indices_size) {
+        if (valid_edge_start >= valid_edge_end || valid_edge_start >= node_ts_sorted_indices_size || valid_edge_end > node_ts_sorted_indices_size) {
             return InternalEdge{-1, -1, -1, -1};
         }
 
@@ -839,23 +871,23 @@ namespace temporal_graph {
         if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
             if (prev_node == -1) {
                 edge_idx = static_cast<long>(node_ts_sorted_indices[
-                    edge_start +
-                    generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), edge_selector_rand_num)]);
+                    valid_edge_start +
+                    generate_random_number_bounded_by(static_cast<int>(valid_edge_end - valid_edge_start), edge_selector_rand_num)]);
             } else {
                 edge_idx = pick_random_temporal_node2vec_edge_device<Forward, IsDirected>(
                     graph,
                     node_id,
                     prev_node,
-                    edge_start,
-                    edge_end,
+                    valid_edge_start,
+                    valid_edge_end,
                     node_ts_sorted_indices,
                     edge_selector_rand_num);
                 if (edge_idx == -1) return InternalEdge{-1, -1, -1, -1};
             }
         } else {
             edge_idx = static_cast<long>(node_ts_sorted_indices[
-                edge_start +
-                generate_random_number_bounded_by(static_cast<int>(edge_end - edge_start), edge_selector_rand_num)]);
+                valid_edge_start +
+                generate_random_number_bounded_by(static_cast<int>(valid_edge_end - valid_edge_start), edge_selector_rand_num)]);
         }
 
         return InternalEdge{

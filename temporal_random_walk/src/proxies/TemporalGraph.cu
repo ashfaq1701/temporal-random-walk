@@ -33,7 +33,10 @@ TemporalGraph::TemporalGraph(
     const bool enable_temporal_node2vec,
     const double timescale_bound,
     const double node2vec_p,
-    const double node2vec_q)
+    const double node2vec_q,
+    const double spatiotemporal_alpha,
+    const double spatiotemporal_beta,
+    const double spatiotemporal_gamma)
     : owns_graph(true) {
 
     graph = new TemporalGraphStore(
@@ -44,7 +47,10 @@ TemporalGraph::TemporalGraph(
         enable_temporal_node2vec,
         timescale_bound,
         node2vec_p,
-        node2vec_q);
+        node2vec_q,
+        spatiotemporal_alpha,
+        spatiotemporal_beta,
+        spatiotemporal_gamma);
 }
 
 TemporalGraph::TemporalGraph(TemporalGraphStore* existing_graph)
@@ -72,7 +78,10 @@ TemporalGraph& TemporalGraph::operator=(const TemporalGraph& other) {
                 other.graph->enable_temporal_node2vec,
                 other.graph->timescale_bound,
                 other.graph->node2vec_p,
-                other.graph->node2vec_q);
+                other.graph->node2vec_q,
+                other.graph->spatiotemporal_alpha,
+                other.graph->spatiotemporal_beta,
+                other.graph->spatiotemporal_gamma);
         } else {
             graph = other.graph;
         }
