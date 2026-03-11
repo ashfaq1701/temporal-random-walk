@@ -170,6 +170,7 @@ namespace temporal_random_walk {
                         case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::Uniform, RandomPickerType::ExponentialIndex); \
                         case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::Uniform, RandomPickerType::ExponentialWeight); \
                         case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::Uniform, RandomPickerType::TemporalNode2Vec); \
+                        case RandomPickerType::SpatioTemporal: DISPATCH(DIR, FWD, RandomPickerType::Uniform, RandomPickerType::SpatioTemporal); \
                         case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::Uniform, RandomPickerType::TEST_FIRST); \
                         case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::Uniform, RandomPickerType::TEST_LAST); \
                         default: break; \
@@ -181,6 +182,7 @@ namespace temporal_random_walk {
                         case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::Linear, RandomPickerType::ExponentialIndex); \
                         case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::Linear, RandomPickerType::ExponentialWeight); \
                         case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::Linear, RandomPickerType::TemporalNode2Vec); \
+                        case RandomPickerType::SpatioTemporal: DISPATCH(DIR, FWD, RandomPickerType::Linear, RandomPickerType::SpatioTemporal); \
                         case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::Linear, RandomPickerType::TEST_FIRST); \
                         case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::Linear, RandomPickerType::TEST_LAST); \
                         default: break; \
@@ -192,6 +194,7 @@ namespace temporal_random_walk {
                         case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::ExponentialIndex, RandomPickerType::ExponentialIndex); \
                         case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::ExponentialIndex, RandomPickerType::ExponentialWeight); \
                         case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::ExponentialIndex, RandomPickerType::TemporalNode2Vec); \
+                        case RandomPickerType::SpatioTemporal: DISPATCH(DIR, FWD, RandomPickerType::ExponentialIndex, RandomPickerType::SpatioTemporal); \
                         case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::ExponentialIndex, RandomPickerType::TEST_FIRST); \
                         case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::ExponentialIndex, RandomPickerType::TEST_LAST); \
                         default: break; \
@@ -203,6 +206,7 @@ namespace temporal_random_walk {
                         case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::ExponentialWeight, RandomPickerType::ExponentialIndex); \
                         case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::ExponentialWeight, RandomPickerType::ExponentialWeight); \
                         case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::ExponentialWeight, RandomPickerType::TemporalNode2Vec); \
+                        case RandomPickerType::SpatioTemporal: DISPATCH(DIR, FWD, RandomPickerType::ExponentialWeight, RandomPickerType::SpatioTemporal); \
                         case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::ExponentialWeight, RandomPickerType::TEST_FIRST); \
                         case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::ExponentialWeight, RandomPickerType::TEST_LAST); \
                         default: break; \
@@ -214,8 +218,21 @@ namespace temporal_random_walk {
                         case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::TemporalNode2Vec, RandomPickerType::ExponentialIndex); \
                         case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::TemporalNode2Vec, RandomPickerType::ExponentialWeight); \
                         case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::TemporalNode2Vec, RandomPickerType::TemporalNode2Vec); \
+                        case RandomPickerType::SpatioTemporal: DISPATCH(DIR, FWD, RandomPickerType::TemporalNode2Vec, RandomPickerType::SpatioTemporal); \
                         case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::TemporalNode2Vec, RandomPickerType::TEST_FIRST); \
                         case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::TemporalNode2Vec, RandomPickerType::TEST_LAST); \
+                        default: break; \
+                    } break; \
+                case RandomPickerType::SpatioTemporal: \
+                    switch (start_picker_type) { \
+                        case RandomPickerType::Uniform: DISPATCH(DIR, FWD, RandomPickerType::SpatioTemporal, RandomPickerType::Uniform); \
+                        case RandomPickerType::Linear: DISPATCH(DIR, FWD, RandomPickerType::SpatioTemporal, RandomPickerType::Linear); \
+                        case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::SpatioTemporal, RandomPickerType::ExponentialIndex); \
+                        case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::SpatioTemporal, RandomPickerType::ExponentialWeight); \
+                        case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::SpatioTemporal, RandomPickerType::TemporalNode2Vec); \
+                        case RandomPickerType::SpatioTemporal: DISPATCH(DIR, FWD, RandomPickerType::SpatioTemporal, RandomPickerType::SpatioTemporal); \
+                        case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::SpatioTemporal, RandomPickerType::TEST_FIRST); \
+                        case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::SpatioTemporal, RandomPickerType::TEST_LAST); \
                         default: break; \
                     } break; \
                 case RandomPickerType::TEST_FIRST: \
@@ -225,6 +242,7 @@ namespace temporal_random_walk {
                         case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::TEST_FIRST, RandomPickerType::ExponentialIndex); \
                         case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::TEST_FIRST, RandomPickerType::ExponentialWeight); \
                         case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::TEST_FIRST, RandomPickerType::TemporalNode2Vec); \
+                        case RandomPickerType::SpatioTemporal: DISPATCH(DIR, FWD, RandomPickerType::TEST_FIRST, RandomPickerType::SpatioTemporal); \
                         case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::TEST_FIRST, RandomPickerType::TEST_FIRST); \
                         case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::TEST_FIRST, RandomPickerType::TEST_LAST); \
                         default: break; \
@@ -236,6 +254,7 @@ namespace temporal_random_walk {
                         case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::TEST_LAST, RandomPickerType::ExponentialIndex); \
                         case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::TEST_LAST, RandomPickerType::ExponentialWeight); \
                         case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::TEST_LAST, RandomPickerType::TemporalNode2Vec); \
+                        case RandomPickerType::SpatioTemporal: DISPATCH(DIR, FWD, RandomPickerType::TEST_LAST, RandomPickerType::SpatioTemporal); \
                         case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::TEST_LAST, RandomPickerType::TEST_FIRST); \
                         case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::TEST_LAST, RandomPickerType::TEST_LAST); \
                         default: break; \
