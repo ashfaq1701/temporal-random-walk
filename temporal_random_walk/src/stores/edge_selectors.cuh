@@ -234,7 +234,6 @@ namespace temporal_graph {
             const long edge_idx = pick_random_spatiotemporal_edge_host<Forward, IsDirected>(
                 graph,
                 node_id,
-                timestamp,
                 valid_begin,
                 valid_end,
                 node_group_begin,
@@ -592,7 +591,6 @@ namespace temporal_graph {
             const long edge_idx = pick_random_spatiotemporal_edge_device<Forward, IsDirected>(
                 graph,
                 node_id,
-                timestamp,
                 valid_begin,
                 valid_end,
                 node_group_begin,

@@ -51,9 +51,9 @@ TYPED_TEST_SUITE(SpatioTemporalSamplerTest, Backends);
 
 TYPED_TEST(SpatioTemporalSamplerTest, ReturnsValidEdge) {
     this->graph.add_multiple_edges({
-        Edge{0, 1, 10},
-        Edge{0, 2, 20},
-        Edge{0, 3, 30}
+        Edge{1, 0, 10},
+        Edge{2, 0, 20},
+        Edge{3, 0, 30}
     });
 
     const Edge e = this->graph.get_node_edge_at(
@@ -61,36 +61,36 @@ TYPED_TEST(SpatioTemporalSamplerTest, ReturnsValidEdge) {
         RandomPickerType::SpatioTemporal,
         -1,
         -1,
-        true
+        false
     );
 
-    EXPECT_EQ(e.u, 0);
-    EXPECT_NE(e.i, -1);
+    EXPECT_EQ(e.i, 0);
+    EXPECT_NE(e.u, -1);
     EXPECT_NE(e.ts, -1);
 }
 
 //
 // ------------------------------------------------------------
-// Temporal Constraint (Forward Walk)
+// Temporal Constraint
 // ------------------------------------------------------------
 //
 
-TYPED_TEST(SpatioTemporalSamplerTest, RespectsForwardTimestamp) {
+TYPED_TEST(SpatioTemporalSamplerTest, RespectsTimestampConstraint) {
     this->graph.add_multiple_edges({
-        Edge{0, 1, 10},
-        Edge{0, 2, 20},
-        Edge{0, 3, 30}
+        Edge{1, 0, 10},
+        Edge{2, 0, 20},
+        Edge{3, 0, 30}
     });
 
     const Edge e = this->graph.get_node_edge_at(
         0,
         RandomPickerType::SpatioTemporal,
-        20,
+        25,
         -1,
-        true
+        false
     );
 
-    EXPECT_GT(e.ts, 20);
+    EXPECT_LT(e.ts, 25);
 }
 
 //
@@ -107,9 +107,9 @@ TYPED_TEST(SpatioTemporalSamplerTest, ReturnsSentinelWhenNoEdges) {
     const Edge e = this->graph.get_node_edge_at(
         0,
         RandomPickerType::SpatioTemporal,
-        10,
         -1,
-        true
+        -1,
+        false
     );
 
     EXPECT_TRUE(is_sentinel(e));
@@ -123,14 +123,14 @@ TYPED_TEST(SpatioTemporalSamplerTest, ReturnsSentinelWhenNoEdges) {
 
 TYPED_TEST(SpatioTemporalSamplerTest, RandomSelectionWithinGroup) {
     this->graph.add_multiple_edges({
-        Edge{0, 1, 10},
-        Edge{0, 2, 10},
-        Edge{0, 3, 10}
+        Edge{1, 0, 10},
+        Edge{2, 0, 10},
+        Edge{3, 0, 10}
     });
 
     std::set<int> seen;
 
-    constexpr int NUM_TRIES = 50;
+    constexpr int NUM_TRIES = 200;
 
     for (int i = 0; i < NUM_TRIES; i++) {
         const Edge e = this->graph.get_node_edge_at(
@@ -138,13 +138,13 @@ TYPED_TEST(SpatioTemporalSamplerTest, RandomSelectionWithinGroup) {
             RandomPickerType::SpatioTemporal,
             -1,
             -1,
-            true
+            false
         );
 
-        EXPECT_EQ(e.u, 0);
+        EXPECT_EQ(e.i, 0);
         EXPECT_EQ(e.ts, 10);
 
-        seen.insert(e.i);
+        seen.insert(e.u);
     }
 
     EXPECT_GT(seen.size(), 1);
@@ -158,16 +158,16 @@ TYPED_TEST(SpatioTemporalSamplerTest, RandomSelectionWithinGroup) {
 
 TYPED_TEST(SpatioTemporalSamplerTest, ExplorationBiasPenalizesVisitedNodes) {
     this->graph.add_multiple_edges({
-        Edge{0, 1, 10},
-        Edge{0, 2, 10}
+        Edge{1, 0, 10},
+        Edge{2, 0, 10}
     });
 
-    std::vector<int> walk = {0, 1};
+    std::vector<int> walk = {0, 1, 0, 1};
 
     int visited_count = 0;
     int unvisited_count = 0;
 
-    constexpr int NUM_TRIES = 200;
+    constexpr int NUM_TRIES = 500;
 
     for (int i = 0; i < NUM_TRIES; i++) {
         const Edge e = this->graph.get_node_edge_at(
@@ -175,13 +175,13 @@ TYPED_TEST(SpatioTemporalSamplerTest, ExplorationBiasPenalizesVisitedNodes) {
             RandomPickerType::SpatioTemporal,
             -1,
             -1,
-            true,
+            false,
             walk,
             walk.size()
         );
 
-        if (e.i == 1) visited_count++;
-        if (e.i == 2) unvisited_count++;
+        if (e.u == 1) visited_count++;
+        if (e.u == 2) unvisited_count++;
     }
 
     EXPECT_GT(unvisited_count, visited_count);
@@ -195,18 +195,18 @@ TYPED_TEST(SpatioTemporalSamplerTest, ExplorationBiasPenalizesVisitedNodes) {
 
 TYPED_TEST(SpatioTemporalSamplerTest, SpatialBiasPrefersLowDegreeNodes) {
     this->graph.add_multiple_edges({
-        Edge{0, 1, 10},
-        Edge{0, 2, 10},
+        Edge{1, 0, 10},
+        Edge{2, 0, 10},
 
-        Edge{1, 3, 5},
-        Edge{1, 4, 6},
-        Edge{1, 5, 7}
+        Edge{3, 1, 5},
+        Edge{4, 1, 6},
+        Edge{5, 1, 7}
     });
 
     int high_degree_node = 0;
     int low_degree_node = 0;
 
-    constexpr int NUM_TRIES = 200;
+    constexpr int NUM_TRIES = 500;
 
     for (int i = 0; i < NUM_TRIES; i++) {
         const Edge e = this->graph.get_node_edge_at(
@@ -214,11 +214,11 @@ TYPED_TEST(SpatioTemporalSamplerTest, SpatialBiasPrefersLowDegreeNodes) {
             RandomPickerType::SpatioTemporal,
             -1,
             -1,
-            true
+            false
         );
 
-        if (e.i == 1) high_degree_node++;
-        if (e.i == 2) low_degree_node++;
+        if (e.u == 1) high_degree_node++;
+        if (e.u == 2) low_degree_node++;
     }
 
     EXPECT_GT(low_degree_node, high_degree_node);
@@ -232,14 +232,14 @@ TYPED_TEST(SpatioTemporalSamplerTest, SpatialBiasPrefersLowDegreeNodes) {
 
 TYPED_TEST(SpatioTemporalSamplerTest, TemporalBiasPrefersRecentEdges) {
     this->graph.add_multiple_edges({
-        Edge{0, 1, 10},
-        Edge{0, 2, 20}
+        Edge{1, 0, 10},
+        Edge{2, 0, 20}
     });
 
     int older = 0;
     int newer = 0;
 
-    constexpr int NUM_TRIES = 200;
+    constexpr int NUM_TRIES = 500;
 
     for (int i = 0; i < NUM_TRIES; i++) {
         const Edge e = this->graph.get_node_edge_at(
@@ -247,11 +247,11 @@ TYPED_TEST(SpatioTemporalSamplerTest, TemporalBiasPrefersRecentEdges) {
             RandomPickerType::SpatioTemporal,
             -1,
             -1,
-            true
+            false
         );
 
-        if (e.i == 1) older++;
-        if (e.i == 2) newer++;
+        if (e.u == 1) older++;
+        if (e.u == 2) newer++;
     }
 
     EXPECT_GT(newer, older);
@@ -259,14 +259,15 @@ TYPED_TEST(SpatioTemporalSamplerTest, TemporalBiasPrefersRecentEdges) {
 
 //
 // ------------------------------------------------------------
-// Backward Walk Safety
+// Forward Direction Sanity
 // ------------------------------------------------------------
 //
 
-TYPED_TEST(SpatioTemporalSamplerTest, BackwardWalkReturnsSentinelIfNoInboundEdges) {
+TYPED_TEST(SpatioTemporalSamplerTest, ForwardDirectionSanity) {
     this->graph.add_multiple_edges({
         Edge{0, 1, 10},
-        Edge{0, 2, 20}
+        Edge{0, 2, 20},
+        Edge{0, 3, 30}
     });
 
     const Edge e = this->graph.get_node_edge_at(
@@ -274,8 +275,9 @@ TYPED_TEST(SpatioTemporalSamplerTest, BackwardWalkReturnsSentinelIfNoInboundEdge
         RandomPickerType::SpatioTemporal,
         -1,
         -1,
-        false
+        true
     );
 
-    EXPECT_TRUE(is_sentinel(e));
+    EXPECT_EQ(e.u, 0);
+    EXPECT_NE(e.i, -1);
 }
