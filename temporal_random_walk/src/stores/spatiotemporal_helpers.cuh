@@ -4,7 +4,7 @@
 #include <cmath>
 #include <algorithm>
 #include "temporal_graph.cuh"
-#include "data_helpers.cuh"
+#include "store_helpers.cuh"
 
 #ifdef HAS_CUDA
 #include <cuda/std/__algorithm/lower_bound.h>

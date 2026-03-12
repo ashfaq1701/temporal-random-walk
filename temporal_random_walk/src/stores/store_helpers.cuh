@@ -1,5 +1,5 @@
-#ifndef DATA_HELPERS_CUH
-#define DATA_HELPERS_CUH
+#ifndef STORE_HELPERS_CUH
+#define STORE_HELPERS_CUH
 
 namespace temporal_graph {
 
@@ -55,4 +55,4 @@ namespace temporal_graph {
 }
 
 
-#endif //DATA_HELPERS_CUH
+#endif //STORE_HELPERS_CUH
