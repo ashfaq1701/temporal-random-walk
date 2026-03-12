@@ -18,9 +18,12 @@ namespace temporal_random_walk {
         const int *start_node_ids,
         const double *rand_nums) {
 
+        if (max_walk_len == 0) return;
+
         const size_t rand_nums_start_idx_for_walk = static_cast<size_t>(walk_idx)
             + static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) * 2;
 
+        const auto padding_value = walk_set->nodes[walk_idx * max_walk_len];
         InternalEdge start_edge;
         if (start_node_ids[walk_idx] == -1) {
             start_edge = temporal_graph::get_edge_at_host<Forward, StartPickerType>(
@@ -29,6 +32,8 @@ namespace temporal_random_walk {
                 rand_nums[rand_nums_start_idx_for_walk],
                 rand_nums[rand_nums_start_idx_for_walk + 1]);
         } else {
+            walk_set->nodes[walk_idx * max_walk_len] = start_node_ids[walk_idx];
+
             start_edge = temporal_graph::get_node_edge_at_host<Forward, StartPickerType, IsDirected>(
                 temporal_graph,
                 start_node_ids[walk_idx],
@@ -37,11 +42,12 @@ namespace temporal_random_walk {
                 rand_nums[rand_nums_start_idx_for_walk],
                 rand_nums[rand_nums_start_idx_for_walk + 1],
                 walk_set->nodes + walk_idx * max_walk_len,
-                walk_set->walk_lens[walk_idx]
+                walk_set->walk_lens[walk_idx] + 1
             );
         }
 
         if (start_edge.i == -1) {
+            walk_set->nodes[walk_idx * max_walk_len] = padding_value;
             return;
         }
 

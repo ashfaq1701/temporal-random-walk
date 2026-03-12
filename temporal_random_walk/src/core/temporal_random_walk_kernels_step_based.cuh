@@ -23,10 +23,13 @@ namespace temporal_random_walk {
         const size_t walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
         if (walk_idx >= num_walks) return;
 
+        if (max_walk_len == 0) return;
+
         const size_t rand_nums_start_offset =
             static_cast<size_t>(walk_idx) +                                           // To account extra value in all previous walk's start pickers.
             (static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) * 2);  // To account all 2 rand numbers for all other steps in the previous walks.
 
+        const auto padding_value = walk_set->nodes[walk_idx * max_walk_len];
         InternalEdge start_edge;
         if (start_node_ids[walk_idx] == -1) {
             start_edge = temporal_graph::get_edge_at_device<Forward, StartPickerType>(
@@ -35,6 +38,8 @@ namespace temporal_random_walk {
                 rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
                 rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1));
         } else {
+            walk_set->nodes[walk_idx * max_walk_len] = start_node_ids[walk_idx];
+
             start_edge = temporal_graph::get_node_edge_at_device<Forward, StartPickerType, IsDirected>(
                 temporal_graph,
                 start_node_ids[walk_idx],
@@ -43,10 +48,11 @@ namespace temporal_random_walk {
                 rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
                 rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1),
                 walk_set->nodes + walk_idx * max_walk_len,
-                walk_set->walk_lens[walk_idx]);
+                walk_set->walk_lens[walk_idx] + 1);
         }
 
         if (start_edge.i == -1) {
+            walk_set->nodes[walk_idx * max_walk_len] = padding_value;
             return;
         }
 
