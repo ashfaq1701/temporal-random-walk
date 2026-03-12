@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include <cmath>
 #include <array>
-#include <filesystem>
 
 #include "test_utils.h"
 #include "../src/proxies/TemporalRandomWalk.cuh"
@@ -12,25 +11,6 @@ constexpr int64_t MAX_TIME_CAPACITY = 5;
 
 constexpr RandomPickerType exponential_picker_type = RandomPickerType::ExponentialIndex;
 constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;
-
-namespace {
-std::string sample_data_path() {
-    static constexpr std::array<const char*, 4> candidates = {
-        "../../../data/sample_data.csv",
-        "../../data/sample_data.csv",
-        "../data/sample_data.csv",
-        "data/sample_data.csv"
-    };
-
-    for (const char* candidate : candidates) {
-        if (std::filesystem::exists(candidate)) {
-            return candidate;
-        }
-    }
-
-    return candidates.front();
-}
-}
 
 #ifdef HAS_CUDA
 using GPU_USAGE_TYPES = ::testing::Types<

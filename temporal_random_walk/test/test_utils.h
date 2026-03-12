@@ -4,6 +4,24 @@
 #include <sstream>
 #include <string>
 #include <fstream>
+#include <filesystem>
+
+inline std::string sample_data_path() {
+    static constexpr std::array<const char*, 4> candidates = {
+        "../../../data/sample_data.csv",
+        "../../data/sample_data.csv",
+        "../data/sample_data.csv",
+        "data/sample_data.csv"
+    };
+
+    for (const char* candidate : candidates) {
+        if (std::filesystem::exists(candidate)) {
+            return candidate;
+        }
+    }
+
+    return candidates.front();
+}
 
 inline std::vector<std::tuple<int, int, int64_t>> read_edges_from_csv(const std::string& filename, const int row_count = -1, char delim=',') {
     std::ifstream file(filename);
