@@ -39,6 +39,7 @@ namespace temporal_graph {
         const size_t *node_edge_offsets,
         const size_t *node_ts_groups_offsets,
         const size_t *node_ts_sorted_indices) {
+
         if (node_group_begin >= node_group_end) {
             return 0;
         }
@@ -48,9 +49,8 @@ namespace temporal_graph {
 
         const int64_t *timestamps = graph->edge_data->timestamps;
 
-        const size_t *begin = node_ts_groups_offsets + static_cast<std::ptrdiff_t>(node_group_begin);
-
-        const size_t *end = node_ts_groups_offsets + static_cast<std::ptrdiff_t>(node_group_end);
+        const size_t *begin = node_ts_groups_offsets + node_group_begin;
+        const size_t *end = node_ts_groups_offsets + node_group_end;
 
         if constexpr (Forward) {
             const size_t *it = std::upper_bound(
@@ -67,8 +67,8 @@ namespace temporal_graph {
             }
 
             const auto first_group = static_cast<size_t>(it - node_ts_groups_offsets);
-
             const size_t first_edge = node_ts_groups_offsets[first_group];
+
             return node_edge_end - first_edge;
         } else {
             const size_t *it = std::lower_bound(
@@ -84,10 +84,17 @@ namespace temporal_graph {
                 return 0;
             }
 
-            const auto first_group = static_cast<size_t>(it - node_ts_groups_offsets);
+            const auto prev_group = static_cast<size_t>(it - 1 - node_ts_groups_offsets);
 
-            const size_t first_edge = node_ts_groups_offsets[first_group];
-            return first_edge - node_edge_begin;
+            size_t last_edge;
+
+            if (prev_group + 1 < node_group_end) {
+                last_edge = node_ts_groups_offsets[prev_group + 1];
+            } else {
+                last_edge = node_edge_end;
+            }
+
+            return last_edge - node_edge_begin;
         }
     }
 
@@ -307,6 +314,7 @@ namespace temporal_graph {
         const size_t *node_edge_offsets,
         const size_t *node_ts_groups_offsets,
         const size_t *node_ts_sorted_indices) {
+
         if (node_group_begin >= node_group_end) {
             return 0;
         }
@@ -316,9 +324,8 @@ namespace temporal_graph {
 
         const int64_t *timestamps = graph->edge_data->timestamps;
 
-        const size_t *begin = node_ts_groups_offsets + static_cast<std::ptrdiff_t>(node_group_begin);
-
-        const size_t *end = node_ts_groups_offsets + static_cast<std::ptrdiff_t>(node_group_end);
+        const size_t *begin = node_ts_groups_offsets + node_group_begin;
+        const size_t *end = node_ts_groups_offsets + node_group_end;
 
         if constexpr (Forward) {
             const size_t *it = cuda::std::upper_bound(
@@ -335,8 +342,8 @@ namespace temporal_graph {
             }
 
             const auto first_group = static_cast<size_t>(it - node_ts_groups_offsets);
-
             const size_t first_edge = node_ts_groups_offsets[first_group];
+
             return node_edge_end - first_edge;
         } else {
             const size_t *it = cuda::std::lower_bound(
@@ -352,10 +359,17 @@ namespace temporal_graph {
                 return 0;
             }
 
-            const auto first_group = static_cast<size_t>(it - node_ts_groups_offsets);
+            const auto prev_group = static_cast<size_t>(it - 1 - node_ts_groups_offsets);
 
-            const size_t first_edge = node_ts_groups_offsets[first_group];
-            return first_edge - node_edge_begin;
+            size_t last_edge;
+
+            if (prev_group + 1 < node_group_end) {
+                last_edge = node_ts_groups_offsets[prev_group + 1];
+            } else {
+                last_edge = node_edge_end;
+            }
+
+            return last_edge - node_edge_begin;
         }
     }
 
