@@ -60,7 +60,7 @@ namespace temporal_graph {
                 end,
                 timestamp,
                 [timestamps, node_ts_sorted_indices]
-                (const int64_t ts, const size_t group_pos) {
+        (const int64_t ts, const size_t group_pos) {
                     return ts < timestamps[node_ts_sorted_indices[group_pos]];
                 });
 
@@ -79,7 +79,7 @@ namespace temporal_graph {
                 end,
                 timestamp,
                 [timestamps, node_ts_sorted_indices]
-                (const size_t group_pos, const int64_t ts) {
+        (const size_t group_pos, const int64_t ts) {
                     return timestamps[node_ts_sorted_indices[group_pos]] < ts;
                 });
 
@@ -121,17 +121,27 @@ namespace temporal_graph {
             return -1;
         }
 
+        // ---- Cache graph parameters locally ----
+        const double beta = graph->spatiotemporal_beta;
+        const double gamma = graph->spatiotemporal_gamma;
+
+        // ---- Node cache (degree + spatial) ----
+        int last_node = -1;
+        size_t last_degree = 0;
+        double last_spatial = 0.0;
+
+        // ---- Visit cache ----
+        int last_visit_node = -1;
+        int last_visit_count = 0;
+
         double total_weight = 0.0;
 
         // PASS 1: compute total weight
-        for (size_t group = valid_node_ts_group_begin;
-             group < valid_node_ts_group_end;
-             ++group) {
-            const double temporal_weight =
-                    get_group_exponential_weight_from_cumulative(
-                        weights,
-                        group,
-                        node_group_begin);
+        for (size_t group = valid_node_ts_group_begin; group < valid_node_ts_group_end; ++group) {
+            const double temporal_weight = get_group_exponential_weight_from_cumulative(
+                weights,
+                group,
+                node_group_begin);
 
             const size_t edge_start = node_ts_groups_offsets[group];
             const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
@@ -144,47 +154,45 @@ namespace temporal_graph {
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
 
-                const int candidate_node =
-                        get_candidate_node<Forward, IsDirected>(
-                            graph,
-                            node_id,
-                            edge_idx);
+                const int candidate_node = get_candidate_node<Forward, IsDirected>(
+                    graph,
+                    node_id,
+                    edge_idx);
 
-                const size_t candidate_node_group_begin =
-                        count_ts_group_per_node[candidate_node];
-                const size_t candidate_node_group_end =
-                        count_ts_group_per_node[candidate_node + 1];
+                // ---- DEGREE + SPATIAL CACHE ----
+                if (candidate_node != last_node) {
+                    const size_t candidate_node_group_begin = count_ts_group_per_node[candidate_node];
 
-                const size_t degree =
-                        count_node_temporal_degree_host<Forward>(
-                            graph,
-                            candidate_node,
-                            timestamp,
-                            candidate_node_group_begin,
-                            candidate_node_group_end,
-                            node_edge_offsets,
-                            node_ts_groups_offsets,
-                            node_ts_sorted_indices);
+                    const size_t candidate_node_group_end = count_ts_group_per_node[candidate_node + 1];
 
-                const double spatial =
-                        degree > 0
-                            ? std::exp(
-                                graph->spatiotemporal_beta /
-                                static_cast<double>(degree))
-                            : 0.0;
+                    last_degree = count_node_temporal_degree_host<Forward>(
+                        graph,
+                        candidate_node,
+                        timestamp,
+                        candidate_node_group_begin,
+                        candidate_node_group_end,
+                        node_edge_offsets,
+                        node_ts_groups_offsets,
+                        node_ts_sorted_indices);
 
-                const int visits =
-                        count_node_visits(
-                            walk_nodes,
-                            walk_len,
-                            candidate_node);
+                    last_spatial = last_degree > 0 ? std::exp(beta / static_cast<double>(last_degree)) : 0.0;
 
-                const double exploration =
-                        std::exp(
-                            -graph->spatiotemporal_gamma *
-                            static_cast<double>(visits));
+                    last_node = candidate_node;
+                }
 
-                total_weight += temporal_weight + spatial + exploration;
+                // ---- VISIT CACHE ----
+                if (candidate_node != last_visit_node) {
+                    last_visit_count = count_node_visits(
+                        walk_nodes,
+                        walk_len,
+                        candidate_node);
+
+                    last_visit_node = candidate_node;
+                }
+
+                const double exploration = std::exp(-gamma * static_cast<double>(last_visit_count));
+
+                total_weight += temporal_weight + last_spatial + exploration;
             }
         }
 
@@ -198,16 +206,14 @@ namespace temporal_graph {
         long last_edge = -1;
 
         // PASS 2: sample edge
-        for (size_t group = valid_node_ts_group_begin;
-             group < valid_node_ts_group_end;
-             ++group) {
-            const double temporal_weight =
-                    get_group_exponential_weight_from_cumulative(
-                        weights,
-                        group,
-                        node_group_begin);
+        for (size_t group = valid_node_ts_group_begin; group < valid_node_ts_group_end; ++group) {
+            const double temporal_weight = get_group_exponential_weight_from_cumulative(
+                weights,
+                group,
+                node_group_begin);
 
             const size_t edge_start = node_ts_groups_offsets[group];
+
             const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
                 graph,
                 node_id,
@@ -218,47 +224,40 @@ namespace temporal_graph {
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
 
-                const int candidate_node =
-                        get_candidate_node<Forward, IsDirected>(
-                            graph,
-                            node_id,
-                            edge_idx);
+                const int candidate_node = get_candidate_node<Forward, IsDirected>(
+                    graph,
+                    node_id,
+                    edge_idx);
 
-                const size_t candidate_node_group_begin =
-                        count_ts_group_per_node[candidate_node];
-                const size_t candidate_node_group_end =
-                        count_ts_group_per_node[candidate_node + 1];
+                // ---- DEGREE + SPATIAL CACHE ----
+                if (candidate_node != last_node) {
+                    const size_t candidate_node_group_begin = count_ts_group_per_node[candidate_node];
 
-                const size_t degree =
-                        count_node_temporal_degree_host<Forward>(
-                            graph,
-                            candidate_node,
-                            timestamp,
-                            candidate_node_group_begin,
-                            candidate_node_group_end,
-                            node_edge_offsets,
-                            node_ts_groups_offsets,
-                            node_ts_sorted_indices);
+                    const size_t candidate_node_group_end = count_ts_group_per_node[candidate_node + 1];
 
-                const double spatial =
-                        degree > 0
-                            ? std::exp(
-                                graph->spatiotemporal_beta /
-                                static_cast<double>(degree))
-                            : 0.0;
+                    last_degree = count_node_temporal_degree_host<Forward>(
+                        graph,
+                        candidate_node,
+                        timestamp,
+                        candidate_node_group_begin,
+                        candidate_node_group_end,
+                        node_edge_offsets,
+                        node_ts_groups_offsets,
+                        node_ts_sorted_indices);
 
-                const int visits =
-                        count_node_visits(
-                            walk_nodes,
-                            walk_len,
-                            candidate_node);
+                    last_spatial = last_degree > 0 ? std::exp(beta / static_cast<double>(last_degree)) : 0.0;
+                    last_node = candidate_node;
+                }
 
-                const double exploration =
-                        std::exp(
-                            -graph->spatiotemporal_gamma *
-                            static_cast<double>(visits));
+                // ---- VISIT CACHE ----
+                if (candidate_node != last_visit_node) {
+                    last_visit_count = count_node_visits(walk_nodes, walk_len, candidate_node);
+                    last_visit_node = candidate_node;
+                }
 
-                const double weight = temporal_weight + spatial + exploration;
+                const double exploration = std::exp(-gamma * static_cast<double>(last_visit_count));
+
+                const double weight = temporal_weight + last_spatial + exploration;
 
                 if (weight <= 0.0) {
                     continue;
@@ -345,7 +344,7 @@ namespace temporal_graph {
     }
 
     template<bool Forward, bool IsDirected>
-    DEVICE long pick_random_spatiotemporal_edge_device(
+    HOST long pick_random_spatiotemporal_edge_device(
         const TemporalGraphStore *graph,
         const int node_id,
         const int64_t timestamp,
@@ -370,17 +369,27 @@ namespace temporal_graph {
             return -1;
         }
 
+        // ---- Cache graph parameters locally ----
+        const double beta = graph->spatiotemporal_beta;
+        const double gamma = graph->spatiotemporal_gamma;
+
+        // ---- Node cache (degree + spatial) ----
+        int last_node = -1;
+        size_t last_degree = 0;
+        double last_spatial = 0.0;
+
+        // ---- Visit cache ----
+        int last_visit_node = -1;
+        int last_visit_count = 0;
+
         double total_weight = 0.0;
 
         // PASS 1: compute total weight
-        for (size_t group = valid_node_ts_group_begin;
-             group < valid_node_ts_group_end;
-             ++group) {
-            const double temporal_weight =
-                    get_group_exponential_weight_from_cumulative(
-                        weights,
-                        group,
-                        node_group_begin);
+        for (size_t group = valid_node_ts_group_begin; group < valid_node_ts_group_end; ++group) {
+            const double temporal_weight = get_group_exponential_weight_from_cumulative(
+                weights,
+                group,
+                node_group_begin);
 
             const size_t edge_start = node_ts_groups_offsets[group];
             const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
@@ -393,47 +402,45 @@ namespace temporal_graph {
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
 
-                const int candidate_node =
-                        get_candidate_node<Forward, IsDirected>(
-                            graph,
-                            node_id,
-                            edge_idx);
+                const int candidate_node = get_candidate_node<Forward, IsDirected>(
+                    graph,
+                    node_id,
+                    edge_idx);
 
-                const size_t candidate_node_group_begin =
-                        count_ts_group_per_node[candidate_node];
-                const size_t candidate_node_group_end =
-                        count_ts_group_per_node[candidate_node + 1];
+                // ---- DEGREE + SPATIAL CACHE ----
+                if (candidate_node != last_node) {
+                    const size_t candidate_node_group_begin = count_ts_group_per_node[candidate_node];
 
-                const size_t degree =
-                        count_node_temporal_degree_device<Forward>(
-                            graph,
-                            candidate_node,
-                            timestamp,
-                            candidate_node_group_begin,
-                            candidate_node_group_end,
-                            node_edge_offsets,
-                            node_ts_groups_offsets,
-                            node_ts_sorted_indices);
+                    const size_t candidate_node_group_end = count_ts_group_per_node[candidate_node + 1];
 
-                const double spatial =
-                        degree > 0
-                            ? std::exp(
-                                graph->spatiotemporal_beta /
-                                static_cast<double>(degree))
-                            : 0.0;
+                    last_degree = count_node_temporal_degree_device<Forward>(
+                        graph,
+                        candidate_node,
+                        timestamp,
+                        candidate_node_group_begin,
+                        candidate_node_group_end,
+                        node_edge_offsets,
+                        node_ts_groups_offsets,
+                        node_ts_sorted_indices);
 
-                const int visits =
-                        count_node_visits(
-                            walk_nodes,
-                            walk_len,
-                            candidate_node);
+                    last_spatial = last_degree > 0 ? std::exp(beta / static_cast<double>(last_degree)) : 0.0;
 
-                const double exploration =
-                        std::exp(
-                            -graph->spatiotemporal_gamma *
-                            static_cast<double>(visits));
+                    last_node = candidate_node;
+                }
 
-                total_weight += temporal_weight + spatial + exploration;
+                // ---- VISIT CACHE ----
+                if (candidate_node != last_visit_node) {
+                    last_visit_count = count_node_visits(
+                        walk_nodes,
+                        walk_len,
+                        candidate_node);
+
+                    last_visit_node = candidate_node;
+                }
+
+                const double exploration = std::exp(-gamma * static_cast<double>(last_visit_count));
+
+                total_weight += temporal_weight + last_spatial + exploration;
             }
         }
 
@@ -447,16 +454,14 @@ namespace temporal_graph {
         long last_edge = -1;
 
         // PASS 2: sample edge
-        for (size_t group = valid_node_ts_group_begin;
-             group < valid_node_ts_group_end;
-             ++group) {
-            const double temporal_weight =
-                    get_group_exponential_weight_from_cumulative(
-                        weights,
-                        group,
-                        node_group_begin);
+        for (size_t group = valid_node_ts_group_begin; group < valid_node_ts_group_end; ++group) {
+            const double temporal_weight = get_group_exponential_weight_from_cumulative(
+                weights,
+                group,
+                node_group_begin);
 
             const size_t edge_start = node_ts_groups_offsets[group];
+
             const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
                 graph,
                 node_id,
@@ -467,47 +472,40 @@ namespace temporal_graph {
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
 
-                const int candidate_node =
-                        get_candidate_node<Forward, IsDirected>(
-                            graph,
-                            node_id,
-                            edge_idx);
+                const int candidate_node = get_candidate_node<Forward, IsDirected>(
+                    graph,
+                    node_id,
+                    edge_idx);
 
-                const size_t candidate_node_group_begin =
-                        count_ts_group_per_node[candidate_node];
-                const size_t candidate_node_group_end =
-                        count_ts_group_per_node[candidate_node + 1];
+                // ---- DEGREE + SPATIAL CACHE ----
+                if (candidate_node != last_node) {
+                    const size_t candidate_node_group_begin = count_ts_group_per_node[candidate_node];
 
-                const size_t degree =
-                        count_node_temporal_degree_device<Forward>(
-                            graph,
-                            candidate_node,
-                            timestamp,
-                            candidate_node_group_begin,
-                            candidate_node_group_end,
-                            node_edge_offsets,
-                            node_ts_groups_offsets,
-                            node_ts_sorted_indices);
+                    const size_t candidate_node_group_end = count_ts_group_per_node[candidate_node + 1];
 
-                const double spatial =
-                        degree > 0
-                            ? std::exp(
-                                graph->spatiotemporal_beta /
-                                static_cast<double>(degree))
-                            : 0.0;
+                    last_degree = count_node_temporal_degree_device<Forward>(
+                        graph,
+                        candidate_node,
+                        timestamp,
+                        candidate_node_group_begin,
+                        candidate_node_group_end,
+                        node_edge_offsets,
+                        node_ts_groups_offsets,
+                        node_ts_sorted_indices);
 
-                const int visits =
-                        count_node_visits(
-                            walk_nodes,
-                            walk_len,
-                            candidate_node);
+                    last_spatial = last_degree > 0 ? std::exp(beta / static_cast<double>(last_degree)) : 0.0;
+                    last_node = candidate_node;
+                }
 
-                const double exploration =
-                        std::exp(
-                            -graph->spatiotemporal_gamma *
-                            static_cast<double>(visits));
+                // ---- VISIT CACHE ----
+                if (candidate_node != last_visit_node) {
+                    last_visit_count = count_node_visits(walk_nodes, walk_len, candidate_node);
+                    last_visit_node = candidate_node;
+                }
 
-                const double weight = temporal_weight + spatial + exploration;
+                const double exploration = std::exp(-gamma * static_cast<double>(last_visit_count));
+
+                const double weight = temporal_weight + last_spatial + exploration;
 
                 if (weight <= 0.0) {
                     continue;
