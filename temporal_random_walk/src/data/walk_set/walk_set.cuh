@@ -18,8 +18,8 @@
 
 // Main WalkSet structure definition
 struct WalkSet {
-    size_t num_walks;
-    size_t max_len;
+    size_t num_walks = 0;
+    size_t max_len = 0;
     int walk_padding_value;
     bool use_gpu;
 
@@ -37,7 +37,7 @@ struct WalkSet {
     bool owns_data = true;
 
     // Constructors and assignment operators
-    HOST WalkSet(): num_walks(0), max_len(0), walk_padding_value(EMPTY_NODE_VALUE), use_gpu(false) {}
+    HOST WalkSet(): walk_padding_value(EMPTY_NODE_VALUE), use_gpu(false) {}
 
     HOST WalkSet(
         const size_t num_walks,
@@ -285,7 +285,7 @@ struct WalkSet {
         walk_lens[walk_number] = hop_pos + 1;
     }
 
-    HOST size_t get_walk_len(const int walk_number) const {
+    HOST [[nodiscard]] size_t get_walk_len(const int walk_number) const {
         #ifdef HAS_CUDA
         if (use_gpu) {
             // Need to copy from device to host
@@ -299,7 +299,7 @@ struct WalkSet {
         }
     }
 
-    DEVICE size_t get_walk_len_device(const int walk_number) const {
+    DEVICE [[nodiscard]] size_t get_walk_len_device(const int walk_number) const {
         return walk_lens[walk_number];
     }
 
@@ -342,7 +342,7 @@ struct WalkSet {
     }
 
     // Walk properties
-    HOST size_t size() const {
+    HOST [[nodiscard]] size_t size() const {
         size_t non_empty_count = 0;
 
         #ifdef HAS_CUDA
@@ -369,7 +369,7 @@ struct WalkSet {
         return non_empty_count;
     }
 
-    HOST size_t get_memory_used() const {
+    HOST [[nodiscard]] size_t get_memory_used() const {
         size_t total_memory = 0;
         total_memory += nodes_size * sizeof(int);
         total_memory += timestamps_size * sizeof(int64_t);
@@ -379,7 +379,7 @@ struct WalkSet {
     }
 
     // Iterator support
-    HOST Walk get_walk(const int walk_number) const {
+    HOST [[nodiscard]] Walk get_walk(const int walk_number) const {
         const size_t walk_len = get_walk_len(walk_number);
         const size_t node_offset = static_cast<size_t>(walk_number) * max_len;
 
@@ -401,11 +401,11 @@ struct WalkSet {
         };
     }
 
-    HOST WalksIterator walks_begin() const {
+    HOST [[nodiscard]] WalksIterator walks_begin() const {
         return WalksIterator{this};
     }
 
-    HOST WalksIterator walks_end() const {
+    HOST [[nodiscard]] WalksIterator walks_end() const {
         return WalksIterator{this, num_walks};
     }
 };
