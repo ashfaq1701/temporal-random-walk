@@ -101,6 +101,9 @@ to populate features for specific nodes, then `get_node_features()` to retrieve 
 - Use `ExponentialIndex` or `Linear` for recency-aware sampling with no extra setup.
 - Use `ExponentialWeight` when you want CTDNE-style weight computation
   (`enable_weight_computation=True`, optionally tune `timescale_bound`).
+- Use `SpatioTemporal` for NeurTWs-style sampling that combines three dynamic biases during sampling: 
+  temporal recency, spatial preference for nodes with lower temporal degree, 
+  and an exploration penalty that discourages revisiting nodes.
 - Use `TemporalNode2Vec` when you need return/in-out control via
   `temporal_node2vec_p` and `temporal_node2vec_q`.
 
