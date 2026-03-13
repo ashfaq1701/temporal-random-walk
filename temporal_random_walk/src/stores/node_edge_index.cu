@@ -232,7 +232,7 @@ HOST void node_edge_index::allocate_node_ts_sorted_indices(NodeEdgeIndexStore *n
  * Std implementations
  */
 HOST void node_edge_index::compute_node_group_offsets_std(
-    NodeEdgeIndexStore* node_edge_index,
+    const NodeEdgeIndexStore* node_edge_index,
     const EdgeDataStore* edge_data,
     const bool is_directed
 ) {
@@ -278,7 +278,7 @@ HOST void node_edge_index::compute_node_group_offsets_std(
 }
 
 HOST void node_edge_index::compute_node_ts_sorted_indices_std(
-    NodeEdgeIndexStore* node_edge_index,
+    const NodeEdgeIndexStore* node_edge_index,
     const EdgeDataStore* edge_data,
     const bool is_directed,
     const size_t outbound_buffer_size,
@@ -824,7 +824,7 @@ HOST void node_edge_index::update_temporal_weights_std(
 #ifdef HAS_CUDA
 
 HOST void node_edge_index::compute_node_group_offsets_cuda(
-    NodeEdgeIndexStore *node_edge_index,
+    const NodeEdgeIndexStore *node_edge_index,
     const EdgeDataStore *edge_data,
     bool is_directed
 ) {
@@ -883,7 +883,7 @@ HOST void node_edge_index::compute_node_group_offsets_cuda(
 }
 
 HOST void node_edge_index::compute_node_ts_sorted_indices_cuda(
-    NodeEdgeIndexStore* node_edge_index,
+    const NodeEdgeIndexStore* node_edge_index,
     const EdgeDataStore* edge_data,
     const bool is_directed,
     const size_t outbound_buffer_size,
@@ -1824,7 +1824,7 @@ HOST void node_edge_index::rebuild(
     clear_memory(&inbound_node_ids, node_edge_index->use_gpu);
 }
 
-HOST size_t node_edge_index::get_memory_used(NodeEdgeIndexStore* node_edge_index) {
+HOST size_t node_edge_index::get_memory_used(const NodeEdgeIndexStore* node_edge_index) {
     size_t total_memory = 0;
 
     // Node group offset arrays

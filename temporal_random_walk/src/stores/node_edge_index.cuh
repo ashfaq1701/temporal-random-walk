@@ -107,13 +107,13 @@ namespace node_edge_index {
      * Std implementations
      */
     HOST void compute_node_group_offsets_std(
-        NodeEdgeIndexStore* node_edge_index,
+        const NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
         bool is_directed
     );
 
     HOST void compute_node_ts_sorted_indices_std(
-        NodeEdgeIndexStore* node_edge_index,
+        const NodeEdgeIndexStore* node_edge_index,
         const EdgeDataStore* edge_data,
         bool is_directed,
         size_t outbound_buffer_size,
@@ -139,13 +139,13 @@ namespace node_edge_index {
     #ifdef HAS_CUDA
 
     HOST void compute_node_group_offsets_cuda(
-        NodeEdgeIndexStore *node_edge_index,
+        const NodeEdgeIndexStore *node_edge_index,
         const EdgeDataStore *edge_data,
         bool is_directed
     );
 
     HOST void compute_node_ts_sorted_indices_cuda(
-        NodeEdgeIndexStore *node_edge_index,
+        const NodeEdgeIndexStore *node_edge_index,
         const EdgeDataStore *edge_data,
         bool is_directed,
         size_t outbound_buffer_size,
@@ -173,7 +173,7 @@ namespace node_edge_index {
 
     HOST void rebuild(NodeEdgeIndexStore *node_edge_index, const EdgeDataStore *edge_data, bool is_directed);
 
-    HOST size_t get_memory_used(NodeEdgeIndexStore* node_edge_index);
+    HOST size_t get_memory_used(const NodeEdgeIndexStore* node_edge_index);
 
 }
 
