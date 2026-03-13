@@ -1381,7 +1381,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
                         ? outbound_group_indices_ptr[pos + 1]
                         : node_edge_index->node_group_outbound_offsets[node + 1];
 
-                const double group_size = static_cast<double>(edge_end - edge_start);
+                const auto group_size = static_cast<double>(edge_end - edge_start);
 
                 const int64_t group_ts  = timestamps_ptr[outbound_indices_ptr[edge_start]];
 
@@ -1532,7 +1532,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
                         ? inbound_group_indices_ptr[pos + 1]
                         : node_edge_index->node_group_inbound_offsets[node + 1];
 
-                const double group_size = static_cast<double>(edge_end - edge_start);
+                const auto group_size = static_cast<double>(edge_end - edge_start);
 
                 const int64_t group_ts  = timestamps_ptr[inbound_indices_ptr[edge_start]];
 
