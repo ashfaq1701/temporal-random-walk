@@ -637,6 +637,13 @@ HOST void node_edge_index::update_temporal_weights_std(
         for (size_t pos = 0; pos < outbound_groups_size; ++pos) {
             const size_t node = group_to_node[pos];
             const size_t edge_start = ts_group_indices[pos];
+            const size_t edge_end =
+                (pos + 1 < outbound_groups_size && group_to_node[pos + 1] == node)
+                    ? ts_group_indices[pos + 1]
+                    : node_edge_index->node_group_outbound_offsets[node + 1];
+
+            const auto group_size = static_cast<double>(edge_end - edge_start);
+
             const int64_t group_ts = timestamps[edge_indices[edge_start]];
             const int64_t min_ts = node_min_ts[node];
             const int64_t max_ts = node_max_ts[node];
@@ -645,8 +652,8 @@ HOST void node_edge_index::update_temporal_weights_std(
             const double f_scaled = (timescale_bound > 0) ? static_cast<double>(max_ts - group_ts) * time_scale : static_cast<double>(max_ts - group_ts);
             const double b_scaled = (timescale_bound > 0) ? static_cast<double>(group_ts - min_ts) * time_scale : static_cast<double>(group_ts - min_ts);
 
-            raw_forward_weights[pos] = std::exp(node_edge_index->spatiotemporal_alpha * f_scaled);
-            raw_backward_weights[pos] = std::exp(node_edge_index->spatiotemporal_alpha * b_scaled);
+            raw_forward_weights[pos] = group_size * std::exp(node_edge_index->spatiotemporal_alpha * f_scaled);
+            raw_backward_weights[pos] = group_size * std::exp(node_edge_index->spatiotemporal_alpha * b_scaled);
         }
 
         // Step 4: Compute normalization sums per node
@@ -756,12 +763,19 @@ HOST void node_edge_index::update_temporal_weights_std(
         for (size_t pos = 0; pos < inbound_groups_size; ++pos) {
             const size_t node = group_to_node[pos];
             const size_t edge_start = ts_group_indices[pos];
+            const size_t edge_end =
+                (pos + 1 < inbound_groups_size && group_to_node[pos + 1] == node)
+                    ? ts_group_indices[pos + 1]
+                    : node_edge_index->node_group_inbound_offsets[node + 1];
+
+            const auto group_size = static_cast<double>(edge_end - edge_start);
+
             const int64_t group_ts = timestamps[edge_indices[edge_start]];
             const int64_t min_ts = node_min_ts[node];
             const double time_scale = node_time_scale[node];
 
             const double b_scaled = (timescale_bound > 0) ? static_cast<double>(group_ts - min_ts) * time_scale : static_cast<double>(group_ts - min_ts);
-            raw_backward_weights[pos] = std::exp(node_edge_index->spatiotemporal_alpha * b_scaled);
+            raw_backward_weights[pos] = group_size * std::exp(node_edge_index->spatiotemporal_alpha * b_scaled);
         }
 
         // Step 4: Compute normalization sums per node
@@ -1361,6 +1375,14 @@ HOST void node_edge_index::update_temporal_weights_cuda(
                 const size_t node = group_to_node_ptr[pos];
 
                 const size_t edge_start = outbound_group_indices_ptr[pos];
+
+                const size_t edge_end =
+                    (pos + 1 < outbound_groups_size && group_to_node_ptr[pos + 1] == node)
+                        ? outbound_group_indices_ptr[pos + 1]
+                        : node_edge_index->node_group_outbound_offsets[node + 1];
+
+                const double group_size = static_cast<double>(edge_end - edge_start);
+
                 const int64_t group_ts  = timestamps_ptr[outbound_indices_ptr[edge_start]];
 
                 const int64_t min_ts = node_min_ts_ptr[node];
@@ -1370,8 +1392,8 @@ HOST void node_edge_index::update_temporal_weights_cuda(
                 const double tf = static_cast<double>(max_ts - group_ts) * scale;
                 const double tb = static_cast<double>(group_ts - min_ts) * scale;
 
-                raw_forward_weights_ptr[pos]  = exp(spatiotemporal_alpha * tf);
-                raw_backward_weights_ptr[pos] = exp(spatiotemporal_alpha * tb);
+                raw_forward_weights_ptr[pos]  = group_size * exp(spatiotemporal_alpha * tf);
+                raw_backward_weights_ptr[pos] = group_size * exp(spatiotemporal_alpha * tb);
             }
         );
 
@@ -1504,13 +1526,21 @@ HOST void node_edge_index::update_temporal_weights_cuda(
                 const size_t node = group_to_node_ptr[pos];
 
                 const size_t edge_start = inbound_group_indices_ptr[pos];
+
+                const size_t edge_end =
+                    (pos + 1 < inbound_groups_size && group_to_node_ptr[pos + 1] == node)
+                        ? inbound_group_indices_ptr[pos + 1]
+                        : node_edge_index->node_group_inbound_offsets[node + 1];
+
+                const double group_size = static_cast<double>(edge_end - edge_start);
+
                 const int64_t group_ts  = timestamps_ptr[inbound_indices_ptr[edge_start]];
 
                 const int64_t min_ts = node_min_ts_ptr[node];
                 const double  scale  = node_time_scale_ptr[node];
 
                 const double tb = static_cast<double>(group_ts - min_ts) * scale;
-                raw_backward_weights_ptr[pos] = exp(spatiotemporal_alpha * tb);
+                raw_backward_weights_ptr[pos] = group_size * exp(spatiotemporal_alpha * tb);
             }
         );
 

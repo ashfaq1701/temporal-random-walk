@@ -475,16 +475,18 @@ HOST void edge_data::update_temporal_weights_std(EdgeDataStore* edge_data, const
     #pragma omp parallel for reduction(+:forward_sum, backward_sum)
     for (size_t group = 0; group < num_groups; ++group) {
         const size_t start = offsets[group];
+        const size_t group_size = offsets[group + 1] - offsets[group];
+
         const int64_t ts = timestamps[start];
 
-        const double t_fwd = static_cast<double>(max_timestamp - ts);
-        const double t_bwd = static_cast<double>(ts - min_timestamp);
+        const auto t_fwd = static_cast<double>(max_timestamp - ts);
+        const auto t_bwd = static_cast<double>(ts - min_timestamp);
 
         const double fwd_scaled = (timescale_bound > 0) ? t_fwd * time_scale : t_fwd;
         const double bwd_scaled = (timescale_bound > 0) ? t_bwd * time_scale : t_bwd;
 
-        const double f_weight = std::exp(fwd_scaled);
-        const double b_weight = std::exp(bwd_scaled);
+        const double f_weight = static_cast<double>(group_size) * std::exp(fwd_scaled);
+        const double b_weight = static_cast<double>(group_size) * std::exp(bwd_scaled);
 
         forward[group] = f_weight;
         backward[group] = b_weight;
@@ -886,6 +888,9 @@ HOST void edge_data::update_temporal_weights_cuda(EdgeDataStore *edge_data, doub
         [d_offsets, d_timestamps, max_timestamp, min_timestamp, timescale_bound, time_scale]
         HOST DEVICE (const size_t group) {
             const size_t start = d_offsets[static_cast<long>(group)];
+            const size_t end   = d_offsets[static_cast<long>(group + 1)];
+            const double group_size = static_cast<double>(end - start);
+
             const int64_t group_timestamp = d_timestamps[static_cast<long>(start)];
 
             const auto time_diff_forward = static_cast<double>(max_timestamp - group_timestamp);
@@ -896,7 +901,9 @@ HOST void edge_data::update_temporal_weights_cuda(EdgeDataStore *edge_data, doub
                                                ? time_diff_backward * time_scale
                                                : time_diff_backward;
 
-            return thrust::make_tuple(exp(forward_scaled), exp(backward_scaled));
+            return thrust::make_tuple(
+                static_cast<double>(group_size) * exp(forward_scaled),
+                static_cast<double>(group_size) * exp(backward_scaled));
         }
     );
     CUDA_KERNEL_CHECK("After thrust transform weights calculation in update_temporal_weights_cuda");
