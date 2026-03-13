@@ -130,7 +130,7 @@ TYPED_TEST(SpatioTemporalSamplerTest, RandomSelectionWithinGroup) {
 
     std::set<int> seen;
 
-    constexpr int NUM_TRIES = 200;
+    constexpr int NUM_TRIES = 1000;
 
     for (int i = 0; i < NUM_TRIES; i++) {
         const Edge e = this->graph.get_node_edge_at(
@@ -162,12 +162,12 @@ TYPED_TEST(SpatioTemporalSamplerTest, ExplorationBiasPenalizesVisitedNodes) {
         Edge{2, 0, 10}
     });
 
-    std::vector<int> walk = {0, 1, 0, 1};
+    std::vector<int> walk = {0, 1, 0, 1, 0, 1};
 
     int visited_count = 0;
     int unvisited_count = 0;
 
-    constexpr int NUM_TRIES = 500;
+    constexpr int NUM_TRIES = 1000;
 
     for (int i = 0; i < NUM_TRIES; i++) {
         const Edge e = this->graph.get_node_edge_at(
@@ -206,7 +206,7 @@ TYPED_TEST(SpatioTemporalSamplerTest, SpatialBiasPrefersLowDegreeNodes) {
     int high_degree_node = 0;
     int low_degree_node = 0;
 
-    constexpr int NUM_TRIES = 500;
+    constexpr int NUM_TRIES = 1000;
 
     for (int i = 0; i < NUM_TRIES; i++) {
         const Edge e = this->graph.get_node_edge_at(
@@ -239,7 +239,7 @@ TYPED_TEST(SpatioTemporalSamplerTest, TemporalBiasPrefersRecentEdges) {
     int older = 0;
     int newer = 0;
 
-    constexpr int NUM_TRIES = 500;
+    constexpr int NUM_TRIES = 1000;
 
     for (int i = 0; i < NUM_TRIES; i++) {
         const Edge e = this->graph.get_node_edge_at(
