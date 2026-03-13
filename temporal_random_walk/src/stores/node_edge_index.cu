@@ -1367,6 +1367,8 @@ HOST void node_edge_index::update_temporal_weights_cuda(
         auto raw_forward_weights_ptr  = thrust::raw_pointer_cast(raw_forward_weights.data());
         auto raw_backward_weights_ptr = thrust::raw_pointer_cast(raw_backward_weights.data());
 
+        size_t* node_group_outbound_offsets = node_edge_index->node_group_outbound_offsets;
+
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
@@ -1379,7 +1381,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
                 const size_t edge_end =
                     (pos + 1 < outbound_groups_size && group_to_node_ptr[pos + 1] == node)
                         ? outbound_group_indices_ptr[pos + 1]
-                        : node_edge_index->node_group_outbound_offsets[node + 1];
+                        : node_group_outbound_offsets[node + 1];
 
                 const auto group_size = static_cast<double>(edge_end - edge_start);
 
@@ -1518,6 +1520,8 @@ HOST void node_edge_index::update_temporal_weights_cuda(
         thrust::device_vector<double> raw_backward_weights(inbound_groups_size);
         auto raw_backward_weights_ptr = thrust::raw_pointer_cast(raw_backward_weights.data());
 
+        size_t* node_group_inbound_offsets_ptr = node_edge_index->node_group_inbound_offsets;
+
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
@@ -1530,7 +1534,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
                 const size_t edge_end =
                     (pos + 1 < inbound_groups_size && group_to_node_ptr[pos + 1] == node)
                         ? inbound_group_indices_ptr[pos + 1]
-                        : node_edge_index->node_group_inbound_offsets[node + 1];
+                        : node_group_inbound_offsets_ptr[node + 1];
 
                 const auto group_size = static_cast<double>(edge_end - edge_start);
 
