@@ -141,11 +141,6 @@ namespace temporal_graph {
         ----------------------------------------------------------- */
 
         for (size_t group = valid_node_ts_group_begin; group < valid_node_ts_group_end; ++group) {
-            const double temporal_weight = get_group_exponential_weight_from_cumulative(
-                weights,
-                group,
-                node_group_begin);
-
             const size_t edge_start = node_ts_groups_offsets[group];
             const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
                 graph,
@@ -153,6 +148,13 @@ namespace temporal_graph {
                 node_ts_groups_offsets,
                 group,
                 node_group_end);
+
+            const double group_mass = get_group_exponential_weight_from_cumulative(
+                weights,
+                group,
+                node_group_begin);
+            const size_t group_size = edge_end - edge_start;
+            const double temporal_weight = group_size > 0 ? group_mass / static_cast<double>(group_size) : 0.0;
 
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
@@ -230,11 +232,6 @@ namespace temporal_graph {
         ----------------------------------------------------------- */
 
         for (size_t group = valid_node_ts_group_begin; group < valid_node_ts_group_end; ++group) {
-            const double temporal_weight = get_group_exponential_weight_from_cumulative(
-                weights,
-                group,
-                node_group_begin);
-
             const size_t edge_start = node_ts_groups_offsets[group];
             const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
                 graph,
@@ -242,6 +239,13 @@ namespace temporal_graph {
                 node_ts_groups_offsets,
                 group,
                 node_group_end);
+
+            const double group_mass = get_group_exponential_weight_from_cumulative(
+                weights,
+                group,
+                node_group_begin);
+            const size_t group_size = edge_end - edge_start;
+            const double temporal_weight = group_size > 0 ? group_mass / static_cast<double>(group_size) : 0.0;
 
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
@@ -416,11 +420,6 @@ namespace temporal_graph {
         ----------------------------------------------------------- */
 
         for (size_t group = valid_node_ts_group_begin; group < valid_node_ts_group_end; ++group) {
-            const double temporal_weight = get_group_exponential_weight_from_cumulative(
-                weights,
-                group,
-                node_group_begin);
-
             const size_t edge_start = node_ts_groups_offsets[group];
             const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
                 graph,
@@ -428,6 +427,13 @@ namespace temporal_graph {
                 node_ts_groups_offsets,
                 group,
                 node_group_end);
+
+            const double group_mass = get_group_exponential_weight_from_cumulative(
+                weights,
+                group,
+                node_group_begin);
+            const size_t group_size = edge_end - edge_start;
+            const double temporal_weight = group_size > 0 ? group_mass / static_cast<double>(group_size) : 0.0;
 
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
@@ -505,11 +511,6 @@ namespace temporal_graph {
         ----------------------------------------------------------- */
 
         for (size_t group = valid_node_ts_group_begin; group < valid_node_ts_group_end; ++group) {
-            const double temporal_weight = get_group_exponential_weight_from_cumulative(
-                weights,
-                group,
-                node_group_begin);
-
             const size_t edge_start = node_ts_groups_offsets[group];
             const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
                 graph,
@@ -517,6 +518,13 @@ namespace temporal_graph {
                 node_ts_groups_offsets,
                 group,
                 node_group_end);
+
+            const double group_mass = get_group_exponential_weight_from_cumulative(
+                weights,
+                group,
+                node_group_begin);
+            const size_t group_size = edge_end - edge_start;
+            const double temporal_weight = group_size > 0 ? group_mass / static_cast<double>(group_size) : 0.0;
 
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
