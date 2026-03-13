@@ -44,7 +44,7 @@ walk_nodes, walk_timestamps, walk_lens, edge_features = walker.get_random_walks_
 ## ✨ Key Features
 - ⚡ **GPU acceleration** for large graphs   
 - 🎯 **Multiple sampling strategies** – Uniform, Linear, Exponential
-- 🧠 **Advanced temporal biases** – ExponentialWeight (CTDNE-style) and TemporalNode2Vec *(p, q)*
+- 🧠 **Advanced temporal biases** – ExponentialWeight (CTDNE-style) NeurTWs (SpatioTemporal bias) and TemporalNode2Vec
 - 🔄 **Forward & backward** temporal walks
 - 📡 **Rolling window support** for streaming data
 - 🏷️ **Optional edge feature propagation** from input edges to sampled walks
