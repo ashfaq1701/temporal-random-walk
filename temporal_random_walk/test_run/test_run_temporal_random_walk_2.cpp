@@ -84,7 +84,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Inserted edge count after first half insertion: " << temporal_random_walk.get_edge_count() << std::endl;
 
     constexpr RandomPickerType linear_picker_type = RandomPickerType::Linear;
-    constexpr RandomPickerType exponential_picker_type = RandomPickerType::ExponentialIndex;
+    constexpr RandomPickerType exponential_picker_type = RandomPickerType::ExponentialWeight;
     constexpr RandomPickerType uniform_picker_type = RandomPickerType::Uniform;
     constexpr RandomPickerType temporal_node2vec_type = RandomPickerType::TemporalNode2Vec;
 
@@ -126,7 +126,7 @@ int main(int argc, char* argv[]) {
     auto second_half_end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> second_half_duration = second_half_end_time - second_half_start;
     std::cout << "Second half edge addition time: " << second_half_duration.count() << " seconds" << std::endl;
-    std::cout << "Inserted edge count after second half insertion: : " << temporal_random_walk.get_edge_count() << std::endl;
+    std::cout << "Inserted edge count after second half insertion: " << temporal_random_walk.get_edge_count() << std::endl;
 
     // Generate walks with all edges
     auto second_half_walks_start = std::chrono::high_resolution_clock::now();
