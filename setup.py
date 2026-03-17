@@ -73,6 +73,12 @@ class CMakeBuild(build_ext):
             print(f"Python library: {python_library}")
         print(f"CMake arguments: {cmake_args}")
 
+        # Inject extra CMake args from environment
+        extra_cmake_args = os.environ.get("CMAKE_ARGS")
+        if extra_cmake_args:
+            print(f"Using extra CMake args from env: {extra_cmake_args}")
+            cmake_args += extra_cmake_args.split()
+
         # Set up compilation flags based on build type
         if is_debug:
             # Debug flags for C++
