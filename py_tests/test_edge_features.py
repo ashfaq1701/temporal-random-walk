@@ -107,3 +107,10 @@ def test_rejects_missing_features_after_feature_mode_is_enabled():
             np.array([5], dtype=np.int32),
             np.array([40], dtype=np.int64),
         )
+
+if __name__ == "__main__":
+    test_walks_include_edge_features_and_zero_unused_slots()
+    test_walks_return_none_when_edge_features_are_not_provided()
+    test_rejects_mismatched_edge_feature_dimensions_on_subsequent_ingestion()
+    test_rejects_missing_features_after_feature_mode_is_enabled()
+    print("All tests passed!")
