@@ -1,0 +1,29 @@
+name: CPU Tests
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  merge_group:
+  workflow_dispatch:
+
+jobs:
+  cpu-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build CPU CI image
+        run: docker build -f ci/Dockerfile -t temporal-random-walk-ci .
+
+      - name: Run C++ and pytest suites in CPU container
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/project" \
+            -w /project \
+            temporal-random-walk-ci
