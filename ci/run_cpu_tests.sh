@@ -17,7 +17,7 @@ cmake -S . -B "${BUILD_DIR}" \
     -DHAS_CUDA=OFF \
     -DPython3_EXECUTABLE="$(command -v python)"
 
-# Build Target
+# Build
 cmake --build "${BUILD_DIR}" --target test_temporal_random_walk --parallel
 
 # Run C++ tests
