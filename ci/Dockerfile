@@ -8,7 +8,6 @@ RUN apt-get update && \
         ca-certificates \
         cmake \
         git \
-        libgtest-dev \
         libtbb-dev \
         ninja-build \
         pkg-config \
@@ -16,7 +15,14 @@ RUN apt-get update && \
         python3-dev \
         python3-pip \
         python3-venv && \
+    git clone https://github.com/microsoft/vcpkg.git /opt/vcpkg && \
+    /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics && \
+    /opt/vcpkg/vcpkg install gtest && \
     rm -rf /var/lib/apt/lists/*
+
+ENV VCPKG_ROOT="/opt/vcpkg"
+ENV CMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+ENV PATH="$VCPKG_ROOT:$PATH"
 
 WORKDIR /project
 

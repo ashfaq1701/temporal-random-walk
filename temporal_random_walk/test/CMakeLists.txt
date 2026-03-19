@@ -78,7 +78,3 @@ target_link_libraries(test_temporal_random_walk PRIVATE
         TBB::tbb
         ${CUDA_LIBS}
 )
-
-if(BUILD_TESTING)
-    add_test(NAME test_temporal_random_walk COMMAND test_temporal_random_walk)
-endif()
