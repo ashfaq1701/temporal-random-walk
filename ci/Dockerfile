@@ -25,7 +25,7 @@ RUN apt-get update && \
         zip && \
     rm -rf /var/lib/apt/lists/*
 
-# Install vcpkg + gtest
+# Install vcpkg and gtest
 RUN git clone https://github.com/microsoft/vcpkg.git /opt/vcpkg && \
     /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics && \
     /opt/vcpkg/vcpkg install gtest:x64-linux
