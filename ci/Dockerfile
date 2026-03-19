@@ -7,6 +7,7 @@ RUN apt-get update && \
         build-essential \
         ca-certificates \
         cmake \
+        curl \
         git \
         libtbb-dev \
         ninja-build \
@@ -14,7 +15,9 @@ RUN apt-get update && \
         python3 \
         python3-dev \
         python3-pip \
-        python3-venv && \
+        python3-venv \
+        unzip \
+        zip && \
     git clone https://github.com/microsoft/vcpkg.git /opt/vcpkg && \
     /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics && \
     /opt/vcpkg/vcpkg install gtest && \
