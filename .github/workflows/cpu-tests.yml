@@ -1,9 +1,13 @@
 name: CPU Tests
 
 on:
+  push:
+    branches:
+      - master
   pull_request:
     branches:
       - master
+  merge_group:
   workflow_dispatch:
 
 jobs:
