@@ -3,6 +3,11 @@ name: Build CI Image
 on:
   push:
     branches: [master]
+    pull_request:
+      branches:
+        - master
+    merge_group:
+    workflow_dispatch:
     paths:
       - ci/Dockerfile
       - requirements.txt
