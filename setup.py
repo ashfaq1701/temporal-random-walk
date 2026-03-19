@@ -107,7 +107,7 @@ class CMakeBuild(build_ext):
         if is_debug:
             cmake_args.append('-DCMAKE_CUDA_FLAGS=-g -G -O0')
 
-        build_args = ['--config', build_type]
+        build_args = ['--config', build_type, '--target', ext.name]
         os.makedirs(self.build_temp, exist_ok=True)
 
         try:

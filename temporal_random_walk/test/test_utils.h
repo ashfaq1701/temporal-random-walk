@@ -1,10 +1,13 @@
 #ifndef TEST_UTILS_H
 #define TEST_UTILS_H
 
+#include <array>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <string>
-#include <fstream>
-#include <filesystem>
+#include <tuple>
+#include <vector>
 
 inline std::string sample_data_path() {
     static constexpr std::array<const char*, 4> candidates = {
