@@ -41,7 +41,6 @@ jobs:
             .
 
       - name: Push image
-        if: github.ref == 'refs/heads/master'
         run: |
           docker push ghcr.io/${{ github.repository }}/ci:latest
           docker push ghcr.io/${{ github.repository }}/ci:${{ github.sha }}
