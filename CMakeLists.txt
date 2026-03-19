@@ -4,6 +4,8 @@ project(temporal_random_walk)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_GLIBCXX_USE_CXX11_ABI=0")
 set(CMAKE_CXX_STANDARD 17)
 
+include(CTest)
+
 # Use directly provided Python paths if available
 if(DEFINED PYTHON_EXECUTABLE AND DEFINED PYTHON_INCLUDE_DIR AND DEFINED PYTHON_LIBRARY)
     set(Python3_EXECUTABLE ${PYTHON_EXECUTABLE})
