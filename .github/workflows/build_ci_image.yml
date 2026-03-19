@@ -7,9 +7,20 @@ on:
       - ci/Dockerfile
       - requirements.txt
 
+  pull_request:
+    branches: [master]
+    paths:
+      - ci/Dockerfile
+      - requirements.txt
+
+  merge_group:
+
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     permissions:
       packages: write
       contents: read
@@ -18,12 +29,18 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Login to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build image
         run: |
-          docker build -f ci/Dockerfile -t ghcr.io/${{ github.repository }}/ci:latest .
+          docker build \
+            -f ci/Dockerfile \
+            -t ghcr.io/${{ github.repository }}/ci:latest \
+            -t ghcr.io/${{ github.repository }}/ci:${{ github.sha }} \
+            .
 
       - name: Push image
         run: |
           docker push ghcr.io/${{ github.repository }}/ci:latest
+          docker push ghcr.io/${{ github.repository }}/ci:${{ github.sha }}
