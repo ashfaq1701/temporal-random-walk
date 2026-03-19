@@ -1,5 +1,6 @@
 # 🚀 Temporal Random Walk
 
+[![Build Passing](https://github.com/ashfaq1701/temporal-random-walk/actions/workflows/cpu-tests.yml/badge.svg?branch=master)](https://github.com/ashfaq1701/temporal-random-walk/actions/workflows/cpu-tests.yml)
 [![PyPI Latest Release](https://img.shields.io/pypi/v/temporal-random-walk.svg)](https://pypi.org/project/temporal-random-walk/)
 [![PyPI Downloads](https://img.shields.io/pypi/dm/temporal-random-walk.svg)](https://pypi.org/project/temporal-random-walk/)
 

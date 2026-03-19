@@ -1,0 +1,13 @@
+branches:
+  - name: master
+    protection:
+      enforce_admins: false
+      required_status_checks:
+        strict: true
+        contexts:
+          - "CPU Tests / cpu-tests"
+      required_pull_request_reviews: null
+      restrictions: null
+      required_linear_history: false
+      allow_force_pushes: false
+      allow_deletions: false
