@@ -2,7 +2,7 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Ensure ABI compatibility with your project
+# Ensuring ABI compatibility with the project
 ENV CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0"
 ENV CFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0"
 
