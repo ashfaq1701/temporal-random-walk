@@ -173,6 +173,7 @@ Classes
                     - "ExponentialIndex": Exponential decay with indices
                     - "ExponentialWeight": Exponential decay with weights
                     - "TemporalNode2Vec": Temporal-node2vec transition bias
+                    - "SpatioTemporal": SpatioTemporal transition bias
             num_walks_total (int): Total Number of walks to generate.
             initial_edge_bias (str, optional): Bias type for first edge selection.
                 Uses walk_bias if not specified.
@@ -202,6 +203,7 @@ Classes
                     - "ExponentialIndex": Exponential decay with indices
                     - "ExponentialWeight": Exponential decay with weights
                     - "TemporalNode2Vec": Temporal-node2vec transition bias
+                    - "SpatioTemporal": SpatioTemporal transition bias
             num_walks_per_node (int): Number of walks per starting node.
             initial_edge_bias (str, optional): Bias type for first edge selection.
                 Uses walk_bias if not specified.
