@@ -66,12 +66,18 @@ HOST void temporal_random_walk::clear(TemporalRandomWalkStore *temporal_random_w
     temporal_random_walk->temporal_graph = new TemporalGraphStore(
         temporal_random_walk->is_directed,
         temporal_random_walk->use_gpu,
+
         temporal_random_walk->max_time_capacity,
         temporal_random_walk->enable_weight_computation,
         temporal_random_walk->enable_temporal_node2vec,
         temporal_random_walk->timescale_bound,
+
         temporal_random_walk->node2vec_p,
-        temporal_random_walk->node2vec_q);
+        temporal_random_walk->node2vec_q,
+
+        temporal_random_walk->spatiotemporal_alpha,
+        temporal_random_walk->spatiotemporal_beta,
+        temporal_random_walk->spatiotemporal_gamma);
 }
 
 /**
@@ -93,7 +99,10 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
         temporal_graph::get_node_ids(temporal_random_walk->temporal_graph),
         num_walks_per_node,
         temporal_random_walk->use_gpu);
-    shuffle_vector_host<int>(repeated_node_ids.data, repeated_node_ids.size);
+
+    if (temporal_random_walk->shuffle_walk_order) {
+        shuffle_vector_host<int>(repeated_node_ids.data, repeated_node_ids.size);
+    }
 
     WalkSet walk_set(repeated_node_ids.size, max_walk_len, temporal_random_walk->walk_padding_value, temporal_random_walk->use_gpu);
 
@@ -192,8 +201,10 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda
         BLOCK_DIM_GENERATING_RANDOM_WALKS);
 
     // Shuffle node IDs for randomization
-    shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
-    CUDA_KERNEL_CHECK("After shuffle_vector_device in get_random_walks_and_times_for_all_nodes_cuda");
+    if (temporal_random_walk->shuffle_walk_order) {
+        shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
+        CUDA_KERNEL_CHECK("After shuffle_vector_device in get_random_walks_and_times_for_all_nodes_cuda");
+    }
 
     // Create and initialize the walk set on device
     const WalkSet walk_set(repeated_node_ids.size, max_walk_len, temporal_random_walk->walk_padding_value, true);

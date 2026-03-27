@@ -25,17 +25,22 @@ public:
     explicit TemporalRandomWalk(
         bool is_directed,
         bool use_gpu,
+
         int64_t max_time_capacity=-1,
         bool enable_weight_computation=false,
         bool enable_temporal_node2vec=false,
         double timescale_bound=DEFAULT_TIMESCALE_BOUND,
+
         double node2vec_p=DEFAULT_NODE2VEC_P,
         double node2vec_q=DEFAULT_NODE2VEC_Q,
+
         double spatiotemporal_alpha = DEFAULT_SPATIOTEMPORAL_ALPHA,
         double spatiotemporal_beta = DEFAULT_SPATIOTEMPORAL_BETA,
         double spatiotemporal_gamma = DEFAULT_SPATIOTEMPORAL_GAMMA,
+
         int walk_padding_value=EMPTY_NODE_VALUE,
-        uint64_t global_seed=EMPTY_GLOBAL_SEED);
+        uint64_t global_seed=EMPTY_GLOBAL_SEED,
+        bool shuffle_walk_order=DEFAULT_SHUFFLE_WALK_ORDER);
 
     ~TemporalRandomWalk();
 

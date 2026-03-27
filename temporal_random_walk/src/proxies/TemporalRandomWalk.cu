@@ -18,31 +18,42 @@ __global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalkSt
 TemporalRandomWalk::TemporalRandomWalk(
         const bool is_directed,
         const bool use_gpu,
+
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
         const bool enable_temporal_node2vec,
         const double timescale_bound,
+
         const double node2vec_p,
         const double node2vec_q,
+
         const double spatiotemporal_alpha,
         const double spatiotemporal_beta,
         const double spatiotemporal_gamma,
+
         const int walk_padding_value,
-        const uint64_t global_seed): use_gpu(use_gpu) {
+        const uint64_t global_seed,
+        const bool shuffle_walk_order): use_gpu(use_gpu) {
+
     temporal_random_walk = new TemporalRandomWalkStore(
         is_directed,
         use_gpu,
+
         max_time_capacity,
         enable_weight_computation,
         enable_temporal_node2vec,
         timescale_bound,
+
         node2vec_p,
         node2vec_q,
+
         spatiotemporal_alpha,
         spatiotemporal_beta,
         spatiotemporal_gamma,
+
         walk_padding_value,
-        global_seed);
+        global_seed,
+        shuffle_walk_order);
     node_features = new NodeFeatures();
 }
 

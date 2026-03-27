@@ -16,14 +16,24 @@ struct TemporalRandomWalkStore {
     bool is_directed;
     bool use_gpu;
     bool owns_data = true;
+
     int64_t max_time_capacity;
+
     bool enable_weight_computation;
-    bool enable_temporal_node2vec = false;
+    bool enable_temporal_node2vec;
+
     double timescale_bound;
+
     double node2vec_p;
     double node2vec_q;
+
+    double spatiotemporal_alpha;
+    double spatiotemporal_beta;
+    double spatiotemporal_gamma;
+
     int walk_padding_value;
     uint64_t global_seed;
+    bool shuffle_walk_order;
 
     #ifdef HAS_CUDA
     cudaDeviceProp *cuda_device_prop;
@@ -33,37 +43,57 @@ struct TemporalRandomWalkStore {
     TemporalRandomWalkStore(
         const bool is_directed,
         const bool use_gpu,
+
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
         const bool enable_temporal_node2vec,
         const double timescale_bound,
+
         const double node2vec_p = DEFAULT_NODE2VEC_P,
         const double node2vec_q = DEFAULT_NODE2VEC_Q,
+
         const double spatiotemporal_alpha = DEFAULT_SPATIOTEMPORAL_ALPHA,
         const double spatiotemporal_beta = DEFAULT_SPATIOTEMPORAL_BETA,
         const double spatiotemporal_gamma = DEFAULT_SPATIOTEMPORAL_GAMMA,
+
         const int walk_padding_value=EMPTY_NODE_VALUE,
-        const uint64_t global_seed=EMPTY_GLOBAL_SEED) {
+        const uint64_t global_seed=EMPTY_GLOBAL_SEED,
+        const bool shuffle_walk_order=DEFAULT_SHUFFLE_WALK_ORDER) {
+
         this->is_directed = is_directed;
         this->use_gpu = use_gpu;
+
         this->max_time_capacity = max_time_capacity;
         this->enable_temporal_node2vec = enable_temporal_node2vec;
         this->enable_weight_computation = enable_weight_computation || enable_temporal_node2vec;
         this->timescale_bound = timescale_bound;
+
         this->node2vec_p = node2vec_p;
         this->node2vec_q = node2vec_q;
+
+        this->spatiotemporal_alpha = spatiotemporal_alpha;
+        this->spatiotemporal_beta = spatiotemporal_beta;
+        this->spatiotemporal_gamma = spatiotemporal_gamma;
+
         this->walk_padding_value = walk_padding_value;
         this->global_seed = global_seed;
+        this->shuffle_walk_order = shuffle_walk_order;
 
         this->temporal_graph = new TemporalGraphStore(
             is_directed,
             use_gpu,
+
             max_time_capacity,
             this->enable_weight_computation,
             this->enable_temporal_node2vec,
             timescale_bound,
+
             node2vec_p,
-            node2vec_q);
+            node2vec_q,
+
+            spatiotemporal_alpha,
+            spatiotemporal_beta,
+            spatiotemporal_gamma);
 
         #ifdef HAS_CUDA
         cuda_device_prop = new cudaDeviceProp();
@@ -74,9 +104,10 @@ struct TemporalRandomWalkStore {
     TemporalRandomWalkStore()
         : is_directed(false), use_gpu(false), max_time_capacity(-1),
           enable_weight_computation(false), enable_temporal_node2vec(false), timescale_bound(-1),
-          node2vec_p(DEFAULT_NODE2VEC_P),
-          node2vec_q(DEFAULT_NODE2VEC_Q), walk_padding_value(EMPTY_NODE_VALUE),
-          global_seed(EMPTY_GLOBAL_SEED),
+          node2vec_p(DEFAULT_NODE2VEC_P), node2vec_q(DEFAULT_NODE2VEC_Q),
+          spatiotemporal_alpha(DEFAULT_SPATIOTEMPORAL_ALPHA), spatiotemporal_beta(DEFAULT_SPATIOTEMPORAL_BETA),
+          spatiotemporal_gamma(DEFAULT_SPATIOTEMPORAL_GAMMA), walk_padding_value(EMPTY_NODE_VALUE),
+          global_seed(EMPTY_GLOBAL_SEED), shuffle_walk_order(DEFAULT_SHUFFLE_WALK_ORDER),
           temporal_graph(nullptr) {
         #ifdef HAS_CUDA
         cuda_device_prop = nullptr;

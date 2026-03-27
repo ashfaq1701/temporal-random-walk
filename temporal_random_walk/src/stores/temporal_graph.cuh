@@ -51,12 +51,15 @@ struct TemporalGraphStore {
     explicit TemporalGraphStore(
         const bool is_directed,
         const bool use_gpu,
+
         const int64_t max_time_capacity,
         const bool enable_weight_computation,
         const bool enable_temporal_node2vec,
         const double timescale_bound,
+
         const double node2vec_p = DEFAULT_NODE2VEC_P,
         const double node2vec_q = DEFAULT_NODE2VEC_Q,
+
         const double spatiotemporal_alpha = DEFAULT_SPATIOTEMPORAL_ALPHA,
         const double spatiotemporal_beta = DEFAULT_SPATIOTEMPORAL_BETA,
         const double spatiotemporal_gamma = DEFAULT_SPATIOTEMPORAL_GAMMA):
