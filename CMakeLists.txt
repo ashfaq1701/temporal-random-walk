@@ -104,6 +104,11 @@ else()
     add_compile_options(-fopenmp)
 endif()
 
+option(BUILD_TESTS "Build C++ tests" ON)
+
 add_subdirectory(temporal_random_walk/py_interface)
-add_subdirectory(temporal_random_walk/test)
-add_subdirectory(temporal_random_walk/test_run)
+
+if(BUILD_TESTS)
+    add_subdirectory(temporal_random_walk/test)
+    add_subdirectory(temporal_random_walk/test_run)
+endif()
