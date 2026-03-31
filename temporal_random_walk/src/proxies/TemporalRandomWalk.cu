@@ -157,6 +157,46 @@ WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times_for_all_nod
     return walks_with_edge_features;
 }
 
+WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times_for_last_batch(
+        const int max_walk_len,
+        const RandomPickerType* walk_bias,
+        const int num_walks_per_node,
+        const RandomPickerType* initial_edge_bias,
+        const WalkDirection walk_direction,
+        const KernelLaunchType kernel_launch_type) const {
+    WalkSet walk_set;
+
+    #ifdef HAS_CUDA
+    if (use_gpu) {
+        walk_set = temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
+            temporal_random_walk,
+            max_walk_len,
+            walk_bias,
+            num_walks_per_node,
+            initial_edge_bias,
+            walk_direction,
+            kernel_launch_type);
+    }
+    else
+    #endif
+    {
+        walk_set = temporal_random_walk::get_random_walks_and_times_for_last_batch_std(
+            temporal_random_walk,
+            max_walk_len,
+            walk_bias,
+            num_walks_per_node,
+            initial_edge_bias,
+            walk_direction);
+    }
+
+    WalksWithEdgeFeatures walks_with_edge_features(
+        std::move(walk_set),
+        static_cast<int>(temporal_random_walk->temporal_graph->edge_data->feature_dim));
+    walks_with_edge_features.populate_walk_edge_features(temporal_random_walk->temporal_graph->edge_data->edge_features);
+
+    return walks_with_edge_features;
+}
+
 WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times(
         const int max_walk_len,
         const RandomPickerType* walk_bias,

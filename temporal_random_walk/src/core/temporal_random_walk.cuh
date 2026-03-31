@@ -3,6 +3,7 @@
 
 #include <optional>
 #include <cstdint>
+#include <vector>
 #include "../common/macros.cuh"
 #include "../data/structs.cuh"
 #include "../data/walk_set/walk_set.cuh"
@@ -34,6 +35,9 @@ struct TemporalRandomWalkStore {
     int walk_padding_value;
     uint64_t global_seed;
     bool shuffle_walk_order;
+
+    std::vector<int> last_batch_unique_sources;
+    std::vector<int> last_batch_unique_targets;
 
     #ifdef HAS_CUDA
     cudaDeviceProp *cuda_device_prop;
@@ -137,7 +141,7 @@ namespace temporal_random_walk {
      * Common functions
      */
     HOST void add_multiple_edges(
-        const TemporalRandomWalkStore *temporal_random_walk,
+        TemporalRandomWalkStore *temporal_random_walk,
         const int* sources,
         const int* targets,
         const int64_t* timestamps,
@@ -169,6 +173,14 @@ namespace temporal_random_walk {
         const RandomPickerType *initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time);
 
+    HOST WalkSet get_random_walks_and_times_for_last_batch_std(
+        const TemporalRandomWalkStore *temporal_random_walk,
+        int max_walk_len,
+        const RandomPickerType *walk_bias,
+        int num_walks_per_node,
+        const RandomPickerType *initial_edge_bias = nullptr,
+        WalkDirection walk_direction = WalkDirection::Forward_In_Time);
+
     HOST WalkSet get_random_walks_and_times_std(
         const TemporalRandomWalkStore *temporal_random_walk,
         int max_walk_len,
@@ -184,6 +196,15 @@ namespace temporal_random_walk {
     #ifdef HAS_CUDA
 
     HOST WalkSet get_random_walks_and_times_for_all_nodes_cuda(
+        const TemporalRandomWalkStore *temporal_random_walk,
+        int max_walk_len,
+        const RandomPickerType *walk_bias,
+        int num_walks_per_node,
+        const RandomPickerType *initial_edge_bias = nullptr,
+        WalkDirection walk_direction = WalkDirection::Forward_In_Time,
+        KernelLaunchType kernel_launch_type=KernelLaunchType::FULL_WALK);
+
+    HOST WalkSet get_random_walks_and_times_for_last_batch_cuda(
         const TemporalRandomWalkStore *temporal_random_walk,
         int max_walk_len,
         const RandomPickerType *walk_bias,
