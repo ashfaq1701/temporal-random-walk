@@ -398,6 +398,108 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             py::arg("initial_edge_bias") = py::none(),
             py::arg("walk_direction") = "Forward_In_Time")
 
+        .def("get_random_walks_and_times_for_last_batch", [](TemporalRandomWalk& tw,
+                                               const int max_walk_len,
+                                               const std::string& walk_bias,
+                                               const int num_walks_per_node,
+                                               const std::optional<std::string>& initial_edge_bias = std::nullopt,
+                                               const std::string& walk_direction = "Forward_In_Time")
+            {
+                const RandomPickerType walk_bias_enum = picker_type_from_string(walk_bias);
+                std::optional<RandomPickerType> edge_bias_enum_opt;
+                const RandomPickerType* initial_edge_bias_enum_ptr = get_picker_ptr_from_optional_string(
+                    initial_edge_bias, edge_bias_enum_opt);
+                const WalkDirection walk_direction_enum = walk_direction_from_string(walk_direction);
+
+                WalksWithEdgeFeatures walks_with_edge_features = tw.get_random_walks_and_times_for_last_batch(
+                    max_walk_len,
+                    &walk_bias_enum,
+                    num_walks_per_node,
+                    initial_edge_bias_enum_ptr,
+                    walk_direction_enum);
+
+                WalkSet& walk_set = walks_with_edge_features.walk_set;
+
+                py::array_t nodes_array(
+                    py::array::ShapeContainer{static_cast<ssize_t>(walk_set.num_walks), static_cast<ssize_t>(max_walk_len)},
+                    py::array::StridesContainer{static_cast<ssize_t>(sizeof(int) * max_walk_len), static_cast<ssize_t>(sizeof(int))},
+                    walk_set.nodes,
+                    py::capsule(walk_set.nodes, [](void* p) { std::free(p); })
+                );
+
+                py::array_t timestamps_array(
+                    py::array::ShapeContainer{static_cast<ssize_t>(walk_set.num_walks), static_cast<ssize_t>(max_walk_len)},
+                    py::array::StridesContainer{static_cast<ssize_t>(sizeof(int64_t) * max_walk_len), static_cast<ssize_t>(sizeof(int64_t))},
+                    walk_set.timestamps,
+                    py::capsule(walk_set.timestamps, [](void* p) { std::free(p); })
+                );
+
+                py::array_t lens_array(
+                    py::array::ShapeContainer{static_cast<ssize_t>(walk_set.num_walks)},
+                    py::array::StridesContainer{static_cast<ssize_t>(sizeof(size_t))},
+                    walk_set.walk_lens,
+                    py::capsule(walk_set.walk_lens, [](void* p) { std::free(p); })
+                );
+
+                py::object edge_features_array = py::none();
+                if (walks_with_edge_features.feature_dim > 0 && walks_with_edge_features.walk_edge_features != nullptr) {
+                    const auto num_walks = static_cast<ssize_t>(walk_set.num_walks);
+                    const ssize_t edges_per_walk = static_cast<ssize_t>(std::max(0, max_walk_len - 1));
+                    const auto feature_dim = static_cast<ssize_t>(walks_with_edge_features.feature_dim);
+
+                    edge_features_array = py::array_t<float>(
+                        py::array::ShapeContainer{num_walks, edges_per_walk, feature_dim},
+                        py::array::StridesContainer{
+                            static_cast<ssize_t>(sizeof(float) * edges_per_walk * feature_dim),
+                            static_cast<ssize_t>(sizeof(float) * feature_dim),
+                            static_cast<ssize_t>(sizeof(float))},
+                        walks_with_edge_features.walk_edge_features,
+                        py::capsule(walks_with_edge_features.walk_edge_features, [](void* p) { std::free(p); })
+                    );
+                    walks_with_edge_features.walk_edge_features = nullptr;
+                }
+
+                walk_set.owns_data = false;
+
+                return std::make_tuple(nodes_array, timestamps_array, lens_array, edge_features_array);
+            },
+            R"(
+            Generate temporal random walks starting from nodes in the last added edge batch.
+
+            For directed graphs, walks start from unique source nodes of the last batch.
+            For undirected graphs, walks start from the sorted union of unique source and
+            target nodes of the last batch.
+
+            Args:
+                max_walk_len (int): Maximum length of each random walk.
+                walk_bias (str): Type of bias for selecting next node.
+                    Choices:
+                        - "Uniform": Equal probability
+                        - "Linear": Linear time decay
+                        - "ExponentialIndex": Exponential decay with indices
+                        - "ExponentialWeight": Exponential decay with weights
+                        - "TemporalNode2Vec": Temporal-node2vec transition bias
+                        - "SpatioTemporal": SpatioTemporal transition bias
+                num_walks_per_node (int): Number of walks per starting node.
+                initial_edge_bias (str, optional): Bias type for first edge selection.
+                    Uses walk_bias if not specified.
+                walk_direction (str, optional): Direction of temporal random walks.
+                    Either "Forward_In_Time" (default) or "Backward_In_Time".
+
+            Returns:
+                Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
+                    - 2D array of node ids (shape: [num_walks, max_walk_len])
+                    - 2D array of timestamps (shape: [num_walks, max_walk_len])
+                    - 1D array of actual walk lengths (shape: [num_walks])
+                    - 3D array of edge features (shape: [num_walks, max_walk_len - 1, feature_dim]),
+                      or None if feature_dim is 0
+            )",
+            py::arg("max_walk_len"),
+            py::arg("walk_bias"),
+            py::arg("num_walks_per_node"),
+            py::arg("initial_edge_bias") = py::none(),
+            py::arg("walk_direction") = "Forward_In_Time")
+
         .def("get_random_walks_and_times", [](TemporalRandomWalk& tw,
                                                const int max_walk_len,
                                                const std::string& walk_bias,

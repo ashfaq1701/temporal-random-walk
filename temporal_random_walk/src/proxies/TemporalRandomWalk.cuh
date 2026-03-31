@@ -65,6 +65,14 @@ public:
         WalkDirection walk_direction=WalkDirection::Forward_In_Time,
         KernelLaunchType kernel_launch_type=KernelLaunchType::FULL_WALK) const;
 
+    WalksWithEdgeFeatures get_random_walks_and_times_for_last_batch(
+        int max_walk_len,
+        const RandomPickerType* walk_bias,
+        int num_walks_per_node,
+        const RandomPickerType* initial_edge_bias=nullptr,
+        WalkDirection walk_direction=WalkDirection::Forward_In_Time,
+        KernelLaunchType kernel_launch_type=KernelLaunchType::FULL_WALK) const;
+
     WalksWithEdgeFeatures get_random_walks_and_times(
         int max_walk_len,
         const RandomPickerType* walk_bias,
