@@ -3,6 +3,7 @@
 
 #include <optional>
 #include <cstdint>
+#include <vector>
 #include "../common/macros.cuh"
 #include "../data/structs.cuh"
 #include "../data/walk_set/walk_set.cuh"
@@ -34,6 +35,9 @@ struct TemporalRandomWalkStore {
     int walk_padding_value;
     uint64_t global_seed;
     bool shuffle_walk_order;
+
+    std::vector<int> last_batch_unique_sources;
+    std::vector<int> last_batch_unique_targets;
 
     #ifdef HAS_CUDA
     cudaDeviceProp *cuda_device_prop;
@@ -137,7 +141,7 @@ namespace temporal_random_walk {
      * Common functions
      */
     HOST void add_multiple_edges(
-        const TemporalRandomWalkStore *temporal_random_walk,
+        TemporalRandomWalkStore *temporal_random_walk,
         const int* sources,
         const int* targets,
         const int64_t* timestamps,

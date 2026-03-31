@@ -6,12 +6,15 @@
 #include "temporal_random_walk_kernels_full_walk.cuh"
 #include "temporal_random_walk_kernels_step_based.cuh"
 
+#include <set>
+#include <algorithm>
+
 /**
  * Common functions
 */
 
 HOST void temporal_random_walk::add_multiple_edges(
-    const TemporalRandomWalkStore *temporal_random_walk,
+    TemporalRandomWalkStore *temporal_random_walk,
     const int *sources,
     const int *targets,
     const int64_t *timestamps,
@@ -40,6 +43,12 @@ HOST void temporal_random_walk::add_multiple_edges(
             edge_features,
             feature_dim);
     }
+
+    std::set<int> unique_sources_set(sources, sources + num_edges);
+    std::set<int> unique_targets_set(targets, targets + num_edges);
+
+    temporal_random_walk->last_batch_unique_sources.assign(unique_sources_set.begin(), unique_sources_set.end());
+    temporal_random_walk->last_batch_unique_targets.assign(unique_targets_set.begin(), unique_targets_set.end());
 }
 
 HOST size_t temporal_random_walk::get_node_count(const TemporalRandomWalkStore *temporal_random_walk) {
