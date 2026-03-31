@@ -561,6 +561,94 @@ TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, ValidEdgesWithScaling) {
     }
 }
 
+template<typename T>
+class LastBatchDirectedTemporalRandomWalkTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        temporal_random_walk = std::make_unique<TemporalRandomWalk>(true, T::value, -1, true, false, -1);
+
+        // First batch
+        temporal_random_walk->add_multiple_edges({
+            {1, 2, 100},
+            {2, 3, 101},
+            {3, 4, 102},
+        });
+
+        // Second batch - only sources {5, 7} should be used as start nodes
+        temporal_random_walk->add_multiple_edges({
+            {5, 6, 103},
+            {7, 8, 104},
+            {5, 9, 105},
+        });
+    }
+
+    std::unique_ptr<TemporalRandomWalk> temporal_random_walk;
+};
+
+TYPED_TEST_SUITE(LastBatchDirectedTemporalRandomWalkTest, GPU_USAGE_TYPES);
+
+template<typename T>
+class LastBatchUndirectedTemporalRandomWalkTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        temporal_random_walk = std::make_unique<TemporalRandomWalk>(false, T::value, -1, true, false, -1);
+
+        // First batch
+        temporal_random_walk->add_multiple_edges({
+            {1, 2, 100},
+            {2, 3, 101},
+            {3, 4, 102},
+        });
+
+        // Second batch - union of sources {5, 7} and targets {6, 8, 9} = {5, 6, 7, 8, 9}
+        temporal_random_walk->add_multiple_edges({
+            {5, 6, 103},
+            {7, 8, 104},
+            {5, 9, 105},
+        });
+    }
+
+    std::unique_ptr<TemporalRandomWalk> temporal_random_walk;
+};
+
+TYPED_TEST_SUITE(LastBatchUndirectedTemporalRandomWalkTest, GPU_USAGE_TYPES);
+
+TYPED_TEST(LastBatchDirectedTemporalRandomWalkTest, WalksStartFromLastBatchSourcesOnly) {
+    const std::set<int> expected_start_nodes = {5, 7};
+
+    const auto walk_set = this->temporal_random_walk->get_random_walks_and_times_for_last_batch(
+        MAX_WALK_LEN, &linear_picker_type, 10);
+
+    EXPECT_GT(walk_set.size(), 0) << "No walks were generated";
+
+    for (auto it = walk_set.walks_begin(); it != walk_set.walks_end(); ++it) {
+        const auto& walk = *it;
+        ASSERT_GT(walk.size(), 0);
+        int start_node = walk[0].node;
+        EXPECT_TRUE(expected_start_nodes.count(start_node) > 0)
+            << "Walk started from node " << start_node
+            << " which is not a source in the last batch";
+    }
+}
+
+TYPED_TEST(LastBatchUndirectedTemporalRandomWalkTest, WalksStartFromLastBatchSourcesUnionTargets) {
+    const std::set<int> expected_start_nodes = {5, 6, 7, 8, 9};
+
+    const auto walk_set = this->temporal_random_walk->get_random_walks_and_times_for_last_batch(
+        MAX_WALK_LEN, &linear_picker_type, 10);
+
+    EXPECT_GT(walk_set.size(), 0) << "No walks were generated";
+
+    for (auto it = walk_set.walks_begin(); it != walk_set.walks_end(); ++it) {
+        const auto& walk = *it;
+        ASSERT_GT(walk.size(), 0);
+        int start_node = walk[0].node;
+        EXPECT_TRUE(expected_start_nodes.count(start_node) > 0)
+            << "Walk started from node " << start_node
+            << " which is not in the source/target union of the last batch";
+    }
+}
+
 TYPED_TEST(TimescaleBoundedTemporalRandomWalkTest, TerminalEdgeValidation) {
     constexpr RandomPickerType exponential_weight_picker = RandomPickerType::ExponentialWeight;
 
