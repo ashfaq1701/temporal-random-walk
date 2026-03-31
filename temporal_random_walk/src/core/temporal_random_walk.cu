@@ -136,7 +136,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
     return walk_set;
 }
 
-static DataBlock<int> get_last_batch_start_nodes(
+HOST static DataBlock<int> get_last_batch_start_nodes(
     const TemporalRandomWalkStore *temporal_random_walk,
     const int num_walks_per_node) {
 
@@ -154,10 +154,7 @@ static DataBlock<int> get_last_batch_start_nodes(
         start_nodes.assign(union_set.begin(), union_set.end());
     }
 
-    DataBlock<int> node_ids_block(start_nodes.size(), false);
-    std::copy(start_nodes.begin(), start_nodes.end(), node_ids_block.data);
-
-    return repeat_elements(node_ids_block, num_walks_per_node, temporal_random_walk->use_gpu);
+    return repeat_elements(start_nodes, num_walks_per_node, temporal_random_walk->use_gpu);
 }
 
 HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_last_batch_std(
