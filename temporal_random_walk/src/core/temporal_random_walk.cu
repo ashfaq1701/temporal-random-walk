@@ -154,8 +154,6 @@ static DataBlock<int> get_last_batch_start_nodes(
         start_nodes.assign(union_set.begin(), union_set.end());
     }
 
-    std::sort(start_nodes.begin(), start_nodes.end());
-
     DataBlock<int> node_ids_block(start_nodes.size(), false);
     std::copy(start_nodes.begin(), start_nodes.end(), node_ids_block.data);
 
