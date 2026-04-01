@@ -226,6 +226,40 @@ Classes
                 - 3D array of edge features (shape: [num_walks, max_walk_len - 1, feature_dim]),
                   or None if feature_dim is 0
 
+    `get_random_walks_and_times_for_last_batch(...)`
+    :   get_random_walks_and_times_for_last_batch(self: _temporal_random_walk.TemporalRandomWalk, max_walk_len: typing.SupportsInt | typing.SupportsIndex, walk_bias: str, num_walks_per_node: typing.SupportsInt | typing.SupportsIndex, initial_edge_bias: str | None = None, walk_direction: str = 'Forward_In_Time') -> tuple[numpy.typing.NDArray[numpy.int32], numpy.typing.NDArray[numpy.int64], numpy.typing.NDArray[numpy.uint64], object]
+        
+        
+        Generate temporal random walks starting from nodes in the last added edge batch.
+        
+        For directed graphs, walks start from unique source nodes of the last batch.
+        For undirected graphs, walks start from the sorted union of unique source and
+        target nodes of the last batch.
+        
+        Args:
+            max_walk_len (int): Maximum length of each random walk.
+            walk_bias (str): Type of bias for selecting next node.
+                Choices:
+                    - "Uniform": Equal probability
+                    - "Linear": Linear time decay
+                    - "ExponentialIndex": Exponential decay with indices
+                    - "ExponentialWeight": Exponential decay with weights
+                    - "TemporalNode2Vec": Temporal-node2vec transition bias
+                    - "SpatioTemporal": SpatioTemporal transition bias
+            num_walks_per_node (int): Number of walks per starting node.
+            initial_edge_bias (str, optional): Bias type for first edge selection.
+                Uses walk_bias if not specified.
+            walk_direction (str, optional): Direction of temporal random walks.
+                Either "Forward_In_Time" (default) or "Backward_In_Time".
+        
+        Returns:
+            Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
+                - 2D array of node ids (shape: [num_walks, max_walk_len])
+                - 2D array of timestamps (shape: [num_walks, max_walk_len])
+                - 1D array of actual walk lengths (shape: [num_walks])
+                - 3D array of edge features (shape: [num_walks, max_walk_len - 1, feature_dim]),
+                  or None if feature_dim is 0
+
     `set_node_features(...)`
     :   set_node_features(self: _temporal_random_walk.TemporalRandomWalk, node_ids: typing.Annotated[numpy.typing.ArrayLike, numpy.int32], node_features: typing.Annotated[numpy.typing.ArrayLike, numpy.float32]) -> None
         
