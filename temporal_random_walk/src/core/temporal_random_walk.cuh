@@ -36,8 +36,11 @@ struct TemporalRandomWalkStore {
     uint64_t global_seed;
     bool shuffle_walk_order;
 
-    std::vector<int> last_batch_unique_sources;
-    std::vector<int> last_batch_unique_targets;
+    int* last_batch_unique_sources;
+    size_t last_batch_unique_sources_size;
+
+    int* last_batch_unique_targets;
+    size_t last_batch_unique_targets_size;
 
     #ifdef HAS_CUDA
     cudaDeviceProp *cuda_device_prop;
@@ -82,6 +85,10 @@ struct TemporalRandomWalkStore {
         this->walk_padding_value = walk_padding_value;
         this->global_seed = global_seed;
         this->shuffle_walk_order = shuffle_walk_order;
+        this->last_batch_unique_sources = nullptr;
+        this->last_batch_unique_sources_size = 0;
+        this->last_batch_unique_targets = nullptr;
+        this->last_batch_unique_targets_size = 0;
 
         this->temporal_graph = new TemporalGraphStore(
             is_directed,
@@ -112,6 +119,8 @@ struct TemporalRandomWalkStore {
           spatiotemporal_alpha(DEFAULT_SPATIOTEMPORAL_ALPHA), spatiotemporal_beta(DEFAULT_SPATIOTEMPORAL_BETA),
           spatiotemporal_gamma(DEFAULT_SPATIOTEMPORAL_GAMMA), walk_padding_value(EMPTY_NODE_VALUE),
           global_seed(EMPTY_GLOBAL_SEED), shuffle_walk_order(DEFAULT_SHUFFLE_WALK_ORDER),
+          last_batch_unique_sources(nullptr), last_batch_unique_sources_size(0),
+          last_batch_unique_targets(nullptr), last_batch_unique_targets_size(0),
           temporal_graph(nullptr) {
         #ifdef HAS_CUDA
         cuda_device_prop = nullptr;
@@ -121,6 +130,10 @@ struct TemporalRandomWalkStore {
     ~TemporalRandomWalkStore() {
         if (owns_data) {
             delete temporal_graph;
+            clear_memory(&last_batch_unique_sources, false);
+            clear_memory(&last_batch_unique_targets, false);
+            last_batch_unique_sources_size = 0;
+            last_batch_unique_targets_size = 0;
 
             #ifdef HAS_CUDA
             if (use_gpu) {

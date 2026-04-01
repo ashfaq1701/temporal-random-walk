@@ -20,6 +20,9 @@ HOST inline DataBlock<int> repeat_elements(const DataBlock<int>& arr, int times,
 
     // Allocate memory for the output
     DataBlock<int> repeated_items(output_size, use_gpu);
+    if (input_size == 0 || times <= 0) {
+        return repeated_items;
+    }
 
     #ifdef HAS_CUDA
     if (use_gpu) {
@@ -54,18 +57,20 @@ HOST inline DataBlock<int> repeat_elements(const DataBlock<int>& arr, int times,
     return repeated_items;
 }
 
-HOST inline DataBlock<int> repeat_elements(const std::vector<int>& arr, int times, const bool use_gpu) {
-    const size_t input_size = arr.size();
+HOST inline DataBlock<int> repeat_elements(const int* arr, const size_t input_size, int times, const bool use_gpu) {
     const size_t output_size = input_size * times;
 
     DataBlock<int> repeated_items(output_size, use_gpu);
+    if (input_size == 0 || times <= 0) {
+        return repeated_items;
+    }
 
     #ifdef HAS_CUDA
     if (use_gpu) {
         // Copy vector data to device first
         int* d_arr;
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_arr, input_size * sizeof(int)));
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_arr, arr.data(), input_size * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_arr, arr, input_size * sizeof(int), cudaMemcpyHostToDevice));
 
         thrust::transform(
             DEVICE_EXECUTION_POLICY,

@@ -9,6 +9,39 @@
 #include <set>
 #include <algorithm>
 
+HOST static void update_last_batch_unique_nodes(
+    TemporalRandomWalkStore* temporal_random_walk,
+    const std::set<int>& unique_sources_set,
+    const std::set<int>& unique_targets_set) {
+    clear_memory(&temporal_random_walk->last_batch_unique_sources, false);
+    clear_memory(&temporal_random_walk->last_batch_unique_targets, false);
+
+    temporal_random_walk->last_batch_unique_sources_size = unique_sources_set.size();
+    temporal_random_walk->last_batch_unique_targets_size = unique_targets_set.size();
+
+    if (temporal_random_walk->last_batch_unique_sources_size > 0) {
+        allocate_memory(
+            &temporal_random_walk->last_batch_unique_sources,
+            temporal_random_walk->last_batch_unique_sources_size,
+            false);
+        std::copy(
+            unique_sources_set.begin(),
+            unique_sources_set.end(),
+            temporal_random_walk->last_batch_unique_sources);
+    }
+
+    if (temporal_random_walk->last_batch_unique_targets_size > 0) {
+        allocate_memory(
+            &temporal_random_walk->last_batch_unique_targets,
+            temporal_random_walk->last_batch_unique_targets_size,
+            false);
+        std::copy(
+            unique_targets_set.begin(),
+            unique_targets_set.end(),
+            temporal_random_walk->last_batch_unique_targets);
+    }
+}
+
 /**
  * Common functions
 */
@@ -46,9 +79,7 @@ HOST void temporal_random_walk::add_multiple_edges(
 
     std::set<int> unique_sources_set(sources, sources + num_edges);
     std::set<int> unique_targets_set(targets, targets + num_edges);
-
-    temporal_random_walk->last_batch_unique_sources.assign(unique_sources_set.begin(), unique_sources_set.end());
-    temporal_random_walk->last_batch_unique_targets.assign(unique_targets_set.begin(), unique_targets_set.end());
+    update_last_batch_unique_nodes(temporal_random_walk, unique_sources_set, unique_targets_set);
 }
 
 HOST size_t temporal_random_walk::get_node_count(const TemporalRandomWalkStore *temporal_random_walk) {
@@ -139,22 +170,40 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
 HOST static DataBlock<int> get_last_batch_start_nodes(
     const TemporalRandomWalkStore *temporal_random_walk,
     const int num_walks_per_node) {
-
-    std::vector<int> start_nodes;
+    int* start_nodes = nullptr;
+    size_t start_nodes_size = 0;
 
     if (temporal_random_walk->is_directed) {
-        start_nodes = temporal_random_walk->last_batch_unique_sources;
+        start_nodes_size = temporal_random_walk->last_batch_unique_sources_size;
+        if (start_nodes_size > 0) {
+            allocate_memory(&start_nodes, start_nodes_size, false);
+            std::copy(
+                temporal_random_walk->last_batch_unique_sources,
+                temporal_random_walk->last_batch_unique_sources + start_nodes_size,
+                start_nodes);
+        }
     } else {
         std::set<int> union_set(
-            temporal_random_walk->last_batch_unique_sources.begin(),
-            temporal_random_walk->last_batch_unique_sources.end());
+            temporal_random_walk->last_batch_unique_sources,
+            temporal_random_walk->last_batch_unique_sources + temporal_random_walk->last_batch_unique_sources_size);
         union_set.insert(
-            temporal_random_walk->last_batch_unique_targets.begin(),
-            temporal_random_walk->last_batch_unique_targets.end());
-        start_nodes.assign(union_set.begin(), union_set.end());
+            temporal_random_walk->last_batch_unique_targets,
+            temporal_random_walk->last_batch_unique_targets + temporal_random_walk->last_batch_unique_targets_size);
+
+        start_nodes_size = union_set.size();
+        if (start_nodes_size > 0) {
+            allocate_memory(&start_nodes, start_nodes_size, false);
+            std::copy(union_set.begin(), union_set.end(), start_nodes);
+        }
     }
 
-    return repeat_elements(start_nodes, num_walks_per_node, temporal_random_walk->use_gpu);
+    const auto repeated_start_nodes = repeat_elements(
+        start_nodes,
+        start_nodes_size,
+        num_walks_per_node,
+        temporal_random_walk->use_gpu);
+    clear_memory(&start_nodes, false);
+    return repeated_start_nodes;
 }
 
 HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_last_batch_std(
@@ -528,6 +577,12 @@ HOST TemporalRandomWalkStore* temporal_random_walk::to_device_ptr(const Temporal
 
     // Make sure use_gpu is set to true
     temp_temporal_random_walk.use_gpu = true;
+
+    // The last-batch unique node ids are host-only tracking fields.
+    temp_temporal_random_walk.last_batch_unique_sources = nullptr;
+    temp_temporal_random_walk.last_batch_unique_sources_size = 0;
+    temp_temporal_random_walk.last_batch_unique_targets = nullptr;
+    temp_temporal_random_walk.last_batch_unique_targets_size = 0;
 
     // Copy the updated struct to device
     CUDA_CHECK_AND_CLEAR(
