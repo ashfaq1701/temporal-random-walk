@@ -68,7 +68,7 @@ HOST inline DataBlock<int> repeat_elements(const int* arr, const size_t input_si
     #ifdef HAS_CUDA
     if (use_gpu) {
         // Copy vector data to device first
-        int* d_arr;
+        int* d_arr = nullptr;
         allocate_memory(&d_arr, input_size, true);
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_arr, arr, input_size * sizeof(int), cudaMemcpyHostToDevice));
 
