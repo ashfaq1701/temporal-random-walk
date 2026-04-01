@@ -69,7 +69,7 @@ HOST inline DataBlock<int> repeat_elements(const int* arr, const size_t input_si
     if (use_gpu) {
         // Copy vector data to device first
         int* d_arr;
-        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_arr, input_size * sizeof(int)));
+        allocate_memory(&d_arr, input_size, true);
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_arr, arr, input_size * sizeof(int), cudaMemcpyHostToDevice));
 
         thrust::transform(
@@ -84,7 +84,7 @@ HOST inline DataBlock<int> repeat_elements(const int* arr, const size_t input_si
         );
 
         CUDA_KERNEL_CHECK("After thrust transform in repeat_elements (vector)");
-        CUDA_CHECK_AND_CLEAR(cudaFree(d_arr));
+        clear_memory(&d_arr, true);
     }
     else
     #endif

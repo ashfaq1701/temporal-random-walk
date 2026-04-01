@@ -77,8 +77,8 @@ HOST void temporal_random_walk::add_multiple_edges(
             feature_dim);
     }
 
-    std::set<int> unique_sources_set(sources, sources + num_edges);
-    std::set<int> unique_targets_set(targets, targets + num_edges);
+    const std::set unique_sources_set(sources, sources + num_edges);
+    const std::set unique_targets_set(targets, targets + num_edges);
     update_last_batch_unique_nodes(temporal_random_walk, unique_sources_set, unique_targets_set);
 }
 
@@ -170,6 +170,7 @@ HOST WalkSet temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
 HOST static DataBlock<int> get_last_batch_start_nodes(
     const TemporalRandomWalkStore *temporal_random_walk,
     const int num_walks_per_node) {
+
     int* start_nodes = nullptr;
     size_t start_nodes_size = 0;
 
@@ -183,7 +184,7 @@ HOST static DataBlock<int> get_last_batch_start_nodes(
                 start_nodes);
         }
     } else {
-        std::set<int> union_set(
+        std::set union_set(
             temporal_random_walk->last_batch_unique_sources,
             temporal_random_walk->last_batch_unique_sources + temporal_random_walk->last_batch_unique_sources_size);
         union_set.insert(
@@ -203,6 +204,7 @@ HOST static DataBlock<int> get_last_batch_start_nodes(
         num_walks_per_node,
         temporal_random_walk->use_gpu);
     clear_memory(&start_nodes, false);
+
     return repeated_start_nodes;
 }
 
