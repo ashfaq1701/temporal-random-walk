@@ -3,7 +3,6 @@
 
 #include "temporal_graph.cuh"
 #include "temporal_node2vec_helpers.cuh"
-#include "spatiotemporal_helpers.cuh"
 
 #ifdef HAS_CUDA
 #include <cuda/std/__algorithm/lower_bound.h>
@@ -130,9 +129,7 @@ namespace temporal_graph {
         const int64_t timestamp,
         const int prev_node,
         const double group_selector_rand_num,
-        const double edge_selector_rand_num,
-        const int *walk_nodes,
-        const int walk_len) {
+        const double edge_selector_rand_num) {
         if (!edge_data::is_node_active_host(graph->edge_data, node_id)) {
             return InternalEdge{-1, -1, -1, -1};
         }
@@ -227,36 +224,6 @@ namespace temporal_graph {
             if (valid_begin >= valid_end) {
                 return InternalEdge{-1, -1, -1, -1};
             }
-        }
-
-        // Edge-based picker: SpatioTemporal
-        if constexpr (PickerType == RandomPickerType::SpatioTemporal) {
-            const long edge_idx = pick_random_spatiotemporal_edge_host<Forward, IsDirected>(
-                graph,
-                node_id,
-                valid_begin,
-                valid_end,
-                node_group_begin,
-                node_group_end,
-                count_ts_group_per_node,
-                node_edge_offsets,
-                node_ts_groups_offsets,
-                node_ts_sorted_indices,
-                weights,
-                walk_nodes,
-                walk_len,
-                edge_selector_rand_num);
-
-            if (edge_idx == -1) {
-                return InternalEdge{-1, -1, -1, -1};
-            }
-
-            return InternalEdge{
-                graph->edge_data->sources[edge_idx],
-                graph->edge_data->targets[edge_idx],
-                graph->edge_data->timestamps[edge_idx],
-                edge_idx
-            };
         }
 
         // Group-based pickers
@@ -487,9 +454,7 @@ namespace temporal_graph {
         const int64_t timestamp,
         const int prev_node,
         const double group_selector_rand_num,
-        const double edge_selector_rand_num,
-        const int *walk_nodes,
-        const int walk_len) {
+        const double edge_selector_rand_num) {
         if (!edge_data::is_node_active_device(graph->edge_data, node_id)) {
             return InternalEdge{-1, -1, -1, -1};
         }
@@ -584,36 +549,6 @@ namespace temporal_graph {
             if (valid_begin >= valid_end) {
                 return InternalEdge{-1, -1, -1, -1};
             }
-        }
-
-        // Edge-based picker: SpatioTemporal
-        if constexpr (PickerType == RandomPickerType::SpatioTemporal) {
-            const long edge_idx = pick_random_spatiotemporal_edge_device<Forward, IsDirected>(
-                graph,
-                node_id,
-                valid_begin,
-                valid_end,
-                node_group_begin,
-                node_group_end,
-                count_ts_group_per_node,
-                node_edge_offsets,
-                node_ts_groups_offsets,
-                node_ts_sorted_indices,
-                weights,
-                walk_nodes,
-                walk_len,
-                edge_selector_rand_num);
-
-            if (edge_idx == -1) {
-                return InternalEdge{-1, -1, -1, -1};
-            }
-
-            return InternalEdge{
-                graph->edge_data->sources[edge_idx],
-                graph->edge_data->targets[edge_idx],
-                graph->edge_data->timestamps[edge_idx],
-                edge_idx
-            };
         }
 
         // Group-based pickers

@@ -39,9 +39,6 @@ inline RandomPickerType picker_type_from_string(const std::string& picker_type_s
     {
         return RandomPickerType::TemporalNode2Vec;
     }
-    else if (picker_type_str == "SpatioTemporal") {
-        return RandomPickerType::SpatioTemporal;
-    }
     else
     {
         throw std::invalid_argument("Invalid picker type: " + picker_type_str);

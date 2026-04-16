@@ -46,9 +46,7 @@ namespace temporal_random_walk {
                 -1, // timestamp
                 -1,
                 rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1),
-                walk_set->nodes + walk_idx * max_walk_len,
-                walk_set->walk_lens[walk_idx] + 1);
+                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1));
         }
 
         if (start_edge.i == -1) {
@@ -113,9 +111,7 @@ namespace temporal_random_walk {
                 last_ts,
                 prev_node,
                 rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1),
-                walk_set->nodes + walk_idx * max_walk_len,
-                walk_set->walk_lens[walk_idx]);
+                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1));
 
         if (next_edge.ts == -1) {
             return;
@@ -169,10 +165,6 @@ namespace temporal_random_walk {
                 pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::TemporalNode2Vec><<<grid, block_dim>>>(
                     temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, base_seed);
                 break;
-            case RandomPickerType::SpatioTemporal:
-                pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::SpatioTemporal><<<grid, block_dim>>>(
-                    temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, base_seed);
-                break;
             case RandomPickerType::TEST_FIRST:
                 pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::TEST_FIRST><<<grid, block_dim>>>(
                     temporal_graph, walk_set, start_node_ids, max_walk_len, num_walks, base_seed);
@@ -218,10 +210,6 @@ namespace temporal_random_walk {
                 break;
             case RandomPickerType::TemporalNode2Vec:
                 pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::TemporalNode2Vec><<<grid, block_dim>>>(
-                    temporal_graph, walk_set, step_number, max_walk_len, num_walks, base_seed);
-                break;
-            case RandomPickerType::SpatioTemporal:
-                pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::SpatioTemporal><<<grid, block_dim>>>(
                     temporal_graph, walk_set, step_number, max_walk_len, num_walks, base_seed);
                 break;
             case RandomPickerType::TEST_FIRST:

@@ -64,7 +64,7 @@ Classes
             int: Selected index
 
 `TemporalRandomWalk(...)`
-:   __init__(self: _temporal_random_walk.TemporalRandomWalk, is_directed: bool, use_gpu: bool = False, max_time_capacity: typing.SupportsInt | typing.SupportsIndex | None = None, enable_weight_computation: bool | None = None, enable_temporal_node2vec: bool | None = None, timescale_bound: typing.SupportsFloat | typing.SupportsIndex | None = None, temporal_node2vec_p: typing.SupportsFloat | typing.SupportsIndex | None = None, temporal_node2vec_q: typing.SupportsFloat | typing.SupportsIndex | None = None, spatiotemporal_alpha: typing.SupportsFloat | typing.SupportsIndex | None = None, spatiotemporal_beta: typing.SupportsFloat | typing.SupportsIndex | None = None, spatiotemporal_gamma: typing.SupportsFloat | typing.SupportsIndex | None = None, walk_padding_value: typing.SupportsInt | typing.SupportsIndex | None = None, global_seed: typing.SupportsInt | typing.SupportsIndex | None = None, shuffle_walk_order: bool | None = None) -> None
+:   __init__(self: _temporal_random_walk.TemporalRandomWalk, is_directed: bool, use_gpu: bool = False, max_time_capacity: typing.SupportsInt | typing.SupportsIndex | None = None, enable_weight_computation: bool | None = None, enable_temporal_node2vec: bool | None = None, timescale_bound: typing.SupportsFloat | typing.SupportsIndex | None = None, temporal_node2vec_p: typing.SupportsFloat | typing.SupportsIndex | None = None, temporal_node2vec_q: typing.SupportsFloat | typing.SupportsIndex | None = None, walk_padding_value: typing.SupportsInt | typing.SupportsIndex | None = None, global_seed: typing.SupportsInt | typing.SupportsIndex | None = None, shuffle_walk_order: bool | None = None) -> None
     
     
     Initialize a temporal random walk generator.
@@ -80,10 +80,6 @@ Classes
     
     temporal_node2vec_p (float, optional): Temporal-node2vec return parameter p (> 0). Defaults to 1.0.
     temporal_node2vec_q (float, optional): Temporal-node2vec in-out parameter q (> 0). Defaults to 1.0.
-    
-    spatiotemporal_alpha (float, optional): SpatioTemporal bias alpha parameter. Defaults to 1.0.
-    spatiotemporal_beta (float, optional): SpatioTemporal bias alpha parameter. Defaults to 1.0.
-    spatiotemporal_gamma (float, optional): SpatioTemporal bias gamma parameter. Defaults to 1.0.
     
     walk_padding_value (int, optional): Padding node value for prematurely broken walks. Default is -1.
     global_seed (int, optional): A global seed to have reproducibility inside random walks. Default is empty and the code in that case generates random seed in each run.
@@ -181,7 +177,6 @@ Classes
                     - "ExponentialIndex": Exponential decay with indices
                     - "ExponentialWeight": Exponential decay with weights
                     - "TemporalNode2Vec": Temporal-node2vec transition bias
-                    - "SpatioTemporal": SpatioTemporal transition bias
             num_walks_total (int): Total Number of walks to generate.
             initial_edge_bias (str, optional): Bias type for first edge selection.
                 Uses walk_bias if not specified.
@@ -211,7 +206,6 @@ Classes
                     - "ExponentialIndex": Exponential decay with indices
                     - "ExponentialWeight": Exponential decay with weights
                     - "TemporalNode2Vec": Temporal-node2vec transition bias
-                    - "SpatioTemporal": SpatioTemporal transition bias
             num_walks_per_node (int): Number of walks per starting node.
             initial_edge_bias (str, optional): Bias type for first edge selection.
                 Uses walk_bias if not specified.
@@ -245,7 +239,6 @@ Classes
                     - "ExponentialIndex": Exponential decay with indices
                     - "ExponentialWeight": Exponential decay with weights
                     - "TemporalNode2Vec": Temporal-node2vec transition bias
-                    - "SpatioTemporal": SpatioTemporal transition bias
             num_walks_per_node (int): Number of walks per starting node.
             initial_edge_bias (str, optional): Bias type for first edge selection.
                 Uses walk_bias if not specified.

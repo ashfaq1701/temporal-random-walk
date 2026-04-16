@@ -21,10 +21,10 @@ __global__ void get_edge_at_kernel(Edge* result, const TemporalGraphStore* graph
 }
 
 template <bool IsDirected, bool Forward, RandomPickerType PickerType>
-__global__ void get_node_edge_at_kernel(Edge* result, TemporalGraphStore* graph, const int node_id, const int64_t timestamp, const int prev_node, const double* rand_nums, const int* walk_nodes, int walk_len) {
+__global__ void get_node_edge_at_kernel(Edge* result, TemporalGraphStore* graph, const int node_id, const int64_t timestamp, const int prev_node, const double* rand_nums) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = temporal_graph::get_node_edge_at_device<Forward, PickerType, IsDirected>(
-        graph, node_id, timestamp, prev_node, rand_nums[0], rand_nums[1], walk_nodes, walk_len);
+        graph, node_id, timestamp, prev_node, rand_nums[0], rand_nums[1]);
     }
 }
 
@@ -49,10 +49,7 @@ public:
         bool enable_temporal_node2vec = false,
         double timescale_bound = -1,
         double node2vec_p = DEFAULT_NODE2VEC_P,
-        double node2vec_q = DEFAULT_NODE2VEC_Q,
-        double spatiotemporal_alpha = DEFAULT_SPATIOTEMPORAL_ALPHA,
-        double spatiotemporal_beta = DEFAULT_SPATIOTEMPORAL_BETA,
-        double spatiotemporal_gamma = DEFAULT_SPATIOTEMPORAL_GAMMA);
+        double node2vec_q = DEFAULT_NODE2VEC_Q);
 
     explicit TemporalGraph(TemporalGraphStore* existing_graph);
 
@@ -99,7 +96,7 @@ public:
 
     [[nodiscard]] Edge get_edge_at(RandomPickerType picker_type, int64_t timestamp = -1, bool forward = true) const;
 
-    [[nodiscard]] Edge get_node_edge_at(int node_id, RandomPickerType picker_type, int64_t timestamp, int prev_node, bool forward = true, const std::vector<int>& walk_nodes={}, int walk_len=0) const;
+    [[nodiscard]] Edge get_node_edge_at(int node_id, RandomPickerType picker_type, int64_t timestamp, int prev_node, bool forward = true) const;
 
     [[nodiscard]] TemporalGraphStore* get_graph() const;
 
