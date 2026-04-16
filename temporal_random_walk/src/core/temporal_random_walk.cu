@@ -113,11 +113,7 @@ HOST void temporal_random_walk::clear(TemporalRandomWalkStore *temporal_random_w
         temporal_random_walk->timescale_bound,
 
         temporal_random_walk->node2vec_p,
-        temporal_random_walk->node2vec_q,
-
-        temporal_random_walk->spatiotemporal_alpha,
-        temporal_random_walk->spatiotemporal_beta,
-        temporal_random_walk->spatiotemporal_gamma);
+        temporal_random_walk->node2vec_q);
 }
 
 /**

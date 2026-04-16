@@ -27,10 +27,6 @@ TemporalRandomWalk::TemporalRandomWalk(
         const double node2vec_p,
         const double node2vec_q,
 
-        const double spatiotemporal_alpha,
-        const double spatiotemporal_beta,
-        const double spatiotemporal_gamma,
-
         const int walk_padding_value,
         const uint64_t global_seed,
         const bool shuffle_walk_order): use_gpu(use_gpu) {
@@ -46,10 +42,6 @@ TemporalRandomWalk::TemporalRandomWalk(
 
         node2vec_p,
         node2vec_q,
-
-        spatiotemporal_alpha,
-        spatiotemporal_beta,
-        spatiotemporal_gamma,
 
         walk_padding_value,
         global_seed,

@@ -12,7 +12,6 @@
 
 struct NodeEdgeIndexStore {
     bool use_gpu;
-    double spatiotemporal_alpha;
     bool owns_data;
 
     size_t* node_group_outbound_offsets = nullptr;
@@ -48,8 +47,8 @@ struct NodeEdgeIndexStore {
     double* inbound_backward_cumulative_weights_exponential = nullptr;
     size_t inbound_backward_cumulative_weights_exponential_size = 0;
 
-    explicit NodeEdgeIndexStore(const bool use_gpu, const double spatiotemporal_alpha=DEFAULT_SPATIOTEMPORAL_ALPHA)
-        : use_gpu(use_gpu), spatiotemporal_alpha(spatiotemporal_alpha), owns_data(true) {}
+    explicit NodeEdgeIndexStore(const bool use_gpu)
+        : use_gpu(use_gpu), owns_data(true) {}
 
     ~NodeEdgeIndexStore() {
         if (owns_data) {

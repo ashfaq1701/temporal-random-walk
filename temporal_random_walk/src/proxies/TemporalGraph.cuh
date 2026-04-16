@@ -49,10 +49,7 @@ public:
         bool enable_temporal_node2vec = false,
         double timescale_bound = -1,
         double node2vec_p = DEFAULT_NODE2VEC_P,
-        double node2vec_q = DEFAULT_NODE2VEC_Q,
-        double spatiotemporal_alpha = DEFAULT_SPATIOTEMPORAL_ALPHA,
-        double spatiotemporal_beta = DEFAULT_SPATIOTEMPORAL_BETA,
-        double spatiotemporal_gamma = DEFAULT_SPATIOTEMPORAL_GAMMA);
+        double node2vec_q = DEFAULT_NODE2VEC_Q);
 
     explicit TemporalGraph(TemporalGraphStore* existing_graph);
 

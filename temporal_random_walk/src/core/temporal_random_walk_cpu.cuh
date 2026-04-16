@@ -150,7 +150,6 @@ namespace temporal_random_walk {
                 case RandomPickerType::ExponentialIndex: DISPATCH(EDGE, RandomPickerType::ExponentialIndex); break; \
                 case RandomPickerType::ExponentialWeight: DISPATCH(EDGE, RandomPickerType::ExponentialWeight); break; \
                 case RandomPickerType::TemporalNode2Vec: DISPATCH(EDGE, RandomPickerType::TemporalNode2Vec); break; \
-                case RandomPickerType::SpatioTemporal: DISPATCH(EDGE, RandomPickerType::SpatioTemporal); break; \
                 case RandomPickerType::TEST_FIRST: DISPATCH(EDGE, RandomPickerType::TEST_FIRST); break; \
                 case RandomPickerType::TEST_LAST: DISPATCH(EDGE, RandomPickerType::TEST_LAST); break; \
                 default: break; \
@@ -171,9 +170,6 @@ namespace temporal_random_walk {
                 break;
             case RandomPickerType::TemporalNode2Vec:
                 HANDLE_START_PICKER(RandomPickerType::TemporalNode2Vec);
-                break;
-            case RandomPickerType::SpatioTemporal:
-                HANDLE_START_PICKER(RandomPickerType::SpatioTemporal);
                 break;
             case RandomPickerType::TEST_FIRST:
                 HANDLE_START_PICKER(RandomPickerType::TEST_FIRST);

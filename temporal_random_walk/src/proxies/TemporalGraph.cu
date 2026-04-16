@@ -33,10 +33,7 @@ TemporalGraph::TemporalGraph(
     const bool enable_temporal_node2vec,
     const double timescale_bound,
     const double node2vec_p,
-    const double node2vec_q,
-    const double spatiotemporal_alpha,
-    const double spatiotemporal_beta,
-    const double spatiotemporal_gamma)
+    const double node2vec_q)
     : owns_graph(true) {
 
     graph = new TemporalGraphStore(
@@ -47,10 +44,7 @@ TemporalGraph::TemporalGraph(
         enable_temporal_node2vec,
         timescale_bound,
         node2vec_p,
-        node2vec_q,
-        spatiotemporal_alpha,
-        spatiotemporal_beta,
-        spatiotemporal_gamma);
+        node2vec_q);
 }
 
 TemporalGraph::TemporalGraph(TemporalGraphStore* existing_graph)
@@ -78,10 +72,7 @@ TemporalGraph& TemporalGraph::operator=(const TemporalGraph& other) {
                 other.graph->enable_temporal_node2vec,
                 other.graph->timescale_bound,
                 other.graph->node2vec_p,
-                other.graph->node2vec_q,
-                other.graph->spatiotemporal_alpha,
-                other.graph->spatiotemporal_beta,
-                other.graph->spatiotemporal_gamma);
+                other.graph->node2vec_q);
         } else {
             graph = other.graph;
         }
@@ -434,7 +425,6 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
             case RandomPickerType::ExponentialIndex: DISPATCH_HOST(FWD, RandomPickerType::ExponentialIndex, DIR) \
             case RandomPickerType::ExponentialWeight: DISPATCH_HOST(FWD, RandomPickerType::ExponentialWeight, DIR) \
             case RandomPickerType::TemporalNode2Vec: DISPATCH_HOST(FWD, RandomPickerType::TemporalNode2Vec, DIR) \
-            case RandomPickerType::SpatioTemporal: DISPATCH_HOST(FWD, RandomPickerType::SpatioTemporal, DIR) \
             case RandomPickerType::TEST_FIRST: DISPATCH_HOST(FWD, RandomPickerType::TEST_FIRST, DIR) \
             case RandomPickerType::TEST_LAST: DISPATCH_HOST(FWD, RandomPickerType::TEST_LAST, DIR) \
             default: break; \
@@ -447,7 +437,6 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
             case RandomPickerType::ExponentialIndex: DISPATCH_DEVICE(FWD, RandomPickerType::ExponentialIndex, DIR) \
             case RandomPickerType::ExponentialWeight: DISPATCH_DEVICE(FWD, RandomPickerType::ExponentialWeight, DIR) \
             case RandomPickerType::TemporalNode2Vec: DISPATCH_DEVICE(FWD, RandomPickerType::TemporalNode2Vec, DIR) \
-            case RandomPickerType::SpatioTemporal: DISPATCH_DEVICE(FWD, RandomPickerType::SpatioTemporal, DIR) \
             case RandomPickerType::TEST_FIRST: DISPATCH_DEVICE(FWD, RandomPickerType::TEST_FIRST, DIR) \
             case RandomPickerType::TEST_LAST: DISPATCH_DEVICE(FWD, RandomPickerType::TEST_LAST, DIR) \
             default: break; \

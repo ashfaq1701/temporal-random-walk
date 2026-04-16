@@ -45,7 +45,7 @@ walk_nodes, walk_timestamps, walk_lens, edge_features = walker.get_random_walks_
 ## ✨ Key Features
 - ⚡ **GPU acceleration** for large graphs   
 - 🎯 **Multiple sampling strategies** – Uniform, Linear, Exponential
-- 🧠 **Advanced temporal biases** – ExponentialWeight (CTDNE-style) NeurTWs (SpatioTemporal bias) and TemporalNode2Vec
+- 🧠 **Advanced temporal biases** – ExponentialWeight (CTDNE-style) and TemporalNode2Vec
 - 🔄 **Forward & backward** temporal walks
 - 📡 **Rolling window support** for streaming data
 - 🏷️ **Optional edge feature propagation** from input edges to sampled walks
@@ -102,9 +102,6 @@ to populate features for specific nodes, then `get_node_features()` to retrieve 
 - Use `ExponentialIndex` or `Linear` for recency-aware sampling with no extra setup.
 - Use `ExponentialWeight` when you want CTDNE-style weight computation
   (`enable_weight_computation=True`, optionally tune `timescale_bound`).
-- Use `SpatioTemporal` for NeurTWs-style sampling that combines three dynamic biases during sampling: 
-  temporal recency, spatial preference for nodes with lower temporal degree, 
-  and an exploration penalty that discourages revisiting nodes.
 - Use `TemporalNode2Vec` when you need return/in-out control via
   `temporal_node2vec_p` and `temporal_node2vec_q`.
 

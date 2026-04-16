@@ -7,7 +7,6 @@ enum RandomPickerType {
     ExponentialIndex,
     ExponentialWeight,
     TemporalNode2Vec,
-    SpatioTemporal,
 
     // ONLY FOR TESTS
     TEST_FIRST,

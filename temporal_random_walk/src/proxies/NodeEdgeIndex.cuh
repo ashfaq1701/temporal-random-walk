@@ -235,7 +235,7 @@ public:
         }
     }
 
-    explicit NodeEdgeIndex(bool use_gpu, double spatiotemporal_alpha=DEFAULT_SPATIOTEMPORAL_ALPHA);
+    explicit NodeEdgeIndex(bool use_gpu);
 
     explicit NodeEdgeIndex(NodeEdgeIndexStore* existing_node_edge_index);
 

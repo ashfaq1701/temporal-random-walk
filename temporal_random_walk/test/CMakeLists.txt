@@ -14,7 +14,6 @@ set(TEST_FILES
         test_temporal_random_walk_edge_features.cpp
         test_weight_based_random_picker.cpp
         test_temporal_node2vec.cpp
-        test_spatiotemporal_bias.cpp
 )
 
 set(MODULE_SRC_FILES ${SRC_FILES} ${TEST_FILES})
