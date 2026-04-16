@@ -40,9 +40,7 @@ namespace temporal_random_walk {
                 -1,
                 -1,
                 rand_nums[rand_nums_start_idx_for_walk],
-                rand_nums[rand_nums_start_idx_for_walk + 1],
-                walk_set->nodes + walk_idx * max_walk_len,
-                walk_set->walk_lens[walk_idx] + 1
+                rand_nums[rand_nums_start_idx_for_walk + 1]
             );
         }
 
@@ -91,17 +89,13 @@ namespace temporal_random_walk {
 
             walk_set->add_hop(walk_idx, current_node, current_timestamp, current_edge_id);
 
-            InternalEdge next_edge = temporal_graph::get_node_edge_at_host<Forward, EdgePickerType, IsDirected
-            >
-            (
+            InternalEdge next_edge = temporal_graph::get_node_edge_at_host<Forward, EdgePickerType, IsDirected>(
                 temporal_graph,
                 current_node,
                 current_timestamp,
                 prev_node,
                 group_selector_rand_num,
-                edge_selector_rand_num,
-                walk_set->nodes + walk_idx * max_walk_len,
-                walk_set->walk_lens[walk_idx]
+                edge_selector_rand_num
             );
 
             if (next_edge.ts == -1) {

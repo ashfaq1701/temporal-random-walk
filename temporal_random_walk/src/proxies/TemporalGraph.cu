@@ -400,21 +400,19 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
     const RandomPickerType picker_type,
     const int64_t timestamp,
     const int prev_node,
-    const bool forward,
-    const std::vector<int>& walk_nodes,
-    const int walk_len) const
+    const bool forward) const
 {
     Edge result{};
     const bool is_directed = graph->is_directed;
 
     #define DISPATCH_HOST(FWD, PICKER, DIR) \
         result = temporal_graph::get_node_edge_at_host<FWD, PICKER, DIR>( \
-            graph, node_id, timestamp, prev_node, rand_nums[0], rand_nums[1], walk_nodes.data(), walk_len); \
+            graph, node_id, timestamp, prev_node, rand_nums[0], rand_nums[1]); \
         break;
 
     #define DISPATCH_DEVICE(FWD, PICKER, DIR) \
         get_node_edge_at_kernel<DIR, FWD, PICKER><<<1, 1>>>( \
-            d_result, d_graph, node_id, timestamp, prev_node, rand_nums, d_walk_nodes, walk_len); \
+            d_result, d_graph, node_id, timestamp, prev_node, rand_nums); \
         CUDA_KERNEL_CHECK("After get_node_edge_at_kernel execution"); \
         break;
 
@@ -447,18 +445,8 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
     #ifdef HAS_CUDA
     if (graph->use_gpu) {
         Edge* d_result = nullptr;
-        int* d_walk_nodes = nullptr;
 
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(Edge)));
-
-        if (walk_len > 0) {
-            CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_walk_nodes, static_cast<size_t>(walk_len) * sizeof(int)));
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(
-                d_walk_nodes,
-                walk_nodes.data(),
-                static_cast<size_t>(walk_len) * sizeof(int),
-                cudaMemcpyHostToDevice));
-        }
 
         TemporalGraphStore* d_graph = temporal_graph::to_device_ptr(graph);
 
@@ -478,9 +466,6 @@ size_t TemporalGraph::count_node_timestamps_greater_than(int node_id, int64_t ti
 
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(&result, d_result, sizeof(Edge), cudaMemcpyDeviceToHost));
 
-        if (d_walk_nodes != nullptr) {
-            CUDA_CHECK_AND_CLEAR(cudaFree(d_walk_nodes));
-        }
         CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
         temporal_graph::free_device_pointers(d_graph);
     }

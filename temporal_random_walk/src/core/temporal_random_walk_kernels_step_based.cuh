@@ -46,9 +46,7 @@ namespace temporal_random_walk {
                 -1, // timestamp
                 -1,
                 rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1),
-                walk_set->nodes + walk_idx * max_walk_len,
-                walk_set->walk_lens[walk_idx] + 1);
+                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1));
         }
 
         if (start_edge.i == -1) {
@@ -113,9 +111,7 @@ namespace temporal_random_walk {
                 last_ts,
                 prev_node,
                 rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1),
-                walk_set->nodes + walk_idx * max_walk_len,
-                walk_set->walk_lens[walk_idx]);
+                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1));
 
         if (next_edge.ts == -1) {
             return;
