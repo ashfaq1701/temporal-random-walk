@@ -328,21 +328,21 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 );
 
                 py::object edge_features_array = py::none();
-                if (walks_with_edge_features.feature_dim > 0 && walks_with_edge_features.walk_edge_features != nullptr) {
+                if (walks_with_edge_features.feature_dim > 0 && walks_with_edge_features.walk_edge_features) {
                     const auto num_walks = static_cast<ssize_t>(walk_set.num_walks);
                     const ssize_t edges_per_walk = static_cast<ssize_t>(std::max(0, max_walk_len - 1));
                     const auto feature_dim = static_cast<ssize_t>(walks_with_edge_features.feature_dim);
 
+                    float* const released_features = walks_with_edge_features.walk_edge_features.release();
                     edge_features_array = py::array_t<float>(
                         py::array::ShapeContainer{num_walks, edges_per_walk, feature_dim},
                         py::array::StridesContainer{
                             static_cast<ssize_t>(sizeof(float) * edges_per_walk * feature_dim),
                             static_cast<ssize_t>(sizeof(float) * feature_dim),
                             static_cast<ssize_t>(sizeof(float))},
-                        walks_with_edge_features.walk_edge_features,
-                        py::capsule(walks_with_edge_features.walk_edge_features, [](void* p) { std::free(p); })
+                        released_features,
+                        py::capsule(released_features, [](void* p) { std::free(p); })
                     );
-                    walks_with_edge_features.walk_edge_features = nullptr;
                 }
 
                 walk_set.owns_data = false;
@@ -425,21 +425,21 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 );
 
                 py::object edge_features_array = py::none();
-                if (walks_with_edge_features.feature_dim > 0 && walks_with_edge_features.walk_edge_features != nullptr) {
+                if (walks_with_edge_features.feature_dim > 0 && walks_with_edge_features.walk_edge_features) {
                     const auto num_walks = static_cast<ssize_t>(walk_set.num_walks);
                     const ssize_t edges_per_walk = static_cast<ssize_t>(std::max(0, max_walk_len - 1));
                     const auto feature_dim = static_cast<ssize_t>(walks_with_edge_features.feature_dim);
 
+                    float* const released_features = walks_with_edge_features.walk_edge_features.release();
                     edge_features_array = py::array_t<float>(
                         py::array::ShapeContainer{num_walks, edges_per_walk, feature_dim},
                         py::array::StridesContainer{
                             static_cast<ssize_t>(sizeof(float) * edges_per_walk * feature_dim),
                             static_cast<ssize_t>(sizeof(float) * feature_dim),
                             static_cast<ssize_t>(sizeof(float))},
-                        walks_with_edge_features.walk_edge_features,
-                        py::capsule(walks_with_edge_features.walk_edge_features, [](void* p) { std::free(p); })
+                        released_features,
+                        py::capsule(released_features, [](void* p) { std::free(p); })
                     );
-                    walks_with_edge_features.walk_edge_features = nullptr;
                 }
 
                 walk_set.owns_data = false;
@@ -527,21 +527,21 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 );
 
                 py::object edge_features_array = py::none();
-                if (walks_with_edge_features.feature_dim > 0 && walks_with_edge_features.walk_edge_features != nullptr) {
+                if (walks_with_edge_features.feature_dim > 0 && walks_with_edge_features.walk_edge_features) {
                     const auto num_walks = static_cast<ssize_t>(walk_set.num_walks);
                     const ssize_t edges_per_walk = static_cast<ssize_t>(std::max(0, max_walk_len - 1));
                     const auto feature_dim = static_cast<ssize_t>(walks_with_edge_features.feature_dim);
 
+                    float* const released_features = walks_with_edge_features.walk_edge_features.release();
                     edge_features_array = py::array_t<float>(
                         py::array::ShapeContainer{num_walks, edges_per_walk, feature_dim},
                         py::array::StridesContainer{
                             static_cast<ssize_t>(sizeof(float) * edges_per_walk * feature_dim),
                             static_cast<ssize_t>(sizeof(float) * feature_dim),
                             static_cast<ssize_t>(sizeof(float))},
-                        walks_with_edge_features.walk_edge_features,
-                        py::capsule(walks_with_edge_features.walk_edge_features, [](void* p) { std::free(p); })
+                        released_features,
+                        py::capsule(released_features, [](void* p) { std::free(p); })
                     );
-                    walks_with_edge_features.walk_edge_features = nullptr;
                 }
 
                 walk_set.owns_data = false;

@@ -96,7 +96,7 @@ TYPED_TEST(TemporalWalkTestWithEdgeFeatures, ReturnsFeatureMetadata) {
         MAX_WALK_LEN, &linear_picker_type, 20);
 
     EXPECT_EQ(walks.feature_dim, static_cast<int>(this->feature_dim));
-    EXPECT_NE(walks.walk_edge_features, nullptr);
+    EXPECT_NE(walks.walk_edge_features.data(), nullptr);
 }
 
 TYPED_TEST(TemporalWalkTestWithEdgeFeatures, PopulatesWalkEdgeFeaturesForTraversedEdges) {
@@ -128,7 +128,7 @@ TYPED_TEST(TemporalWalkTestWithEdgeFeatures, PopulatesWalkEdgeFeaturesForTravers
             ASSERT_NE(it, this->expected_feature_by_edge.end())
                 << "Traversed edge missing in expected-feature map";
 
-            const float* sampled = walks.walk_edge_features + (edge_slot * this->feature_dim);
+            const float* sampled = walks.walk_edge_features.data() + (edge_slot * this->feature_dim);
             EXPECT_FLOAT_EQ(sampled[0], it->second[0]);
             EXPECT_FLOAT_EQ(sampled[1], it->second[1]);
             EXPECT_FLOAT_EQ(sampled[2], it->second[2]);
@@ -149,7 +149,7 @@ TYPED_TEST(TemporalWalkTestWithEdgeFeatures, KeepsUnusedEdgeSlotsAsEmptyAndZeroe
             const size_t edge_slot = this->edge_slot_index(walks, walk_idx, step_idx);
             EXPECT_EQ(walk_set.edge_ids[edge_slot], EMPTY_EDGE_ID);
 
-            const float* sampled = walks.walk_edge_features + (edge_slot * this->feature_dim);
+            const float* sampled = walks.walk_edge_features.data() + (edge_slot * this->feature_dim);
             EXPECT_FLOAT_EQ(sampled[0], 0.0f);
             EXPECT_FLOAT_EQ(sampled[1], 0.0f);
             EXPECT_FLOAT_EQ(sampled[2], 0.0f);

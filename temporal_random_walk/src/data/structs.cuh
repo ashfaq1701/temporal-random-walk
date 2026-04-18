@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstring>
 #include <utility>
+#include "../common/cuda_buffer.cuh"
 #include "../common/memory.cuh"
 #include "../common/macros.cuh"
 #include "walk_set/walk_set.cuh"
@@ -109,11 +110,11 @@ struct MemoryView {
 
 struct WalksWithEdgeFeatures {
     WalkSet walk_set;
-    float* walk_edge_features;
+    CudaBuffer<float> walk_edge_features;
     int feature_dim;
 
     HOST WalksWithEdgeFeatures(WalkSet walk_set, const int feature_dim)
-        : walk_set(std::move(walk_set)), walk_edge_features(nullptr), feature_dim(feature_dim) {
+        : walk_set(std::move(walk_set)), feature_dim(feature_dim) {
         if (feature_dim <= 0) {
             return;
         }
@@ -123,13 +124,14 @@ struct WalksWithEdgeFeatures {
             return;
         }
 
-        allocate_memory(&walk_edge_features, walk_edge_features_size, false);
-        std::memset(walk_edge_features, 0, walk_edge_features_size * sizeof(float));
+        walk_edge_features = CudaBuffer<float>(walk_edge_features_size, false);
+        std::memset(walk_edge_features.data(), 0, walk_edge_features_size * sizeof(float));
     }
 
-    HOST ~WalksWithEdgeFeatures() {
-        clear_memory(&walk_edge_features, false);
-    }
+    WalksWithEdgeFeatures(const WalksWithEdgeFeatures&) = delete;
+    WalksWithEdgeFeatures& operator=(const WalksWithEdgeFeatures&) = delete;
+    HOST WalksWithEdgeFeatures(WalksWithEdgeFeatures&&) noexcept = default;
+    HOST WalksWithEdgeFeatures& operator=(WalksWithEdgeFeatures&&) noexcept = default;
 
     HOST size_t size() const {
         return walk_set.size();
@@ -148,6 +150,11 @@ struct WalksWithEdgeFeatures {
             return;
         }
 
+        float* const dst_base = walk_edge_features.data();
+        if (dst_base == nullptr) {
+            return;
+        }
+
         const auto feature_dim_size_t = static_cast<size_t>(feature_dim);
         const size_t walk_edges_count = walk_set.edge_ids_size;
 
@@ -158,7 +165,7 @@ struct WalksWithEdgeFeatures {
             }
 
             const auto edge_id = static_cast<size_t>(walk_set.edge_ids[i]);
-            float* dst = walk_edge_features + (i * feature_dim_size_t);
+            float* dst = dst_base + (i * feature_dim_size_t);
             const float* src = edge_features + (edge_id * feature_dim_size_t);
             std::memcpy(dst, src, feature_dim_size_t * sizeof(float));
         }

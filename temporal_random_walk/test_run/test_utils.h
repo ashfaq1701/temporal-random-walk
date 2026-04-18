@@ -46,14 +46,15 @@ inline void print_temporal_random_walks_with_times_and_weights(
         }
 
         std::cout << "Weights: [";
-        if (feature_dim > 0 && walks_with_edge_features.walk_edge_features != nullptr) {
+        const float* const walk_edge_features_data = walks_with_edge_features.walk_edge_features.data();
+        if (feature_dim > 0 && walk_edge_features_data != nullptr) {
             for (size_t hop = 1; hop < walk_len; ++hop) {
                 const size_t edge_offset = edge_base + (hop - 1);
                 std::cout << "[";
                 for (int feat_idx = 0; feat_idx < feature_dim; ++feat_idx) {
                     const size_t feature_offset = edge_offset * static_cast<size_t>(feature_dim) +
                                                   static_cast<size_t>(feat_idx);
-                    std::cout << walks_with_edge_features.walk_edge_features[feature_offset];
+                    std::cout << walk_edge_features_data[feature_offset];
                     if (feat_idx + 1 < feature_dim) {
                         std::cout << ", ";
                     }
