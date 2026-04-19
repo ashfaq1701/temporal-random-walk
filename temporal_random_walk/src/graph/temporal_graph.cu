@@ -713,6 +713,76 @@ HOST void temporal_graph::free_device_pointers(TemporalGraphStore *d_graph) {
     clear_memory(&d_graph, true);
 }
 
+HOST TemporalGraphView temporal_graph::make_view_from_old_store(
+    const TemporalGraphStore* graph) {
+    TemporalGraphView v{};
+
+    v.is_directed       = graph->is_directed;
+    v.latest_timestamp  = graph->latest_timestamp;
+    v.inv_p             = graph->inv_p;
+    v.inv_q             = graph->inv_q;
+
+    const EdgeDataStore* e = graph->edge_data;
+    v.sources           = e->sources;
+    v.targets           = e->targets;
+    v.timestamps        = e->timestamps;
+    v.num_edges         = e->timestamps_size;
+
+    v.timestamp_group_offsets = e->timestamp_group_offsets;
+    v.unique_timestamps       = e->unique_timestamps;
+    v.num_groups              = e->unique_timestamps_size;
+
+    v.active_node_ids      = e->active_node_ids;
+    v.active_node_ids_size = e->active_node_ids_size;
+    v.max_node_id          = e->max_node_id;
+
+    v.forward_cumulative_weights_exponential =
+        e->forward_cumulative_weights_exponential;
+    v.forward_cumulative_weights_exponential_size =
+        e->forward_cumulative_weights_exponential_size;
+    v.backward_cumulative_weights_exponential =
+        e->backward_cumulative_weights_exponential;
+    v.backward_cumulative_weights_exponential_size =
+        e->backward_cumulative_weights_exponential_size;
+
+    v.node_adj_offsets        = e->node_adj_offsets;
+    v.node_adj_offsets_size   = e->node_adj_offsets_size;
+    v.node_adj_neighbors      = e->node_adj_neighbors;
+    v.node_adj_neighbors_size = e->node_adj_neighbors_size;
+
+    const NodeEdgeIndexStore* n = graph->node_edge_index;
+    v.node_group_outbound_offsets = n->node_group_outbound_offsets;
+    v.node_group_inbound_offsets  = n->node_group_inbound_offsets;
+
+    v.node_ts_sorted_outbound_indices = n->node_ts_sorted_outbound_indices;
+    v.node_ts_sorted_outbound_indices_size =
+        n->node_ts_sorted_outbound_indices_size;
+    v.node_ts_sorted_inbound_indices  = n->node_ts_sorted_inbound_indices;
+    v.node_ts_sorted_inbound_indices_size =
+        n->node_ts_sorted_inbound_indices_size;
+
+    v.count_ts_group_per_node_outbound = n->count_ts_group_per_node_outbound;
+    v.count_ts_group_per_node_inbound  = n->count_ts_group_per_node_inbound;
+
+    v.node_ts_group_outbound_offsets = n->node_ts_group_outbound_offsets;
+    v.node_ts_group_inbound_offsets  = n->node_ts_group_inbound_offsets;
+
+    v.outbound_forward_cumulative_weights_exponential =
+        n->outbound_forward_cumulative_weights_exponential;
+    v.outbound_forward_cumulative_weights_exponential_size =
+        n->outbound_forward_cumulative_weights_exponential_size;
+    v.outbound_backward_cumulative_weights_exponential =
+        n->outbound_backward_cumulative_weights_exponential;
+    v.outbound_backward_cumulative_weights_exponential_size =
+        n->outbound_backward_cumulative_weights_exponential_size;
+    v.inbound_backward_cumulative_weights_exponential =
+        n->inbound_backward_cumulative_weights_exponential;
+    v.inbound_backward_cumulative_weights_exponential_size =
+        n->inbound_backward_cumulative_weights_exponential_size;
+
+    return v;
+}
+
 #endif
 
 HOST size_t temporal_graph::get_memory_used(TemporalGraphStore* graph) {

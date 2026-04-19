@@ -343,21 +343,60 @@ namespace temporal_graph {
 
     #ifdef HAS_CUDA
 
+    // -------------------------------------------------------------------------
+    // Inline view-based helpers (device-only).
+    // Mirror edge_data::find_group_after_timestamp_device,
+    // edge_data::find_group_before_timestamp_device,
+    // edge_data::get_timestamp_group_range, edge_data::is_node_active_device —
+    // but sourced from TemporalGraphView instead of EdgeDataStore.
+    // -------------------------------------------------------------------------
+    DEVICE inline size_t find_group_after_timestamp(
+        const TemporalGraphView& view, const int64_t timestamp) {
+        if (view.num_groups == 0) return 0;
+        const int64_t* begin = view.unique_timestamps;
+        const int64_t* end   = begin + view.num_groups;
+        const auto it = cuda::std::upper_bound(begin, end, timestamp);
+        return it - begin;
+    }
+
+    DEVICE inline size_t find_group_before_timestamp(
+        const TemporalGraphView& view, const int64_t timestamp) {
+        if (view.num_groups == 0) return 0;
+        const int64_t* begin = view.unique_timestamps;
+        const int64_t* end   = begin + view.num_groups;
+        const auto it = cuda::std::lower_bound(begin, end, timestamp);
+        return (it - begin) - 1;
+    }
+
+    DEVICE inline SizeRange get_timestamp_group_range(
+        const TemporalGraphView& view, size_t group_idx) {
+        if (group_idx >= view.num_groups) return SizeRange{0, 0};
+        return SizeRange{view.timestamp_group_offsets[group_idx],
+                         view.timestamp_group_offsets[group_idx + 1]};
+    }
+
+    DEVICE inline bool is_node_active(const TemporalGraphView& view,
+                                       const int node_id) {
+        return node_id >= 0
+            && static_cast<size_t>(node_id) < view.active_node_ids_size
+            && view.active_node_ids[node_id] == 1;
+    }
+
     template<bool Forward, RandomPickerType PickerType>
     DEVICE InternalEdge get_edge_at_device(
-        const TemporalGraphStore *graph,
+        const TemporalGraphView& view,
         const int64_t timestamp,
         const double group_selector_rand_num,
         const double edge_selector_rand_num) {
-        if (edge_data::empty(graph->edge_data)) return InternalEdge{-1, -1, -1, -1};
+        if (view.num_edges == 0) return InternalEdge{-1, -1, -1, -1};
 
-        const size_t num_groups = edge_data::get_timestamp_group_count(graph->edge_data);
+        const size_t num_groups = view.num_groups;
         if (num_groups == 0) return InternalEdge{-1, -1, -1, -1};
 
         long group_idx;
         if (timestamp != -1) {
             if constexpr (Forward) {
-                const size_t first_group = edge_data::find_group_after_timestamp_device(graph->edge_data, timestamp);
+                const size_t first_group = find_group_after_timestamp(view, timestamp);
                 const size_t available_groups = num_groups - first_group;
                 if (available_groups == 0) return InternalEdge{-1, -1, -1, -1};
 
@@ -372,13 +411,13 @@ namespace temporal_graph {
                 } else {
                     group_idx = random_pickers::pick_using_weight_based_picker_device(
                         PickerType,
-                        graph->edge_data->forward_cumulative_weights_exponential,
-                        graph->edge_data->forward_cumulative_weights_exponential_size,
+                        view.forward_cumulative_weights_exponential,
+                        view.forward_cumulative_weights_exponential_size,
                         first_group, num_groups, group_selector_rand_num);
                     if (group_idx == -1) return InternalEdge{-1, -1, -1, -1};
                 }
             } else {
-                const size_t last_group = edge_data::find_group_before_timestamp_device(graph->edge_data, timestamp);
+                const size_t last_group = find_group_before_timestamp(view, timestamp);
                 if (last_group == static_cast<size_t>(-1)) return InternalEdge{-1, -1, -1, -1};
 
                 const size_t available_groups = last_group + 1;
@@ -393,8 +432,8 @@ namespace temporal_graph {
                 } else {
                     group_idx = random_pickers::pick_using_weight_based_picker_device(
                         PickerType,
-                        graph->edge_data->backward_cumulative_weights_exponential,
-                        graph->edge_data->backward_cumulative_weights_exponential_size,
+                        view.backward_cumulative_weights_exponential,
+                        view.backward_cumulative_weights_exponential_size,
                         0, last_group + 1, group_selector_rand_num);
                     if (group_idx == -1) return InternalEdge{-1, -1, -1, -1};
                 }
@@ -412,15 +451,15 @@ namespace temporal_graph {
                 if constexpr (Forward) {
                     group_idx = random_pickers::pick_using_weight_based_picker_device(
                         PickerType,
-                        graph->edge_data->forward_cumulative_weights_exponential,
-                        graph->edge_data->forward_cumulative_weights_exponential_size,
+                        view.forward_cumulative_weights_exponential,
+                        view.forward_cumulative_weights_exponential_size,
                         0, num_groups, group_selector_rand_num);
                     if (group_idx == -1) return InternalEdge{-1, -1, -1, -1};
                 } else {
                     group_idx = random_pickers::pick_using_weight_based_picker_device(
                         PickerType,
-                        graph->edge_data->backward_cumulative_weights_exponential,
-                        graph->edge_data->backward_cumulative_weights_exponential_size,
+                        view.backward_cumulative_weights_exponential,
+                        view.backward_cumulative_weights_exponential_size,
                         0, num_groups, group_selector_rand_num);
                     if (group_idx == -1) return InternalEdge{-1, -1, -1, -1};
                 }
@@ -428,7 +467,7 @@ namespace temporal_graph {
         }
 
         // Get selected group's boundaries
-        const SizeRange group_range = edge_data::get_timestamp_group_range(graph->edge_data, group_idx);
+        const SizeRange group_range = get_timestamp_group_range(view, group_idx);
         if (group_range.from == group_range.to) {
             return InternalEdge{-1, -1, -1, -1};
         }
@@ -440,74 +479,74 @@ namespace temporal_graph {
                                       edge_selector_rand_num);
 
         return InternalEdge{
-            graph->edge_data->sources[random_idx],
-            graph->edge_data->targets[random_idx],
-            graph->edge_data->timestamps[random_idx],
+            view.sources[random_idx],
+            view.targets[random_idx],
+            view.timestamps[random_idx],
             static_cast<int64_t>(random_idx),
         };
     }
 
     template<bool Forward, RandomPickerType PickerType, bool IsDirected>
     DEVICE InternalEdge get_node_edge_at_device(
-        const TemporalGraphStore *graph,
+        const TemporalGraphView& view,
         const int node_id,
         const int64_t timestamp,
         const int prev_node,
         const double group_selector_rand_num,
         const double edge_selector_rand_num) {
-        if (!edge_data::is_node_active_device(graph->edge_data, node_id)) {
+        if (!is_node_active(view, node_id)) {
             return InternalEdge{-1, -1, -1, -1};
         }
 
         // Direction-dependent index structures
         const size_t *count_ts_group_per_node =
                 Forward
-                    ? graph->node_edge_index->count_ts_group_per_node_outbound
+                    ? view.count_ts_group_per_node_outbound
                     : (IsDirected
-                           ? graph->node_edge_index->count_ts_group_per_node_inbound
-                           : graph->node_edge_index->count_ts_group_per_node_outbound);
+                           ? view.count_ts_group_per_node_inbound
+                           : view.count_ts_group_per_node_outbound);
 
         const size_t *node_ts_groups_offsets =
                 Forward
-                    ? graph->node_edge_index->node_ts_group_outbound_offsets
+                    ? view.node_ts_group_outbound_offsets
                     : (IsDirected
-                           ? graph->node_edge_index->node_ts_group_inbound_offsets
-                           : graph->node_edge_index->node_ts_group_outbound_offsets);
+                           ? view.node_ts_group_inbound_offsets
+                           : view.node_ts_group_outbound_offsets);
 
         const size_t *node_ts_sorted_indices =
                 Forward
-                    ? graph->node_edge_index->node_ts_sorted_outbound_indices
+                    ? view.node_ts_sorted_outbound_indices
                     : (IsDirected
-                           ? graph->node_edge_index->node_ts_sorted_inbound_indices
-                           : graph->node_edge_index->node_ts_sorted_outbound_indices);
+                           ? view.node_ts_sorted_inbound_indices
+                           : view.node_ts_sorted_outbound_indices);
 
         const size_t node_ts_sorted_indices_size =
                 Forward
-                    ? graph->node_edge_index->node_ts_sorted_outbound_indices_size
+                    ? view.node_ts_sorted_outbound_indices_size
                     : (IsDirected
-                           ? graph->node_edge_index->node_ts_sorted_inbound_indices_size
-                           : graph->node_edge_index->node_ts_sorted_outbound_indices_size);
+                           ? view.node_ts_sorted_inbound_indices_size
+                           : view.node_ts_sorted_outbound_indices_size);
 
         const size_t *node_edge_offsets =
                 Forward
-                    ? graph->node_edge_index->node_group_outbound_offsets
+                    ? view.node_group_outbound_offsets
                     : (IsDirected
-                           ? graph->node_edge_index->node_group_inbound_offsets
-                           : graph->node_edge_index->node_group_outbound_offsets);
+                           ? view.node_group_inbound_offsets
+                           : view.node_group_outbound_offsets);
 
         const double *weights =
                 Forward
-                    ? graph->node_edge_index->outbound_forward_cumulative_weights_exponential
+                    ? view.outbound_forward_cumulative_weights_exponential
                     : (IsDirected
-                           ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential
-                           : graph->node_edge_index->outbound_backward_cumulative_weights_exponential);
+                           ? view.inbound_backward_cumulative_weights_exponential
+                           : view.outbound_backward_cumulative_weights_exponential);
 
         const size_t weights_size =
                 Forward
-                    ? graph->node_edge_index->outbound_forward_cumulative_weights_exponential_size
+                    ? view.outbound_forward_cumulative_weights_exponential_size
                     : (IsDirected
-                           ? graph->node_edge_index->inbound_backward_cumulative_weights_exponential_size
-                           : graph->node_edge_index->outbound_backward_cumulative_weights_exponential_size);
+                           ? view.inbound_backward_cumulative_weights_exponential_size
+                           : view.outbound_backward_cumulative_weights_exponential_size);
 
         // Node's full timestamp-group range
         const size_t node_group_begin = count_ts_group_per_node[node_id];
@@ -522,13 +561,14 @@ namespace temporal_graph {
         size_t valid_end = node_group_end;
 
         if (timestamp != -1) {
+            const int64_t* view_timestamps = view.timestamps;
             if constexpr (Forward) {
                 const auto it = cuda::std::upper_bound(
                     node_ts_groups_offsets + static_cast<long>(node_group_begin),
                     node_ts_groups_offsets + static_cast<long>(node_group_end),
                     timestamp,
-                    [graph, node_ts_sorted_indices](const int64_t ts, const size_t pos) {
-                        return ts < graph->edge_data->timestamps[node_ts_sorted_indices[pos]];
+                    [view_timestamps, node_ts_sorted_indices](const int64_t ts, const size_t pos) {
+                        return ts < view_timestamps[node_ts_sorted_indices[pos]];
                     });
 
                 valid_begin = static_cast<size_t>(it - node_ts_groups_offsets);
@@ -538,8 +578,8 @@ namespace temporal_graph {
                     node_ts_groups_offsets + static_cast<long>(node_group_begin),
                     node_ts_groups_offsets + static_cast<long>(node_group_end),
                     timestamp,
-                    [graph, node_ts_sorted_indices](const size_t pos, const int64_t ts) {
-                        return graph->edge_data->timestamps[node_ts_sorted_indices[pos]] < ts;
+                    [view_timestamps, node_ts_sorted_indices](const size_t pos, const int64_t ts) {
+                        return view_timestamps[node_ts_sorted_indices[pos]] < ts;
                     });
 
                 valid_begin = node_group_begin;
@@ -583,7 +623,7 @@ namespace temporal_graph {
                         group_selector_rand_num);
                 } else {
                     group_pos = pick_random_temporal_node2vec_device<Forward, IsDirected>(
-                        graph,
+                        view,
                         node_id,
                         prev_node,
                         valid_begin,
@@ -634,7 +674,7 @@ namespace temporal_graph {
                         edge_selector_rand_num)]);
             } else {
                 edge_idx = pick_random_temporal_node2vec_edge_device<Forward, IsDirected>(
-                    graph,
+                    view,
                     node_id,
                     prev_node,
                     valid_edge_start,
@@ -655,9 +695,9 @@ namespace temporal_graph {
         }
 
         return InternalEdge{
-            graph->edge_data->sources[edge_idx],
-            graph->edge_data->targets[edge_idx],
-            graph->edge_data->timestamps[edge_idx],
+            view.sources[edge_idx],
+            view.targets[edge_idx],
+            view.timestamps[edge_idx],
             edge_idx
         };
     }
