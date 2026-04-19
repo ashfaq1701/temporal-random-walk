@@ -2,10 +2,10 @@
 #define TEMPORAL_GRAPH_H
 
 #include <vector>
-#include "../stores/temporal_graph.cuh"
+#include "../graph/temporal_graph.cuh"
 #include "../data/structs.cuh"
 #include "../data/enums.cuh"
-#include "../stores/edge_selectors.cuh"
+#include "../graph/edge_selectors.cuh"
 #include "../common/const.cuh"
 
 #ifdef HAS_CUDA

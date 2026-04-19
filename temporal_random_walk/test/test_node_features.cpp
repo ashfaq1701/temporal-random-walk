@@ -3,7 +3,7 @@
 #include <vector>
 
 #include "../src/proxies/NodeFeatures.cuh"
-#include "../src/stores/edge_data.cuh"
+#include "../src/graph/edge_data.cuh"
 
 TEST(NodeFeaturesTest, SetNodeFeaturesPreservesOldDataOnGrow) {
     EdgeDataStore edge_data(false, false, false);

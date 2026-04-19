@@ -7,7 +7,7 @@
 #include "../common/macros.cuh"
 #include "../data/structs.cuh"
 #include "../data/walk_set/walk_set.cuh"
-#include "../stores/temporal_graph.cuh"
+#include "../graph/temporal_graph.cuh"
 #include "../utils/utils.cuh"
 #include "../utils/random.cuh"
 #include "../common/random_gen.cuh"

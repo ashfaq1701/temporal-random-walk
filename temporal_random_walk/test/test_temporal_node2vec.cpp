@@ -4,7 +4,7 @@
 #include <algorithm>
 
 #include "../src/proxies/TemporalGraph.cuh"
-#include "../src/stores/temporal_node2vec_helpers.cuh"
+#include "../src/graph/temporal_node2vec_helpers.cuh"
 #include "../src/proxies/EdgeData.cuh"
 
 namespace {

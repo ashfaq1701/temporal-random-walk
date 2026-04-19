@@ -1,6 +1,6 @@
 #include "NodeEdgeIndex.cuh"
 
-#include "../stores/node_edge_index.cuh"
+#include "../graph/node_edge_index.cuh"
 #include "../data/structs.cuh"
 #include "../common/error_handlers.cuh"
 

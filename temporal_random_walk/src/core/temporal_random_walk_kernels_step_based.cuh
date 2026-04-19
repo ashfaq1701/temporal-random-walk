@@ -2,11 +2,11 @@
 #define TEMPORAL_RANDOM_WALK_KERNELS_STEP_BASED_CUH
 
 #include "../data/walk_set/walk_set.cuh"
-#include "../stores/temporal_graph.cuh"
+#include "../graph/temporal_graph.cuh"
 #include "../utils/random.cuh"
 #include "../utils/utils.cuh"
 #include "helpers.cuh"
-#include "../stores/edge_selectors.cuh"
+#include "../graph/edge_selectors.cuh"
 
 namespace temporal_random_walk {
 
