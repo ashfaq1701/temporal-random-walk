@@ -22,6 +22,39 @@
 #include "../common/memory.cuh"
 #include "../common/cuda_config.cuh"
 
+// Non-owning device-facing view over EdgeDataStore. Carries only the fields
+// that host/device code reads through raw pointers. Populated on the host by
+// edge_data::to_device_ptr and cudaMemcpy'd to a device allocation for kernel
+// consumption. Not yet wired into the edge_data:: function signatures; see
+// step B.2.
+struct EdgeDataView {
+    int* sources = nullptr;
+    size_t sources_size = 0;
+
+    int* targets = nullptr;
+    size_t targets_size = 0;
+
+    int64_t* timestamps = nullptr;
+    size_t timestamps_size = 0;
+
+    int* active_node_ids = nullptr;
+    size_t active_node_ids_size = 0;
+
+    size_t* timestamp_group_offsets = nullptr;
+    size_t timestamp_group_offsets_size = 0;
+
+    int64_t* unique_timestamps = nullptr;
+    size_t unique_timestamps_size = 0;
+
+    double* forward_cumulative_weights_exponential = nullptr;
+    size_t forward_cumulative_weights_exponential_size = 0;
+
+    double* backward_cumulative_weights_exponential = nullptr;
+    size_t backward_cumulative_weights_exponential_size = 0;
+
+    int max_node_id = -1;
+};
+
 struct EdgeDataStore {
     bool use_gpu;
     bool owns_data;

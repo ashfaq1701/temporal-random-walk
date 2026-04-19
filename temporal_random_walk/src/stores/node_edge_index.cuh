@@ -10,6 +10,45 @@
 
 #include "../common/memory.cuh"
 
+// Non-owning device-facing view over NodeEdgeIndexStore. Populated by
+// node_edge_index::to_device_ptr and cudaMemcpy'd to device memory for
+// kernel consumption. Not yet wired into the node_edge_index:: function
+// signatures; see step B.3.
+struct NodeEdgeIndexView {
+    size_t* node_group_outbound_offsets = nullptr;
+    size_t node_group_outbound_offsets_size = 0;
+
+    size_t* node_group_inbound_offsets = nullptr;
+    size_t node_group_inbound_offsets_size = 0;
+
+    size_t* node_ts_sorted_outbound_indices = nullptr;
+    size_t node_ts_sorted_outbound_indices_size = 0;
+
+    size_t* node_ts_sorted_inbound_indices = nullptr;
+    size_t node_ts_sorted_inbound_indices_size = 0;
+
+    size_t* count_ts_group_per_node_outbound = nullptr;
+    size_t count_ts_group_per_node_outbound_size = 0;
+
+    size_t* count_ts_group_per_node_inbound = nullptr;
+    size_t count_ts_group_per_node_inbound_size = 0;
+
+    size_t* node_ts_group_outbound_offsets = nullptr;
+    size_t node_ts_group_outbound_offsets_size = 0;
+
+    size_t* node_ts_group_inbound_offsets = nullptr;
+    size_t node_ts_group_inbound_offsets_size = 0;
+
+    double* outbound_forward_cumulative_weights_exponential = nullptr;
+    size_t outbound_forward_cumulative_weights_exponential_size = 0;
+
+    double* outbound_backward_cumulative_weights_exponential = nullptr;
+    size_t outbound_backward_cumulative_weights_exponential_size = 0;
+
+    double* inbound_backward_cumulative_weights_exponential = nullptr;
+    size_t inbound_backward_cumulative_weights_exponential_size = 0;
+};
+
 struct NodeEdgeIndexStore {
     bool use_gpu;
     bool owns_data;

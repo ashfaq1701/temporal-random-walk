@@ -13,6 +13,21 @@
 #include "../common/random_gen.cuh"
 #include "../data/enums.cuh"
 
+// Non-owning device-facing view over TemporalRandomWalkStore. The
+// temporal_graph member points at a device-resident TemporalGraphView built
+// by temporal_graph::to_device_ptr. Not yet wired into the
+// temporal_random_walk:: function signatures; see step B.5.
+struct TemporalRandomWalkView {
+    bool is_directed = false;
+    int walk_padding_value = 0;
+    uint64_t global_seed = 0;
+    bool shuffle_walk_order = false;
+    double node2vec_p = 1.0;
+    double node2vec_q = 1.0;
+
+    TemporalGraphView* temporal_graph = nullptr;
+};
+
 struct TemporalRandomWalkStore {
     bool is_directed;
     bool use_gpu;

@@ -5,6 +5,20 @@
 #include "node_edge_index.cuh"
 #include "../common/const.cuh"
 
+// Non-owning device-facing view over TemporalGraphStore. The edge_data and
+// node_edge_index members point at device-resident view copies built by
+// edge_data::to_device_ptr / node_edge_index::to_device_ptr. Not yet wired
+// into temporal_graph:: function signatures; see step B.4.
+struct TemporalGraphView {
+    bool is_directed = false;
+    double inv_p = 1.0;
+    double inv_q = 1.0;
+    int64_t latest_timestamp = 0;
+
+    EdgeDataView* edge_data = nullptr;
+    NodeEdgeIndexView* node_edge_index = nullptr;
+};
+
 struct TemporalGraphStore {
     bool is_directed;
     bool use_gpu;
