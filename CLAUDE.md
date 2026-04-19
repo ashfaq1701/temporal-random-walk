@@ -21,33 +21,45 @@ build_scripts/
 py_tests/           Python-level integration tests
 ```
 
-## Build
+## Build + test workflow
 
-CUDA toolkit, pybind11, OpenMP, TBB, and GTest are required. The Dockerfiles in `build_scripts/build_12_8/` are the canonical reference.
+**Run this full sequence before considering any change done.** All commands from the repo root.
 
-Basic configure + build:
+CUDA toolkit, pybind11, OpenMP, TBB, and GTest must be installed. The Dockerfiles in `build_scripts/build_12_8/` are the canonical reference for the exact toolchain.
+
+**1. Configure** (once per clean checkout, or after touching CMake files):
 
 ```
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+```
+
+Add `-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake` if GTest comes from vcpkg. Set `-DHAS_CUDA=OFF` only when deliberately testing the CPU-only fallback (e.g. under ASAN on a GPU-less box).
+
+**2. Build**:
+
+```
 cmake --build build -j
 ```
 
-Set `-DHAS_CUDA=OFF` to build the CPU-only fallback (used for ASAN runs on machines without a GPU).
+Re-run this after every edit. CMake rebuilds only touched translation units.
 
-Key targets:
-
-- `test_temporal_random_walk` — the unit test binary (in `build/temporal_random_walk/test/`).
-- `test_run_temporal_random_walk_2` — end-to-end benchmark (`test_run/`).
-- The pybind module — built by `setup.py` / `python -m build`, not by the bare `cmake` target.
-
-## Test
+**3. Run the unit tests under compute-sanitizer**:
 
 ```
-./build/temporal_random_walk/test/test_temporal_random_walk
+compute-sanitizer --tool memcheck ./build/temporal_random_walk/test/test_temporal_random_walk
 ```
 
-GPU tests require an actual NVIDIA GPU on the machine; CPU tests run anywhere. Python tests live in `py_tests/` and run under `pytest` after `pip install -e .`.
+**Success criteria — both must hold:**
+
+- `compute-sanitizer` footer reports `ERROR SUMMARY: 0 errors`. No leaks, no invalid accesses, no race conditions.
+- All gtest cases pass. Last lines show `[  PASSED  ] N tests.` with no `[  FAILED  ]` entries.
+
+If either check fails, investigate the root cause before committing. Do not commit a leak or a test regression to paper over later.
+
+### Other targets
+
+- `test_run_temporal_random_walk_2` and siblings — end-to-end benchmark binaries; they land in `build/bin/` per their CMakeLists override. For performance measurement, not correctness. Not part of the standard workflow.
+- pybind module — built by `setup.py bdist_wheel` / `python -m build`, not by the bare `cmake` target. Run `pytest py_tests/` after `pip install -e .` when touching the Python surface.
 
 ## Architectural patterns
 
@@ -75,7 +87,7 @@ GPU tests require an actual NVIDIA GPU on the machine; CPU tests run anywhere. P
 
 ## When verifying changes
 
-- Compile the full build before claiming success — type errors in `nvcc`-only code are invisible to plain `g++`.
-- Run `test_temporal_random_walk` (CPU paths) at minimum. GPU paths need a box with a CUDA GPU.
-- For Python-facing changes, run `py_tests/` with `pytest`.
-- Changes to `CudaBuffer<T>`, `DataBlock<T>`, `WalkSet`, or any `Store`'s destructor are high-blast-radius — re-run the full test suite, don't just compile.
+- Always run the full build + test + memcheck workflow above. "It compiles" is not sufficient.
+- Type errors in `nvcc`-only code are invisible to plain `g++` — do not rely on a stripped-down CPU compile as a shortcut.
+- For Python-facing changes, also run `py_tests/` with `pytest`.
+- Changes to `CudaBuffer<T>`, `DataBlock<T>`, `WalkSet`, or any `Store`'s destructor are high-blast-radius — the memcheck run is non-negotiable for these.
