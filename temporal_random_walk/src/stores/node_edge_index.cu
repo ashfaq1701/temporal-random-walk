@@ -836,18 +836,35 @@ HOST void node_edge_index::compute_node_group_offsets_cuda(
     int *src_ptr = edge_data->sources;
     int *tgt_ptr = edge_data->targets;
 
-    // Count edges per node using atomics
+    // Count edges per node using 64-bit atomics on the full size_t slot.
+    // Rationale: outbound_offsets_ptr / inbound_offsets_ptr are size_t (64-bit)
+    // arrays. The 32-bit reinterpret that used to live here silently overflowed
+    // for any node reaching 2^32 incident edges and was endian-dependent. CUDA
+    // provides atomicAdd on unsigned long long natively on all compute
+    // capabilities >= 3.5 (we target 75/80/86/89/90).
+    //
+    // sizeof(size_t) == sizeof(unsigned long long) on every CUDA-supported
+    // platform (64-bit host, little-endian). The static_assert below encodes
+    // that assumption so a future port on a platform where it fails to hold
+    // breaks at compile time rather than silently.
+    static_assert(sizeof(size_t) == sizeof(unsigned long long),
+                  "size_t must be 64-bit for compute_node_group_offsets_cuda's "
+                  "atomicAdd; revisit the cast if this platform differs.");
+
     auto counter_device_lambda = [
                 outbound_offsets_ptr, inbound_offsets_ptr,
                 src_ptr, tgt_ptr, is_directed] DEVICE (const size_t i) {
         const int src_idx = src_ptr[i];
         const int tgt_idx = tgt_ptr[i];
 
-        atomicAdd(reinterpret_cast<unsigned int *>(&outbound_offsets_ptr[src_idx + 1]), 1);
+        atomicAdd(reinterpret_cast<unsigned long long *>(&outbound_offsets_ptr[src_idx + 1]),
+                  static_cast<unsigned long long>(1));
         if (is_directed) {
-            atomicAdd(reinterpret_cast<unsigned int *>(&inbound_offsets_ptr[tgt_idx + 1]), 1);
+            atomicAdd(reinterpret_cast<unsigned long long *>(&inbound_offsets_ptr[tgt_idx + 1]),
+                      static_cast<unsigned long long>(1));
         } else {
-            atomicAdd(reinterpret_cast<unsigned int *>(&outbound_offsets_ptr[tgt_idx + 1]), 1);
+            atomicAdd(reinterpret_cast<unsigned long long *>(&outbound_offsets_ptr[tgt_idx + 1]),
+                      static_cast<unsigned long long>(1));
         }
     };
 

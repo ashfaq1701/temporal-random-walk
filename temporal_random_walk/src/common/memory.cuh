@@ -98,7 +98,7 @@ HOST void fill_memory(T* memory, size_t size, T value, bool use_gpu) {
         int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
 
         fill_kernel<<<blocksPerGrid, threadsPerBlock>>>(memory, size, d_value);
-        CUDA_KERNEL_CHECK("After fill_kernel execution");
+        CUDA_KERNEL_CHECK_SYNC("After fill_kernel execution");
 
         CUDA_CHECK_AND_CLEAR(cudaFree(d_value));
     }
