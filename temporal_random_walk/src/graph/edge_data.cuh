@@ -16,8 +16,11 @@
 #include <thrust/scan.h>
 #endif
 
+#include <vector>
+
 #include "../common/macros.cuh"
 #include "../data/structs.cuh"
+#include "../data/temporal_graph_data.cuh"
 #include "../common/error_handlers.cuh"
 #include "../common/memory.cuh"
 #include "../common/cuda_config.cuh"
@@ -102,15 +105,35 @@ struct EdgeDataStore {
 
 namespace edge_data {
     /**
+     * TEMPORARY — dies in task 5i when EdgeDataStore is deleted.
+     *
+     * Produces an EdgeDataStore whose pointers alias into a TemporalGraphData.
+     * Used so that new TemporalGraphData-taking overloads can delegate to
+     * the old EdgeDataStore-taking bodies during the gradual migration.
+     *
+     * The returned store sets owns_data = false so its destructor is a no-op.
+     * Do NOT call this on a TemporalGraphData that is being mutated concurrently.
+     */
+    HOST EdgeDataStore temporary_edge_data_store_view(const TemporalGraphData& data);
+
+    /**
      * Common Functions
      */
 
     HOST DEVICE size_t size(const EdgeDataStore *edge_data);
 
+    HOST size_t size(const TemporalGraphData& data);
+
     HOST void set_size(EdgeDataStore* edge_data, size_t size);
+
+    HOST void set_size(TemporalGraphData& data, size_t size);
 
     HOST DEVICE inline bool empty(const EdgeDataStore *edge_data) {
         return edge_data->timestamps_size == 0;
+    }
+
+    HOST inline bool empty(const TemporalGraphData& data) {
+        return data.timestamps.size() == 0;
     }
 
     HOST void add_edges(EdgeDataStore *edge_data, const int *sources, const int *targets, const int64_t *timestamps, size_t size);
@@ -124,7 +147,25 @@ namespace edge_data {
         const float *edge_features,
         size_t feature_dim);
 
+    HOST void add_edges(
+        TemporalGraphData& data,
+        const int *sources,
+        const int *targets,
+        const int64_t *timestamps,
+        size_t size);
+
+    HOST void add_edges(
+        TemporalGraphData& data,
+        const int *sources,
+        const int *targets,
+        const int64_t *timestamps,
+        size_t size,
+        const float *edge_features,
+        size_t feature_dim);
+
     HOST DataBlock<Edge> get_edges(const EdgeDataStore *edge_data);
+
+    HOST std::vector<Edge> get_edges(const TemporalGraphData& data);
 
     HOST DEVICE inline SizeRange get_timestamp_group_range(const EdgeDataStore *edge_data, const size_t group_idx) {
         if (group_idx >= edge_data->unique_timestamps_size) {
@@ -134,8 +175,21 @@ namespace edge_data {
         return SizeRange{edge_data->timestamp_group_offsets[group_idx], edge_data->timestamp_group_offsets[group_idx + 1]};
     }
 
+    HOST inline SizeRange get_timestamp_group_range(const TemporalGraphData& data, const size_t group_idx) {
+        if (group_idx >= data.unique_timestamps.size()) {
+            return SizeRange{0, 0};
+        }
+
+        const size_t* offsets = data.timestamp_group_offsets.data();
+        return SizeRange{offsets[group_idx], offsets[group_idx + 1]};
+    }
+
     HOST DEVICE inline size_t get_timestamp_group_count(const EdgeDataStore *edge_data) {
         return edge_data->unique_timestamps_size;
+    }
+
+    HOST inline size_t get_timestamp_group_count(const TemporalGraphData& data) {
+        return data.unique_timestamps.size();
     }
 
     HOST inline size_t find_group_after_timestamp(const EdgeDataStore *edge_data, const int64_t timestamp) {
@@ -149,12 +203,34 @@ namespace edge_data {
         return it - begin;
     }
 
+    HOST inline size_t find_group_after_timestamp(const TemporalGraphData& data, const int64_t timestamp) {
+        const size_t n = data.unique_timestamps.size();
+        if (n == 0) return 0;
+
+        const int64_t* begin = data.unique_timestamps.data();
+        const int64_t* end = begin + n;
+
+        const auto it = std::upper_bound(begin, end, timestamp);
+        return it - begin;
+    }
+
     HOST inline size_t find_group_before_timestamp(const EdgeDataStore *edge_data, const int64_t timestamp) {
         if (edge_data->unique_timestamps_size == 0) return 0;
 
         // Get raw pointer to data and use std::lower_bound directly
         const int64_t* begin = edge_data->unique_timestamps;
         const int64_t* end = edge_data->unique_timestamps + edge_data->unique_timestamps_size;
+
+        const auto it = std::lower_bound(begin, end, timestamp);
+        return (it - begin) - 1;
+    }
+
+    HOST inline size_t find_group_before_timestamp(const TemporalGraphData& data, const int64_t timestamp) {
+        const size_t n = data.unique_timestamps.size();
+        if (n == 0) return 0;
+
+        const int64_t* begin = data.unique_timestamps.data();
+        const int64_t* end = begin + n;
 
         const auto it = std::lower_bound(begin, end, timestamp);
         return (it - begin) - 1;
@@ -181,12 +257,22 @@ namespace edge_data {
         }
     }
 
+    HOST bool is_node_active_host(const TemporalGraphData& data, int node_id);
+
     HOST DataBlock<int> get_active_node_ids(const EdgeDataStore* edge_data);
+
+    HOST std::vector<int> get_active_node_ids(const TemporalGraphData& data);
 
     HOST size_t active_node_count(const EdgeDataStore* edge_data);
 
+    HOST size_t active_node_count(const TemporalGraphData& data);
+
     HOST DEVICE inline int get_max_node_id(const EdgeDataStore* edge_data) {
         return edge_data->max_node_id;
+    }
+
+    HOST inline int get_max_node_id(const TemporalGraphData& data) {
+        return data.max_node_id;
     }
 
     /**
@@ -195,11 +281,19 @@ namespace edge_data {
 
     HOST void populate_active_nodes_std(EdgeDataStore* edge_data);
 
+    HOST void populate_active_nodes_std(TemporalGraphData& data);
+
     HOST void build_node_adjacency_csr_std(EdgeDataStore *edge_data);
+
+    HOST void build_node_adjacency_csr_std(TemporalGraphData& data);
 
     HOST void update_timestamp_groups_std(EdgeDataStore *edge_data);
 
+    HOST void update_timestamp_groups_std(TemporalGraphData& data);
+
     HOST void update_temporal_weights_std(EdgeDataStore *edge_data, double timescale_bound);
+
+    HOST void update_temporal_weights_std(TemporalGraphData& data, double timescale_bound);
 
     #ifdef HAS_CUDA
 
@@ -209,11 +303,19 @@ namespace edge_data {
 
     HOST void populate_active_nodes_cuda(EdgeDataStore* edge_data);
 
+    HOST void populate_active_nodes_cuda(TemporalGraphData& data);
+
     HOST void build_node_adjacency_csr_cuda(EdgeDataStore *edge_data);
+
+    HOST void build_node_adjacency_csr_cuda(TemporalGraphData& data);
 
     HOST void update_timestamp_groups_cuda(EdgeDataStore *edge_data);
 
+    HOST void update_timestamp_groups_cuda(TemporalGraphData& data);
+
     HOST void update_temporal_weights_cuda(EdgeDataStore *edge_data, double timescale_bound);
+
+    HOST void update_temporal_weights_cuda(TemporalGraphData& data, double timescale_bound);
 
     /**
      * Device functions
@@ -253,6 +355,8 @@ namespace edge_data {
     #endif
 
     HOST size_t get_memory_used(EdgeDataStore* edge_data);
+
+    HOST size_t get_memory_used(const TemporalGraphData& data);
 
 }
 

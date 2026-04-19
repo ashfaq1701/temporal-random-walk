@@ -1122,3 +1122,802 @@ HOST size_t edge_data::get_memory_used(EdgeDataStore* edge_data) {
 
     return total_memory;
 }
+
+// ===========================================================================
+// TemporalGraphData overloads (task 5a)
+// ---------------------------------------------------------------------------
+// Parallel overloads that take TemporalGraphData& instead of EdgeDataStore*.
+// Read-only and in-place mutators delegate to the old bodies via
+// temporary_edge_data_store_view. Reallocating functions are implemented
+// directly in terms of Buffer<T>.
+// ===========================================================================
+
+HOST EdgeDataStore edge_data::temporary_edge_data_store_view(
+    const TemporalGraphData& data) {
+    EdgeDataStore store(
+        data.use_gpu,
+        data.enable_weight_computation,
+        data.enable_temporal_node2vec);
+    store.owns_data = false;
+    store.max_node_id = data.max_node_id;
+
+    store.sources               = const_cast<int*>(data.sources.data());
+    store.sources_size          = data.sources.size();
+    store.targets               = const_cast<int*>(data.targets.data());
+    store.targets_size          = data.targets.size();
+    store.timestamps            = const_cast<int64_t*>(data.timestamps.data());
+    store.timestamps_size       = data.timestamps.size();
+
+    store.timestamp_group_offsets        = const_cast<size_t*>(data.timestamp_group_offsets.data());
+    store.timestamp_group_offsets_size   = data.timestamp_group_offsets.size();
+    store.unique_timestamps              = const_cast<int64_t*>(data.unique_timestamps.data());
+    store.unique_timestamps_size         = data.unique_timestamps.size();
+
+    store.forward_cumulative_weights_exponential        = const_cast<double*>(data.forward_cumulative_weights_exponential.data());
+    store.forward_cumulative_weights_exponential_size   = data.forward_cumulative_weights_exponential.size();
+    store.backward_cumulative_weights_exponential       = const_cast<double*>(data.backward_cumulative_weights_exponential.data());
+    store.backward_cumulative_weights_exponential_size  = data.backward_cumulative_weights_exponential.size();
+
+    store.active_node_ids       = const_cast<int*>(data.active_node_ids.data());
+    store.active_node_ids_size  = data.active_node_ids.size();
+
+    store.node_adj_offsets      = const_cast<size_t*>(data.node_adj_offsets.data());
+    store.node_adj_offsets_size = data.node_adj_offsets.size();
+    store.node_adj_neighbors    = const_cast<int*>(data.node_adj_neighbors.data());
+    store.node_adj_neighbors_size = data.node_adj_neighbors.size();
+
+    store.edge_features         = const_cast<float*>(data.edge_features.data());
+    store.edge_features_size    = data.edge_features.size();
+    store.feature_dim           = data.feature_dim;
+
+    return store;
+}
+
+// ---------------------------------------------------------------------------
+// Tier 1 — read-only overloads that delegate to the old EdgeDataStore body.
+// ---------------------------------------------------------------------------
+
+HOST size_t edge_data::size(const TemporalGraphData& data) {
+    return data.timestamps.size();
+}
+
+HOST std::vector<Edge> edge_data::get_edges(const TemporalGraphData& data) {
+    const EdgeDataStore store = temporary_edge_data_store_view(data);
+    DataBlock<Edge> block = get_edges(&store);
+    std::vector<Edge> result(block.size);
+    for (size_t i = 0; i < block.size; ++i) {
+        result[i] = block.data[i];
+    }
+    return result;
+}
+
+HOST bool edge_data::is_node_active_host(const TemporalGraphData& data, const int node_id) {
+    const EdgeDataStore store = temporary_edge_data_store_view(data);
+    return is_node_active_host(&store, node_id);
+}
+
+HOST std::vector<int> edge_data::get_active_node_ids(const TemporalGraphData& data) {
+    const EdgeDataStore store = temporary_edge_data_store_view(data);
+    DataBlock<int> block = get_active_node_ids(&store);
+    std::vector<int> result(block.size);
+    if (block.size == 0) return result;
+    copy_memory(result.data(), block.data, block.size, false, block.use_gpu);
+    return result;
+}
+
+HOST size_t edge_data::active_node_count(const TemporalGraphData& data) {
+    const EdgeDataStore store = temporary_edge_data_store_view(data);
+    return active_node_count(&store);
+}
+
+HOST size_t edge_data::get_memory_used(const TemporalGraphData& data) {
+    EdgeDataStore store = temporary_edge_data_store_view(data);
+    return get_memory_used(&store);
+}
+
+// ---------------------------------------------------------------------------
+// Tier 2 — reallocating mutators, implemented directly against Buffer<T>.
+// ---------------------------------------------------------------------------
+
+HOST void edge_data::set_size(TemporalGraphData& data, const size_t size) {
+    data.sources.resize(size);
+    data.targets.resize(size);
+    data.timestamps.resize(size);
+    data.edge_features.resize(size * data.feature_dim);
+}
+
+HOST void edge_data::add_edges(
+    TemporalGraphData& data,
+    const int *sources,
+    const int *targets,
+    const int64_t *timestamps,
+    const size_t size) {
+    edge_data::add_edges(data, sources, targets, timestamps, size, nullptr, 0);
+}
+
+HOST void edge_data::add_edges(
+    TemporalGraphData& data,
+    const int *sources,
+    const int *targets,
+    const int64_t *timestamps,
+    const size_t size,
+    const float *edge_features,
+    const size_t feature_dim) {
+    if (edge_features != nullptr && feature_dim == 0) {
+        throw std::runtime_error("edge_features provided but feature_dim is 0");
+    }
+
+    if (data.sources.size() != 0 && feature_dim != data.feature_dim) {
+        throw std::runtime_error("feature_dim mismatch with existing data.feature_dim");
+    }
+
+    if (data.sources.size() == 0) {
+        data.feature_dim = feature_dim;
+    }
+
+    if (edge_features == nullptr && feature_dim != 0) {
+        throw std::runtime_error("feature_dim must be 0 when edge_features is not provided");
+    }
+
+    if (data.feature_dim > 0 && edge_features == nullptr && size > 0) {
+        throw std::runtime_error("edge features enabled; non-empty ingestion must provide edge_features");
+    }
+
+    data.sources.append_from_host(sources, size);
+    data.targets.append_from_host(targets, size);
+    data.timestamps.append_from_host(timestamps, size);
+
+    if (data.feature_dim > 0 && edge_features != nullptr && size > 0) {
+        const size_t feature_values = size * data.feature_dim;
+        data.edge_features.append_from_host(edge_features, feature_values);
+    }
+}
+
+HOST void edge_data::populate_active_nodes_std(TemporalGraphData& data) {
+    const size_t num_edges = data.timestamps.size();
+    if (num_edges == 0) {
+        data.max_node_id = -1;
+        data.active_node_ids.shrink_to_fit_empty();
+        return;
+    }
+
+    const int* sources = data.sources.data();
+    const int* targets = data.targets.data();
+
+    int max_node_id = -1;
+
+    // Parallel reduction to find the max node id
+    #pragma omp parallel for reduction(max:max_node_id)
+    for (size_t i = 0; i < num_edges; i++) {
+        const int src_node = sources[i];
+        const int tgt_node = targets[i];
+        max_node_id = std::max({max_node_id, src_node, tgt_node});
+    }
+
+    data.max_node_id = max_node_id;
+
+    data.active_node_ids.resize(max_node_id + 1);
+    data.active_node_ids.fill(0);
+
+    int* active_node_ids = data.active_node_ids.data();
+
+    // Parallel setting of active node flags
+    #pragma omp parallel for
+    for (size_t i = 0; i < num_edges; i++) {
+        const int src = sources[i];
+        const int tgt = targets[i];
+
+        active_node_ids[src] = 1;
+        active_node_ids[tgt] = 1;
+    }
+}
+
+HOST void edge_data::build_node_adjacency_csr_std(TemporalGraphData& data) {
+    const size_t n = data.active_node_ids.size();
+    const size_t m = data.timestamps.size();
+
+    // Allocate CSR arrays (host)
+    data.node_adj_offsets.resize(n + 1);
+    data.node_adj_neighbors.resize(2 * m);
+
+    // ---------------------------------------------------------------------
+    // Empty graph
+    // ---------------------------------------------------------------------
+    if (n == 0 || m == 0) {
+        size_t* offsets = data.node_adj_offsets.data();
+        #pragma omp parallel for
+        for (size_t i = 0; i < n + 1; ++i) {
+            offsets[i] = 0;
+        }
+        data.node_adj_neighbors.resize(0);
+        return;
+    }
+
+    const int* sources = data.sources.data();
+    const int* targets = data.targets.data();
+    size_t* node_adj_offsets = data.node_adj_offsets.data();
+    int* neighbors = data.node_adj_neighbors.data();
+
+    // ---------------------------------------------------------------------
+    // 1) Degree counting
+    // ---------------------------------------------------------------------
+    std::vector<std::atomic<size_t>> degree(n);
+
+    #pragma omp parallel for
+    for (size_t i = 0; i < n; ++i) {
+        degree[i].store(0, std::memory_order_relaxed);
+    }
+
+    #pragma omp parallel for
+    for (size_t i = 0; i < m; ++i) {
+        const int u = sources[i];
+        const int v = targets[i];
+
+        degree[static_cast<size_t>(u)].fetch_add(1, std::memory_order_relaxed);
+        degree[static_cast<size_t>(v)].fetch_add(1, std::memory_order_relaxed);
+    }
+
+    // ---------------------------------------------------------------------
+    // 2) Offsets via TBB parallel_scan
+    // ---------------------------------------------------------------------
+    node_adj_offsets[0] = 0;
+
+    tbb::parallel_scan(
+        tbb::blocked_range<size_t>(0, n),
+        static_cast<size_t>(0),
+        [&](const tbb::blocked_range<size_t>& r, size_t sum, bool is_final) -> size_t {
+            for (size_t i = r.begin(); i != r.end(); ++i) {
+                const size_t d = degree[i].load(std::memory_order_relaxed);
+                if (is_final) {
+                    node_adj_offsets[i + 1] = sum + d;
+                }
+                sum += d;
+            }
+            return sum;
+        },
+        std::plus<>()
+    );
+
+    // ---------------------------------------------------------------------
+    // 3) Cursor init
+    // ---------------------------------------------------------------------
+    std::vector<std::atomic<size_t>> cursor(n);
+
+    #pragma omp parallel for
+    for (size_t i = 0; i < n; ++i) {
+        cursor[i].store(node_adj_offsets[i], std::memory_order_relaxed);
+    }
+
+    // ---------------------------------------------------------------------
+    // 4) Fill neighbors
+    // ---------------------------------------------------------------------
+    #pragma omp parallel for
+    for (size_t i = 0; i < m; ++i) {
+        const int u = sources[i];
+        const int v = targets[i];
+
+        const size_t u_pos =
+            cursor[static_cast<size_t>(u)].fetch_add(1, std::memory_order_relaxed);
+        const size_t v_pos =
+            cursor[static_cast<size_t>(v)].fetch_add(1, std::memory_order_relaxed);
+
+        neighbors[u_pos] = v;
+        neighbors[v_pos] = u;
+    }
+
+    // ---------------------------------------------------------------------
+    // 5) Sort adjacency lists (OpenMP outer, TBB inner)
+    // ---------------------------------------------------------------------
+    #pragma omp parallel for schedule(dynamic)
+    for (size_t node = 0; node < n; ++node) {
+        const size_t start = node_adj_offsets[node];
+        const size_t end   = node_adj_offsets[node + 1];
+
+        if (end > start + 1) {
+            tbb::parallel_sort(neighbors + start, neighbors + end);
+        }
+    }
+}
+
+HOST void edge_data::update_timestamp_groups_std(TemporalGraphData& data) {
+    if (data.timestamps.size() == 0) {
+        data.timestamp_group_offsets.shrink_to_fit_empty();
+        data.unique_timestamps.shrink_to_fit_empty();
+        data.max_node_id = -1;
+        data.active_node_ids.shrink_to_fit_empty();
+        return;
+    }
+
+    const size_t n = data.timestamps.size();
+    const int64_t* timestamps = data.timestamps.data();
+
+    // Step 1: Flag where timestamps change
+    std::vector<int> flags(n, 0);
+    flags[0] = 1;
+
+    #pragma omp parallel for
+    for (size_t i = 1; i < n; ++i) {
+        flags[i] = (timestamps[i] != timestamps[i - 1]) ? 1 : 0;
+    }
+
+    // Step 2: Compute prefix sum into raw buffer (exclusive scan)
+    std::vector<int> prefix_sum(n);
+    parallel_prefix_sum(flags.data(), prefix_sum.data(), n);
+
+    const int num_groups = prefix_sum[n - 1] + flags[n - 1];
+
+    // Step 3: Resize output arrays
+    data.timestamp_group_offsets.resize(num_groups + 1);
+    data.unique_timestamps.resize(num_groups);
+
+    size_t* group_offsets = data.timestamp_group_offsets.data();
+    int64_t* unique_timestamps = data.unique_timestamps.data();
+
+    // Step 4: Write group offsets and unique timestamps
+    #pragma omp parallel for
+    for (size_t i = 0; i < n; ++i) {
+        if (flags[i]) {
+            const int idx = prefix_sum[i];
+            group_offsets[idx] = i;
+            unique_timestamps[idx] = timestamps[i];
+        }
+    }
+
+    // Step 5: Final group offset (end marker)
+    group_offsets[num_groups] = n;
+
+    // Step 6: Activate nodes
+    populate_active_nodes_std(data);
+}
+
+HOST void edge_data::update_temporal_weights_std(TemporalGraphData& data, const double timescale_bound) {
+    if (data.timestamps.size() == 0) {
+        data.forward_cumulative_weights_exponential.shrink_to_fit_empty();
+        data.backward_cumulative_weights_exponential.shrink_to_fit_empty();
+        return;
+    }
+
+    const int64_t* timestamps = data.timestamps.data();
+    const size_t ts_size = data.timestamps.size();
+
+    const int64_t min_timestamp = timestamps[0];
+    const int64_t max_timestamp = timestamps[ts_size - 1];
+    const auto time_diff = static_cast<double>(max_timestamp - min_timestamp);
+    const double time_scale = (timescale_bound > 0 && time_diff > 0) ? timescale_bound / time_diff : 1.0;
+
+    const size_t num_groups = data.unique_timestamps.size();
+
+    // Resize output arrays
+    data.forward_cumulative_weights_exponential.resize(num_groups);
+    data.backward_cumulative_weights_exponential.resize(num_groups);
+
+    auto* forward = data.forward_cumulative_weights_exponential.data();
+    auto* backward = data.backward_cumulative_weights_exponential.data();
+    const auto* offsets = data.timestamp_group_offsets.data();
+
+    double forward_sum = 0.0, backward_sum = 0.0;
+
+    // Step 1: Compute unnormalized weights and sums
+    #pragma omp parallel for reduction(+:forward_sum, backward_sum)
+    for (size_t group = 0; group < num_groups; ++group) {
+        const size_t start = offsets[group];
+        const size_t group_size = offsets[group + 1] - offsets[group];
+
+        const int64_t ts = timestamps[start];
+
+        const auto t_fwd = static_cast<double>(max_timestamp - ts);
+        const auto t_bwd = static_cast<double>(ts - min_timestamp);
+
+        const double fwd_scaled = (timescale_bound > 0) ? t_fwd * time_scale : t_fwd;
+        const double bwd_scaled = (timescale_bound > 0) ? t_bwd * time_scale : t_bwd;
+
+        const double f_weight = static_cast<double>(group_size) * std::exp(fwd_scaled);
+        const double b_weight = static_cast<double>(group_size) * std::exp(bwd_scaled);
+
+        forward[group] = f_weight;
+        backward[group] = b_weight;
+
+        forward_sum += f_weight;
+        backward_sum += b_weight;
+    }
+
+    // Step 2: Normalize
+    #pragma omp parallel for
+    for (size_t group = 0; group < num_groups; ++group) {
+        forward[group] /= forward_sum;
+        backward[group] /= backward_sum;
+    }
+
+    // Step 3: Inclusive scan
+    parallel_inclusive_scan(forward, num_groups);
+    parallel_inclusive_scan(backward, num_groups);
+}
+
+#ifdef HAS_CUDA
+
+HOST void edge_data::populate_active_nodes_cuda(TemporalGraphData& data) {
+    const size_t num_edges = data.timestamps.size();
+    if (num_edges == 0) {
+        data.max_node_id = -1;
+        data.active_node_ids.shrink_to_fit_empty();
+        return;
+    }
+
+    const thrust::device_ptr<int> d_sources(const_cast<int*>(data.sources.data()));
+    const thrust::device_ptr<int> d_targets(const_cast<int*>(data.targets.data()));
+
+    const int max_source = thrust::reduce(
+        DEVICE_EXECUTION_POLICY,
+        d_sources,
+        d_sources + static_cast<long>(num_edges),
+        0,
+        thrust::maximum<int>()
+    );
+
+    const int max_target = thrust::reduce(
+        DEVICE_EXECUTION_POLICY,
+        d_targets,
+        d_targets + static_cast<long>(num_edges),
+        0,
+        thrust::maximum<int>()
+    );
+
+    const int max_node_id = std::max(max_source, max_target);
+    data.max_node_id = max_node_id;
+
+    data.active_node_ids.resize(max_node_id + 1);
+    data.active_node_ids.fill(0);
+
+    thrust::device_ptr<int> d_active_nodes(data.active_node_ids.data());
+
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        d_sources,
+        d_sources + static_cast<long>(num_edges),
+        [d_active_nodes] __device__ (const int source_id) {
+            d_active_nodes[source_id] = 1;
+        }
+    );
+    CUDA_KERNEL_CHECK("After thrust for_each sources in populate_active_nodes_cuda (TemporalGraphData)");
+
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        d_targets,
+        d_targets + static_cast<long>(num_edges),
+        [d_active_nodes] __device__ (int target_id) {
+            d_active_nodes[target_id] = 1;
+        }
+    );
+    CUDA_KERNEL_CHECK("After thrust for_each targets in populate_active_nodes_cuda (TemporalGraphData)");
+}
+
+HOST void edge_data::build_node_adjacency_csr_cuda(TemporalGraphData& data) {
+    const size_t n = data.active_node_ids.size();
+    const size_t m = data.timestamps.size();
+
+    // Allocate CSR arrays (device)
+    data.node_adj_offsets.resize(n + 1);
+    data.node_adj_neighbors.resize(2 * m);
+
+    // Handle empty graph
+    if (n == 0 || m == 0) {
+        thrust::fill_n(
+            DEVICE_EXECUTION_POLICY,
+            thrust::device_pointer_cast(data.node_adj_offsets.data()),
+            static_cast<long>(n + 1),
+            static_cast<size_t>(0)
+        );
+        CUDA_KERNEL_CHECK("After thrust fill_n zero offsets in build_node_adjacency_csr_cuda (TemporalGraphData)");
+        return;
+    }
+
+    // Device pointers to input edges and output CSR arrays
+    const auto d_sources   = thrust::device_pointer_cast(const_cast<int*>(data.sources.data()));
+    const auto d_targets   = thrust::device_pointer_cast(const_cast<int*>(data.targets.data()));
+    const auto d_offsets   = thrust::device_pointer_cast(data.node_adj_offsets.data());
+    const auto d_neighbors = thrust::device_pointer_cast(data.node_adj_neighbors.data());
+
+    // ---------------------------------------------------------------------
+    // 1) Degree counting (device)
+    // ---------------------------------------------------------------------
+    thrust::device_vector<unsigned int> degree(n, 0u);
+
+    unsigned int* d_degree_raw = thrust::raw_pointer_cast(degree.data());
+
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(m),
+        [d_sources, d_targets, d_degree_raw] __device__ (const size_t i) {
+            const int u = d_sources[static_cast<long>(i)];
+            const int v = d_targets[static_cast<long>(i)];
+            atomicAdd(d_degree_raw + u, 1u);
+            atomicAdd(d_degree_raw + v, 1u);
+        }
+    );
+    CUDA_KERNEL_CHECK("After thrust for_each degree counting in build_node_adjacency_csr_cuda (TemporalGraphData)");
+
+    // ---------------------------------------------------------------------
+    // 2) Offsets: exclusive_scan(degree) -> offsets[0..n)
+    // ---------------------------------------------------------------------
+    thrust::exclusive_scan(
+        DEVICE_EXECUTION_POLICY,
+        degree.begin(),
+        degree.end(),
+        d_offsets,
+        static_cast<size_t>(0)
+    );
+    CUDA_KERNEL_CHECK("After thrust exclusive_scan offsets in build_node_adjacency_csr_cuda (TemporalGraphData)");
+
+    thrust::fill_n(
+        DEVICE_EXECUTION_POLICY,
+        d_offsets + static_cast<long>(n),
+        1,
+        static_cast<size_t>(2 * m)
+    );
+    CUDA_KERNEL_CHECK("After writing offsets[n] in build_node_adjacency_csr_cuda (TemporalGraphData)");
+
+    // ---------------------------------------------------------------------
+    // 3) Cursor: initialize from offsets[0..n)
+    // ---------------------------------------------------------------------
+    thrust::device_vector<unsigned int> cursor(n, 0u);
+
+    thrust::transform(
+        DEVICE_EXECUTION_POLICY,
+        d_offsets,
+        d_offsets + static_cast<long>(n),
+        cursor.begin(),
+        [] __device__ (const size_t x) { return static_cast<unsigned int>(x); }
+    );
+    CUDA_KERNEL_CHECK("After cursor init transform in build_node_adjacency_csr_cuda (TemporalGraphData)");
+
+    unsigned int* d_cursor_raw = thrust::raw_pointer_cast(cursor.data());
+
+    // ---------------------------------------------------------------------
+    // 4) Fill neighbors using cursor atomics
+    // ---------------------------------------------------------------------
+    thrust::for_each(
+        DEVICE_EXECUTION_POLICY,
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(m),
+        [d_sources, d_targets, d_cursor_raw, d_neighbors] __device__ (const size_t i) {
+            const int u = d_sources[static_cast<long>(i)];
+            const int v = d_targets[static_cast<long>(i)];
+
+            const unsigned int u_pos = atomicAdd(d_cursor_raw + u, 1u);
+            const unsigned int v_pos = atomicAdd(d_cursor_raw + v, 1u);
+
+            d_neighbors[static_cast<long>(static_cast<size_t>(u_pos))] = v;
+            d_neighbors[static_cast<long>(static_cast<size_t>(v_pos))] = u;
+        }
+    );
+    CUDA_KERNEL_CHECK("After thrust for_each neighbor fill in build_node_adjacency_csr_cuda (TemporalGraphData)");
+
+    // ---------------------------------------------------------------------
+    // 5) GPU segmented sort (thrust-only, no loops)
+    // ---------------------------------------------------------------------
+    const auto nnz = static_cast<size_t>(2 * m);
+
+    thrust::device_vector<int> node_ids(nnz);
+
+    thrust::upper_bound(
+        DEVICE_EXECUTION_POLICY,
+        d_offsets,
+        d_offsets + static_cast<long>(n + 1),
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(nnz),
+        node_ids.begin()
+    );
+    CUDA_KERNEL_CHECK("After thrust upper_bound in build_node_adjacency_csr_cuda (TemporalGraphData)");
+
+    thrust::transform(
+        DEVICE_EXECUTION_POLICY,
+        node_ids.begin(),
+        node_ids.end(),
+        node_ids.begin(),
+        [] __device__ (int x) { return x - 1; }
+    );
+    CUDA_KERNEL_CHECK("After node_ids subtract-one transform in build_node_adjacency_csr_cuda (TemporalGraphData)");
+
+    const auto zipped_begin = thrust::make_zip_iterator(
+        thrust::make_tuple(
+            node_ids.begin(),
+            d_neighbors
+        )
+    );
+
+    thrust::sort(
+        DEVICE_EXECUTION_POLICY,
+        zipped_begin,
+        zipped_begin + static_cast<long>(nnz)
+    );
+    CUDA_KERNEL_CHECK("After thrust segmented sort (key,neighbor) in build_node_adjacency_csr_cuda (TemporalGraphData)");
+}
+
+HOST void edge_data::update_timestamp_groups_cuda(TemporalGraphData& data) {
+    if (data.timestamps.size() == 0) {
+        data.timestamp_group_offsets.shrink_to_fit_empty();
+        data.unique_timestamps.shrink_to_fit_empty();
+        data.max_node_id = -1;
+        data.active_node_ids.shrink_to_fit_empty();
+        return;
+    }
+
+    const size_t n = data.timestamps.size();
+
+    // Create flags vector on device
+    int *d_flags = nullptr;
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_flags, n * sizeof(int)));
+
+    const thrust::device_ptr<int64_t> d_timestamps(const_cast<int64_t*>(data.timestamps.data()));
+    const thrust::device_ptr<int> d_flags_ptr(d_flags);
+
+    thrust::transform(
+        DEVICE_EXECUTION_POLICY,
+        d_timestamps + 1,
+        d_timestamps + static_cast<long>(n),
+        d_timestamps,
+        d_flags_ptr + 1,
+        [] HOST DEVICE (const int64_t curr, const int64_t prev) { return curr != prev ? 1 : 0; });
+    CUDA_KERNEL_CHECK("After thrust transform in update_timestamp_groups_cuda (TemporalGraphData)");
+
+    thrust::fill_n(d_flags_ptr, 1, 1);
+    CUDA_KERNEL_CHECK("After thrust fill_n in update_timestamp_groups_cuda (TemporalGraphData)");
+
+    const size_t num_groups = thrust::reduce(d_flags_ptr, d_flags_ptr + static_cast<long>(n));
+    CUDA_KERNEL_CHECK("After thrust reduce in update_timestamp_groups_cuda (TemporalGraphData)");
+
+    data.timestamp_group_offsets.resize(num_groups + 1);
+    data.unique_timestamps.resize(num_groups);
+
+    const thrust::device_ptr<size_t> d_group_offsets(data.timestamp_group_offsets.data());
+    const thrust::device_ptr<int64_t> d_unique_timestamps(data.unique_timestamps.data());
+
+    thrust::copy_if(
+        DEVICE_EXECUTION_POLICY,
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(n),
+        d_flags_ptr,
+        d_group_offsets,
+        [] HOST DEVICE (const int flag) { return flag == 1; });
+    CUDA_KERNEL_CHECK("After thrust copy_if group boundaries in update_timestamp_groups_cuda (TemporalGraphData)");
+
+    thrust::fill_n(d_group_offsets + static_cast<long>(num_groups), 1, n);
+    CUDA_KERNEL_CHECK("After thrust fill_n final offset in update_timestamp_groups_cuda (TemporalGraphData)");
+
+    thrust::copy_if(
+        DEVICE_EXECUTION_POLICY,
+        d_timestamps,
+        d_timestamps + static_cast<long>(n),
+        d_flags_ptr,
+        d_unique_timestamps,
+        [] HOST DEVICE (const int flag) { return flag == 1; });
+    CUDA_KERNEL_CHECK("After thrust copy_if unique timestamps in update_timestamp_groups_cuda (TemporalGraphData)");
+
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_flags));
+
+    populate_active_nodes_cuda(data);
+}
+
+HOST void edge_data::update_temporal_weights_cuda(TemporalGraphData& data, const double timescale_bound) {
+    if (data.timestamps.size() == 0) {
+        data.forward_cumulative_weights_exponential.shrink_to_fit_empty();
+        data.backward_cumulative_weights_exponential.shrink_to_fit_empty();
+        return;
+    }
+
+    const size_t ts_size = data.timestamps.size();
+    const int64_t* d_timestamps_raw = data.timestamps.data();
+
+    int64_t min_timestamp, max_timestamp;
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(&min_timestamp, d_timestamps_raw, sizeof(int64_t), cudaMemcpyDeviceToHost));
+    CUDA_CHECK_AND_CLEAR(
+        cudaMemcpy(&max_timestamp, d_timestamps_raw + (ts_size - 1), sizeof(int64_t),
+            cudaMemcpyDeviceToHost));
+
+    const auto time_diff = static_cast<double>(max_timestamp - min_timestamp);
+    const double time_scale = (timescale_bound > 0 && time_diff > 0) ? timescale_bound / time_diff : 1.0;
+
+    const size_t num_groups = data.unique_timestamps.size();
+
+    data.forward_cumulative_weights_exponential.resize(num_groups);
+    data.backward_cumulative_weights_exponential.resize(num_groups);
+
+    // Allocate temporary memory for unnormalized weights
+    double *d_forward_weights = nullptr;
+    double *d_backward_weights = nullptr;
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_forward_weights, num_groups * sizeof(double)));
+    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_backward_weights, num_groups * sizeof(double)));
+
+    thrust::device_ptr<int64_t> d_timestamps(const_cast<int64_t*>(data.timestamps.data()));
+    thrust::device_ptr<size_t> d_offsets(data.timestamp_group_offsets.data());
+    thrust::device_ptr<double> d_forward_weights_ptr(d_forward_weights);
+    thrust::device_ptr<double> d_backward_weights_ptr(d_backward_weights);
+
+    thrust::transform(
+        DEVICE_EXECUTION_POLICY,
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(num_groups),
+        thrust::make_zip_iterator(thrust::make_tuple(
+            d_forward_weights_ptr,
+            d_backward_weights_ptr
+        )),
+        [d_offsets, d_timestamps, max_timestamp, min_timestamp, timescale_bound, time_scale]
+        HOST DEVICE (const size_t group) {
+            const size_t start = d_offsets[static_cast<long>(group)];
+            const size_t end   = d_offsets[static_cast<long>(group + 1)];
+            const double group_size = static_cast<double>(end - start);
+
+            const int64_t group_timestamp = d_timestamps[static_cast<long>(start)];
+
+            const auto time_diff_forward = static_cast<double>(max_timestamp - group_timestamp);
+            const auto time_diff_backward = static_cast<double>(group_timestamp - min_timestamp);
+
+            const double forward_scaled = timescale_bound > 0 ? time_diff_forward * time_scale : time_diff_forward;
+            const double backward_scaled = timescale_bound > 0
+                                               ? time_diff_backward * time_scale
+                                               : time_diff_backward;
+
+            return thrust::make_tuple(
+                static_cast<double>(group_size) * exp(forward_scaled),
+                static_cast<double>(group_size) * exp(backward_scaled));
+        }
+    );
+    CUDA_KERNEL_CHECK("After thrust transform weights calculation in update_temporal_weights_cuda (TemporalGraphData)");
+
+    double forward_sum = thrust::reduce(
+        DEVICE_EXECUTION_POLICY,
+        d_forward_weights_ptr,
+        d_forward_weights_ptr + static_cast<long>(num_groups)
+    );
+    CUDA_KERNEL_CHECK("After thrust reduce forward weights in update_temporal_weights_cuda (TemporalGraphData)");
+
+    double backward_sum = thrust::reduce(
+        DEVICE_EXECUTION_POLICY,
+        d_backward_weights_ptr,
+        d_backward_weights_ptr + static_cast<long>(num_groups)
+    );
+    CUDA_KERNEL_CHECK("After thrust reduce backward weights in update_temporal_weights_cuda (TemporalGraphData)");
+
+    thrust::transform(
+        DEVICE_EXECUTION_POLICY,
+        d_forward_weights_ptr,
+        d_forward_weights_ptr + static_cast<long>(num_groups),
+        d_forward_weights_ptr,
+        [=] HOST DEVICE (const double w) { return w / forward_sum; }
+    );
+    CUDA_KERNEL_CHECK("After thrust transform forward weight normalization in update_temporal_weights_cuda (TemporalGraphData)");
+
+    thrust::transform(
+        DEVICE_EXECUTION_POLICY,
+        d_backward_weights_ptr,
+        d_backward_weights_ptr + static_cast<long>(num_groups),
+        d_backward_weights_ptr,
+        [=] HOST DEVICE (const double w) { return w / backward_sum; }
+    );
+    CUDA_KERNEL_CHECK("After thrust transform backward weight normalization in update_temporal_weights_cuda (TemporalGraphData)");
+
+    thrust::device_ptr<double> d_forward_cumulative(data.forward_cumulative_weights_exponential.data());
+    thrust::device_ptr<double> d_backward_cumulative(data.backward_cumulative_weights_exponential.data());
+
+    thrust::inclusive_scan(
+        DEVICE_EXECUTION_POLICY,
+        d_forward_weights_ptr,
+        d_forward_weights_ptr + static_cast<long>(num_groups),
+        d_forward_cumulative
+    );
+    CUDA_KERNEL_CHECK("After thrust inclusive_scan forward weights in update_temporal_weights_cuda (TemporalGraphData)");
+
+    thrust::inclusive_scan(
+        DEVICE_EXECUTION_POLICY,
+        d_backward_weights_ptr,
+        d_backward_weights_ptr + static_cast<long>(num_groups),
+        d_backward_cumulative
+    );
+    CUDA_KERNEL_CHECK("After thrust inclusive_scan backward weights in update_temporal_weights_cuda (TemporalGraphData)");
+
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_forward_weights));
+    CUDA_CHECK_AND_CLEAR(cudaFree(d_backward_weights));
+}
+
+#endif // HAS_CUDA
