@@ -2,38 +2,28 @@
 #define NODE_FEATURES_STORE_H
 
 #include <cstddef>
+#include "../common/cuda_buffer.cuh"
 #include "../common/macros.cuh"
-#include "../common/memory.cuh"
 
 struct NodeFeaturesStore {
     bool use_gpu = false;
-    bool owns_data = true;
 
     int max_node_id = -1;
     size_t node_feature_dim = 0;
 
-    float* node_features = nullptr;
-    size_t node_features_size = 0;
+    CudaBuffer<float> node_features;
 
     NodeFeaturesStore() = default;
-
-    ~NodeFeaturesStore() {
-        if (owns_data) {
-            clear_memory(&node_features, false);
-        } else {
-            node_features = nullptr;
-        }
-    }
 };
 
 namespace node_features {
 
     HOST inline size_t size(const NodeFeaturesStore* node_features_store) {
-        return node_features_store->node_features_size;
+        return node_features_store->node_features.size();
     }
 
     HOST inline bool empty(const NodeFeaturesStore* node_features_store) {
-        return node_features_store->node_features_size == 0;
+        return node_features_store->node_features.size() == 0;
     }
 
     HOST void ensure_size(NodeFeaturesStore* node_features_store, int max_node_id);

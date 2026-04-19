@@ -16,18 +16,18 @@ TEST(NodeFeaturesTest, SetNodeFeaturesPreservesOldDataOnGrow) {
     nf.set_node_features(edge_data.max_node_id, first_ids.data(), first_ids.size(), first_features.data(), 2);
 
     const auto* store = nf.get_node_features();
-    EXPECT_FLOAT_EQ(store->node_features[1 * 2], 1.0f);
-    EXPECT_FLOAT_EQ(store->node_features[1 * 2 + 1], 2.0f);
+    EXPECT_FLOAT_EQ(store->node_features.data()[1 * 2], 1.0f);
+    EXPECT_FLOAT_EQ(store->node_features.data()[1 * 2 + 1], 2.0f);
 
     edge_data.max_node_id = 5;
     std::vector<int> second_ids{5};
     std::vector<float> second_features{9.0f, 10.0f};
     nf.set_node_features(edge_data.max_node_id, second_ids.data(), second_ids.size(), second_features.data(), 2);
 
-    EXPECT_FLOAT_EQ(store->node_features[1 * 2], 1.0f);
-    EXPECT_FLOAT_EQ(store->node_features[1 * 2 + 1], 2.0f);
-    EXPECT_FLOAT_EQ(store->node_features[5 * 2], 9.0f);
-    EXPECT_FLOAT_EQ(store->node_features[5 * 2 + 1], 10.0f);
+    EXPECT_FLOAT_EQ(store->node_features.data()[1 * 2], 1.0f);
+    EXPECT_FLOAT_EQ(store->node_features.data()[1 * 2 + 1], 2.0f);
+    EXPECT_FLOAT_EQ(store->node_features.data()[5 * 2], 9.0f);
+    EXPECT_FLOAT_EQ(store->node_features.data()[5 * 2 + 1], 10.0f);
 
     EXPECT_EQ(nf.max_node_id(), 5);
     EXPECT_EQ(nf.node_feature_dim(), 2);
@@ -45,7 +45,7 @@ TEST(NodeFeaturesTest, SetNodeFeaturesWithPointers) {
     nf.set_node_features(edge_data.max_node_id, node_ids.data(), node_ids.size(), node_features.data(), 3);
 
     const auto* store = nf.get_node_features();
-    EXPECT_FLOAT_EQ(store->node_features[2], 9.0f);
-    EXPECT_FLOAT_EQ(store->node_features[2 * 3], 1.0f);
+    EXPECT_FLOAT_EQ(store->node_features.data()[2], 9.0f);
+    EXPECT_FLOAT_EQ(store->node_features.data()[2 * 3], 1.0f);
     EXPECT_EQ(nf.node_feature_dim(), 3);
 }
