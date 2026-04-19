@@ -29,9 +29,8 @@ TemporalRandomWalk::TemporalRandomWalk(
 
         const int walk_padding_value,
         const uint64_t global_seed,
-        const bool shuffle_walk_order): use_gpu(use_gpu) {
-
-    temporal_random_walk = new TemporalRandomWalkStore(
+        const bool shuffle_walk_order): use_gpu(use_gpu),
+    temporal_random_walk(std::make_unique<TemporalRandomWalkStore>(
         is_directed,
         use_gpu,
 
@@ -45,14 +44,8 @@ TemporalRandomWalk::TemporalRandomWalk(
 
         walk_padding_value,
         global_seed,
-        shuffle_walk_order);
-    node_features = new NodeFeatures();
-}
-
-TemporalRandomWalk::~TemporalRandomWalk() {
-    delete node_features;
-    delete temporal_random_walk;
-}
+        shuffle_walk_order)),
+    node_features(std::make_unique<NodeFeatures>()) {}
 
 void TemporalRandomWalk::add_multiple_edges(
     const int* sources,
@@ -62,7 +55,7 @@ void TemporalRandomWalk::add_multiple_edges(
     const float* edge_features,
     const size_t feature_dim) const {
     temporal_random_walk::add_multiple_edges(
-        temporal_random_walk,
+        temporal_random_walk.get(),
         sources,
         targets,
         timestamps,
@@ -121,7 +114,7 @@ WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times_for_all_nod
     #ifdef HAS_CUDA
     if (use_gpu) {
         walk_set = temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
-            temporal_random_walk,
+            temporal_random_walk.get(),
             max_walk_len,
             walk_bias,
             num_walks_per_node,
@@ -133,7 +126,7 @@ WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times_for_all_nod
     #endif
     {
         walk_set = temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
-            temporal_random_walk,
+            temporal_random_walk.get(),
             max_walk_len,
             walk_bias,
             num_walks_per_node,
@@ -161,7 +154,7 @@ WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times_for_last_ba
     #ifdef HAS_CUDA
     if (use_gpu) {
         walk_set = temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
-            temporal_random_walk,
+            temporal_random_walk.get(),
             max_walk_len,
             walk_bias,
             num_walks_per_node,
@@ -173,7 +166,7 @@ WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times_for_last_ba
     #endif
     {
         walk_set = temporal_random_walk::get_random_walks_and_times_for_last_batch_std(
-            temporal_random_walk,
+            temporal_random_walk.get(),
             max_walk_len,
             walk_bias,
             num_walks_per_node,
@@ -202,7 +195,7 @@ WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times(
     #ifdef HAS_CUDA
     if (use_gpu) {
         walk_set = temporal_random_walk::get_random_walks_and_times_cuda(
-            temporal_random_walk,
+            temporal_random_walk.get(),
             max_walk_len,
             walk_bias,
             num_walks_total,
@@ -214,7 +207,7 @@ WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times(
     #endif
     {
         walk_set = temporal_random_walk::get_random_walks_and_times_std(
-            temporal_random_walk,
+            temporal_random_walk.get(),
             max_walk_len,
             walk_bias,
             num_walks_total,
@@ -231,7 +224,7 @@ WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times(
 }
 
 size_t TemporalRandomWalk::get_node_count() const {
-    return temporal_random_walk::get_node_count(temporal_random_walk);
+    return temporal_random_walk::get_node_count(temporal_random_walk.get());
 }
 
 size_t TemporalRandomWalk::get_edge_count() const {
@@ -241,7 +234,7 @@ size_t TemporalRandomWalk::get_edge_count() const {
         size_t* d_result;
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(size_t)));
 
-        TemporalRandomWalkStore* d_temporal_random_walk = temporal_random_walk::to_device_ptr(temporal_random_walk);
+        TemporalRandomWalkStore* d_temporal_random_walk = temporal_random_walk::to_device_ptr(temporal_random_walk.get());
         get_edge_count_kernel<<<1, 1>>>(d_result, d_temporal_random_walk);
         CUDA_KERNEL_CHECK("After get_edge_count_kernel execution");
 
@@ -257,12 +250,12 @@ size_t TemporalRandomWalk::get_edge_count() const {
     #endif
     {
         // Direct call for CPU implementation
-        return temporal_random_walk::get_edge_count(temporal_random_walk);
+        return temporal_random_walk::get_edge_count(temporal_random_walk.get());
     }
 }
 
 std::vector<int> TemporalRandomWalk::get_node_ids() const {
-    const DataBlock<int> node_ids = temporal_random_walk::get_node_ids(temporal_random_walk);
+    const DataBlock<int> node_ids = temporal_random_walk::get_node_ids(temporal_random_walk.get());
     std::vector<int> result;
 
     #ifdef HAS_CUDA
@@ -289,7 +282,7 @@ std::vector<int> TemporalRandomWalk::get_node_ids() const {
 std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() const {
     // temporal_random_walk::get_edges ultimately delegates to edge_data::get_edges,
     // which always returns CPU-resident edges.
-    const DataBlock<Edge> edges = temporal_random_walk::get_edges(temporal_random_walk);
+    const DataBlock<Edge> edges = temporal_random_walk::get_edges(temporal_random_walk.get());
     std::vector<std::tuple<int, int, int64_t>> result;
     result.reserve(edges.size);
 
@@ -304,13 +297,13 @@ std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() const
 }
 
 bool TemporalRandomWalk::get_is_directed() const {
-    return temporal_random_walk::get_is_directed(temporal_random_walk);
+    return temporal_random_walk::get_is_directed(temporal_random_walk.get());
 }
 
 void TemporalRandomWalk::clear() const {
-    temporal_random_walk::clear(temporal_random_walk);
+    temporal_random_walk::clear(temporal_random_walk.get());
 }
 
 size_t TemporalRandomWalk::get_memory_used() const {
-    return temporal_random_walk::get_memory_used(temporal_random_walk);
+    return temporal_random_walk::get_memory_used(temporal_random_walk.get());
 }

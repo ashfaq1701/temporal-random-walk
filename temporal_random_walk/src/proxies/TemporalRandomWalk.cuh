@@ -1,6 +1,7 @@
 #ifndef TEMPORAL_RANDOM_WALK_H
 #define TEMPORAL_RANDOM_WALK_H
 
+#include <memory>
 #include <vector>
 #include <thread>
 #include "../core/temporal_random_walk.cuh"
@@ -18,8 +19,8 @@ __global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalkSt
 
 class TemporalRandomWalk {
     bool use_gpu;
-    TemporalRandomWalkStore* temporal_random_walk;
-    NodeFeatures* node_features;
+    std::unique_ptr<TemporalRandomWalkStore> temporal_random_walk;
+    std::unique_ptr<NodeFeatures> node_features;
 
 public:
     explicit TemporalRandomWalk(
@@ -37,8 +38,6 @@ public:
         int walk_padding_value=EMPTY_NODE_VALUE,
         uint64_t global_seed=EMPTY_GLOBAL_SEED,
         bool shuffle_walk_order=DEFAULT_SHUFFLE_WALK_ORDER);
-
-    ~TemporalRandomWalk();
 
     void add_multiple_edges(
         const int* sources,

@@ -1,14 +1,15 @@
 #ifndef NODE_FEATURES_H
 #define NODE_FEATURES_H
 
+#include <memory>
+
 #include "../stores/node_features.cuh"
 
 class NodeFeatures {
 public:
-    NodeFeaturesStore* node_features;
-    explicit NodeFeatures();
+    std::unique_ptr<NodeFeaturesStore> node_features;
 
-    ~NodeFeatures();
+    NodeFeatures();
 
     void set_node_features(
         int max_node_id,

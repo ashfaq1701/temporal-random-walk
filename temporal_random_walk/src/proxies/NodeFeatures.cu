@@ -1,12 +1,6 @@
 #include "NodeFeatures.cuh"
 
-NodeFeatures::NodeFeatures() {
-    node_features = new NodeFeaturesStore();
-}
-
-NodeFeatures::~NodeFeatures() {
-    delete node_features;
-}
+NodeFeatures::NodeFeatures() : node_features(std::make_unique<NodeFeaturesStore>()) {}
 
 void NodeFeatures::set_node_features(
     const int max_node_id,
@@ -15,7 +9,7 @@ void NodeFeatures::set_node_features(
     const float* node_features,
     const size_t feature_dim) const {
     node_features::set_node_features(
-        this->node_features,
+        this->node_features.get(),
         max_node_id,
         node_ids,
         num_nodes,
@@ -33,5 +27,5 @@ int NodeFeatures::max_node_id() const {
 
 
 NodeFeaturesStore* NodeFeatures::get_node_features() const {
-    return node_features;
+    return node_features.get();
 }
