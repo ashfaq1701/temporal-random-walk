@@ -1,12 +1,13 @@
 #ifndef TEMPORAL_RANDOM_WALK_KERNELS_FULL_WALK_CUH
 #define TEMPORAL_RANDOM_WALK_KERNELS_FULL_WALK_CUH
 
-#include "../data/walk_set/walk_set.cuh"
-#include "../stores/temporal_graph.cuh"
+#include "../data/walk_set/walk_set_view.cuh"
+#include "../data/temporal_graph_view.cuh"
+#include "../graph/temporal_graph.cuh"
 #include "../utils/random.cuh"
 #include "../utils/utils.cuh"
 #include "helpers.cuh"
-#include "../stores/edge_selectors.cuh"
+#include "../graph/edge_selectors.cuh"
 
 namespace temporal_random_walk {
 
@@ -14,8 +15,8 @@ namespace temporal_random_walk {
 
     template<bool IsDirected, bool Forward, RandomPickerType EdgePickerType, RandomPickerType StartPickerType>
     __global__ void generate_random_walks_kernel(
-        const WalkSet *__restrict__ walk_set,
-        TemporalGraphStore *__restrict__ temporal_graph,
+        WalkSetView walk_set,
+        TemporalGraphView view,
         const int *__restrict__ start_node_ids,
         const int max_walk_len,
         const size_t num_walks,
@@ -34,19 +35,19 @@ namespace temporal_random_walk {
         const double r1 = rng_u01_philox(base_seed, walk_idx, base_idx + 1);
 
         // Get start edge based on whether we have a starting node
-        const auto padding_value = walk_set->nodes[walk_idx * max_walk_len];
+        const auto padding_value = walk_set.nodes[walk_idx * max_walk_len];
         InternalEdge start_edge;
         if (start_node_ids[walk_idx] == -1) {
             start_edge = temporal_graph::get_edge_at_device<Forward, StartPickerType>(
-                temporal_graph,
+                view,
                 -1, // timestamp
                 r0,
                 r1);
         } else {
-            walk_set->nodes[walk_idx * max_walk_len] = start_node_ids[walk_idx];
+            walk_set.nodes[walk_idx * max_walk_len] = start_node_ids[walk_idx];
 
             start_edge = temporal_graph::get_node_edge_at_device<Forward, StartPickerType, IsDirected>(
-                temporal_graph,
+                view,
                 start_node_ids[walk_idx],
                 -1, // timestamp
                 -1,
@@ -55,7 +56,7 @@ namespace temporal_random_walk {
         }
 
         if (start_edge.i == -1) {
-            walk_set->nodes[walk_idx * max_walk_len] = padding_value;
+            walk_set.nodes[walk_idx * max_walk_len] = padding_value;
             return;
         }
 
@@ -69,10 +70,10 @@ namespace temporal_random_walk {
         // Set initial node and add first hop - use template conditions
         if constexpr (IsDirected) {
             if constexpr (Forward) {
-                walk_set->add_hop(walk_idx, start_src, current_timestamp);
+                walk_set.add_hop(walk_idx, start_src, current_timestamp);
                 current_node = start_dst;
             } else {
-                walk_set->add_hop(walk_idx, start_dst, current_timestamp);
+                walk_set.add_hop(walk_idx, start_dst, current_timestamp);
                 current_node = start_src;
             }
         } else {
@@ -83,7 +84,7 @@ namespace temporal_random_walk {
                                         ? start_node_ids[walk_idx]
                                         : pick_random_number(start_src, start_dst, r2);
 
-            walk_set->add_hop(walk_idx, picked_node, current_timestamp);
+            walk_set.add_hop(walk_idx, picked_node, current_timestamp);
             current_node = pick_other_number(start_src, start_dst, picked_node);
         }
 
@@ -99,11 +100,11 @@ namespace temporal_random_walk {
             const double r_step0 = rng_u01_philox(base_seed, walk_idx, step_base_idx);
             const double r_step1 = rng_u01_philox(base_seed, walk_idx, step_base_idx + 1);
 
-            walk_set->add_hop(walk_idx, current_node, current_timestamp, current_edge_id);
+            walk_set.add_hop(walk_idx, current_node, current_timestamp, current_edge_id);
 
             // Use templated edge selector function
             InternalEdge next_edge = temporal_graph::get_node_edge_at_device<Forward, EdgePickerType, IsDirected>(
-                temporal_graph,
+                view,
                 current_node,
                 current_timestamp,
                 prev_node,
@@ -131,14 +132,14 @@ namespace temporal_random_walk {
 
         // Reverse walk only when walking backward
         if constexpr (!Forward) {
-            walk_set->reverse_walk(walk_idx);
+            walk_set.reverse_walk(walk_idx);
         }
     }
 
     inline void launch_random_walk_kernel_full_walk(
-        TemporalGraphStore *temporal_graph,
+        const TemporalGraphView& view,
         const bool is_directed,
-        const WalkSet *walk_set,
+        WalkSetView walk_set_view,
         const int max_walk_len,
         const int *start_node_ids,
         const size_t num_walks,
@@ -161,7 +162,7 @@ namespace temporal_random_walk {
 
         #define DISPATCH(DIR, FWD, EDGE, START) \
             generate_random_walks_kernel<DIR, FWD, EDGE, START><<<grid, block_dim>>>( \
-                walk_set, temporal_graph, start_node_ids, max_walk_len, num_walks_int, base_seed); return;
+                walk_set_view, view, start_node_ids, max_walk_len, num_walks_int, base_seed); return;
 
         #define HANDLE_EDGE_START(DIR, FWD) \
             switch (edge_picker_type) { \

@@ -1,7 +1,7 @@
 #ifndef NODE_FEATURES_H
 #define NODE_FEATURES_H
 
-#include "../stores/node_features.cuh"
+#include "../graph/node_features.cuh"
 
 class NodeFeatures {
 public:

@@ -2,8 +2,8 @@
 #define NODE_EDGE_INDEX_H
 
 #include <vector>
-#include "../stores/node_edge_index.cuh"
-#include "../stores/edge_data.cuh"
+#include "../graph/node_edge_index.cuh"
+#include "../graph/edge_data.cuh"
 #include "../common/error_handlers.cuh"
 
 #ifdef HAS_CUDA

@@ -4,8 +4,8 @@
 #include "../common/macros.cuh"
 #include "../data/walk_set/walk_set.cuh"
 #include "helpers.cuh"
-#include "../stores/temporal_graph.cuh"
-#include "../stores/edge_selectors.cuh"
+#include "../graph/temporal_graph.cuh"
+#include "../graph/edge_selectors.cuh"
 
 
 namespace temporal_random_walk {

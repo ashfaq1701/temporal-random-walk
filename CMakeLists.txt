@@ -64,10 +64,14 @@ if(APPLE)
 endif()
 
 set(SRC_FILES
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/edge_data.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/node_edge_index.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/node_features.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/stores/temporal_graph.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/data/buffer.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/data/walk_set/walk_set_device.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/data/walk_set/walk_set_host.cu
+
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/graph/edge_data.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/graph/node_edge_index.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/graph/node_features.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/graph/temporal_graph.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/core/temporal_random_walk.cu
 
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/EdgeData.cu

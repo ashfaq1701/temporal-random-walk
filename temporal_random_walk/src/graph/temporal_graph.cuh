@@ -4,6 +4,7 @@
 #include "edge_data.cuh"
 #include "node_edge_index.cuh"
 #include "../common/const.cuh"
+#include "../data/temporal_graph_view.cuh"
 
 struct TemporalGraphStore {
     bool is_directed;
@@ -144,6 +145,19 @@ namespace temporal_graph {
     HOST TemporalGraphStore* to_device_ptr(const TemporalGraphStore* graph);
 
     HOST void free_device_pointers(TemporalGraphStore* d_graph);
+
+    /**
+     * Bridge helper: build a TemporalGraphView from an old TemporalGraphStore.
+     *
+     * This lives for exactly one task. Task 4 uses it to feed views into
+     * walk kernels without yet having a TemporalGraphData. Task 5 deletes
+     * this function (along with the old *Store types) and replaces callers
+     * with make_temporal_graph_view(data) from data/temporal_graph_view.cuh.
+     *
+     * The returned view aliases into graph->edge_data and
+     * graph->node_edge_index. It must not outlive either.
+     */
+    HOST TemporalGraphView make_view_from_old_store(const TemporalGraphStore* graph);
 
     #endif
 
