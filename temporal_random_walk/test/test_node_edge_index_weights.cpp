@@ -1,76 +1,88 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
-#include "../src/proxies/NodeEdgeIndex.cuh"
-#include "../src/proxies/EdgeData.cuh"
+#include <limits>
+#include <vector>
+
 #include "../src/common/const.cuh"
+#include "../src/core/temporal_random_walk.cuh"
+#include "../src/graph/edge_data.cuh"
+#include "../src/graph/node_edge_index.cuh"
+
+namespace {
+
+static void do_update_timestamp_groups(TemporalGraphData& data) {
+#ifdef HAS_CUDA
+    if (data.use_gpu) {
+        edge_data::update_timestamp_groups_cuda(data);
+        return;
+    }
+#endif
+    edge_data::update_timestamp_groups_std(data);
+}
+
+static void do_update_temporal_weights(TemporalGraphData& data, double timescale_bound) {
+#ifdef HAS_CUDA
+    if (data.use_gpu) {
+        node_edge_index::update_temporal_weights_cuda(data, timescale_bound);
+        return;
+    }
+#endif
+    node_edge_index::update_temporal_weights_std(data, timescale_bound);
+}
+
+} // namespace
 
 template<typename T>
 class NodeEdgeIndexWeightTest : public ::testing::Test {
 protected:
-
-    NodeEdgeIndexWeightTest(): index(T::value) {}
-
-    // Helper to verify weights are normalized and cumulative per node's group
     static void verify_node_weights(const std::vector<size_t>& group_offsets,
-                                  const std::vector<double>& weights)
-    {
-        // For each node
-        for (size_t node = 0; node < group_offsets.size() - 1; node++) {
-            size_t start = group_offsets[node];
-            size_t end = group_offsets[node + 1];
+                                    const std::vector<double>& weights) {
+        for (size_t node = 0; node + 1 < group_offsets.size(); node++) {
+            const size_t start = group_offsets[node];
+            const size_t end = group_offsets[node + 1];
 
             if (start < end) {
-                // Check weights are monotonically increasing
                 for (size_t i = start; i < end; i++) {
                     EXPECT_GE(weights[i], 0.0);
                     if (i > start) {
                         EXPECT_GE(weights[i], weights[i-1]);
                     }
                 }
-                // Last weight in node's group should be normalized to 1.0
                 EXPECT_NEAR(weights[end-1], 1.0, 1e-6);
             }
         }
     }
 
-    // Helper to get individual weights for a node
     static std::vector<double> get_individual_weights(
-        const std::vector<double> &cumulative,
-        const std::vector<size_t> &offsets,
+        const std::vector<double>& cumulative,
+        const std::vector<size_t>& offsets,
         const size_t node) {
-
-        // Get node's range
         const size_t start = offsets[node];
         const size_t end = offsets[node + 1];
 
-        // Calculate individual weights
         std::vector<double> weights;
         weights.push_back(cumulative[start]);
         for (size_t i = start + 1; i < end; i++) {
             weights.push_back(cumulative[i] - cumulative[i - 1]);
         }
-
         return weights;
     }
 
-    void setup_test_graph(bool directed = true) {
-        const EdgeData edges(T::value);  // CPU mode
-        // Add edges that create multiple timestamp groups per node
-        edges.push_back(1, 2, 10);
-        edges.push_back(1, 3, 10); // Same timestamp group for node 1
-        edges.push_back(1, 4, 20); // New timestamp group for node 1
-        edges.push_back(2, 3, 20);
-        edges.push_back(2, 4, 30); // Different timestamp groups for node 2
-        edges.push_back(3, 4, 40);
-        edges.update_timestamp_groups();
-
-        index = NodeEdgeIndex(T::value);  // CPU mode
-        index.rebuild(edges.edge_data, directed);
-        index.update_temporal_weights(edges.edge_data, -1);
+    core::TemporalRandomWalk make_test_graph(const bool directed) {
+        core::TemporalRandomWalk local(directed, T::value, -1, /*enable_weight_computation=*/true);
+        auto& d = local.data();
+        edge_data::push_back(d, 1, 2, 10);
+        edge_data::push_back(d, 1, 3, 10);
+        edge_data::push_back(d, 1, 4, 20);
+        edge_data::push_back(d, 2, 3, 20);
+        edge_data::push_back(d, 2, 4, 30);
+        edge_data::push_back(d, 3, 4, 40);
+        do_update_timestamp_groups(d);
+        node_edge_index::rebuild(d);
+        do_update_temporal_weights(d, -1);
+        return local;
     }
-
-    NodeEdgeIndex index;
 };
 
 #ifdef HAS_CUDA
@@ -80,261 +92,245 @@ using GPU_USAGE_TYPES = ::testing::Types<
 >;
 #else
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<bool, false>   // CPU mode only
+    std::integral_constant<bool, false>
 >;
 #endif
 
 TYPED_TEST_SUITE(NodeEdgeIndexWeightTest, GPU_USAGE_TYPES);
 
 TYPED_TEST(NodeEdgeIndexWeightTest, EmptyGraph) {
-    EdgeData empty_edges(TypeParam::value);
-    this->index = NodeEdgeIndex(TypeParam::value);
-    this->index.rebuild(empty_edges.edge_data, true);
-    this->index.update_temporal_weights(empty_edges.edge_data, -1);
+    core::TemporalRandomWalk trw(/*is_directed=*/true, TypeParam::value, -1, true);
+    auto& data = trw.data();
+    node_edge_index::rebuild(data);
+    do_update_temporal_weights(data, -1);
 
-    EXPECT_TRUE(this->index.outbound_forward_cumulative_weights_exponential().empty());
-    EXPECT_TRUE(this->index.outbound_backward_cumulative_weights_exponential().empty());
-    EXPECT_TRUE(this->index.inbound_backward_cumulative_weights_exponential().empty());
+    const auto idx = node_edge_index::snapshot(data);
+    EXPECT_TRUE(idx.outbound_forward_cumulative_weights_exponential.empty());
+    EXPECT_TRUE(idx.outbound_backward_cumulative_weights_exponential.empty());
+    EXPECT_TRUE(idx.inbound_backward_cumulative_weights_exponential.empty());
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, DirectedWeightNormalization) {
-    this->setup_test_graph(true);
+    auto local = this->make_test_graph(true);
+    const auto idx = node_edge_index::snapshot(local.data());
 
-    // Verify per-node weight normalization
-    this->verify_node_weights(this->index.count_ts_group_per_node_outbound(),
-        this->index.outbound_forward_cumulative_weights_exponential());
-    this->verify_node_weights(this->index.count_ts_group_per_node_outbound(),
-        this->index.outbound_backward_cumulative_weights_exponential());
-    this->verify_node_weights(this->index.count_ts_group_per_node_inbound(),
-        this->index.inbound_backward_cumulative_weights_exponential());
+    this->verify_node_weights(idx.count_ts_group_per_node_outbound,
+                              idx.outbound_forward_cumulative_weights_exponential);
+    this->verify_node_weights(idx.count_ts_group_per_node_outbound,
+                              idx.outbound_backward_cumulative_weights_exponential);
+    this->verify_node_weights(idx.count_ts_group_per_node_inbound,
+                              idx.inbound_backward_cumulative_weights_exponential);
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, WeightBiasPerNode) {
+    core::TemporalRandomWalk trw(/*is_directed=*/true, TypeParam::value, -1, true);
+    auto& data = trw.data();
+    edge_data::push_back(data, 1, 2, 10);
+    edge_data::push_back(data, 1, 3, 20);
+    edge_data::push_back(data, 1, 4, 30);
+    do_update_timestamp_groups(data);
+    node_edge_index::rebuild(data);
+    do_update_temporal_weights(data, -1);
 
-    EdgeData edges(TypeParam::value);
-    edges.push_back(1, 2, 10);  // Known timestamps for precise verification
-    edges.push_back(1, 3, 20);
-    edges.push_back(1, 4, 30);
-    edges.update_timestamp_groups();
+    const auto idx = node_edge_index::snapshot(data);
 
-    this->index = NodeEdgeIndex(TypeParam::value);
-    this->index.rebuild(edges.edge_data, true);
-    this->index.update_temporal_weights(edges.edge_data, -1); // No scaling
-
-    // Forward weights: exp(-(t - t_min))
-    auto forward = this->get_individual_weights(
-        this->index.outbound_forward_cumulative_weights_exponential(),
-        this->index.count_ts_group_per_node_outbound(), 1);
-
+    const auto forward = this->get_individual_weights(
+        idx.outbound_forward_cumulative_weights_exponential,
+        idx.count_ts_group_per_node_outbound, 1);
     for (size_t i = 0; i < forward.size() - 1; i++) {
-        double expected_ratio = exp(-10); // Time diff between groups is 100
+        const double expected_ratio = exp(-10);
         EXPECT_NEAR(forward[i+1]/forward[i], expected_ratio, 1e-6);
     }
 
-    // Backward weights: exp(t - t_min)
-    auto backward = this->get_individual_weights(
-        this->index.outbound_backward_cumulative_weights_exponential(),
-        this->index.count_ts_group_per_node_outbound(), 1);
-
+    const auto backward = this->get_individual_weights(
+        idx.outbound_backward_cumulative_weights_exponential,
+        idx.count_ts_group_per_node_outbound, 1);
     for (size_t i = 0; i < backward.size() - 1; i++) {
-        double expected_ratio = exp(10); // Time diff between groups is 100
+        const double expected_ratio = exp(10);
         EXPECT_NEAR(backward[i + 1]/backward[i], expected_ratio, 1e-6);
     }
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, ScaledWeightRatios) {
-    EdgeData edges(TypeParam::value);
-    edges.push_back(1, 2, 100);
-    edges.push_back(1, 3, 300);
-    edges.push_back(1, 4, 500);
-    edges.update_timestamp_groups();
-
-    this->index = NodeEdgeIndex(TypeParam::value);
-    this->index.rebuild(edges.edge_data, true);
+    core::TemporalRandomWalk trw(/*is_directed=*/true, TypeParam::value, -1, true);
+    auto& data = trw.data();
+    edge_data::push_back(data, 1, 2, 100);
+    edge_data::push_back(data, 1, 3, 300);
+    edge_data::push_back(data, 1, 4, 500);
+    do_update_timestamp_groups(data);
+    node_edge_index::rebuild(data);
 
     constexpr double timescale_bound = 2.0;
-    this->index.update_temporal_weights(edges.edge_data, timescale_bound);
+    do_update_temporal_weights(data, timescale_bound);
+
+    const auto idx = node_edge_index::snapshot(data);
 
     const auto forward = this->get_individual_weights(
-        this->index.outbound_forward_cumulative_weights_exponential(),
-        this->index.count_ts_group_per_node_outbound(), 1);
+        idx.outbound_forward_cumulative_weights_exponential,
+        idx.count_ts_group_per_node_outbound, 1);
 
-    // Time range is 400, scale = 2.0/400 = 0.005
     constexpr double time_scale = timescale_bound / 400.0;
 
     for (size_t i = 0; i < forward.size() - 1; i++) {
-        // Each step is 200 units
-        double scaled_diff = 200 * time_scale;
-        double expected_ratio = exp(-scaled_diff);
-        EXPECT_NEAR(forward[i+1]/forward[i], expected_ratio, 1e-6)
-            << "Forward ratio incorrect at index " << i;
+        const double scaled_diff = 200 * time_scale;
+        const double expected_ratio = exp(-scaled_diff);
+        EXPECT_NEAR(forward[i+1]/forward[i], expected_ratio, 1e-6);
     }
 
-    auto backward = this->get_individual_weights(
-        this->index.outbound_backward_cumulative_weights_exponential(),
-        this->index.count_ts_group_per_node_outbound(), 1);
-
+    const auto backward = this->get_individual_weights(
+        idx.outbound_backward_cumulative_weights_exponential,
+        idx.count_ts_group_per_node_outbound, 1);
     for (size_t i = 0; i < backward.size() - 1; i++) {
         constexpr double scaled_diff = 200 * time_scale;
         const double expected_ratio = exp(scaled_diff);
-        EXPECT_NEAR(backward[i+1]/backward[i], expected_ratio, 1e-6)
-            << "Backward ratio incorrect at index " << i;
+        EXPECT_NEAR(backward[i+1]/backward[i], expected_ratio, 1e-6);
     }
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, UndirectedWeightNormalization) {
-   this->setup_test_graph(false);
+    auto local = this->make_test_graph(false);
+    const auto idx = node_edge_index::snapshot(local.data());
 
-   // For undirected, should only have outbound weights
-   this->verify_node_weights(this->index.count_ts_group_per_node_outbound(),
-                      this->index.outbound_forward_cumulative_weights_exponential());
-   this->verify_node_weights(this->index.count_ts_group_per_node_outbound(),
-                      this->index.outbound_backward_cumulative_weights_exponential());
-   EXPECT_TRUE(this->index.inbound_backward_cumulative_weights_exponential().empty());
+    this->verify_node_weights(idx.count_ts_group_per_node_outbound,
+                              idx.outbound_forward_cumulative_weights_exponential);
+    this->verify_node_weights(idx.count_ts_group_per_node_outbound,
+                              idx.outbound_backward_cumulative_weights_exponential);
+    EXPECT_TRUE(idx.inbound_backward_cumulative_weights_exponential.empty());
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, WeightConsistencyAcrossUpdates) {
-   this->setup_test_graph(true);
+    auto local = this->make_test_graph(true);
+    auto& data = local.data();
 
-   // Store original weights
-   auto original_out_forward = this->index.outbound_forward_cumulative_weights_exponential();
-   auto original_out_backward = this->index.outbound_backward_cumulative_weights_exponential();
-   auto original_in_backward = this->index.inbound_backward_cumulative_weights_exponential();
+    const auto before = node_edge_index::snapshot(data);
 
-   // Rebuild and update weights again
-   EdgeData edges(TypeParam::value);
-   edges.push_back(1, 2, 10);
-   edges.push_back(1, 3, 10);
-   edges.update_timestamp_groups();
+    // Reset and rebuild with a smaller edge set.
+    edge_data::set_size(data, 0);
+    do_update_timestamp_groups(data);
+    edge_data::push_back(data, 1, 2, 10);
+    edge_data::push_back(data, 1, 3, 10);
+    do_update_timestamp_groups(data);
+    node_edge_index::rebuild(data);
+    do_update_temporal_weights(data, -1);
 
-   this->index.rebuild(edges.edge_data, true);
-   this->index.update_temporal_weights(edges.edge_data, -1);
+    const auto after = node_edge_index::snapshot(data);
 
-   // Weights should be different but still normalized
-   EXPECT_NE(original_out_forward.size(), this->index.outbound_forward_cumulative_weights_exponential().size());
-   this->verify_node_weights(this->index.count_ts_group_per_node_outbound(),
-                      this->index.outbound_forward_cumulative_weights_exponential());
+    EXPECT_NE(before.outbound_forward_cumulative_weights_exponential.size(),
+              after.outbound_forward_cumulative_weights_exponential.size());
+    this->verify_node_weights(after.count_ts_group_per_node_outbound,
+                              after.outbound_forward_cumulative_weights_exponential);
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, SingleTimestampGroupPerNode) {
-   EdgeData edges(TypeParam::value);
-   // All edges in same timestamp group
-   edges.push_back(1, 2, 10);
-   edges.push_back(1, 3, 10);
-   edges.push_back(2, 3, 10);
-   edges.update_timestamp_groups();
+    core::TemporalRandomWalk trw(/*is_directed=*/true, TypeParam::value, -1, true);
+    auto& data = trw.data();
+    edge_data::push_back(data, 1, 2, 10);
+    edge_data::push_back(data, 1, 3, 10);
+    edge_data::push_back(data, 2, 3, 10);
+    do_update_timestamp_groups(data);
+    node_edge_index::rebuild(data);
+    do_update_temporal_weights(data, -1);
 
-   this->index.rebuild(edges.edge_data, true);
-   this->index.update_temporal_weights(edges.edge_data, -1);
-
-   // Each node should have single weight of 1.0
-   for (size_t node = 0; node < this->index.count_ts_group_per_node_outbound().size() - 1; node++) {
-       const size_t start = this->index.count_ts_group_per_node_outbound()[node];
-       size_t end = this->index.count_ts_group_per_node_outbound()[node + 1];
-       if (start < end) {
-           EXPECT_EQ(end - start, 1);
-           EXPECT_NEAR(this->index.outbound_forward_cumulative_weights_exponential()[start], 1.0, 1e-6);
-           EXPECT_NEAR(this->index.outbound_backward_cumulative_weights_exponential()[start], 1.0, 1e-6);
-       }
-   }
+    const auto idx = node_edge_index::snapshot(data);
+    for (size_t node = 0; node + 1 < idx.count_ts_group_per_node_outbound.size(); node++) {
+        const size_t start = idx.count_ts_group_per_node_outbound[node];
+        const size_t end   = idx.count_ts_group_per_node_outbound[node + 1];
+        if (start < end) {
+            EXPECT_EQ(end - start, 1u);
+            EXPECT_NEAR(idx.outbound_forward_cumulative_weights_exponential[start],  1.0, 1e-6);
+            EXPECT_NEAR(idx.outbound_backward_cumulative_weights_exponential[start], 1.0, 1e-6);
+        }
+    }
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundZero) {
-    EdgeData edges(TypeParam::value);
-    edges.push_back(1, 2, 10);
-    edges.push_back(1, 3, 20);
-    edges.push_back(1, 4, 30);
-    edges.update_timestamp_groups();
+    core::TemporalRandomWalk trw(/*is_directed=*/true, TypeParam::value, -1, true);
+    auto& data = trw.data();
+    edge_data::push_back(data, 1, 2, 10);
+    edge_data::push_back(data, 1, 3, 20);
+    edge_data::push_back(data, 1, 4, 30);
+    do_update_timestamp_groups(data);
+    node_edge_index::rebuild(data);
+    do_update_temporal_weights(data, 0);
 
-    this->index.rebuild(edges.edge_data, true);
-    this->index.update_temporal_weights(edges.edge_data, 0);  // Should behave like -1
-
-    this->verify_node_weights(this->index.count_ts_group_per_node_outbound(),
-                       this->index.outbound_forward_cumulative_weights_exponential());
-    this->verify_node_weights(this->index.count_ts_group_per_node_outbound(),
-                       this->index.outbound_backward_cumulative_weights_exponential());
+    const auto idx = node_edge_index::snapshot(data);
+    this->verify_node_weights(idx.count_ts_group_per_node_outbound,
+                              idx.outbound_forward_cumulative_weights_exponential);
+    this->verify_node_weights(idx.count_ts_group_per_node_outbound,
+                              idx.outbound_backward_cumulative_weights_exponential);
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleBoundWithSingleTimestamp) {
-    EdgeData edges(TypeParam::value);
-    // All edges for node 1 have same timestamp
-    constexpr int node_id = 1;  // Original node ID
-    edges.push_back(node_id, 2, 10);
-    edges.push_back(node_id, 3, 10);
-    edges.push_back(node_id, 4, 10);
-    edges.update_timestamp_groups();
+    core::TemporalRandomWalk trw(/*is_directed=*/true, TypeParam::value, -1, true);
+    auto& data = trw.data();
+    constexpr int node_id = 1;
+    edge_data::push_back(data, node_id, 2, 10);
+    edge_data::push_back(data, node_id, 3, 10);
+    edge_data::push_back(data, node_id, 4, 10);
+    do_update_timestamp_groups(data);
+    node_edge_index::rebuild(data);
 
-    this->index.rebuild(edges.edge_data, true);
-
-    // Test with different bounds
     for (const double bound : {-1.0, 0.0, 10.0, 50.0}) {
-        this->index.update_temporal_weights(edges.edge_data, bound);
+        do_update_temporal_weights(data, bound);
 
-        // Node should have single group with weight 1.0
-        const size_t start = this->index.count_ts_group_per_node_outbound()[node_id];
-        const size_t end = this->index.count_ts_group_per_node_outbound()[node_id + 1];
-        ASSERT_EQ(end - start, 1) << "Node should have exactly one timestamp group";
-        EXPECT_NEAR(this->index.outbound_forward_cumulative_weights_exponential()[start], 1.0, 1e-6);
-        EXPECT_NEAR(this->index.outbound_backward_cumulative_weights_exponential()[start], 1.0, 1e-6);
+        const auto idx = node_edge_index::snapshot(data);
+        const size_t start = idx.count_ts_group_per_node_outbound[node_id];
+        const size_t end   = idx.count_ts_group_per_node_outbound[node_id + 1];
+        ASSERT_EQ(end - start, 1u);
+        EXPECT_NEAR(idx.outbound_forward_cumulative_weights_exponential[start], 1.0, 1e-6);
+        EXPECT_NEAR(idx.outbound_backward_cumulative_weights_exponential[start], 1.0, 1e-6);
     }
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, WeightOrderPreservation) {
-    EdgeData edges(TypeParam::value);
-    edges.push_back(1, 2, 10);
-    edges.push_back(1, 3, 20);
-    edges.push_back(1, 4, 30);
-    edges.update_timestamp_groups();
+    core::TemporalRandomWalk trw(/*is_directed=*/true, TypeParam::value, -1, true);
+    auto& data = trw.data();
+    edge_data::push_back(data, 1, 2, 10);
+    edge_data::push_back(data, 1, 3, 20);
+    edge_data::push_back(data, 1, 4, 30);
+    do_update_timestamp_groups(data);
+    node_edge_index::rebuild(data);
 
-    this->index.rebuild(edges.edge_data, true);
+    do_update_temporal_weights(data, -1);
+    const auto unscaled = node_edge_index::snapshot(data);
+    const auto unscaled_forward  = unscaled.outbound_forward_cumulative_weights_exponential;
+    const auto unscaled_backward = unscaled.outbound_backward_cumulative_weights_exponential;
 
-    // Get unscaled weights
-    this->index.update_temporal_weights(edges.edge_data, -1);
-    const auto unscaled_forward = this->index.outbound_forward_cumulative_weights_exponential();
-    const auto unscaled_backward = this->index.outbound_backward_cumulative_weights_exponential();
+    do_update_temporal_weights(data, 10.0);
+    const auto scaled = node_edge_index::snapshot(data);
 
-    // Get scaled weights
-    this->index.update_temporal_weights(edges.edge_data, 10.0);
-
-    // Check relative ordering is preserved for node 1
-    const size_t start = this->index.count_ts_group_per_node_outbound()[1];
-    const size_t end = this->index.count_ts_group_per_node_outbound()[2];
+    const size_t start = scaled.count_ts_group_per_node_outbound[1];
+    const size_t end   = scaled.count_ts_group_per_node_outbound[2];
     for (size_t i = start + 1; i < end; i++) {
-        // If unscaled weights were increasing/decreasing, scaled weights should follow
-        EXPECT_EQ(unscaled_forward[i] > unscaled_forward[i-1],
-                  this->index.outbound_forward_cumulative_weights_exponential()[i] > this->index.outbound_forward_cumulative_weights_exponential()[i-1]);
+        EXPECT_EQ(unscaled_forward[i]  > unscaled_forward[i-1],
+                  scaled.outbound_forward_cumulative_weights_exponential[i]  >
+                  scaled.outbound_forward_cumulative_weights_exponential[i-1]);
         EXPECT_EQ(unscaled_backward[i] > unscaled_backward[i-1],
-                  this->index.outbound_backward_cumulative_weights_exponential()[i] > this->index.outbound_backward_cumulative_weights_exponential()[i-1]);
+                  scaled.outbound_backward_cumulative_weights_exponential[i] >
+                  scaled.outbound_backward_cumulative_weights_exponential[i-1]);
     }
 }
 
 TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleNormalizationTest) {
-
-    EdgeData edges(TypeParam::value);  // CPU mode
-    // Create edges with widely varying time differences
-    edges.push_back(1, 2, 100);       // Small gap
-    edges.push_back(1, 3, 200);       // 100 units
-    edges.push_back(1, 4, 1000);      // 800 units
-    edges.push_back(1, 5, 100000);    // Large gap
-    edges.update_timestamp_groups();
-
-    this->index = NodeEdgeIndex(TypeParam::value);  // CPU mode
-    this->index.rebuild(edges.edge_data, true);
+    core::TemporalRandomWalk trw(/*is_directed=*/true, TypeParam::value, -1, true);
+    auto& data = trw.data();
+    edge_data::push_back(data, 1, 2, 100);
+    edge_data::push_back(data, 1, 3, 200);
+    edge_data::push_back(data, 1, 4, 1000);
+    edge_data::push_back(data, 1, 5, 100000);
+    do_update_timestamp_groups(data);
+    node_edge_index::rebuild(data);
 
     constexpr double timescale_bound = 5.0;
-    this->index.update_temporal_weights(edges.edge_data, timescale_bound);
+    do_update_temporal_weights(data, timescale_bound);
 
-    // Get host data for group offsets and start/end indices
-    const auto host_offsets = this->index.count_ts_group_per_node_outbound();
+    const auto idx = node_edge_index::snapshot(data);
+    const auto edges = edge_data::snapshot(data);
 
-    // Get individual weights using helper method
     const auto weights = this->get_individual_weights(
-        this->index.outbound_forward_cumulative_weights_exponential(),
-        this->index.count_ts_group_per_node_outbound(),
-        1  // Node index
-    );
+        idx.outbound_forward_cumulative_weights_exponential,
+        idx.count_ts_group_per_node_outbound, 1);
 
-    // Check that max weight difference is bounded by timescale_bound
     double max_weight_ratio = -std::numeric_limits<double>::infinity();
     for (size_t i = 0; i < weights.size(); i++) {
         for (size_t j = 0; j < weights.size(); j++) {
@@ -343,18 +339,13 @@ TYPED_TEST(NodeEdgeIndexWeightTest, TimescaleNormalizationTest) {
             }
         }
     }
-    EXPECT_NEAR(max_weight_ratio, timescale_bound, 1e-6)
-        << "Maximum weight ratio exceeds timescale bound";
+    EXPECT_NEAR(max_weight_ratio, timescale_bound, 1e-6);
 
-    // Get timestamps for node from EdgeData
-    const auto host_timestamps = edges.unique_timestamps();
-
-    // Verify that relative ordering matches time differences
+    const auto& ts = edges.unique_timestamps;
     for (size_t i = 0; i < weights.size() - 1; i++) {
-        const double time_ratio = static_cast<double>(host_timestamps[i+1] - host_timestamps[i]) /
-                          static_cast<double>(host_timestamps[weights.size()-1] - host_timestamps[0]);
-        double weight_ratio = weights[i] / weights[i+1];
-        EXPECT_NEAR(log(weight_ratio), timescale_bound * time_ratio, 1e-6)
-            << "Weight ratio doesn't match expected scaled time difference at " << i;
+        const double time_ratio = static_cast<double>(ts[i+1] - ts[i]) /
+                                   static_cast<double>(ts[weights.size()-1] - ts[0]);
+        const double weight_ratio = weights[i] / weights[i+1];
+        EXPECT_NEAR(log(weight_ratio), timescale_bound * time_ratio, 1e-6);
     }
 }

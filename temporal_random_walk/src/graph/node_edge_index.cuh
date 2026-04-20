@@ -2,6 +2,7 @@
 #define NODE_EDGE_INDEX_CUH
 
 #include <cstddef>
+#include <vector>
 
 #include "../common/macros.cuh"
 #include "../common/error_handlers.cuh"
@@ -99,6 +100,40 @@ namespace node_edge_index {
     HOST void rebuild(TemporalGraphData& data);
 
     HOST size_t get_memory_used(const TemporalGraphData& data);
+
+    // ============================================================
+    // Test / debug helpers. See edge_data::snapshot for usage notes.
+    // ============================================================
+
+    struct NodeEdgeIndexSnapshot {
+        std::vector<size_t> node_group_outbound_offsets;
+        std::vector<size_t> node_group_inbound_offsets;
+        std::vector<size_t> node_ts_sorted_outbound_indices;
+        std::vector<size_t> node_ts_sorted_inbound_indices;
+        std::vector<size_t> count_ts_group_per_node_outbound;
+        std::vector<size_t> count_ts_group_per_node_inbound;
+        std::vector<size_t> node_ts_group_outbound_offsets;
+        std::vector<size_t> node_ts_group_inbound_offsets;
+        std::vector<double> outbound_forward_cumulative_weights_exponential;
+        std::vector<double> outbound_backward_cumulative_weights_exponential;
+        std::vector<double> inbound_backward_cumulative_weights_exponential;
+    };
+
+    HOST inline NodeEdgeIndexSnapshot snapshot(const TemporalGraphData& data) {
+        return NodeEdgeIndexSnapshot{
+            data.node_group_outbound_offsets.to_host_vector(),
+            data.node_group_inbound_offsets.to_host_vector(),
+            data.node_ts_sorted_outbound_indices.to_host_vector(),
+            data.node_ts_sorted_inbound_indices.to_host_vector(),
+            data.count_ts_group_per_node_outbound.to_host_vector(),
+            data.count_ts_group_per_node_inbound.to_host_vector(),
+            data.node_ts_group_outbound_offsets.to_host_vector(),
+            data.node_ts_group_inbound_offsets.to_host_vector(),
+            data.outbound_forward_cumulative_weights_exponential.to_host_vector(),
+            data.outbound_backward_cumulative_weights_exponential.to_host_vector(),
+            data.inbound_backward_cumulative_weights_exponential.to_host_vector(),
+        };
+    }
 
 }
 

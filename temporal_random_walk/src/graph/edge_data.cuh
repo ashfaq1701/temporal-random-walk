@@ -57,6 +57,15 @@ namespace edge_data {
         const float* edge_features,
         size_t feature_dim);
 
+    // Convenience: append a single edge. Thin wrapper around add_edges.
+    HOST inline void push_back(TemporalGraphData& data,
+                               const int src, const int tgt, const int64_t ts) {
+        const int srcs[1]     = {src};
+        const int tgts[1]     = {tgt};
+        const int64_t times[1] = {ts};
+        add_edges(data, srcs, tgts, times, 1);
+    }
+
     HOST std::vector<Edge> get_edges(const TemporalGraphData& data);
 
     HOST std::vector<int> get_active_node_ids(const TemporalGraphData& data);
@@ -163,6 +172,42 @@ namespace edge_data {
 #endif
 
     HOST size_t get_memory_used(const TemporalGraphData& data);
+
+    // ============================================================
+    // Test / debug helpers (not hot-path). One snapshot() call does
+    // Buffer<T>::to_host_vector() over every edge-layer buffer so
+    // test bodies stay readable. Prefer one snapshot per assertion
+    // block rather than one per assertion (each call incurs D->H
+    // copies when data.use_gpu).
+    // ============================================================
+
+    struct EdgeDataSnapshot {
+        std::vector<int>     sources;
+        std::vector<int>     targets;
+        std::vector<int64_t> timestamps;
+        std::vector<size_t>  timestamp_group_offsets;
+        std::vector<int64_t> unique_timestamps;
+        std::vector<double>  forward_cumulative_weights_exponential;
+        std::vector<double>  backward_cumulative_weights_exponential;
+        std::vector<int>     active_node_ids;
+        std::vector<size_t>  node_adj_offsets;
+        std::vector<int>     node_adj_neighbors;
+    };
+
+    HOST inline EdgeDataSnapshot snapshot(const TemporalGraphData& data) {
+        return EdgeDataSnapshot{
+            data.sources.to_host_vector(),
+            data.targets.to_host_vector(),
+            data.timestamps.to_host_vector(),
+            data.timestamp_group_offsets.to_host_vector(),
+            data.unique_timestamps.to_host_vector(),
+            data.forward_cumulative_weights_exponential.to_host_vector(),
+            data.backward_cumulative_weights_exponential.to_host_vector(),
+            data.active_node_ids.to_host_vector(),
+            data.node_adj_offsets.to_host_vector(),
+            data.node_adj_neighbors.to_host_vector(),
+        };
+    }
 
 }
 
