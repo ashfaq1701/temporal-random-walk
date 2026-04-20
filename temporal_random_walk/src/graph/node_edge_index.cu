@@ -720,50 +720,78 @@ HOST void node_edge_index::compute_node_group_offsets_cuda(TemporalGraphData& da
     const bool is_directed = data.is_directed;
 
     size_t* outbound_offsets_ptr = data.node_group_outbound_offsets.data();
-    size_t* inbound_offsets_ptr = is_directed ? data.node_group_inbound_offsets.data() : nullptr;
-    int* src_ptr = data.sources.data();
-    int* tgt_ptr = data.targets.data();
+    size_t* inbound_offsets_ptr  = is_directed ? data.node_group_inbound_offsets.data() : nullptr;
+    const int* src_ptr = data.sources.data();
+    const int* tgt_ptr = data.targets.data();
 
-    // Count edges per node using 64-bit atomics on the full size_t slot.
-    // Rationale: outbound_offsets_ptr / inbound_offsets_ptr are size_t (64-bit)
-    // arrays. The 32-bit reinterpret that used to live here silently overflowed
-    // for any node reaching 2^32 incident edges and was endian-dependent. CUDA
-    // provides atomicAdd on unsigned long long natively on all compute
-    // capabilities >= 3.5 (we target 75/80/86/89/90).
+    const size_t outbound_size = data.node_group_outbound_offsets.size();
+    const size_t inbound_size  = is_directed ? data.node_group_inbound_offsets.size() : 0;
+    const int    num_out_buckets = static_cast<int>(outbound_size) - 1;
+    const int    num_in_buckets  = static_cast<int>(inbound_size)  - 1;
+
+    if (num_edges == 0 || num_out_buckets <= 0) {
+        // offsets already zeroed by allocate_node_group_offsets; nothing to scan.
+        return;
+    }
+
+    // Per-node degree counts via CUB histogram. Replaces the atomic-increment
+    // for_each; HistogramEven builds per-block shared-memory local histograms
+    // and reduces them, eliminating the global-atomic contention that
+    // serialized the old kernel on hub nodes (degree >> average).
+    //
+    // Counter type must be unsigned long long (not size_t) because CUB's
+    // internal atomicAdd overload set only covers the ULL type. On LP64 this
+    // is layout-identical to size_t, so we reinterpret the offsets pointer —
+    // same cast pattern the old atomicAdd-based code used.
     static_assert(sizeof(size_t) == sizeof(unsigned long long),
-                  "size_t must be 64-bit for compute_node_group_offsets_cuda's "
-                  "atomicAdd; revisit the cast if this platform differs.");
+                  "compute_node_group_offsets_cuda reinterpret-cast assumes "
+                  "size_t and unsigned long long are layout-compatible.");
+    auto* outbound_ull = reinterpret_cast<unsigned long long*>(outbound_offsets_ptr + 1);
+    auto* inbound_ull  = is_directed
+        ? reinterpret_cast<unsigned long long*>(inbound_offsets_ptr + 1)
+        : nullptr;
 
-    auto counter_device_lambda = [
-                outbound_offsets_ptr, inbound_offsets_ptr,
-                src_ptr, tgt_ptr, is_directed] DEVICE (const size_t i) {
-        const int src_idx = src_ptr[i];
-        const int tgt_idx = tgt_ptr[i];
+    // Layout: counts write into offsets[1..n-1] so offsets[0] stays 0 and the
+    // downstream inclusive scan produces the CSR offsets directly.
+    if (is_directed) {
+        cub_histogram_even<int, unsigned long long>(
+            src_ptr, outbound_ull,
+            num_out_buckets, /*lower=*/0, /*upper=*/num_out_buckets,
+            num_edges);
+        CUDA_KERNEL_CHECK("After cub histogram outbound in compute_node_group_offsets_cuda");
 
-        atomicAdd(reinterpret_cast<unsigned long long *>(&outbound_offsets_ptr[src_idx + 1]),
-                  static_cast<unsigned long long>(1));
-        if (is_directed) {
-            atomicAdd(reinterpret_cast<unsigned long long *>(&inbound_offsets_ptr[tgt_idx + 1]),
-                      static_cast<unsigned long long>(1));
-        } else {
-            atomicAdd(reinterpret_cast<unsigned long long *>(&outbound_offsets_ptr[tgt_idx + 1]),
-                      static_cast<unsigned long long>(1));
-        }
-    };
+        cub_histogram_even<int, unsigned long long>(
+            tgt_ptr, inbound_ull,
+            num_in_buckets, /*lower=*/0, /*upper=*/num_in_buckets,
+            num_edges);
+        CUDA_KERNEL_CHECK("After cub histogram inbound in compute_node_group_offsets_cuda");
+    } else {
+        // Undirected: each edge contributes to both endpoints' degree, so
+        // concatenate [sources, targets] into one sample stream and run a
+        // single histogram. Two D->D memcpys + one histogram, which is still
+        // less work than the two-atomic-per-edge kernel we used to launch.
+        Buffer<int> concat(/*use_gpu=*/true);
+        concat.resize(num_edges * 2);
 
-    thrust::for_each(
-        DEVICE_EXECUTION_POLICY,
-        thrust::make_counting_iterator<size_t>(0),
-        thrust::make_counting_iterator<size_t>(num_edges),
-        counter_device_lambda);
-    CUDA_KERNEL_CHECK("After thrust for_each in compute_node_group_offsets_cuda");
+        CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
+            concat.data(),             src_ptr, num_edges * sizeof(int),
+            cudaMemcpyDeviceToDevice, /*stream=*/0));
+        CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
+            concat.data() + num_edges, tgt_ptr, num_edges * sizeof(int),
+            cudaMemcpyDeviceToDevice, /*stream=*/0));
 
-    // CUB specializes scans for primitive size_t; ~20-30% faster than the
-    // generic thrust inclusive_scan on large offsets arrays.
+        cub_histogram_even<int, unsigned long long>(
+            concat.data(), outbound_ull,
+            num_out_buckets, /*lower=*/0, /*upper=*/num_out_buckets,
+            num_edges * 2);
+        CUDA_KERNEL_CHECK("After cub histogram undirected in compute_node_group_offsets_cuda");
+    }
+
+    // Counts -> exclusive-style offsets via CUB inclusive scan on offsets[1..n].
     cub_inclusive_sum(
         outbound_offsets_ptr + 1,
         outbound_offsets_ptr + 1,
-        data.node_group_outbound_offsets.size() - 1
+        outbound_size - 1
     );
     CUDA_KERNEL_CHECK("After cub inclusive_sum outbound in compute_node_group_offsets_cuda");
 
@@ -771,7 +799,7 @@ HOST void node_edge_index::compute_node_group_offsets_cuda(TemporalGraphData& da
         cub_inclusive_sum(
             inbound_offsets_ptr + 1,
             inbound_offsets_ptr + 1,
-            data.node_group_inbound_offsets.size() - 1
+            inbound_size - 1
         );
         CUDA_KERNEL_CHECK("After cub inclusive_sum inbound in compute_node_group_offsets_cuda");
     }
