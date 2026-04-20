@@ -1,14 +1,63 @@
 #include "buffer.cuh"
 
-#include <vector>
-#include <cstring>
+#include <algorithm>
 #include <cstdint>
+#include <cstring>
+#include <vector>
 
-#include "../common/memory.cuh"
+#ifdef HAS_CUDA
+#include <thrust/device_ptr.h>
+#include <thrust/execution_policy.h>
+#include <thrust/fill.h>
+#endif
+
+namespace buffer_detail {
+
+// Byte-pattern fast paths for fill(): comparing T against an all-0 or
+// all-0xFF buffer lets cudaMemsetAsync replace a full kernel launch for
+// common values (int(0), size_t::max(), double(+0.0), etc.).
+template <typename T>
+inline bool is_zero_value(const T& v) {
+    constexpr size_t N = sizeof(T);
+    alignas(T) unsigned char zero[N] = {};
+    return std::memcmp(&v, zero, N) == 0;
+}
+
+template <typename T>
+inline bool is_all_0xff_value(const T& v) {
+    constexpr size_t N = sizeof(T);
+    alignas(T) unsigned char ffs[N];
+    std::memset(ffs, 0xFF, N);
+    return std::memcmp(&v, ffs, N) == 0;
+}
+
+} // namespace buffer_detail
 
 template <typename T>
 void Buffer<T>::fill(const T& value) {
-    fill_memory(data_, size_, value, use_gpu_);
+    if (!data_ || size_ == 0) return;
+
+#ifdef HAS_CUDA
+    if (use_gpu_) {
+        if (buffer_detail::is_zero_value(value)) {
+            CUDA_CHECK_AND_CLEAR(cudaMemsetAsync(
+                data_, 0, size_ * sizeof(T)));
+            return;
+        }
+        if (buffer_detail::is_all_0xff_value(value)) {
+            CUDA_CHECK_AND_CLEAR(cudaMemsetAsync(
+                data_, 0xFF, size_ * sizeof(T)));
+            return;
+        }
+        thrust::fill_n(
+            thrust::device,
+            thrust::device_pointer_cast(data_),
+            size_,
+            value);
+        return;
+    }
+#endif
+    std::fill(data_, data_ + size_, value);
 }
 
 template <typename T>

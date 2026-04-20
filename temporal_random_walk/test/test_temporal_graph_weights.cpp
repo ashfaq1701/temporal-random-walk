@@ -182,7 +182,8 @@ TYPED_TEST(TemporalGraphWeightTest, TimescaleBoundSampling) {
     std::map<int64_t, int> scaled_samples, unscaled_samples;
     constexpr int num_samples = 1000;
 
-    const double* random_nums = generate_n_random_numbers(num_samples * 4, TypeParam::value);
+    Buffer<double> random_nums_buf = generate_n_random_numbers(num_samples * 4, TypeParam::value);
+    const double* random_nums = random_nums_buf.data();
 
     for (int i = 0; i < num_samples; i++) {
         auto edge1 = test_util::get_edge_at_with_provided_nums(
@@ -195,8 +196,6 @@ TYPED_TEST(TemporalGraphWeightTest, TimescaleBoundSampling) {
 
     EXPECT_GT(scaled_samples[30],   scaled_samples[40]);
     EXPECT_GT(unscaled_samples[30], unscaled_samples[40]);
-
-    clear_memory(const_cast<double**>(&random_nums), TypeParam::value);
 }
 
 TYPED_TEST(TemporalGraphWeightTest, WeightScalingPrecision) {
@@ -243,7 +242,8 @@ TYPED_TEST(TemporalGraphWeightTest, DifferentTimescaleBounds) {
             /*is_directed=*/true, TypeParam::value, -1, true, false, bound);
         test_util::add_edges(graph, this->test_edges);
 
-        const double* random_nums = generate_n_random_numbers(num_samples * 2, TypeParam::value);
+        Buffer<double> random_nums_buf = generate_n_random_numbers(num_samples * 2, TypeParam::value);
+        const double* random_nums = random_nums_buf.data();
 
         std::map<int64_t, int> samples;
         for (int i = 0; i < num_samples; i++) {
@@ -257,8 +257,6 @@ TYPED_TEST(TemporalGraphWeightTest, DifferentTimescaleBounds) {
             EXPECT_GT(samples[timestamps[i]], samples[timestamps[i + 1]])
                 << "At bound " << bound;
         }
-
-        clear_memory(const_cast<double**>(&random_nums), TypeParam::value);
     }
 }
 

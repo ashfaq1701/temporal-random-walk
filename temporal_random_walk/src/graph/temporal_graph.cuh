@@ -12,16 +12,9 @@
 #include "../data/temporal_graph_view.cuh"
 #include "../data/buffer.cuh"
 
-// Include the OTHER parallel-file headers so temporal_graph_new.cu
-// can call the new overloads of edge_data::, node_edge_index::,
-// node_features::.
 #include "edge_data.cuh"
 #include "node_edge_index.cuh"
 #include "node_features.cuh"
-
-// STAGING FILE for task 5d. Not in CMake. Swapped in by task 5g
-// alongside all the other parallel files; the _new suffixes are
-// removed from includes at that time.
 
 namespace temporal_graph {
 

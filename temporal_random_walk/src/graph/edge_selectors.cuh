@@ -14,8 +14,6 @@
 #include <cuda/std/__algorithm/upper_bound.h>
 #endif
 
-// STAGING FILE for task 5e.
-
 namespace temporal_graph {
 
     // -------------------------------------------------------------------------

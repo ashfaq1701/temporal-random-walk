@@ -144,8 +144,7 @@
 
 /**
  * Explicitly clear the sticky CUDA error state. Use when you want to discard
- * a known-prior error without reacting to it (e.g., the intentional
- * cudaPointerGetAttributes probe in clear_memory).
+ * a known-prior error without reacting to it.
  */
 inline void clearCudaErrorState() {
     cudaGetLastError();

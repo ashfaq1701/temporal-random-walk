@@ -12,7 +12,7 @@
 #include "../data/enums.cuh"
 #include "../data/buffer.cuh"
 #include "../data/temporal_graph_data.cuh"
-#include "../data/walks_with_edge_features_host.cuh"
+#include "../data/walk_set/walks_with_edge_features_host.cuh"
 #include "../graph/temporal_graph.cuh"
 #include "../graph/node_features.cuh"
 
@@ -20,10 +20,8 @@
 #include <cuda_runtime.h>
 #endif
 
-// STAGING FILE for task 5f. Not in CMake. Swapped in by task 5g.
-
 // ==================================================================
-// The new top-level class.
+// Top-level class.
 // ==================================================================
 
 namespace core {

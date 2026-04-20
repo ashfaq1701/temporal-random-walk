@@ -8,7 +8,7 @@
 #include <fstream>
 
 #include "../src/data/walk_set/walk_set_host.cuh"
-#include "../src/data/walks_with_edge_features_host.cuh"
+#include "../src/data/walk_set/walks_with_edge_features_host.cuh"
 #include "../src/data/structs.cuh"
 
 inline void print_temporal_random_walks_with_times(

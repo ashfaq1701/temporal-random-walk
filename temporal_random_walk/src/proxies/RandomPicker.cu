@@ -1,6 +1,5 @@
 #include "RandomPicker.cuh"
 
-#include <common/memory.cuh>
 #include <common/random_gen.cuh>
 
 #include "../common/error_handlers.cuh"
@@ -30,7 +29,7 @@ ExponentialIndexRandomPicker::ExponentialIndexRandomPicker(const bool use_gpu) :
 
 int ExponentialIndexRandomPicker::pick_random(const int start, const int end, const bool prioritize_end) const {
     // Initialize rand nums between [0, 1)
-    double* rand_nums = generate_n_random_numbers(1, use_gpu);
+    Buffer<double> rand_nums = generate_n_random_numbers(1, use_gpu);
     int result;
 
     #ifdef HAS_CUDA
@@ -40,7 +39,7 @@ int ExponentialIndexRandomPicker::pick_random(const int start, const int end, co
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(int)));
 
         // Launch kernel with a single thread
-        pick_exponential_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, prioritize_end, rand_nums);
+        pick_exponential_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, prioritize_end, rand_nums.data());
         CUDA_KERNEL_CHECK("After pick_exponential_random_number_cuda_kernel execution");
 
         // Copy result back to host
@@ -52,10 +51,9 @@ int ExponentialIndexRandomPicker::pick_random(const int start, const int end, co
     else
     #endif
     {
-        result = random_pickers::pick_random_exponential_index(start, end, prioritize_end, rand_nums[0]);
+        result = random_pickers::pick_random_exponential_index(start, end, prioritize_end, rand_nums.data()[0]);
     }
 
-    clear_memory(&rand_nums, use_gpu);
     return result;
 }
 
@@ -110,7 +108,7 @@ LinearRandomPicker::LinearRandomPicker(const bool use_gpu) : use_gpu(use_gpu) {}
 
 int LinearRandomPicker::pick_random(const int start, const int end, const bool prioritize_end) const {
     // Initialize rand nums between [0, 1)
-    double* rand_nums = generate_n_random_numbers(1, use_gpu);
+    Buffer<double> rand_nums = generate_n_random_numbers(1, use_gpu);
     int result;
 
     #ifdef HAS_CUDA
@@ -120,7 +118,7 @@ int LinearRandomPicker::pick_random(const int start, const int end, const bool p
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(int)));
 
         // Launch kernel with a single thread
-        pick_linear_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, prioritize_end, rand_nums);
+        pick_linear_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, prioritize_end, rand_nums.data());
         CUDA_KERNEL_CHECK("After pick_linear_random_number_cuda_kernel execution");
 
         // Copy result back to host
@@ -132,10 +130,9 @@ int LinearRandomPicker::pick_random(const int start, const int end, const bool p
     else
     #endif
     {
-        result = random_pickers::pick_random_linear(start, end, prioritize_end, rand_nums[0]);
+        result = random_pickers::pick_random_linear(start, end, prioritize_end, rand_nums.data()[0]);
     }
 
-    clear_memory(&rand_nums, use_gpu);
     return result;
 }
 
@@ -187,7 +184,7 @@ UniformRandomPicker::UniformRandomPicker(const bool use_gpu) : use_gpu(use_gpu) 
 
 int UniformRandomPicker::pick_random(const int start, const int end, const bool /* prioritize_end */) const {
     // Initialize rand nums between [0, 1)
-    double* rand_nums = generate_n_random_numbers(1, use_gpu);
+    Buffer<double> rand_nums = generate_n_random_numbers(1, use_gpu);
     int result;
 
     #ifdef HAS_CUDA
@@ -197,7 +194,7 @@ int UniformRandomPicker::pick_random(const int start, const int end, const bool 
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(int)));
 
         // Launch kernel with a single thread
-        pick_uniform_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, rand_nums);
+        pick_uniform_random_number_cuda_kernel<<<1, 1>>>(d_result, start, end, rand_nums.data());
         CUDA_KERNEL_CHECK("After pick_uniform_random_number_cuda_kernel execution");
 
         // Copy result back to host
@@ -209,10 +206,9 @@ int UniformRandomPicker::pick_random(const int start, const int end, const bool 
     else
     #endif
     {
-        result = random_pickers::pick_random_uniform(start, end, rand_nums[0]);
+        result = random_pickers::pick_random_uniform(start, end, rand_nums.data()[0]);
     }
 
-    clear_memory(&rand_nums, use_gpu);
     return result;
 }
 
@@ -272,7 +268,7 @@ WeightBasedRandomPicker::WeightBasedRandomPicker(const bool use_gpu) : use_gpu(u
 
 int WeightBasedRandomPicker::pick_random(const double* weights, const size_t weights_size, const size_t group_start, const size_t group_end) const {
     // Initialize rand nums between [0, 1)
-    double* rand_nums = generate_n_random_numbers(1, use_gpu);
+    Buffer<double> rand_nums = generate_n_random_numbers(1, use_gpu);
     int result;
 
     #ifdef HAS_CUDA
@@ -289,7 +285,7 @@ int WeightBasedRandomPicker::pick_random(const double* weights, const size_t wei
         CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(int)));
 
         // Launch kernel with a single thread
-        pick_weighted_random_number_cuda_kernel<<<1, 1>>>(d_result, d_weights, weights_size, group_start, group_end, rand_nums);
+        pick_weighted_random_number_cuda_kernel<<<1, 1>>>(d_result, d_weights, weights_size, group_start, group_end, rand_nums.data());
         CUDA_KERNEL_CHECK("After pick_weighted_random_number_cuda_kernel execution");
 
         // Copy result back to host
@@ -307,10 +303,9 @@ int WeightBasedRandomPicker::pick_random(const double* weights, const size_t wei
             weights_size,
             group_start,
             group_end,
-            rand_nums[0]);
+            rand_nums.data()[0]);
     }
 
-    clear_memory(&rand_nums, use_gpu);
     return result;
 }
 

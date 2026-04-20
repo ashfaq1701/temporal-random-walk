@@ -11,7 +11,7 @@
 #include "../core/temporal_random_walk.cuh"
 #include "../data/enums.cuh"
 #include "../data/structs.cuh"
-#include "../data/walks_with_edge_features_host.cuh"
+#include "../data/walk_set/walks_with_edge_features_host.cuh"
 
 class TemporalRandomWalk {
     std::unique_ptr<core::TemporalRandomWalk> impl_;

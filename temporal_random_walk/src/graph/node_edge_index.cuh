@@ -14,8 +14,6 @@
 #include <cuda_runtime.h>
 #endif
 
-// STAGING FILE for task 5b. Not in CMake. Swapped in by task 5g.
-
 namespace node_edge_index {
 
     /**
@@ -39,7 +37,7 @@ namespace node_edge_index {
         size_t group_idx,
         bool forward);
 
-    HOST MemoryView<size_t> get_timestamp_offset_vector(
+    HOST const Buffer<size_t>& get_timestamp_offset_vector(
         const TemporalGraphData& data,
         bool forward);
 

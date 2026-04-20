@@ -12,7 +12,7 @@
 #include <random>
 
 #include "error_handlers.cuh"
-#include "memory.cuh"
+#include "../data/buffer.cuh"
 
 inline uint64_t secure_random_seed() {
     std::random_device rd;
@@ -24,11 +24,11 @@ inline uint64_t secure_random_seed() {
     return seed;
 }
 
-inline double* generate_n_random_numbers_cpu(const size_t n) {
-    double* random_numbers = nullptr;
-    allocate_memory(&random_numbers, n, false);
+inline Buffer<double> generate_n_random_numbers_cpu(const size_t n) {
+    Buffer<double> random_numbers(n, false);
 
     std::random_device rd;  // uses hardware entropy
+    double* out = random_numbers.data();
 
     #pragma omp parallel
     {
@@ -38,7 +38,7 @@ inline double* generate_n_random_numbers_cpu(const size_t n) {
 
         #pragma omp for
         for (size_t i = 0; i < n; ++i) {
-            random_numbers[i] = dis(gen);
+            out[i] = dis(gen);
         }
     }
 
@@ -75,9 +75,8 @@ DEVICE __forceinline__ double draw_u01_philox(PhiloxState& state) {
     return curand_uniform_double(&state);
 }
 
-inline double* generate_n_random_numbers_gpu(const size_t n) {
-    double* d_random_numbers = nullptr;
-    allocate_memory(&d_random_numbers, n, true);
+inline Buffer<double> generate_n_random_numbers_gpu(const size_t n) {
+    Buffer<double> d_random_numbers(n, true);
 
     curandGenerator_t gen;
     CHECK_CURAND(curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_PHILOX4_32_10));
@@ -86,7 +85,7 @@ inline double* generate_n_random_numbers_gpu(const size_t n) {
     const auto seed = secure_random_seed();
     CHECK_CURAND(curandSetPseudoRandomGeneratorSeed(gen, seed));
 
-    CHECK_CURAND(curandGenerateUniformDouble(gen, d_random_numbers, n));
+    CHECK_CURAND(curandGenerateUniformDouble(gen, d_random_numbers.data(), n));
     CHECK_CURAND(curandDestroyGenerator(gen));
 
     return d_random_numbers;
@@ -94,7 +93,7 @@ inline double* generate_n_random_numbers_gpu(const size_t n) {
 
 #endif
 
-inline double* generate_n_random_numbers(const size_t n, const bool use_gpu) {
+inline Buffer<double> generate_n_random_numbers(const size_t n, const bool use_gpu) {
     #ifdef HAS_CUDA
     if (use_gpu) {
         return generate_n_random_numbers_gpu(n);

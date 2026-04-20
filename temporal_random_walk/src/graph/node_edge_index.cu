@@ -23,7 +23,7 @@
 #include "../common/nvtx.cuh"
 #include "../common/parallel_algorithms.cuh"
 #include "../common/cuda_config.cuh"
-#include "../common/memory.cuh"
+#include "../data/buffer.cuh"
 
 #ifdef HAS_CUDA
 #include "../common/cuda_scan.cuh"
@@ -124,32 +124,25 @@ HOST SizeRange node_edge_index::get_timestamp_group_range(
     return SizeRange{group_start, group_end};
 }
 
-HOST MemoryView<size_t> node_edge_index::get_timestamp_offset_vector(
+HOST const Buffer<size_t>& node_edge_index::get_timestamp_offset_vector(
     const TemporalGraphData& data,
     const bool forward) {
-    // Returns a raw (possibly-device) pointer + size. The pointer is only
+    // Returns the live count-per-node buffer. Its .data() pointer is only
     // dereferenceable on the side (host / device) matching data.use_gpu;
-    // callers on the host side must copy through cudaMemcpy if use_gpu.
+    // host-side callers must go through read_one_host_safe or copy out.
     if (data.is_directed && !forward) {
-        return MemoryView<size_t>{
-            const_cast<size_t*>(data.count_ts_group_per_node_inbound.data()),
-            data.count_ts_group_per_node_inbound.size()
-        };
-    } else {
-        return MemoryView<size_t>{
-            const_cast<size_t*>(data.count_ts_group_per_node_outbound.data()),
-            data.count_ts_group_per_node_outbound.size()
-        };
+        return data.count_ts_group_per_node_inbound;
     }
+    return data.count_ts_group_per_node_outbound;
 }
 
 HOST size_t node_edge_index::get_timestamp_group_count(
     const TemporalGraphData& data,
     const int dense_node_id,
     const bool forward) {
-    const MemoryView<size_t> offsets_block = get_timestamp_offset_vector(data, forward);
-    const size_t* offsets      = offsets_block.data;
-    const size_t  offsets_size = offsets_block.size;
+    const Buffer<size_t>& offsets_buf = get_timestamp_offset_vector(data, forward);
+    const size_t* offsets      = offsets_buf.data();
+    const size_t  offsets_size = offsets_buf.size();
 
     if (dense_node_id < 0 || dense_node_id >= static_cast<int>(offsets_size) - 1) {
         return 0;
@@ -489,14 +482,15 @@ HOST void node_edge_index::update_temporal_weights_std(
 
     // Process outbound weights
     {
-        auto outbound_offsets = get_timestamp_offset_vector(data, true);
+        const size_t* outbound_offsets =
+            get_timestamp_offset_vector(data, true).data();
 
         std::vector<size_t> group_to_node(outbound_groups_size);
 
         #pragma omp parallel for
         for (size_t node = 0; node < node_index_capacity; ++node) {
-            const size_t out_start = outbound_offsets.data[node];
-            const size_t out_end = outbound_offsets.data[node + 1];
+            const size_t out_start = outbound_offsets[node];
+            const size_t out_end = outbound_offsets[node + 1];
 
             for (size_t pos = out_start; pos < out_end; ++pos) {
                 group_to_node[pos] = node;
@@ -513,8 +507,8 @@ HOST void node_edge_index::update_temporal_weights_std(
 
         #pragma omp parallel for
         for (size_t node = 0; node < node_index_capacity; ++node) {
-            const size_t out_start = outbound_offsets.data[node];
-            const size_t out_end = outbound_offsets.data[node + 1];
+            const size_t out_start = outbound_offsets[node];
+            const size_t out_end = outbound_offsets[node + 1];
 
             if (out_start >= out_end) {
                 node_min_ts[node] = 0;
@@ -591,8 +585,8 @@ HOST void node_edge_index::update_temporal_weights_std(
 
         #pragma omp parallel for
         for (size_t node = 0; node < node_index_capacity; ++node) {
-            const size_t out_start = outbound_offsets.data[node];
-            const size_t out_end = outbound_offsets.data[node + 1];
+            const size_t out_start = outbound_offsets[node];
+            const size_t out_end = outbound_offsets[node + 1];
 
             if (out_start >= out_end) continue;
 
@@ -609,15 +603,16 @@ HOST void node_edge_index::update_temporal_weights_std(
 
     // Process inbound weights (only backward)
     if (is_directed) {
-        auto inbound_offsets = get_timestamp_offset_vector(data, false);
+        const size_t* inbound_offsets =
+            get_timestamp_offset_vector(data, false).data();
         const size_t inbound_groups_size = data.node_ts_group_inbound_offsets.size();
 
         std::vector<size_t> group_to_node(inbound_groups_size);
 
         #pragma omp parallel for
         for (size_t node = 0; node < node_index_capacity; ++node) {
-            const size_t in_start = inbound_offsets.data[node];
-            const size_t in_end = inbound_offsets.data[node + 1];
+            const size_t in_start = inbound_offsets[node];
+            const size_t in_end = inbound_offsets[node + 1];
 
             for (size_t pos = in_start; pos < in_end; ++pos) {
                 group_to_node[pos] = node;
@@ -634,8 +629,8 @@ HOST void node_edge_index::update_temporal_weights_std(
 
         #pragma omp parallel for
         for (size_t node = 0; node < node_index_capacity; ++node) {
-            const size_t in_start = inbound_offsets.data[node];
-            const size_t in_end = inbound_offsets.data[node + 1];
+            const size_t in_start = inbound_offsets[node];
+            const size_t in_end = inbound_offsets[node + 1];
 
             if (in_start >= in_end) {
                 node_min_ts[node] = 0;
@@ -698,8 +693,8 @@ HOST void node_edge_index::update_temporal_weights_std(
 
         #pragma omp parallel for
         for (size_t node = 0; node < node_index_capacity; ++node) {
-            const size_t in_start = inbound_offsets.data[node];
-            const size_t in_end = inbound_offsets.data[node + 1];
+            const size_t in_start = inbound_offsets[node];
+            const size_t in_end = inbound_offsets[node + 1];
 
             if (in_start >= in_end) continue;
 

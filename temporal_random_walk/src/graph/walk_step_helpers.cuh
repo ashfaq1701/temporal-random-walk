@@ -1,11 +1,8 @@
-#ifndef STORE_HELPERS_CUH
-#define STORE_HELPERS_CUH
+#ifndef WALK_STEP_HELPERS_CUH
+#define WALK_STEP_HELPERS_CUH
 
 #include "../common/macros.cuh"
 #include "../data/temporal_graph_view.cuh"
-
-// STAGING FILE for task 5e. Not included from anywhere. Swapped in
-// by task 5g.
 
 namespace temporal_graph {
 
@@ -58,4 +55,4 @@ namespace temporal_graph {
 
 }
 
-#endif // STORE_HELPERS_CUH
+#endif // WALK_STEP_HELPERS_CUH

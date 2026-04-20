@@ -20,17 +20,38 @@
 #endif
 
 /**
+ * Read a single T from a pointer whose allocator depends on use_gpu.
+ *
+ * Safe to call from host for both host and device allocations: on GPU
+ * data it does a one-element cudaMemcpy, on host data it does a direct
+ * load. Host-only — the device side can always dereference its own
+ * pointers and needs no wrapper.
+ */
+template <typename T>
+HOST inline T read_one_host_safe(const T* p, const bool use_gpu) {
+#ifdef HAS_CUDA
+    if (use_gpu) {
+        T out;
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&out, p, sizeof(T), cudaMemcpyDeviceToHost));
+        return out;
+    }
+#else
+    (void)use_gpu;
+#endif
+    return *p;
+}
+
+/**
  * Buffer<T> — RAII owning container for a contiguous array of T, backed by
  * either host memory (malloc/free) or device memory (cudaMalloc/cudaFree)
  * depending on a use_gpu flag fixed at construction.
  *
  * Design goals:
- *   1. Replace the 20+ "T* ptr + size_t _size + owns_data + manual
- *      allocate/clear_memory" groups scattered through the old code.
+ *   1. Single owning type for bulk memory, replacing hand-rolled
+ *      (T* ptr, size_t size, owns_data) groups with RAII.
  *   2. Present a single type to the rest of the codebase so tests can
- *      continue to parameterize on a runtime use_gpu bool (same shape as
- *      today's TYPED_TEST_SUITE pattern).
- *   3. Be move-only: there is exactly one owner of any buffer at any time.
+ *      parameterize on a runtime use_gpu bool (TYPED_TEST_SUITE pattern).
+ *   3. Move-only: there is exactly one owner of any buffer at any time.
  *      Double-free is prevented by the type system, not by an owns_data
  *      flag.
  *

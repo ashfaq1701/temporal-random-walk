@@ -448,7 +448,7 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
                            trw->walk_padding_value());
     WalkSetView walk_set_view = host_walks.make_host_view();
 
-    double* rand_nums = generate_n_random_numbers(
+    Buffer<double> rand_nums = generate_n_random_numbers(
         repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, false);
 
     const TemporalGraphView view = make_temporal_graph_view(trw->data());
@@ -463,9 +463,7 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
         *walk_bias,
         *initial_edge_bias,
         walk_direction,
-        rand_nums);
-
-    clear_memory(&rand_nums, false);
+        rand_nums.data());
 
     return finalize_host_walks(trw, std::move(host_walks));
 }
@@ -494,7 +492,7 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_std(
                            trw->walk_padding_value());
     WalkSetView walk_set_view = host_walks.make_host_view();
 
-    double* rand_nums = generate_n_random_numbers(
+    Buffer<double> rand_nums = generate_n_random_numbers(
         repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, false);
 
     const TemporalGraphView view = make_temporal_graph_view(trw->data());
@@ -509,9 +507,7 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_std(
         *walk_bias,
         *initial_edge_bias,
         walk_direction,
-        rand_nums);
-
-    clear_memory(&rand_nums, false);
+        rand_nums.data());
 
     return finalize_host_walks(trw, std::move(host_walks));
 }
@@ -533,7 +529,7 @@ temporal_random_walk::get_random_walks_and_times_std(
                            trw->walk_padding_value());
     WalkSetView walk_set_view = host_walks.make_host_view();
 
-    double* rand_nums = generate_n_random_numbers(
+    Buffer<double> rand_nums = generate_n_random_numbers(
         num_walks_total + num_walks_total * max_walk_len * 2, false);
 
     const std::vector<int> start_node_ids(num_walks_total, -1);
@@ -550,9 +546,7 @@ temporal_random_walk::get_random_walks_and_times_std(
         *walk_bias,
         *initial_edge_bias,
         walk_direction,
-        rand_nums);
-
-    clear_memory(&rand_nums, false);
+        rand_nums.data());
 
     return finalize_host_walks(trw, std::move(host_walks));
 }

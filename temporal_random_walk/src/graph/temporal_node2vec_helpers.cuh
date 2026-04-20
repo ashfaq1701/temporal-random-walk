@@ -4,13 +4,11 @@
 #include <algorithm>
 #include "../common/macros.cuh"
 #include "../data/temporal_graph_view.cuh"
-#include "store_helpers.cuh"
+#include "walk_step_helpers.cuh"
 
 #ifdef HAS_CUDA
 #include <cuda/std/__algorithm/lower_bound.h>
 #endif
-
-// STAGING FILE for task 5e.
 
 namespace temporal_graph {
 

@@ -21,19 +21,10 @@
 #include "../common/macros.cuh"
 #include "../common/error_handlers.cuh"
 #include "../common/cuda_config.cuh"
-#include "../common/memory.cuh"
 #include "../data/structs.cuh"
 #include "../data/temporal_graph_data.cuh"
 #include "../data/temporal_graph_view.cuh"
 #include "../data/buffer.cuh"
-
-/*
- * STAGING FILE for task 5a.
- *
- * This file is NOT in the CMake build. The swap (delete old
- * edge_data.{cu,cuh}, rename edge_data_new.{cu,cuh} into their
- * places) happens in task 5g alongside the other parallel files.
- */
 
 namespace edge_data {
 

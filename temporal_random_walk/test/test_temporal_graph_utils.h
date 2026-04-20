@@ -124,10 +124,9 @@ inline Edge get_edge_at(
     const RandomPickerType picker_type,
     const int64_t timestamp = -1,
     const bool forward = true) {
-    double* rand_nums = generate_n_random_numbers(2, data.use_gpu);
+    Buffer<double> rand_nums_buf = generate_n_random_numbers(2, data.use_gpu);
     const Edge result = get_edge_at_with_provided_nums(
-        data, picker_type, rand_nums, timestamp, forward);
-    clear_memory(&rand_nums, data.use_gpu);
+        data, picker_type, rand_nums_buf.data(), timestamp, forward);
     return result;
 }
 
@@ -142,7 +141,8 @@ inline Edge get_node_edge_at(
     Edge result{};
     const bool is_directed = data.is_directed;
 
-    double* rand_nums = generate_n_random_numbers(2, data.use_gpu);
+    Buffer<double> rand_nums_buf = generate_n_random_numbers(2, data.use_gpu);
+    double* rand_nums = rand_nums_buf.data();
 
     #define DISPATCH_HOST(FWD, PICKER, DIR) \
         result = temporal_graph::get_node_edge_at_host<FWD, PICKER, DIR>( \
@@ -199,8 +199,6 @@ inline Edge get_node_edge_at(
             if (forward) { HANDLE_PICKER_HOST(true,  false) } else { HANDLE_PICKER_HOST(false, false) }
         }
     }
-
-    clear_memory(&rand_nums, data.use_gpu);
 
     #undef DISPATCH_HOST
     #undef HANDLE_PICKER_HOST

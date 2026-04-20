@@ -8,7 +8,7 @@
 #include <cuda_runtime.h>
 #endif
 
-#include "../src/common/nvtx_utils.h"
+#include "../src/common/nvtx.cuh"
 #include "../src/proxies/TemporalRandomWalk.cuh"
 #include "../test/test_utils.h"
 #include "test_utils.h"

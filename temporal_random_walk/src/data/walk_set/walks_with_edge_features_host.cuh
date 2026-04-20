@@ -6,9 +6,9 @@
 #include <cstring>
 #include <omp.h>
 
-#include "../common/const.cuh"
-#include "buffer.cuh"
-#include "walk_set/walk_set_host.cuh"
+#include "../../common/const.cuh"
+#include "../buffer.cuh"
+#include "walk_set_host.cuh"
 
 /**
  * RAII host-resident bundle of walks + their per-edge feature rows.

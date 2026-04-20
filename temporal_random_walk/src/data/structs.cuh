@@ -2,9 +2,10 @@
 #define STRUCTS_H
 
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <utility>
-#include "../common/memory.cuh"
+#include "../common/error_handlers.cuh"
 #include "../common/macros.cuh"
 
 struct Edge {
@@ -67,8 +68,10 @@ struct SizeRange {
 template <typename T>
 struct DataBlock {
     T* data = nullptr;
-    size_t size;
-    bool use_gpu;
+    size_t size = 0;
+    bool use_gpu = false;
+
+    DataBlock() = default;
 
     // Constructor allocates memory internally
     HOST DataBlock(const size_t size, const bool use_gpu) : size(size), use_gpu(use_gpu) {
@@ -85,25 +88,47 @@ struct DataBlock {
         }
     }
 
-    HOST ~DataBlock() {
-        if (data) {
-            #ifdef HAS_CUDA
-            if (use_gpu) {
-                CUDA_CHECK_AND_CLEAR(cudaFree(data));
-            }
-            else
-            #endif
-            {
-                free(data);
-            }
-        }
-    }
-};
+    DataBlock(const DataBlock&) = delete;
+    DataBlock& operator=(const DataBlock&) = delete;
 
-template <typename T>
-struct MemoryView {
-    T* data;
-    size_t size;
+    // Explicit moves (not = default) so the moved-from pointer is nulled
+    // and the source's destructor does not double-free.
+    HOST DataBlock(DataBlock&& other) noexcept
+        : data(other.data), size(other.size), use_gpu(other.use_gpu) {
+        other.data = nullptr;
+        other.size = 0;
+    }
+
+    HOST DataBlock& operator=(DataBlock&& other) noexcept {
+        if (this != &other) {
+            release();
+            data    = other.data;
+            size    = other.size;
+            use_gpu = other.use_gpu;
+            other.data = nullptr;
+            other.size = 0;
+        }
+        return *this;
+    }
+
+    HOST ~DataBlock() noexcept { release(); }
+
+private:
+    // Shared teardown. Uses bare cudaFree + cudaGetLastError instead of the
+    // throwing CUDA_CHECK_AND_CLEAR macro so the destructor is truly noexcept.
+    HOST void release() noexcept {
+        if (!data) return;
+        #ifdef HAS_CUDA
+        if (use_gpu) {
+            cudaFree(data);
+            cudaGetLastError();
+        } else
+        #endif
+        {
+            free(data);
+        }
+        data = nullptr;
+    }
 };
 
 #endif // STRUCTS_H

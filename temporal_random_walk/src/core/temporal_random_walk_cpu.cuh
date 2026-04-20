@@ -14,8 +14,6 @@
 #include "../graph/edge_selectors.cuh"
 #include "../common/picker_dispatch.cuh"
 
-// STAGING FILE for task 5f. Not compiled. Swapped in by task 5g.
-
 namespace temporal_random_walk {
 
     template<bool IsDirected, bool Forward, RandomPickerType EdgePickerType, RandomPickerType StartPickerType>
