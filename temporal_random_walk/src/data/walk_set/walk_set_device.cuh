@@ -13,7 +13,7 @@ class WalkSetHost;
 
 /**
  * WalkSetDevice — RAII owner of the four device-side buffers that hold a
- * batch of in-progress walks. Replaces the GPU mode of the old WalkSet.
+ * batch of in-progress walks.
  *
  * Construction allocates and fills each buffer with its padding value.
  * make_view() produces a POD WalkSetView suitable for kernel arguments.

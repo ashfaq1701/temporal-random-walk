@@ -11,7 +11,7 @@
 #include "../core/temporal_random_walk.cuh"
 #include "../data/enums.cuh"
 #include "../data/structs.cuh"
-#include "../data/walk_set/walk_set.cuh"
+#include "../data/walks_with_edge_features_host.cuh"
 
 class TemporalRandomWalk {
     std::unique_ptr<core::TemporalRandomWalk> impl_;
@@ -46,21 +46,21 @@ public:
         const float* edge_features = nullptr,
         size_t feature_dim = 0) const;
 
-    WalksWithEdgeFeatures get_random_walks_and_times_for_all_nodes(
+    WalksWithEdgeFeaturesHost get_random_walks_and_times_for_all_nodes(
         int max_walk_len, const RandomPickerType* walk_bias,
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
         KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK) const;
 
-    WalksWithEdgeFeatures get_random_walks_and_times_for_last_batch(
+    WalksWithEdgeFeaturesHost get_random_walks_and_times_for_last_batch(
         int max_walk_len, const RandomPickerType* walk_bias,
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
         KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK) const;
 
-    WalksWithEdgeFeatures get_random_walks_and_times(
+    WalksWithEdgeFeaturesHost get_random_walks_and_times(
         int max_walk_len, const RandomPickerType* walk_bias,
         int num_walks_total,
         const RandomPickerType* initial_edge_bias = nullptr,

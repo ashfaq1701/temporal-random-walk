@@ -12,8 +12,8 @@
  * to kernels by value. Kernels write hops via add_hop and optionally
  * reverse walks via reverse_walk. The view itself owns nothing.
  *
- * Replaces WalkSet::to_device_ptr (which allocated a device mirror of the
- * struct). A kernel now takes `WalkSetView view` as a regular by-value
+ * Replaces the old to_device_ptr path (which allocated a device mirror of
+ * the struct). A kernel now takes `WalkSetView view` as a regular by-value
  * parameter — no cudaMalloc, no cudaMemcpy.
  */
 struct WalkSetView {

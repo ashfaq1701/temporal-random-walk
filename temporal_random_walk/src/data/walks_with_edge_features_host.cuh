@@ -10,10 +10,14 @@
 #include "buffer.cuh"
 #include "walk_set/walk_set_host.cuh"
 
-// STAGING FILE for task 5f. Not included from any live build file.
-// After 5g this file may be kept or merged into structs.cuh,
-// depending on how the proxy's adapter evolves.
-
+/**
+ * RAII host-resident bundle of walks + their per-edge feature rows.
+ *
+ * `walk_set` owns the four walk arrays (nodes, timestamps, walk_lens,
+ * edge_ids). `walk_edge_features` is a Buffer<float> whose pinning
+ * state is inherited from walk_set so the device-origin path preserves
+ * pinned host memory all the way out to the Python capsule.
+ */
 struct WalksWithEdgeFeaturesHost {
     WalkSetHost   walk_set;
     Buffer<float> walk_edge_features{/*use_gpu=*/false};
@@ -23,7 +27,7 @@ struct WalksWithEdgeFeaturesHost {
 
     WalksWithEdgeFeaturesHost(WalkSetHost ws, const int fdim)
         : walk_set(std::move(ws)), feature_dim(fdim) {
-        // Inherit pinned-host state from the incoming WalkSetHost: if the
+        // Inherit pinned-host state from the incoming walk set: if the
         // walk data came out of a device download, the edge-feature gather
         // buffer should also live in pinned host memory so the caller's
         // upstream D->H copy gets full bandwidth.
@@ -40,6 +44,15 @@ struct WalksWithEdgeFeaturesHost {
     WalksWithEdgeFeaturesHost& operator=(const WalksWithEdgeFeaturesHost&) = delete;
     WalksWithEdgeFeaturesHost(WalksWithEdgeFeaturesHost&&) noexcept = default;
     WalksWithEdgeFeaturesHost& operator=(WalksWithEdgeFeaturesHost&&) noexcept = default;
+
+    // Forwarded walk-iteration helpers.
+    size_t size() const noexcept { return walk_set.size(); }
+    WalksIterator walks_begin() const { return walk_set.walks_begin(); }
+    WalksIterator walks_end()   const { return walk_set.walks_end(); }
+
+    HostRelease release_walk_edge_features() {
+        return walk_edge_features.release_host();
+    }
 
     // edge_features_src is a host pointer (already D->H copied, or
     // data.use_gpu == false). Zero-padded for empty slots.

@@ -3,6 +3,10 @@
 #include <utility>
 #include <cstdlib>
 
+#ifdef HAS_CUDA
+#include <cuda_runtime.h>
+#endif
+
 #include "../src/data/buffer.cuh"
 #include "../src/data/device_arena.cuh"
 #include "../src/data/temporal_graph_data.cuh"
@@ -198,10 +202,10 @@ TYPED_TEST(WalkSetRoundTripTest, PreservesInitialPadding) {
 }
 
 template <typename T>
-class WalkSetHostReleaseTest : public ::testing::Test {};
-TYPED_TEST_SUITE(WalkSetHostReleaseTest, BACKEND_TYPES);
+class WalkSetReleaseTest : public ::testing::Test {};
+TYPED_TEST_SUITE(WalkSetReleaseTest, BACKEND_TYPES);
 
-TYPED_TEST(WalkSetHostReleaseTest, ReleaseTransfersOwnership) {
+TYPED_TEST(WalkSetReleaseTest, ReleaseTransfersOwnership) {
     constexpr bool use_gpu = TypeParam::value;
     const size_t num_walks = 2;
     const size_t max_len   = 3;
@@ -219,9 +223,18 @@ TYPED_TEST(WalkSetHostReleaseTest, ReleaseTransfersOwnership) {
         h = WalkSetHost(num_walks, max_len, padding);
     }
 
-    int* n_raw = h.release_nodes_as_raw();
+    HostRelease rn = h.release_nodes();
+    int* n_raw = static_cast<int*>(rn.ptr);
     ASSERT_NE(n_raw, nullptr);
     for (size_t i = 0; i < num_walks * max_len; ++i) EXPECT_EQ(n_raw[i], padding);
     EXPECT_EQ(h.nodes_ptr(), nullptr);
-    std::free(n_raw);
+
+#ifdef HAS_CUDA
+    if (rn.pinned) {
+        cudaFreeHost(n_raw);
+    } else
+#endif
+    {
+        std::free(n_raw);
+    }
 }

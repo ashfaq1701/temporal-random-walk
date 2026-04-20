@@ -1,9 +1,6 @@
 #include "walk_set_host.cuh"
 
 #include <cstring>
-#include <cstdlib>
-#include <new>
-#include <stdexcept>
 
 #ifdef HAS_CUDA
 #include <cuda_runtime.h>
@@ -43,35 +40,6 @@ size_t WalkSetHost::non_empty_count() const noexcept {
         if (lens[i] > 0) ++count;
     }
     return count;
-}
-
-namespace {
-template <typename T>
-T* copy_out_and_clear(Buffer<T>& buf) {
-    const size_t n = buf.size();
-    if (n == 0) {
-        buf.shrink_to_fit_empty();
-        return nullptr;
-    }
-    T* out = static_cast<T*>(std::malloc(n * sizeof(T)));
-    if (!out) throw std::bad_alloc();
-    std::memcpy(out, buf.data(), n * sizeof(T));
-    buf.shrink_to_fit_empty();
-    return out;
-}
-} // namespace
-
-int*     WalkSetHost::release_nodes_as_raw()      noexcept {
-    try { return copy_out_and_clear(nodes_); } catch (...) { return nullptr; }
-}
-int64_t* WalkSetHost::release_timestamps_as_raw() noexcept {
-    try { return copy_out_and_clear(timestamps_); } catch (...) { return nullptr; }
-}
-size_t*  WalkSetHost::release_walk_lens_as_raw()  noexcept {
-    try { return copy_out_and_clear(walk_lens_); } catch (...) { return nullptr; }
-}
-int64_t* WalkSetHost::release_edge_ids_as_raw()   noexcept {
-    try { return copy_out_and_clear(edge_ids_); } catch (...) { return nullptr; }
 }
 
 void WalkSetHost::overwrite_from_device_buffers(

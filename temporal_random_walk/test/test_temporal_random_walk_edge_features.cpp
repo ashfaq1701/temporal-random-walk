@@ -77,8 +77,8 @@ protected:
         }
     }
 
-    [[nodiscard]] static size_t edge_slot_index(const WalksWithEdgeFeatures& walks, size_t walk_idx, size_t step_idx) {
-        return walk_idx * (walks.walk_set.max_len - 1) + step_idx;
+    [[nodiscard]] static size_t edge_slot_index(const WalksWithEdgeFeaturesHost& walks, size_t walk_idx, size_t step_idx) {
+        return walk_idx * (walks.walk_set.max_len() - 1) + step_idx;
     }
 
     static constexpr size_t feature_dim = 3;
@@ -96,7 +96,7 @@ TYPED_TEST(TemporalWalkTestWithEdgeFeatures, ReturnsFeatureMetadata) {
         MAX_WALK_LEN, &linear_picker_type, 20);
 
     EXPECT_EQ(walks.feature_dim, static_cast<int>(this->feature_dim));
-    EXPECT_NE(walks.walk_edge_features, nullptr);
+    EXPECT_NE(walks.walk_edge_features.data(), nullptr);
 }
 
 TYPED_TEST(TemporalWalkTestWithEdgeFeatures, PopulatesWalkEdgeFeaturesForTraversedEdges) {
@@ -104,31 +104,37 @@ TYPED_TEST(TemporalWalkTestWithEdgeFeatures, PopulatesWalkEdgeFeaturesForTravers
         MAX_WALK_LEN, &linear_picker_type, 40, nullptr, WalkDirection::Forward_In_Time);
 
     const auto& walk_set = walks.walk_set;
-    ASSERT_GT(walk_set.num_walks, 0);
+    ASSERT_GT(walk_set.num_walks(), 0);
 
-    for (size_t walk_idx = 0; walk_idx < walk_set.num_walks; ++walk_idx) {
-        const size_t walk_len = walk_set.walk_lens[walk_idx];
+    const int*     nodes      = walk_set.nodes_ptr();
+    const int64_t* timestamps = walk_set.timestamps_ptr();
+    const size_t*  walk_lens  = walk_set.walk_lens_ptr();
+    const int64_t* edge_ids   = walk_set.edge_ids_ptr();
+    const float*   edge_feats = walks.walk_edge_features.data();
+
+    for (size_t walk_idx = 0; walk_idx < walk_set.num_walks(); ++walk_idx) {
+        const size_t walk_len = walk_lens[walk_idx];
         if (walk_len < 2) {
             continue;
         }
 
-        const size_t node_offset = walk_idx * walk_set.max_len;
+        const size_t node_offset = walk_idx * walk_set.max_len();
 
         for (size_t step_idx = 0; step_idx + 1 < walk_len; ++step_idx) {
             const auto edge_slot = this->edge_slot_index(walks, walk_idx, step_idx);
-            const int64_t edge_id = walk_set.edge_ids[edge_slot];
+            const int64_t edge_id = edge_ids[edge_slot];
             ASSERT_NE(edge_id, EMPTY_EDGE_ID);
 
             const auto edge = std::make_tuple(
-                walk_set.nodes[node_offset + step_idx],
-                walk_set.nodes[node_offset + step_idx + 1],
-                walk_set.timestamps[node_offset + step_idx + 1]);
+                nodes[node_offset + step_idx],
+                nodes[node_offset + step_idx + 1],
+                timestamps[node_offset + step_idx + 1]);
 
             const auto it = this->expected_feature_by_edge.find(edge);
             ASSERT_NE(it, this->expected_feature_by_edge.end())
                 << "Traversed edge missing in expected-feature map";
 
-            const float* sampled = walks.walk_edge_features + (edge_slot * this->feature_dim);
+            const float* sampled = edge_feats + (edge_slot * this->feature_dim);
             EXPECT_FLOAT_EQ(sampled[0], it->second[0]);
             EXPECT_FLOAT_EQ(sampled[1], it->second[1]);
             EXPECT_FLOAT_EQ(sampled[2], it->second[2]);
@@ -141,15 +147,18 @@ TYPED_TEST(TemporalWalkTestWithEdgeFeatures, KeepsUnusedEdgeSlotsAsEmptyAndZeroe
         MAX_WALK_LEN, &linear_picker_type, 20);
 
     const auto& walk_set = walks.walk_set;
+    const size_t*  walk_lens  = walk_set.walk_lens_ptr();
+    const int64_t* edge_ids   = walk_set.edge_ids_ptr();
+    const float*   edge_feats = walks.walk_edge_features.data();
 
-    for (size_t walk_idx = 0; walk_idx < walk_set.num_walks; ++walk_idx) {
-        const size_t walk_len = walk_set.walk_lens[walk_idx];
+    for (size_t walk_idx = 0; walk_idx < walk_set.num_walks(); ++walk_idx) {
+        const size_t walk_len = walk_lens[walk_idx];
 
-        for (size_t step_idx = walk_len > 0 ? walk_len - 1 : 0; step_idx < walk_set.max_len - 1; ++step_idx) {
+        for (size_t step_idx = walk_len > 0 ? walk_len - 1 : 0; step_idx < walk_set.max_len() - 1; ++step_idx) {
             const size_t edge_slot = this->edge_slot_index(walks, walk_idx, step_idx);
-            EXPECT_EQ(walk_set.edge_ids[edge_slot], EMPTY_EDGE_ID);
+            EXPECT_EQ(edge_ids[edge_slot], EMPTY_EDGE_ID);
 
-            const float* sampled = walks.walk_edge_features + (edge_slot * this->feature_dim);
+            const float* sampled = edge_feats + (edge_slot * this->feature_dim);
             EXPECT_FLOAT_EQ(sampled[0], 0.0f);
             EXPECT_FLOAT_EQ(sampled[1], 0.0f);
             EXPECT_FLOAT_EQ(sampled[2], 0.0f);

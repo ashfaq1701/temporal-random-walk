@@ -1,10 +1,5 @@
 #include "TemporalRandomWalk.cuh"
 
-#include <algorithm>
-#include <cstring>
-
-#include "../data/walks_with_edge_features_host.cuh"
-
 TemporalRandomWalk::TemporalRandomWalk(
     const bool is_directed, const bool use_gpu,
     const int64_t max_time_capacity,
@@ -38,83 +33,40 @@ void TemporalRandomWalk::add_multiple_edges(
     impl_->add_multiple_edges(edges, edge_features, feature_dim);
 }
 
-namespace {
-
-// Adapter: new WalksWithEdgeFeaturesHost -> legacy WalksWithEdgeFeatures.
-// Both sides are host-resident; runs a host memcpy per buffer.
-WalksWithEdgeFeatures adapt_to_legacy(
-    WalksWithEdgeFeaturesHost src, const int walk_padding_value) {
-    const size_t num_walks = src.walk_set.num_walks();
-    const size_t max_len   = src.walk_set.max_len();
-
-    WalkSet legacy(num_walks, max_len, walk_padding_value, /*use_gpu=*/false);
-
-    if (src.walk_set.nodes_size() > 0) {
-        std::memcpy(legacy.nodes, src.walk_set.nodes_ptr(),
-                    src.walk_set.nodes_size() * sizeof(int));
-    }
-    if (src.walk_set.timestamps_size() > 0) {
-        std::memcpy(legacy.timestamps, src.walk_set.timestamps_ptr(),
-                    src.walk_set.timestamps_size() * sizeof(int64_t));
-    }
-    if (src.walk_set.walk_lens_size() > 0) {
-        std::memcpy(legacy.walk_lens, src.walk_set.walk_lens_ptr(),
-                    src.walk_set.walk_lens_size() * sizeof(size_t));
-    }
-    if (src.walk_set.edge_ids_size() > 0) {
-        std::memcpy(legacy.edge_ids, src.walk_set.edge_ids_ptr(),
-                    src.walk_set.edge_ids_size() * sizeof(int64_t));
-    }
-
-    WalksWithEdgeFeatures out(std::move(legacy), src.feature_dim);
-    if (src.feature_dim > 0 && src.walk_edge_features.size() > 0 &&
-        out.walk_edge_features) {
-        std::memcpy(out.walk_edge_features,
-                    src.walk_edge_features.data(),
-                    src.walk_edge_features.size() * sizeof(float));
-    }
-    return out;
-}
-
-} // namespace
-
-WalksWithEdgeFeatures
+WalksWithEdgeFeaturesHost
 TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
     const int max_walk_len, const RandomPickerType* walk_bias,
     const int num_walks_per_node,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
     const KernelLaunchType kernel_launch_type) const {
-    auto host_result = impl_->get_random_walks_and_times_for_all_nodes(
+    return impl_->get_random_walks_and_times_for_all_nodes(
         max_walk_len, walk_bias, num_walks_per_node,
         initial_edge_bias, walk_direction, kernel_launch_type);
-    return adapt_to_legacy(std::move(host_result), impl_->walk_padding_value());
 }
 
-WalksWithEdgeFeatures
+WalksWithEdgeFeaturesHost
 TemporalRandomWalk::get_random_walks_and_times_for_last_batch(
     const int max_walk_len, const RandomPickerType* walk_bias,
     const int num_walks_per_node,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
     const KernelLaunchType kernel_launch_type) const {
-    auto host_result = impl_->get_random_walks_and_times_for_last_batch(
+    return impl_->get_random_walks_and_times_for_last_batch(
         max_walk_len, walk_bias, num_walks_per_node,
         initial_edge_bias, walk_direction, kernel_launch_type);
-    return adapt_to_legacy(std::move(host_result), impl_->walk_padding_value());
 }
 
-WalksWithEdgeFeatures
+WalksWithEdgeFeaturesHost
 TemporalRandomWalk::get_random_walks_and_times(
     const int max_walk_len, const RandomPickerType* walk_bias,
     const int num_walks_total,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
     const KernelLaunchType kernel_launch_type) const {
-    auto host_result = impl_->get_random_walks_and_times(
+    return impl_->get_random_walks_and_times(
         max_walk_len, walk_bias, num_walks_total,
         initial_edge_bias, walk_direction, kernel_launch_type);
-    return adapt_to_legacy(std::move(host_result), impl_->walk_padding_value());
 }
 
 void TemporalRandomWalk::set_node_features(

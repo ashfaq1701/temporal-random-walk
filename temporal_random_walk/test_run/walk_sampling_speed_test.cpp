@@ -188,7 +188,7 @@ int main(int argc, char* argv[])
     const auto start_time =
         std::chrono::high_resolution_clock::now();
 
-    const WalksWithEdgeFeatures walks_with_edge_features =
+    auto walks_with_edge_features =
         (num_walks_per_node == -1)
             ? walker.get_random_walks_and_times(
                 max_walk_length,
@@ -216,8 +216,8 @@ int main(int argc, char* argv[])
         end_time - start_time;
 
     print_walk_performance_stats(
-        walk_set.num_walks,
-        walk_set.walk_lens,
+        walk_set.num_walks(),
+        walk_set.walk_lens_ptr(),
         duration.count()
     );
 

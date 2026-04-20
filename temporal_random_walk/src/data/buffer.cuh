@@ -58,6 +58,18 @@ inline std::atomic<size_t> g_total_pinned_host_bytes{0};
 inline constexpr size_t kPinnedHostWarnThreshold =
     4ULL * 1024ULL * 1024ULL * 1024ULL;  // 4 GiB
 
+// POD returned by Buffer<T>::release_host(). Carries all the state the
+// downstream deleter needs to free the block via the correct allocator
+// (std::free vs cudaFreeHost) and to decrement the pinned-byte counter.
+//
+// Kept as a free-standing struct so non-pybind callers (e.g. tests) can
+// pattern-match on it without pulling in pybind headers.
+struct HostRelease {
+    void*  ptr     = nullptr;   // block pointer (nullptr => empty)
+    size_t bytes   = 0;         // capacity * sizeof(T) at release time
+    bool   pinned  = false;     // allocated via cudaMallocHost
+};
+
 template <typename T>
 class Buffer {
 public:
@@ -242,6 +254,29 @@ public:
     }
 
     std::vector<T> to_host_vector() const;
+
+    // Host-only. Transfer ownership of the internal block to the caller.
+    // After return the Buffer is empty and will not free anything in its
+    // destructor. Caller is responsible for releasing r.ptr using the
+    // allocator implied by r.pinned (std::free or cudaFreeHost, with the
+    // pinned-byte counter decremented on the pinned path).
+    //
+    // Calling this on a GPU buffer is a logic error: the returned pointer
+    // would be a device pointer and cannot be freed via std::free. The
+    // precondition is checked at runtime via a throw because Buffer has
+    // no static use_gpu dimension.
+    HostRelease release_host() {
+        if (use_gpu_) {
+            throw std::logic_error(
+                "Buffer::release_host called on a device buffer");
+        }
+        HostRelease r{ data_, capacity_ * sizeof(T), pinned_host_ };
+        data_ = nullptr;
+        size_ = 0;
+        capacity_ = 0;
+        pinned_host_ = false;
+        return r;
+    }
 
 private:
     T*     data_;
