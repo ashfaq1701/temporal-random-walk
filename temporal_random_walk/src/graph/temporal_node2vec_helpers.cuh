@@ -2,8 +2,9 @@
 #define TEMPORAL_NODE2VEC_HELPERS_CUH
 
 #include <algorithm>
-#include "temporal_graph.cuh"
-#include "store_helpers.cuh"
+#include "../common/macros.cuh"
+#include "../data/temporal_graph_view.cuh"
+#include "walk_step_helpers.cuh"
 
 #ifdef HAS_CUDA
 #include <cuda/std/__algorithm/lower_bound.h>
@@ -11,64 +12,63 @@
 
 namespace temporal_graph {
 
-    // -------------------------------------------------------------------------
-    // Node2Vec beta primitives
-    // -------------------------------------------------------------------------
+    // ==================== HOST ====================
 
     HOST inline bool is_node_adjacent_to_host(
-        const TemporalGraphStore *graph,
+        const TemporalGraphView& view,
         const int prev_node,
         const int candidate_node) {
-        const EdgeDataStore *edge_data = graph->edge_data;
 
-        if (!edge_data->enable_temporal_node2vec || edge_data->node_adj_offsets == nullptr) {
+        if (!view.enable_temporal_node2vec || view.node_adj_offsets == nullptr) {
             return false;
         }
 
-        if (prev_node < 0 || prev_node + 1 >= edge_data->node_adj_offsets_size) {
+        if (prev_node < 0
+            || static_cast<size_t>(prev_node) + 1 >= view.node_adj_offsets_size) {
             return false;
         }
 
-        const size_t start = edge_data->node_adj_offsets[prev_node];
-        const size_t end   = edge_data->node_adj_offsets[prev_node + 1];
+        const size_t start = view.node_adj_offsets[prev_node];
+        const size_t end   = view.node_adj_offsets[prev_node + 1];
 
         if (start >= end) {
             return false;
         }
 
         return std::binary_search(
-            edge_data->node_adj_neighbors + start,
-            edge_data->node_adj_neighbors + end,
+            view.node_adj_neighbors + start,
+            view.node_adj_neighbors + end,
             candidate_node
         );
     }
 
     HOST inline double compute_node2vec_beta_host(
-        const TemporalGraphStore *graph,
+        const TemporalGraphView& view,
         const int prev_node,
         const int w) {
         if (w == prev_node) {
-            return graph->inv_p;
+            return view.inv_p;
         }
 
-        if (is_node_adjacent_to_host(graph, prev_node, w)) {
+        if (is_node_adjacent_to_host(view, prev_node, w)) {
             return 1.0;
         }
 
-        return graph->inv_q;
+        return view.inv_q;
     }
+
     // -------------------------------------------------------------------------
     // Temporal-node2vec edge selection inside selected timestamp group
     // -------------------------------------------------------------------------
 
     template<bool Forward, bool IsDirected>
     HOST long pick_random_temporal_node2vec_edge_host(
-        const TemporalGraphStore *graph,
+        const TemporalGraphView& view,
         const int node_id,
         const int prev_node,
         const size_t edge_start,
         const size_t edge_end,
-        const size_t * node_ts_sorted_indices,
+        const size_t* node_ts_sorted_indices,
         const double edge_selector_rand_num) {
 
         if (prev_node == -1 || edge_start >= edge_end) {
@@ -82,8 +82,8 @@ namespace temporal_graph {
         double beta_sum = 0.0;
         for (size_t i = edge_start; i < edge_end; ++i) {
             const size_t edge_idx = node_ts_sorted_indices[i];
-            const int w = get_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-            const double beta = compute_node2vec_beta_host(graph, prev_node, w);
+            const int w = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+            const double beta = compute_node2vec_beta_host(view, prev_node, w);
             beta_sum += beta;
         }
 
@@ -96,8 +96,8 @@ namespace temporal_graph {
 
         for (size_t i = edge_start; i < edge_end; ++i) {
             const size_t edge_idx = node_ts_sorted_indices[i];
-            const int w = get_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-            const double beta = compute_node2vec_beta_host(graph, prev_node, w);
+            const int w = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+            const double beta = compute_node2vec_beta_host(view, prev_node, w);
             running_sum += beta;
             if (running_sum >= target) {
                 return static_cast<long>(edge_idx);
@@ -111,19 +111,18 @@ namespace temporal_graph {
     // Temporal-node2vec timestamp-group selection
     // -------------------------------------------------------------------------
 
-
     template<bool Forward, bool IsDirected>
     HOST int pick_random_temporal_node2vec_host(
-        const TemporalGraphStore *graph,
+        const TemporalGraphView& view,
         const int node_id,
         const int prev_node,
         const size_t valid_node_ts_group_begin,
         const size_t valid_node_ts_group_end,
         const size_t node_group_begin,
         const size_t node_group_end,
-        const size_t * node_ts_groups_offsets,
-        const size_t * node_ts_sorted_indices,
-        const double * weights,
+        const size_t* node_ts_groups_offsets,
+        const size_t* node_ts_sorted_indices,
+        const double* weights,
         const double group_selector_rand_num) {
 
         if (valid_node_ts_group_begin >= valid_node_ts_group_end || prev_node == -1) {
@@ -135,7 +134,7 @@ namespace temporal_graph {
         for (size_t group_pos = valid_node_ts_group_begin; group_pos < valid_node_ts_group_end; ++group_pos) {
             const size_t edge_start = node_ts_groups_offsets[group_pos];
             const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
-                graph, node_id, node_ts_groups_offsets, group_pos, node_group_end);
+                view, node_id, node_ts_groups_offsets, group_pos, node_group_end);
 
             if (edge_start == edge_end) {
                 continue;
@@ -144,8 +143,8 @@ namespace temporal_graph {
             double beta_sum = 0.0;
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
-                const int w = get_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-                const double beta = compute_node2vec_beta_host(graph, prev_node, w);
+                const int w = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+                const double beta = compute_node2vec_beta_host(view, prev_node, w);
                 beta_sum += beta;
             }
 
@@ -164,7 +163,7 @@ namespace temporal_graph {
         for (size_t group_pos = valid_node_ts_group_begin; group_pos < valid_node_ts_group_end; ++group_pos) {
             const size_t edge_start = node_ts_groups_offsets[group_pos];
             const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
-                graph, node_id, node_ts_groups_offsets, group_pos, node_group_end);
+                view, node_id, node_ts_groups_offsets, group_pos, node_group_end);
 
             if (edge_start == edge_end) {
                 continue;
@@ -173,8 +172,8 @@ namespace temporal_graph {
             double beta_sum = 0.0;
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
-                const int w = get_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-                const double beta = compute_node2vec_beta_host(graph, prev_node, w);
+                const int w = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+                const double beta = compute_node2vec_beta_host(view, prev_node, w);
                 beta_sum += beta;
             }
 
@@ -190,71 +189,64 @@ namespace temporal_graph {
         return selected_group;
     }
 
+    // ==================== DEVICE ====================
+
     #ifdef HAS_CUDA
 
     DEVICE inline bool is_node_adjacent_to_device(
-        const TemporalGraphStore *graph,
+        const TemporalGraphView& view,
         const int prev_node,
         const int candidate_node) {
-        const EdgeDataStore *edge_data = graph->edge_data;
-
-        if (!edge_data->enable_temporal_node2vec || edge_data->node_adj_offsets == nullptr) {
+        if (!view.enable_temporal_node2vec || view.node_adj_offsets == nullptr) {
             return false;
         }
 
-        if (prev_node < 0 || prev_node + 1 >= edge_data->node_adj_offsets_size) {
+        if (prev_node < 0
+            || static_cast<size_t>(prev_node) + 1 >= view.node_adj_offsets_size) {
             return false;
         }
 
-        // Bounds for prev_node adjacency list
-        const size_t start = edge_data->node_adj_offsets[prev_node];
-        const size_t end   = edge_data->node_adj_offsets[prev_node + 1];
+        const size_t start = view.node_adj_offsets[prev_node];
+        const size_t end   = view.node_adj_offsets[prev_node + 1];
 
         if (start >= end) {
             return false;
         }
 
-        const int *begin = edge_data->node_adj_neighbors + start;
-        const int *finish = edge_data->node_adj_neighbors + end;
+        const int* begin  = view.node_adj_neighbors + start;
+        const int* finish = view.node_adj_neighbors + end;
 
-        // Binary search via lower_bound
-        const int *it = cuda::std::lower_bound(
-            begin,
-            finish,
-            candidate_node
-        );
-
-        // Check exact match
+        const int* it = cuda::std::lower_bound(begin, finish, candidate_node);
         return (it != finish && *it == candidate_node);
     }
 
     DEVICE inline double compute_node2vec_beta_device(
-        const TemporalGraphStore *graph,
+        const TemporalGraphView& view,
         const int prev_node,
         const int w) {
         if (w == prev_node) {
-            return graph->inv_p;
+            return view.inv_p;
         }
 
-        if (is_node_adjacent_to_device(graph, prev_node, w)) {
+        if (is_node_adjacent_to_device(view, prev_node, w)) {
             return 1.0;
         }
 
-        return graph->inv_q;
+        return view.inv_q;
     }
 
     template<bool Forward, bool IsDirected>
     DEVICE int pick_random_temporal_node2vec_device(
-        const TemporalGraphStore *graph,
+        const TemporalGraphView& view,
         const int node_id,
         const int prev_node,
         const size_t valid_node_ts_group_begin,
         const size_t valid_node_ts_group_end,
         const size_t node_group_begin,
         const size_t node_group_end,
-        const size_t * node_ts_groups_offsets,
-        const size_t * node_ts_sorted_indices,
-        const double * weights,
+        const size_t* node_ts_groups_offsets,
+        const size_t* node_ts_sorted_indices,
+        const double* weights,
         const double group_selector_rand_num) {
 
         if (valid_node_ts_group_begin >= valid_node_ts_group_end || prev_node == -1) {
@@ -266,7 +258,7 @@ namespace temporal_graph {
         for (size_t group_pos = valid_node_ts_group_begin; group_pos < valid_node_ts_group_end; ++group_pos) {
             const size_t edge_start = node_ts_groups_offsets[group_pos];
             const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
-                graph, node_id, node_ts_groups_offsets, group_pos, node_group_end);
+                view, node_id, node_ts_groups_offsets, group_pos, node_group_end);
 
             if (edge_start == edge_end) {
                 continue;
@@ -275,8 +267,8 @@ namespace temporal_graph {
             double beta_sum = 0.0;
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
-                const int w = get_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-                const double beta = compute_node2vec_beta_device(graph, prev_node, w);
+                const int w = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+                const double beta = compute_node2vec_beta_device(view, prev_node, w);
                 beta_sum += beta;
             }
 
@@ -295,7 +287,7 @@ namespace temporal_graph {
         for (size_t group_pos = valid_node_ts_group_begin; group_pos < valid_node_ts_group_end; ++group_pos) {
             const size_t edge_start = node_ts_groups_offsets[group_pos];
             const size_t edge_end = get_node_group_edge_end<Forward, IsDirected>(
-                graph, node_id, node_ts_groups_offsets, group_pos, node_group_end);
+                view, node_id, node_ts_groups_offsets, group_pos, node_group_end);
 
             if (edge_start == edge_end) {
                 continue;
@@ -304,8 +296,8 @@ namespace temporal_graph {
             double beta_sum = 0.0;
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
-                const int w = get_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-                const double beta = compute_node2vec_beta_device(graph, prev_node, w);
+                const int w = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+                const double beta = compute_node2vec_beta_device(view, prev_node, w);
                 beta_sum += beta;
             }
 
@@ -323,12 +315,12 @@ namespace temporal_graph {
 
     template<bool Forward, bool IsDirected>
     DEVICE long pick_random_temporal_node2vec_edge_device(
-        const TemporalGraphStore *graph,
+        const TemporalGraphView& view,
         const int node_id,
         const int prev_node,
         const size_t edge_start,
         const size_t edge_end,
-        const size_t * node_ts_sorted_indices,
+        const size_t* node_ts_sorted_indices,
         const double edge_selector_rand_num) {
 
         if (prev_node == -1 || edge_start >= edge_end) {
@@ -342,8 +334,8 @@ namespace temporal_graph {
         double beta_sum = 0.0;
         for (size_t i = edge_start; i < edge_end; ++i) {
             const size_t edge_idx = node_ts_sorted_indices[i];
-            const int w = get_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-            const double beta = compute_node2vec_beta_device(graph, prev_node, w);
+            const int w = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+            const double beta = compute_node2vec_beta_device(view, prev_node, w);
             beta_sum += beta;
         }
 
@@ -356,8 +348,8 @@ namespace temporal_graph {
 
         for (size_t i = edge_start; i < edge_end; ++i) {
             const size_t edge_idx = node_ts_sorted_indices[i];
-            const int w = get_candidate_node<Forward, IsDirected>(graph, node_id, edge_idx);
-            const double beta = compute_node2vec_beta_device(graph, prev_node, w);
+            const int w = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+            const double beta = compute_node2vec_beta_device(view, prev_node, w);
             running_sum += beta;
             if (running_sum >= target) {
                 return static_cast<long>(edge_idx);

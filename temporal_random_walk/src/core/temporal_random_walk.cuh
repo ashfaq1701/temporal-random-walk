@@ -1,224 +1,230 @@
 #ifndef TEMPORAL_RANDOM_WALK_STORE_H
 #define TEMPORAL_RANDOM_WALK_STORE_H
 
-#include <optional>
+#include <cstddef>
 #include <cstdint>
+#include <tuple>
 #include <vector>
+
 #include "../common/macros.cuh"
+#include "../common/const.cuh"
 #include "../data/structs.cuh"
-#include "../data/walk_set/walk_set.cuh"
-#include "../stores/temporal_graph.cuh"
-#include "../utils/utils.cuh"
-#include "../utils/random.cuh"
-#include "../common/random_gen.cuh"
 #include "../data/enums.cuh"
+#include "../data/buffer.cuh"
+#include "../data/temporal_graph_data.cuh"
+#include "../data/walk_set/walks_with_edge_features_host.cuh"
+#include "../graph/temporal_graph.cuh"
+#include "../graph/node_features.cuh"
 
-struct TemporalRandomWalkStore {
-    bool is_directed;
-    bool use_gpu;
-    bool owns_data = true;
+#ifdef HAS_CUDA
+#include <cuda_runtime.h>
+#endif
 
-    int64_t max_time_capacity;
+// ==================================================================
+// Top-level class.
+// ==================================================================
 
-    bool enable_weight_computation;
-    bool enable_temporal_node2vec;
+namespace core {
 
-    double timescale_bound;
+class TemporalRandomWalk {
+public:
+    TemporalRandomWalk(
+        bool is_directed,
+        bool use_gpu,
+        int64_t max_time_capacity = -1,
+        bool enable_weight_computation = false,
+        bool enable_temporal_node2vec = false,
+        double timescale_bound = DEFAULT_TIMESCALE_BOUND,
+        double node2vec_p = DEFAULT_NODE2VEC_P,
+        double node2vec_q = DEFAULT_NODE2VEC_Q,
+        int walk_padding_value = EMPTY_NODE_VALUE,
+        uint64_t global_seed = EMPTY_GLOBAL_SEED,
+        bool shuffle_walk_order = DEFAULT_SHUFFLE_WALK_ORDER);
 
-    double node2vec_p;
-    double node2vec_q;
+    ~TemporalRandomWalk();
 
-    int walk_padding_value;
-    uint64_t global_seed;
-    bool shuffle_walk_order;
+    TemporalRandomWalk(const TemporalRandomWalk&) = delete;
+    TemporalRandomWalk& operator=(const TemporalRandomWalk&) = delete;
+    // Move semantics need to manage stream ownership, so implement manually.
+    TemporalRandomWalk(TemporalRandomWalk&&) noexcept;
+    TemporalRandomWalk& operator=(TemporalRandomWalk&&) noexcept;
 
-    int* last_batch_unique_sources = nullptr;
-    size_t last_batch_unique_sources_size = 0;
+    // Accessors
+    TemporalGraphData&       data()       { return data_; }
+    const TemporalGraphData& data() const { return data_; }
 
-    int* last_batch_unique_targets = nullptr;
-    size_t last_batch_unique_targets_size = 0;
+    int      walk_padding_value() const { return walk_padding_value_; }
+    uint64_t global_seed()        const { return global_seed_; }
+    bool     shuffle_walk_order() const { return shuffle_walk_order_; }
+    bool     is_directed()        const { return data_.is_directed; }
 
-    #ifdef HAS_CUDA
-    cudaDeviceProp *cuda_device_prop;
-    #endif
-    TemporalGraphStore *temporal_graph;
+    Buffer<int>&       last_batch_unique_sources()       { return last_batch_unique_sources_; }
+    const Buffer<int>& last_batch_unique_sources() const { return last_batch_unique_sources_; }
+    Buffer<int>&       last_batch_unique_targets()       { return last_batch_unique_targets_; }
+    const Buffer<int>& last_batch_unique_targets() const { return last_batch_unique_targets_; }
 
-    TemporalRandomWalkStore(
-        const bool is_directed,
-        const bool use_gpu,
+    // Pinned host staging for add_multiple_edges H->D. Allocated on
+    // demand (pinned_host=true when data_.use_gpu, else unused). Kept
+    // alive across batches to amortize the cudaMallocHost cost and
+    // benefit from geometric-growth reuse.
+    Buffer<int>& h_stage_sources() { return h_stage_sources_; }
+    Buffer<int>& h_stage_targets() { return h_stage_targets_; }
 
-        const int64_t max_time_capacity,
-        const bool enable_weight_computation,
-        const bool enable_temporal_node2vec,
-        const double timescale_bound,
+#ifdef HAS_CUDA
+    const cudaDeviceProp& cuda_device_prop() const { return cuda_device_prop_; }
 
-        const double node2vec_p = DEFAULT_NODE2VEC_P,
-        const double node2vec_q = DEFAULT_NODE2VEC_Q,
+    // Non-blocking stream owned by this instance. All GPU work inside
+    // the walk pipeline (kernel launches, thrust ops, async memcpys)
+    // should eventually flow through this stream so that concurrent
+    // instances don't serialize on the default legacy stream.
+    cudaStream_t stream() const { return stream_; }
 
-        const int walk_padding_value=EMPTY_NODE_VALUE,
-        const uint64_t global_seed=EMPTY_GLOBAL_SEED,
-        const bool shuffle_walk_order=DEFAULT_SHUFFLE_WALK_ORDER) {
-
-        this->is_directed = is_directed;
-        this->use_gpu = use_gpu;
-
-        this->max_time_capacity = max_time_capacity;
-        this->enable_temporal_node2vec = enable_temporal_node2vec;
-        this->enable_weight_computation = enable_weight_computation || enable_temporal_node2vec;
-        this->timescale_bound = timescale_bound;
-
-        this->node2vec_p = node2vec_p;
-        this->node2vec_q = node2vec_q;
-
-        this->walk_padding_value = walk_padding_value;
-        this->global_seed = global_seed;
-        this->shuffle_walk_order = shuffle_walk_order;
-
-        this->temporal_graph = new TemporalGraphStore(
-            is_directed,
-            use_gpu,
-
-            max_time_capacity,
-            this->enable_weight_computation,
-            this->enable_temporal_node2vec,
-            timescale_bound,
-
-            node2vec_p,
-            node2vec_q);
-
-        #ifdef HAS_CUDA
-        cuda_device_prop = new cudaDeviceProp();
-        cudaGetDeviceProperties(cuda_device_prop, 0);
-        #endif
-    }
-
-    TemporalRandomWalkStore()
-        : is_directed(false), use_gpu(false), max_time_capacity(-1),
-          enable_weight_computation(false), enable_temporal_node2vec(false), timescale_bound(-1),
-          node2vec_p(DEFAULT_NODE2VEC_P), node2vec_q(DEFAULT_NODE2VEC_Q),
-          walk_padding_value(EMPTY_NODE_VALUE),
-          global_seed(EMPTY_GLOBAL_SEED), shuffle_walk_order(DEFAULT_SHUFFLE_WALK_ORDER),
-          temporal_graph(nullptr) {
-        #ifdef HAS_CUDA
-        cuda_device_prop = nullptr;
-        #endif
-    }
-
-    ~TemporalRandomWalkStore() {
-        if (owns_data) {
-            delete temporal_graph;
-            clear_memory(&last_batch_unique_sources, false);
-            clear_memory(&last_batch_unique_targets, false);
-            last_batch_unique_sources_size = 0;
-            last_batch_unique_targets_size = 0;
-
-            #ifdef HAS_CUDA
-            if (use_gpu) {
-                clear_memory(&cuda_device_prop, use_gpu);
-            } else
-            #endif
-            {
-                #ifdef HAS_CUDA
-                delete cuda_device_prop;
-                #endif
-            }
+    // Block the host until any outstanding async work on stream_ has
+    // completed. Called at user-visible boundaries (e.g. before
+    // returning results to the caller) so host-observed reads are safe.
+    void sync_stream() const {
+        if (data_.use_gpu && stream_ != nullptr) {
+            cudaStreamSynchronize(stream_);
         }
     }
+#endif
+
+    // Public methods (forward to namespace free functions)
+    void add_multiple_edges(
+        const int* sources, const int* targets,
+        const int64_t* timestamps, size_t num_edges,
+        const float* edge_features = nullptr, size_t feature_dim = 0);
+
+    void add_multiple_edges(
+        const std::vector<std::tuple<int, int, int64_t>>& edges,
+        const float* edge_features = nullptr, size_t feature_dim = 0);
+
+    WalksWithEdgeFeaturesHost get_random_walks_and_times_for_all_nodes(
+        int max_walk_len,
+        const RandomPickerType* walk_bias,
+        int num_walks_per_node,
+        const RandomPickerType* initial_edge_bias = nullptr,
+        WalkDirection walk_direction = WalkDirection::Forward_In_Time,
+        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK);
+
+    WalksWithEdgeFeaturesHost get_random_walks_and_times_for_last_batch(
+        int max_walk_len,
+        const RandomPickerType* walk_bias,
+        int num_walks_per_node,
+        const RandomPickerType* initial_edge_bias = nullptr,
+        WalkDirection walk_direction = WalkDirection::Forward_In_Time,
+        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK);
+
+    WalksWithEdgeFeaturesHost get_random_walks_and_times(
+        int max_walk_len,
+        const RandomPickerType* walk_bias,
+        int num_walks_total,
+        const RandomPickerType* initial_edge_bias = nullptr,
+        WalkDirection walk_direction = WalkDirection::Forward_In_Time,
+        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK);
+
+    void set_node_features(
+        const int* node_ids, size_t num_nodes,
+        const float* node_features_src, size_t feature_dim);
+
+    size_t get_node_count() const;
+    size_t get_edge_count() const;
+    std::vector<int> get_node_ids() const;
+    std::vector<Edge> get_edges() const;
+    bool get_is_directed() const { return data_.is_directed; }
+    void clear();
+    size_t get_memory_used() const;
+
+private:
+    TemporalGraphData data_;
+    int      walk_padding_value_;
+    uint64_t global_seed_;
+    bool     shuffle_walk_order_;
+    Buffer<int> last_batch_unique_sources_{/*use_gpu=*/false};
+    Buffer<int> last_batch_unique_targets_{/*use_gpu=*/false};
+    Buffer<int> h_stage_sources_{/*use_gpu=*/false};
+    Buffer<int> h_stage_targets_{/*use_gpu=*/false};
+#ifdef HAS_CUDA
+    cudaDeviceProp cuda_device_prop_{};
+    cudaStream_t   stream_{nullptr};
+#endif
 };
 
+} // namespace core
+
+// ==================================================================
+// Namespace free-function overloads taking core::TemporalRandomWalk*.
+// ==================================================================
+
 namespace temporal_random_walk {
-    /**
-     * Common functions
-     */
+
     HOST void add_multiple_edges(
-        TemporalRandomWalkStore *temporal_random_walk,
-        const int* sources,
-        const int* targets,
-        const int64_t* timestamps,
-        size_t num_edges,
-        const float* edge_features = nullptr,
-        size_t feature_dim = 0);
+        core::TemporalRandomWalk* trw,
+        const int* sources, const int* targets,
+        const int64_t* timestamps, size_t num_edges,
+        const float* edge_features = nullptr, size_t feature_dim = 0);
 
-    HOST size_t get_node_count(const TemporalRandomWalkStore *temporal_random_walk);
-    
-    HOST DEVICE size_t get_edge_count(const TemporalRandomWalkStore *temporal_random_walk);
+    HOST size_t get_node_count(const core::TemporalRandomWalk* trw);
+    HOST size_t get_edge_count(const core::TemporalRandomWalk* trw);
+    HOST std::vector<int>  get_node_ids(const core::TemporalRandomWalk* trw);
+    HOST std::vector<Edge> get_edges(const core::TemporalRandomWalk* trw);
+    HOST bool              get_is_directed(const core::TemporalRandomWalk* trw);
+    HOST void              clear(core::TemporalRandomWalk* trw);
 
-    HOST DataBlock<int> get_node_ids(const TemporalRandomWalkStore *temporal_random_walk);
-
-    HOST DataBlock<Edge> get_edges(const TemporalRandomWalkStore *temporal_random_walk);
-
-    HOST bool get_is_directed(const TemporalRandomWalkStore *temporal_random_walk);
-
-    HOST void clear(TemporalRandomWalkStore *temporal_random_walk);
-
-    /**
-     * Std implementations
-     */
-
-    HOST WalkSet get_random_walks_and_times_for_all_nodes_std(
-        const TemporalRandomWalkStore *temporal_random_walk,
+    HOST WalksWithEdgeFeaturesHost get_random_walks_and_times_for_all_nodes_std(
+        core::TemporalRandomWalk* trw,
         int max_walk_len,
-        const RandomPickerType *walk_bias,
+        const RandomPickerType* walk_bias,
         int num_walks_per_node,
-        const RandomPickerType *initial_edge_bias = nullptr,
+        const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time);
 
-    HOST WalkSet get_random_walks_and_times_for_last_batch_std(
-        const TemporalRandomWalkStore *temporal_random_walk,
+    HOST WalksWithEdgeFeaturesHost get_random_walks_and_times_for_last_batch_std(
+        core::TemporalRandomWalk* trw,
         int max_walk_len,
-        const RandomPickerType *walk_bias,
+        const RandomPickerType* walk_bias,
         int num_walks_per_node,
-        const RandomPickerType *initial_edge_bias = nullptr,
+        const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time);
 
-    HOST WalkSet get_random_walks_and_times_std(
-        const TemporalRandomWalkStore *temporal_random_walk,
+    HOST WalksWithEdgeFeaturesHost get_random_walks_and_times_std(
+        core::TemporalRandomWalk* trw,
         int max_walk_len,
-        const RandomPickerType *walk_bias,
+        const RandomPickerType* walk_bias,
         int num_walks_total,
-        const RandomPickerType *initial_edge_bias = nullptr,
+        const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time);
 
-    /**
-     * CUDA implementations
-     */
-
-    #ifdef HAS_CUDA
-
-    HOST WalkSet get_random_walks_and_times_for_all_nodes_cuda(
-        const TemporalRandomWalkStore *temporal_random_walk,
+#ifdef HAS_CUDA
+    HOST WalksWithEdgeFeaturesHost get_random_walks_and_times_for_all_nodes_cuda(
+        core::TemporalRandomWalk* trw,
         int max_walk_len,
-        const RandomPickerType *walk_bias,
+        const RandomPickerType* walk_bias,
         int num_walks_per_node,
-        const RandomPickerType *initial_edge_bias = nullptr,
+        const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type=KernelLaunchType::FULL_WALK);
+        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK);
 
-    HOST WalkSet get_random_walks_and_times_for_last_batch_cuda(
-        const TemporalRandomWalkStore *temporal_random_walk,
+    HOST WalksWithEdgeFeaturesHost get_random_walks_and_times_for_last_batch_cuda(
+        core::TemporalRandomWalk* trw,
         int max_walk_len,
-        const RandomPickerType *walk_bias,
+        const RandomPickerType* walk_bias,
         int num_walks_per_node,
-        const RandomPickerType *initial_edge_bias = nullptr,
+        const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type=KernelLaunchType::FULL_WALK);
+        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK);
 
-    HOST WalkSet get_random_walks_and_times_cuda(
-        const TemporalRandomWalkStore *temporal_random_walk,
+    HOST WalksWithEdgeFeaturesHost get_random_walks_and_times_cuda(
+        core::TemporalRandomWalk* trw,
         int max_walk_len,
-        const RandomPickerType *walk_bias,
+        const RandomPickerType* walk_bias,
         int num_walks_total,
-        const RandomPickerType *initial_edge_bias = nullptr,
+        const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type=KernelLaunchType::FULL_WALK);
+        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK);
+#endif
 
-    HOST TemporalRandomWalkStore *to_device_ptr(const TemporalRandomWalkStore* temporal_random_walk);
-
-    HOST void free_device_pointers(TemporalRandomWalkStore* d_temporal_random_walk);
-
-    #endif
-
-    HOST size_t get_memory_used(TemporalRandomWalkStore* temporal_random_walk);
-
+    HOST size_t get_memory_used(const core::TemporalRandomWalk* trw);
 }
+
 #endif // TEMPORAL_RANDOM_WALK_STORE_H

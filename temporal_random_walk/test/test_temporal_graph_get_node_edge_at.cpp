@@ -1,18 +1,27 @@
 #include <gtest/gtest.h>
-#include "../src/proxies/TemporalGraph.cuh"
 
+#include <memory>
+#include <set>
+#include <vector>
+
+#include "../src/core/temporal_random_walk.cuh"
+#include "test_temporal_graph_utils.h"
 
 template<typename T>
 class TemporalGraphGetNodeEdgeAtTest : public ::testing::Test {
 protected:
-    std::unique_ptr<TemporalGraph> graph;
+    std::unique_ptr<core::TemporalRandomWalk> graph;
 
     void SetUp() override {
-        graph = std::make_unique<TemporalGraph>(true, T::value); // directed graph
+        graph = std::make_unique<core::TemporalRandomWalk>(/*is_directed=*/true, T::value);
     }
 
-    // Helper to verify edge fields
-    static void verify_edge(const Edge& edge, const int expected_src, const int expected_tgt, const int64_t expected_ts) {
+    TemporalGraphData&       data()       { return graph->data(); }
+    const TemporalGraphData& data() const { return graph->data(); }
+
+    static void verify_edge(const Edge& edge,
+                            const int expected_src, const int expected_tgt,
+                            const int64_t expected_ts) {
         EXPECT_EQ(edge.u, expected_src);
         EXPECT_EQ(edge.i, expected_tgt);
         EXPECT_EQ(edge.ts, expected_ts);
@@ -26,202 +35,180 @@ using GPU_USAGE_TYPES = ::testing::Types<
 >;
 #else
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<bool, false>   // CPU mode only
+    std::integral_constant<bool, false>
 >;
 #endif
 
 TYPED_TEST_SUITE(TemporalGraphGetNodeEdgeAtTest, GPU_USAGE_TYPES);
 
-// Test forward walks from a node
 TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, ForwardWalkTest) {
-    auto edges = std::vector<Edge>{
-        Edge{10, 20, 100}, // Node 10 outbound group 1
+    test_util::add_edges(*this->graph, {
+        Edge{10, 20, 100},
         Edge{10, 30, 100},
-        Edge{10, 40, 102}, // Node 10 outbound group 2
-        Edge{10, 50, 104}, // Node 10 outbound group 3
-        Edge{20, 10, 101}, // Node 10 inbound (should be ignored for forward)
-        Edge{30, 10, 103}  // Node 10 inbound (should be ignored for forward)
-    };
-    this->graph->add_multiple_edges(edges);
+        Edge{10, 40, 102},
+        Edge{10, 50, 104},
+        Edge{20, 10, 101},
+        Edge{30, 10, 103}
+    });
 
-    // Test no timestamp constraint
-    auto edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, -1, -1, true);
-    EXPECT_EQ(edge.ts, 100); // Should select from first group
-    EXPECT_EQ(edge.u, 10);  // Source should be 10
+    const auto& d = this->data();
 
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_LAST, -1, -1, true);
-    EXPECT_EQ(edge.ts, 104); // Should select from last group
-    EXPECT_EQ(edge.u, 10);  // Source should be 10
+    auto edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, -1, -1, true);
+    EXPECT_EQ(edge.ts, 100);
+    EXPECT_EQ(edge.u, 10);
 
-    // Test with timestamp constraints
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 102, -1, true);
-    EXPECT_EQ(edge.ts, 104); // Should select first group after 102
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_LAST, -1, -1, true);
+    EXPECT_EQ(edge.ts, 104);
+    EXPECT_EQ(edge.u, 10);
 
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 103, -1, true);
-    EXPECT_EQ(edge.ts, 104); // Should select first group after 103
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, 102, -1, true);
+    EXPECT_EQ(edge.ts, 104);
 
-    // Test no available groups after timestamp
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 104, -1, true);
-    this->verify_edge(edge, -1, -1, -1); // No groups after 104
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, 103, -1, true);
+    EXPECT_EQ(edge.ts, 104);
+
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, 104, -1, true);
+    this->verify_edge(edge, -1, -1, -1);
 }
 
 TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, BackwardWalkTest) {
-    auto edges = std::vector<Edge>{
-        Edge{20, 10, 100}, // Node 10 inbound: ts 100 -> 103
-        Edge{30, 10, 101}, // From upstream (source) nodes: 20,30,40,50
-        Edge{40, 10, 102}, // To downstream node: 10
+    test_util::add_edges(*this->graph, {
+        Edge{20, 10, 100},
+        Edge{30, 10, 101},
+        Edge{40, 10, 102},
         Edge{50, 10, 103},
-        Edge{10, 20, 101}, // Node 10 outbound (should be ignored for backward)
-        Edge{10, 30, 102}  // Node 10 outbound (should be ignored for backward)
-    };
-    this->graph->add_multiple_edges(edges);
+        Edge{10, 20, 101},
+        Edge{10, 30, 102}
+    });
 
-    // Test no timestamp constraint
-    auto edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, -1, -1, false);
-    this->verify_edge(edge, 20, 10, 100); // Should select from first group with first_picker
+    const auto& d = this->data();
 
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_LAST, -1, -1, false);
-    this->verify_edge(edge, 50, 10, 103); // Should select from last group with last_picker
+    auto edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, -1, -1, false);
+    this->verify_edge(edge, 20, 10, 100);
 
-    // Test with timestamp constraints
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 104, -1, false);
-    this->verify_edge(edge, 20, 10, 100); // Should select 100 as lowest timestamp < 104
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_LAST, -1, -1, false);
+    this->verify_edge(edge, 50, 10, 103);
 
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 103, -1, false);
-    this->verify_edge(edge, 20, 10, 100); // Should select 100 as lowest timestamp < 103
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, 104, -1, false);
+    this->verify_edge(edge, 20, 10, 100);
 
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 102, -1, false);
-    this->verify_edge(edge, 20, 10, 100); // Should select 100 as lowest timestamp < 102
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, 103, -1, false);
+    this->verify_edge(edge, 20, 10, 100);
 
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 101, -1, false);
-    this->verify_edge(edge, 20, 10, 100); // Should select 100 as lowest timestamp < 101
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, 102, -1, false);
+    this->verify_edge(edge, 20, 10, 100);
 
-    // Test with timestamp constraints
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_LAST, 104, -1, false);
-    this->verify_edge(edge, 50, 10, 103); // Should select 103 as highest timestamp < 104
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, 101, -1, false);
+    this->verify_edge(edge, 20, 10, 100);
 
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_LAST, 103, -1, false);
-    this->verify_edge(edge, 40, 10, 102); // Should select 102 as highest timestamp < 103
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_LAST, 104, -1, false);
+    this->verify_edge(edge, 50, 10, 103);
 
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_LAST, 102, -1, false);
-    this->verify_edge(edge, 30, 10, 101); // Should select 101 as highest timestamp < 102
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_LAST, 103, -1, false);
+    this->verify_edge(edge, 40, 10, 102);
 
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 101, -1, false);
-    this->verify_edge(edge, 20, 10, 100); // Should select 100 as highest timestamp < 101
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_LAST, 102, -1, false);
+    this->verify_edge(edge, 30, 10, 101);
 
-    // Test edge cases
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 100, -1, false);
-    this->verify_edge(edge, -1, -1, -1); // No timestamps < 100
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, 101, -1, false);
+    this->verify_edge(edge, 20, 10, 100);
 
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 99, -1, false);
-    this->verify_edge(edge, -1, -1, -1); // No timestamps < 99
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, 100, -1, false);
+    this->verify_edge(edge, -1, -1, -1);
+
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, 99, -1, false);
+    this->verify_edge(edge, -1, -1, -1);
 }
 
-// Test edge cases and invalid inputs
 TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, EdgeCasesTest) {
-    auto edges = std::vector<Edge>{
-        Edge{10, 20, 100}, // Node 10 outbound: ts 100,101
-        Edge{10, 30, 101}, // Node 10 -> Nodes 20,30
-    };
-    this->graph->add_multiple_edges(edges);
+    test_util::add_edges(*this->graph, {
+        Edge{10, 20, 100},
+        Edge{10, 30, 101}
+    });
 
-    // Test invalid node ID
-    auto edge = this->graph->get_node_edge_at(-1, RandomPickerType::TEST_FIRST, -1, -1, true);
+    const auto& d = this->data();
+
+    auto edge = test_util::get_node_edge_at(d, -1, RandomPickerType::TEST_FIRST, -1, -1, true);
     this->verify_edge(edge, -1, -1, -1);
 
-    // Test non-existent node
-    edge = this->graph->get_node_edge_at(999, RandomPickerType::TEST_FIRST, -1, -1, true);
+    edge = test_util::get_node_edge_at(d, 999, RandomPickerType::TEST_FIRST, -1, -1, true);
     this->verify_edge(edge, -1, -1, -1);
 
-    // Test node with no edges in requested direction
-    edge = this->graph->get_node_edge_at(20, RandomPickerType::TEST_FIRST, -1, -1, true); // Node 20 has no outbound edges
+    edge = test_util::get_node_edge_at(d, 20, RandomPickerType::TEST_FIRST, -1, -1, true);
     this->verify_edge(edge, -1, -1, -1);
 
-    // Test backward walk for node with no inbound edges
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, -1, -1, false); // Node 10 has no inbound edges
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, -1, -1, false);
     this->verify_edge(edge, -1, -1, -1);
 
-    // Test empty graph
-    this->graph = std::make_unique<TemporalGraph>(true, TypeParam::value);
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, -1, -1, true);
+    this->graph = std::make_unique<core::TemporalRandomWalk>(true, TypeParam::value);
+    edge = test_util::get_node_edge_at(this->data(), 10, RandomPickerType::TEST_FIRST, -1, -1, true);
     this->verify_edge(edge, -1, -1, -1);
 }
 
-// Test random selection within timestamp groups
 TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, RandomSelectionTest) {
-    const auto edges = std::vector<Edge>{
-        Edge{10, 20, 100}, // Group 1: ts 100
+    test_util::add_edges(*this->graph, {
+        Edge{10, 20, 100},
         Edge{10, 30, 100},
         Edge{10, 40, 100},
-        Edge{10, 50, 101}  // Group 2: ts 101
-    };
-    this->graph->add_multiple_edges(edges);
+        Edge{10, 50, 101}
+    });
 
-    // Make multiple selections from first timestamp group
+    const auto& d = this->data();
+
     std::set<int> seen_targets;
     constexpr int NUM_TRIES = 50;
 
     for (int i = 0; i < NUM_TRIES; i++) {
-        auto edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, -1, -1, true);
-        EXPECT_EQ(edge.ts, 100); // Should always be from first group
+        auto edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, -1, -1, true);
+        EXPECT_EQ(edge.ts, 100);
         seen_targets.insert(edge.i);
     }
-
-    // Should see more than one target due to random selection within group ts=100
-    EXPECT_GT(seen_targets.size(), 1);
+    EXPECT_GT(seen_targets.size(), 1u);
 }
 
-// Test exact timestamp matching
 TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, ExactTimestampTest) {
-    auto edges = std::vector<Edge>{
-        // Edges for backward walks (upstream -> node 10)
-        Edge{20, 10, 100}, // Upstream nodes 20,30,40 -> downstream node 10
+    test_util::add_edges(*this->graph, {
+        Edge{20, 10, 100},
         Edge{30, 10, 101},
         Edge{40, 10, 102},
-        // Edges for forward walks (node 10 -> downstream)
-        Edge{10, 50, 100}, // Upstream node 10 -> downstream nodes 50,60,70
+        Edge{10, 50, 100},
         Edge{10, 60, 101},
         Edge{10, 70, 102}
-    };
-    this->graph->add_multiple_edges(edges);
+    });
 
-    // Forward direction (node 10 to downstream)
-    auto edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 100, -1, true);
-    this->verify_edge(edge, 10, 60, 101); // Should get next timestamp going downstream
+    const auto& d = this->data();
 
-    // Backward direction (node 10 looking upstream)
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 101, -1, false);
-    this->verify_edge(edge, 20, 10, 100); // Should get previous timestamp from upstream
+    auto edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, 100, -1, true);
+    this->verify_edge(edge, 10, 60, 101);
+
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, 101, -1, false);
+    this->verify_edge(edge, 20, 10, 100);
 }
 
-// Test exact timestamp matching for undirected graphs
 TYPED_TEST(TemporalGraphGetNodeEdgeAtTest, ExactTimestampUndirectedTest) {
-    // Create undirected graph
-    this->graph = std::make_unique<TemporalGraph>(false, TypeParam::value);
+    this->graph = std::make_unique<core::TemporalRandomWalk>(
+        /*is_directed=*/false, TypeParam::value);
 
-    auto edges = std::vector<Edge>{
-        // Edges connecting to node 10
-        Edge{10, 20, 100}, // Will be normalized (stored as min source, max target)
-        Edge{30, 10, 101}, // These edges connect node 10 with 20,30,40,50,60,70
-        Edge{10, 40, 102}, // In both directions since it's undirected
+    test_util::add_edges(*this->graph, {
+        Edge{10, 20, 100},
+        Edge{30, 10, 101},
+        Edge{10, 40, 102},
         Edge{50, 10, 100},
         Edge{10, 60, 101},
         Edge{70, 10, 102},
         Edge{20, 30, 104}
-    };
-    this->graph->add_multiple_edges(edges);
+    });
 
-    // Forward direction should work same as backward
-    auto edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 100, -1, true);
+    const auto& d = this->data();
+
+    auto edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, 100, -1, true);
     EXPECT_EQ(edge.ts, 101);
     EXPECT_TRUE((edge.u == 30 && edge.i == 10) || (edge.u == 10 && edge.i == 60));
 
-    // Backward direction
-    edge = this->graph->get_node_edge_at(10, RandomPickerType::TEST_FIRST, 101, -1, false);
+    edge = test_util::get_node_edge_at(d, 10, RandomPickerType::TEST_FIRST, 101, -1, false);
     EXPECT_EQ(edge.ts, 100);
-    EXPECT_TRUE((edge.u == 10 && edge.i == 20) or (edge.u == 50 && edge.i == 10));
+    EXPECT_TRUE((edge.u == 10 && edge.i == 20) || (edge.u == 50 && edge.i == 10));
 
-    // Try from other node's perspective
-    edge = this->graph->get_node_edge_at(20, RandomPickerType::TEST_FIRST, 100, -1, true);
+    edge = test_util::get_node_edge_at(d, 20, RandomPickerType::TEST_FIRST, 100, -1, true);
     this->verify_edge(edge, 20, 30, 104);
 }

@@ -1,12 +1,14 @@
 #ifndef TEMPORAL_RANDOM_WALK_KERNELS_FULL_WALK_CUH
 #define TEMPORAL_RANDOM_WALK_KERNELS_FULL_WALK_CUH
 
-#include "../data/walk_set/walk_set.cuh"
-#include "../stores/temporal_graph.cuh"
+#include "../data/walk_set/walk_set_view.cuh"
+#include "../data/temporal_graph_view.cuh"
+#include "../graph/temporal_graph.cuh"
 #include "../utils/random.cuh"
 #include "../utils/utils.cuh"
 #include "helpers.cuh"
-#include "../stores/edge_selectors.cuh"
+#include "../graph/edge_selectors.cuh"
+#include "../common/picker_dispatch.cuh"
 
 namespace temporal_random_walk {
 
@@ -14,8 +16,8 @@ namespace temporal_random_walk {
 
     template<bool IsDirected, bool Forward, RandomPickerType EdgePickerType, RandomPickerType StartPickerType>
     __global__ void generate_random_walks_kernel(
-        const WalkSet *__restrict__ walk_set,
-        TemporalGraphStore *__restrict__ temporal_graph,
+        WalkSetView walk_set,
+        TemporalGraphView view,
         const int *__restrict__ start_node_ids,
         const int max_walk_len,
         const size_t num_walks,
@@ -26,27 +28,29 @@ namespace temporal_random_walk {
 
         if (max_walk_len == 0) return;
 
-        // Optimize rand_nums access - use direct formula instead of storing offset
-        // Calculate indices directly to reduce register usage
-        const size_t base_idx = static_cast<size_t>(walk_idx) * (1 + static_cast<size_t>(max_walk_len) * 2);
+        // Philox is counter-based: one init per thread, then step the
+        // counter via successive draw_u01_philox calls for each of the
+        // ~2*max_walk_len draws this walk needs.
+        PhiloxState rng;
+        init_philox_state(rng, base_seed, static_cast<uint64_t>(walk_idx));
 
-        const double r0 = rng_u01_philox(base_seed, walk_idx, base_idx + 0);
-        const double r1 = rng_u01_philox(base_seed, walk_idx, base_idx + 1);
+        const double r0 = draw_u01_philox(rng);
+        const double r1 = draw_u01_philox(rng);
 
         // Get start edge based on whether we have a starting node
-        const auto padding_value = walk_set->nodes[walk_idx * max_walk_len];
+        const auto padding_value = walk_set.nodes[walk_idx * max_walk_len];
         InternalEdge start_edge;
         if (start_node_ids[walk_idx] == -1) {
             start_edge = temporal_graph::get_edge_at_device<Forward, StartPickerType>(
-                temporal_graph,
+                view,
                 -1, // timestamp
                 r0,
                 r1);
         } else {
-            walk_set->nodes[walk_idx * max_walk_len] = start_node_ids[walk_idx];
+            walk_set.nodes[walk_idx * max_walk_len] = start_node_ids[walk_idx];
 
             start_edge = temporal_graph::get_node_edge_at_device<Forward, StartPickerType, IsDirected>(
-                temporal_graph,
+                view,
                 start_node_ids[walk_idx],
                 -1, // timestamp
                 -1,
@@ -55,7 +59,7 @@ namespace temporal_random_walk {
         }
 
         if (start_edge.i == -1) {
-            walk_set->nodes[walk_idx * max_walk_len] = padding_value;
+            walk_set.nodes[walk_idx * max_walk_len] = padding_value;
             return;
         }
 
@@ -69,21 +73,21 @@ namespace temporal_random_walk {
         // Set initial node and add first hop - use template conditions
         if constexpr (IsDirected) {
             if constexpr (Forward) {
-                walk_set->add_hop(walk_idx, start_src, current_timestamp);
+                walk_set.add_hop(walk_idx, start_src, current_timestamp);
                 current_node = start_dst;
             } else {
-                walk_set->add_hop(walk_idx, start_dst, current_timestamp);
+                walk_set.add_hop(walk_idx, start_dst, current_timestamp);
                 current_node = start_src;
             }
         } else {
-            const double r2 = rng_u01_philox(base_seed, walk_idx, base_idx + 2);
+            const double r2 = draw_u01_philox(rng);
 
             // For undirected graphs, use specified start node or pick a random node
             const int picked_node = (start_node_ids[walk_idx] != -1)
                                         ? start_node_ids[walk_idx]
                                         : pick_random_number(start_src, start_dst, r2);
 
-            walk_set->add_hop(walk_idx, picked_node, current_timestamp);
+            walk_set.add_hop(walk_idx, picked_node, current_timestamp);
             current_node = pick_other_number(start_src, start_dst, picked_node);
         }
 
@@ -93,17 +97,14 @@ namespace temporal_random_walk {
         // Main walk loop
         int walk_len = 1; // Start at 1 since we already added first hop
         while (walk_len < max_walk_len && current_node != -1) {
-            // Calculate random number indices directly based on walk_len
-            const size_t step_base_idx = base_idx + static_cast<size_t>(walk_len) * 2 + 1;
+            const double r_step0 = draw_u01_philox(rng);
+            const double r_step1 = draw_u01_philox(rng);
 
-            const double r_step0 = rng_u01_philox(base_seed, walk_idx, step_base_idx);
-            const double r_step1 = rng_u01_philox(base_seed, walk_idx, step_base_idx + 1);
-
-            walk_set->add_hop(walk_idx, current_node, current_timestamp, current_edge_id);
+            walk_set.add_hop(walk_idx, current_node, current_timestamp, current_edge_id);
 
             // Use templated edge selector function
             InternalEdge next_edge = temporal_graph::get_node_edge_at_device<Forward, EdgePickerType, IsDirected>(
-                temporal_graph,
+                view,
                 current_node,
                 current_timestamp,
                 prev_node,
@@ -131,14 +132,14 @@ namespace temporal_random_walk {
 
         // Reverse walk only when walking backward
         if constexpr (!Forward) {
-            walk_set->reverse_walk(walk_idx);
+            walk_set.reverse_walk(walk_idx);
         }
     }
 
     inline void launch_random_walk_kernel_full_walk(
-        TemporalGraphStore *temporal_graph,
+        const TemporalGraphView& view,
         const bool is_directed,
-        const WalkSet *walk_set,
+        WalkSetView walk_set_view,
         const int max_walk_len,
         const int *start_node_ids,
         const size_t num_walks,
@@ -147,7 +148,8 @@ namespace temporal_random_walk {
         const WalkDirection walk_direction,
         const uint64_t base_seed,
         const dim3 &grid_dim,
-        const dim3 &block_dim) {
+        const dim3 &block_dim,
+        const cudaStream_t stream = 0) {
         // Calculate grid dimensions if not provided
         dim3 grid = grid_dim;
         if (grid.x == 0) {
@@ -159,109 +161,27 @@ namespace temporal_random_walk {
         // Convert to int since the kernel accepts int, not size_t
         const int num_walks_int = static_cast<int>(num_walks);
 
-        #define DISPATCH(DIR, FWD, EDGE, START) \
-            generate_random_walks_kernel<DIR, FWD, EDGE, START><<<grid, block_dim>>>( \
-                walk_set, temporal_graph, start_node_ids, max_walk_len, num_walks_int, base_seed); return;
-
-        #define HANDLE_EDGE_START(DIR, FWD) \
-            switch (edge_picker_type) { \
-                case RandomPickerType::Uniform: \
-                    switch (start_picker_type) { \
-                        case RandomPickerType::Uniform: DISPATCH(DIR, FWD, RandomPickerType::Uniform, RandomPickerType::Uniform); \
-                        case RandomPickerType::Linear: DISPATCH(DIR, FWD, RandomPickerType::Uniform, RandomPickerType::Linear); \
-                        case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::Uniform, RandomPickerType::ExponentialIndex); \
-                        case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::Uniform, RandomPickerType::ExponentialWeight); \
-                        case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::Uniform, RandomPickerType::TemporalNode2Vec); \
-                        case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::Uniform, RandomPickerType::TEST_FIRST); \
-                        case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::Uniform, RandomPickerType::TEST_LAST); \
-                        default: break; \
-                    } break; \
-                case RandomPickerType::Linear: \
-                    switch (start_picker_type) { \
-                        case RandomPickerType::Uniform: DISPATCH(DIR, FWD, RandomPickerType::Linear, RandomPickerType::Uniform); \
-                        case RandomPickerType::Linear: DISPATCH(DIR, FWD, RandomPickerType::Linear, RandomPickerType::Linear); \
-                        case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::Linear, RandomPickerType::ExponentialIndex); \
-                        case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::Linear, RandomPickerType::ExponentialWeight); \
-                        case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::Linear, RandomPickerType::TemporalNode2Vec); \
-                        case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::Linear, RandomPickerType::TEST_FIRST); \
-                        case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::Linear, RandomPickerType::TEST_LAST); \
-                        default: break; \
-                    } break; \
-                case RandomPickerType::ExponentialIndex: \
-                    switch (start_picker_type) { \
-                        case RandomPickerType::Uniform: DISPATCH(DIR, FWD, RandomPickerType::ExponentialIndex, RandomPickerType::Uniform); \
-                        case RandomPickerType::Linear: DISPATCH(DIR, FWD, RandomPickerType::ExponentialIndex, RandomPickerType::Linear); \
-                        case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::ExponentialIndex, RandomPickerType::ExponentialIndex); \
-                        case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::ExponentialIndex, RandomPickerType::ExponentialWeight); \
-                        case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::ExponentialIndex, RandomPickerType::TemporalNode2Vec); \
-                        case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::ExponentialIndex, RandomPickerType::TEST_FIRST); \
-                        case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::ExponentialIndex, RandomPickerType::TEST_LAST); \
-                        default: break; \
-                    } break; \
-                case RandomPickerType::ExponentialWeight: \
-                    switch (start_picker_type) { \
-                        case RandomPickerType::Uniform: DISPATCH(DIR, FWD, RandomPickerType::ExponentialWeight, RandomPickerType::Uniform); \
-                        case RandomPickerType::Linear: DISPATCH(DIR, FWD, RandomPickerType::ExponentialWeight, RandomPickerType::Linear); \
-                        case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::ExponentialWeight, RandomPickerType::ExponentialIndex); \
-                        case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::ExponentialWeight, RandomPickerType::ExponentialWeight); \
-                        case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::ExponentialWeight, RandomPickerType::TemporalNode2Vec); \
-                        case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::ExponentialWeight, RandomPickerType::TEST_FIRST); \
-                        case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::ExponentialWeight, RandomPickerType::TEST_LAST); \
-                        default: break; \
-                    } break; \
-                case RandomPickerType::TemporalNode2Vec: \
-                    switch (start_picker_type) { \
-                        case RandomPickerType::Uniform: DISPATCH(DIR, FWD, RandomPickerType::TemporalNode2Vec, RandomPickerType::Uniform); \
-                        case RandomPickerType::Linear: DISPATCH(DIR, FWD, RandomPickerType::TemporalNode2Vec, RandomPickerType::Linear); \
-                        case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::TemporalNode2Vec, RandomPickerType::ExponentialIndex); \
-                        case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::TemporalNode2Vec, RandomPickerType::ExponentialWeight); \
-                        case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::TemporalNode2Vec, RandomPickerType::TemporalNode2Vec); \
-                        case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::TemporalNode2Vec, RandomPickerType::TEST_FIRST); \
-                        case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::TemporalNode2Vec, RandomPickerType::TEST_LAST); \
-                        default: break; \
-                    } break; \
-                case RandomPickerType::TEST_FIRST: \
-                    switch (start_picker_type) { \
-                        case RandomPickerType::Uniform: DISPATCH(DIR, FWD, RandomPickerType::TEST_FIRST, RandomPickerType::Uniform); \
-                        case RandomPickerType::Linear: DISPATCH(DIR, FWD, RandomPickerType::TEST_FIRST, RandomPickerType::Linear); \
-                        case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::TEST_FIRST, RandomPickerType::ExponentialIndex); \
-                        case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::TEST_FIRST, RandomPickerType::ExponentialWeight); \
-                        case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::TEST_FIRST, RandomPickerType::TemporalNode2Vec); \
-                        case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::TEST_FIRST, RandomPickerType::TEST_FIRST); \
-                        case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::TEST_FIRST, RandomPickerType::TEST_LAST); \
-                        default: break; \
-                    } break; \
-                case RandomPickerType::TEST_LAST: \
-                    switch (start_picker_type) { \
-                        case RandomPickerType::Uniform: DISPATCH(DIR, FWD, RandomPickerType::TEST_LAST, RandomPickerType::Uniform); \
-                        case RandomPickerType::Linear: DISPATCH(DIR, FWD, RandomPickerType::TEST_LAST, RandomPickerType::Linear); \
-                        case RandomPickerType::ExponentialIndex: DISPATCH(DIR, FWD, RandomPickerType::TEST_LAST, RandomPickerType::ExponentialIndex); \
-                        case RandomPickerType::ExponentialWeight: DISPATCH(DIR, FWD, RandomPickerType::TEST_LAST, RandomPickerType::ExponentialWeight); \
-                        case RandomPickerType::TemporalNode2Vec: DISPATCH(DIR, FWD, RandomPickerType::TEST_LAST, RandomPickerType::TemporalNode2Vec); \
-                        case RandomPickerType::TEST_FIRST: DISPATCH(DIR, FWD, RandomPickerType::TEST_LAST, RandomPickerType::TEST_FIRST); \
-                        case RandomPickerType::TEST_LAST: DISPATCH(DIR, FWD, RandomPickerType::TEST_LAST, RandomPickerType::TEST_LAST); \
-                        default: break; \
-                    } break; \
-                default: break; \
-            }
-
-        if (is_directed) {
-            if (should_walk_forward) {
-                HANDLE_EDGE_START(true, true)
-            } else {
-                HANDLE_EDGE_START(true, false)
-            }
-        }
-        else {
-            if (should_walk_forward) {
-                HANDLE_EDGE_START(false, true)
-            } else {
-                HANDLE_EDGE_START(false, false)
-            }
-        }
-
-        #undef DISPATCH
-        #undef HANDLE_EDGE_START
+        // 4-level tag dispatch: (is_directed, should_walk_forward,
+        // edge_picker_type, start_picker_type). Each level converts a
+        // runtime value into a constexpr template parameter, giving the
+        // compiler enough info to emit the correct kernel instantiation.
+        // Same 196 instantiations as the old preprocessor macro.
+        dispatch_bool(is_directed, [&](auto dir_tag) {
+            constexpr bool kDir = decltype(dir_tag)::value;
+            dispatch_bool(should_walk_forward, [&](auto fwd_tag) {
+                constexpr bool kFwd = decltype(fwd_tag)::value;
+                dispatch_picker_type(edge_picker_type, [&](auto edge_tag) {
+                    constexpr auto kEdge = decltype(edge_tag)::value;
+                    dispatch_picker_type(start_picker_type, [&](auto start_tag) {
+                        constexpr auto kStart = decltype(start_tag)::value;
+                        generate_random_walks_kernel<kDir, kFwd, kEdge, kStart>
+                            <<<grid, block_dim, 0, stream>>>(
+                                walk_set_view, view, start_node_ids,
+                                max_walk_len, num_walks_int, base_seed);
+                    });
+                });
+            });
+        });
     }
 
     #endif

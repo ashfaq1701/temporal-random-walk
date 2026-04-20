@@ -1,24 +1,26 @@
-#ifndef STORE_HELPERS_CUH
-#define STORE_HELPERS_CUH
+#ifndef WALK_STEP_HELPERS_CUH
+#define WALK_STEP_HELPERS_CUH
+
+#include "../common/macros.cuh"
+#include "../data/temporal_graph_view.cuh"
 
 namespace temporal_graph {
 
     HOST DEVICE inline double get_group_exponential_weight_from_cumulative(
-        const double *weights,
+        const double* weights,
         const size_t current_group_pos,
         const size_t node_group_begin) {
         if (current_group_pos == node_group_begin) {
             return weights[current_group_pos];
         }
-
         return weights[current_group_pos] - weights[current_group_pos - 1];
     }
 
     template<bool Forward, bool IsDirected>
     HOST DEVICE size_t get_node_group_edge_end(
-        const TemporalGraphStore *graph,
+        const TemporalGraphView& view,
         const int node_id,
-        const size_t *node_ts_groups_offsets,
+        const size_t* node_ts_groups_offsets,
         const size_t group_pos,
         const size_t node_group_end) {
 
@@ -27,23 +29,22 @@ namespace temporal_graph {
         }
 
         if constexpr (Forward) {
-            return graph->node_edge_index->node_group_outbound_offsets[node_id + 1];
+            return view.node_group_outbound_offsets[node_id + 1];
         }
 
         return IsDirected
-            ? graph->node_edge_index->node_group_inbound_offsets[node_id + 1]
-            : graph->node_edge_index->node_group_outbound_offsets[node_id + 1];
+            ? view.node_group_inbound_offsets[node_id + 1]
+            : view.node_group_outbound_offsets[node_id + 1];
     }
 
     template<bool Forward, bool IsDirected>
     HOST DEVICE int get_candidate_node(
-        const TemporalGraphStore *graph,
+        const TemporalGraphView& view,
         const int node_id,
         const size_t edge_idx) {
 
-        const EdgeDataStore *const edge_data = graph->edge_data;
-        const int src = edge_data->sources[edge_idx];
-        const int dst = edge_data->targets[edge_idx];
+        const int src = view.sources[edge_idx];
+        const int dst = view.targets[edge_idx];
 
         if constexpr (IsDirected) {
             return Forward ? dst : src;
@@ -54,5 +55,4 @@ namespace temporal_graph {
 
 }
 
-
-#endif //STORE_HELPERS_CUH
+#endif // WALK_STEP_HELPERS_CUH

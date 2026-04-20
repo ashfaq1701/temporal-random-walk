@@ -2,11 +2,11 @@
 #define STRUCTS_H
 
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <utility>
-#include "../common/memory.cuh"
+#include "../common/error_handlers.cuh"
 #include "../common/macros.cuh"
-#include "walk_set/walk_set.cuh"
 
 struct Edge {
     int u;
@@ -68,8 +68,10 @@ struct SizeRange {
 template <typename T>
 struct DataBlock {
     T* data = nullptr;
-    size_t size;
-    bool use_gpu;
+    size_t size = 0;
+    bool use_gpu = false;
+
+    DataBlock() = default;
 
     // Constructor allocates memory internally
     HOST DataBlock(const size_t size, const bool use_gpu) : size(size), use_gpu(use_gpu) {
@@ -86,82 +88,46 @@ struct DataBlock {
         }
     }
 
-    HOST ~DataBlock() {
-        if (data) {
-            #ifdef HAS_CUDA
-            if (use_gpu) {
-                CUDA_CHECK_AND_CLEAR(cudaFree(data));
-            }
-            else
-            #endif
-            {
-                free(data);
-            }
+    DataBlock(const DataBlock&) = delete;
+    DataBlock& operator=(const DataBlock&) = delete;
+
+    // Explicit moves (not = default) so the moved-from pointer is nulled
+    // and the source's destructor does not double-free.
+    HOST DataBlock(DataBlock&& other) noexcept
+        : data(other.data), size(other.size), use_gpu(other.use_gpu) {
+        other.data = nullptr;
+        other.size = 0;
+    }
+
+    HOST DataBlock& operator=(DataBlock&& other) noexcept {
+        if (this != &other) {
+            release();
+            data    = other.data;
+            size    = other.size;
+            use_gpu = other.use_gpu;
+            other.data = nullptr;
+            other.size = 0;
         }
+        return *this;
     }
-};
 
-template <typename T>
-struct MemoryView {
-    T* data;
-    size_t size;
-};
+    HOST ~DataBlock() noexcept { release(); }
 
-struct WalksWithEdgeFeatures {
-    WalkSet walk_set;
-    float* walk_edge_features;
-    int feature_dim;
-
-    HOST WalksWithEdgeFeatures(WalkSet walk_set, const int feature_dim)
-        : walk_set(std::move(walk_set)), walk_edge_features(nullptr), feature_dim(feature_dim) {
-        if (feature_dim <= 0) {
-            return;
+private:
+    // Shared teardown. Uses bare cudaFree + cudaGetLastError instead of the
+    // throwing CUDA_CHECK_AND_CLEAR macro so the destructor is truly noexcept.
+    HOST void release() noexcept {
+        if (!data) return;
+        #ifdef HAS_CUDA
+        if (use_gpu) {
+            cudaFree(data);
+            cudaGetLastError();
+        } else
+        #endif
+        {
+            free(data);
         }
-
-        const size_t walk_edge_features_size = this->walk_set.edge_ids_size * static_cast<size_t>(feature_dim);
-        if (walk_edge_features_size == 0) {
-            return;
-        }
-
-        allocate_memory(&walk_edge_features, walk_edge_features_size, false);
-        std::memset(walk_edge_features, 0, walk_edge_features_size * sizeof(float));
-    }
-
-    HOST ~WalksWithEdgeFeatures() {
-        clear_memory(&walk_edge_features, false);
-    }
-
-    HOST size_t size() const {
-        return walk_set.size();
-    }
-
-    HOST WalksIterator walks_begin() const {
-        return walk_set.walks_begin();
-    }
-
-    HOST WalksIterator walks_end() const {
-        return walk_set.walks_end();
-    }
-
-    HOST void populate_walk_edge_features(const float* edge_features) const {
-        if (edge_features == nullptr || feature_dim <= 0) {
-            return;
-        }
-
-        const auto feature_dim_size_t = static_cast<size_t>(feature_dim);
-        const size_t walk_edges_count = walk_set.edge_ids_size;
-
-        #pragma omp parallel for schedule(static)
-        for (size_t i = 0; i < walk_edges_count; ++i) {
-            if (walk_set.edge_ids[i] == EMPTY_EDGE_ID) {
-                continue;
-            }
-
-            const auto edge_id = static_cast<size_t>(walk_set.edge_ids[i]);
-            float* dst = walk_edge_features + (i * feature_dim_size_t);
-            const float* src = edge_features + (edge_id * feature_dim_size_t);
-            std::memcpy(dst, src, feature_dim_size_t * sizeof(float));
-        }
+        data = nullptr;
     }
 };
 

@@ -19,7 +19,8 @@ protected:
 
     double compute_average_picks(const bool use_exponential, const bool prioritize_end) {
         double sum = 0;
-        const double* random_nums = generate_n_random_numbers(RANDOM_NUM_SAMPLES, T::value);
+        Buffer<double> random_nums_buf = generate_n_random_numbers(RANDOM_NUM_SAMPLES, T::value);
+        double* random_nums = random_nums_buf.data();
 
         for (int i = 0; i < RANDOM_NUM_SAMPLES; i++) {
             const int pick = use_exponential ?
@@ -91,7 +92,8 @@ TYPED_TEST(RandomPickerTest, BoundsTest) {
     const int end = 10;
     const int num_tests = 1000;
 
-    const double* random_nums = generate_n_random_numbers(num_tests * 4, TypeParam::value);
+    Buffer<double> random_nums_buf = generate_n_random_numbers(num_tests * 4, TypeParam::value);
+    double* random_nums = random_nums_buf.data();
 
     for (int i = 0; i < num_tests; i++) {
         int linear_result = this->linear_picker.pick_random_with_provided_number(start, end, true, random_nums + i * 4);
@@ -132,7 +134,8 @@ TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForLinearRandomPicke
     int count_ones_start_prioritized = 0;
     const int num_trials = RANDOM_NUM_SAMPLES;
 
-    const double* rand_nums = generate_n_random_numbers(num_trials * 2, TypeParam::value);
+    Buffer<double> rand_nums_buf = generate_n_random_numbers(num_trials * 2, TypeParam::value);
+    double* rand_nums = rand_nums_buf.data();
 
     // Run trials
     for (int i = 0; i < num_trials; i++) {
@@ -183,7 +186,8 @@ TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForExponentialRandom
     int count_ones_start_prioritized = 0;
     constexpr int num_trials = RANDOM_NUM_SAMPLES;
 
-    const double* rand_nums = generate_n_random_numbers(num_trials * 2, TypeParam::value);
+    Buffer<double> rand_nums_buf = generate_n_random_numbers(num_trials * 2, TypeParam::value);
+    double* rand_nums = rand_nums_buf.data();
 
     // Run trials
     for (int i = 0; i < num_trials; i++) {

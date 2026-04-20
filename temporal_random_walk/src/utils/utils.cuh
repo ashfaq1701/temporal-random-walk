@@ -10,6 +10,7 @@
 #include <cstddef>
 
 #include "../data/structs.cuh"
+#include "../data/buffer.cuh"
 #include "../common/macros.cuh"
 #include "../common/cuda_config.cuh"
 #include "../common/error_handlers.cuh"
@@ -68,8 +69,8 @@ HOST inline DataBlock<int> repeat_elements(const int* arr, const size_t input_si
     #ifdef HAS_CUDA
     if (use_gpu) {
         // Copy vector data to device first
-        int* d_arr = nullptr;
-        allocate_memory(&d_arr, input_size, true);
+        Buffer<int> d_arr_buf(input_size, true);
+        int* d_arr = d_arr_buf.data();
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_arr, arr, input_size * sizeof(int), cudaMemcpyHostToDevice));
 
         thrust::transform(
@@ -84,7 +85,6 @@ HOST inline DataBlock<int> repeat_elements(const int* arr, const size_t input_si
         );
 
         CUDA_KERNEL_CHECK("After thrust transform in repeat_elements (vector)");
-        clear_memory(&d_arr, true);
     }
     else
     #endif

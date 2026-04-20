@@ -4,45 +4,56 @@
 #include "walks_iterator.cuh"
 
 HOST inline void WalksIterator::find_next_non_empty() {
-    while (walk_index_ < max_walks_ && walk_set_->walk_lens[walk_index_] == 0) {
+    while (walk_index_ < max_walks_ && walk_lens_[walk_index_] == 0) {
         ++walk_index_;
     }
 }
 
-inline WalksIterator::WalksIterator(const WalkSet* walk_set, const size_t start_index)
-    : walk_set_(walk_set), walk_index_(start_index), max_walks_(walk_set->num_walks) {
+HOST inline WalksIterator::WalksIterator(
+    const int*     nodes,
+    const int64_t* timestamps,
+    const size_t*  walk_lens,
+    const int64_t* edge_ids,
+    const size_t   num_walks,
+    const size_t   max_len,
+    const size_t   start_index)
+    : nodes_(nodes),
+      timestamps_(timestamps),
+      walk_lens_(walk_lens),
+      edge_ids_(edge_ids),
+      max_len_(max_len),
+      max_walks_(num_walks),
+      walk_index_(start_index) {
     find_next_non_empty();
 }
 
-// Iterator operations
-inline Walk WalksIterator::operator*() const {
-    const size_t len = walk_set_->walk_lens[walk_index_];
-    const size_t node_offset = walk_index_ * walk_set_->max_len;
-
-    const size_t edge_stride = (walk_set_->max_len > 0) ? (walk_set_->max_len - 1) : 0;
+HOST inline Walk WalksIterator::operator*() const {
+    const size_t len = walk_lens_[walk_index_];
+    const size_t node_offset = walk_index_ * max_len_;
+    const size_t edge_stride = (max_len_ > 0) ? (max_len_ - 1) : 0;
     const size_t edge_offset = walk_index_ * edge_stride;
 
     return {
-        walk_set_->nodes + node_offset,
-        walk_set_->timestamps + node_offset,
-        walk_set_->edge_ids + edge_offset,
+        nodes_ ? nodes_ + node_offset : nullptr,
+        timestamps_ ? timestamps_ + node_offset : nullptr,
+        edge_ids_ ? edge_ids_ + edge_offset : nullptr,
         len
     };
 }
 
-inline WalksIterator& WalksIterator::operator++() {
+HOST inline WalksIterator& WalksIterator::operator++() {
     ++walk_index_;
     find_next_non_empty();
     return *this;
 }
 
-inline WalksIterator WalksIterator::operator++(int) {
+HOST inline WalksIterator WalksIterator::operator++(int) {
     const WalksIterator temp = *this;
     ++(*this);
     return temp;
 }
 
-inline bool WalksIterator::operator==(const WalksIterator& other) const {
+HOST inline bool WalksIterator::operator==(const WalksIterator& other) const {
     return walk_index_ == other.walk_index_;
 }
 

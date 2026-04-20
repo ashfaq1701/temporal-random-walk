@@ -21,7 +21,8 @@ protected:
     {
         std::map<int, int> sample_counts;
 
-        const double* random_nums = generate_n_random_numbers(num_samples, T::value);
+        Buffer<double> random_nums_buf = generate_n_random_numbers(num_samples, T::value);
+        double* random_nums = random_nums_buf.data();
 
         for (int i = 0; i < num_samples; i++)
         {
@@ -88,7 +89,8 @@ TYPED_TEST(WeightBasedRandomPickerTest, SingleElementRange)
     std::vector<double> weights = {0.2, 0.5, 0.7, 1.0};
     constexpr int num_samples = 100;
 
-    const double* random_nums = generate_n_random_numbers(num_samples, TypeParam::value);
+    Buffer<double> random_nums_buf = generate_n_random_numbers(num_samples, TypeParam::value);
+    double* random_nums = random_nums_buf.data();
 
     // When sampling single element, should always return that index
     for (int i = 0; i < num_samples; i++)
@@ -105,7 +107,8 @@ TYPED_TEST(WeightBasedRandomPickerTest, WeightDistributionTest)
     std::map<int, int> sample_counts;
     constexpr int num_samples = 100000;
 
-    const double* random_nums = generate_n_random_numbers(num_samples, TypeParam::value);
+    Buffer<double> random_nums_buf = generate_n_random_numbers(num_samples, TypeParam::value);
+    double* random_nums = random_nums_buf.data();
 
     for (int i = 0; i < num_samples; i++)
     {
