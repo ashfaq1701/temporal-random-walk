@@ -28,10 +28,20 @@ if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
             CUDA::curand
     )
 
+    # CUDA_ARCHITECTURES must be quoted: CMAKE_CUDA_ARCHITECTURES is a
+    # semicolon list (e.g. "75;80;86;89;90"), and without the quotes CMake
+    # splits it into multiple positional tokens inside set_target_properties.
+    # That silently pairs "75" as the arch value and turns "80;86;89;90" into
+    # bogus property/value pairs, so the .so gets built for sm_75 only. On
+    # newer GPUs the PTX-JIT fallback then produces CUB kernels that fail
+    # with cudaErrorInvalidValue on the dispatch call.
     set_target_properties(_temporal_random_walk PROPERTIES
             CUDA_SEPARABLE_COMPILATION ON
             CUDA_RESOLVE_DEVICE_SYMBOLS ON
-            CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+            CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}"
+            CUDA_VISIBILITY_PRESET "hidden"
+            CXX_VISIBILITY_PRESET "hidden"
+            VISIBILITY_INLINES_HIDDEN ON
     )
 
     target_include_directories(_temporal_random_walk PRIVATE
