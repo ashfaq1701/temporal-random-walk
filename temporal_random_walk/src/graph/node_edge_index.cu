@@ -27,6 +27,8 @@
 
 #ifdef HAS_CUDA
 #include "../common/cuda_scan.cuh"
+#include <cub/block/block_reduce.cuh>
+#include <cub/block/block_scan.cuh>
 #endif
 
 /**
@@ -1127,10 +1129,252 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
     }
 }
 
+namespace {
+
+// Fused outbound-weight kernel (one block per node).
+//
+// Replaces the old 8-kernel thrust pipeline (build_group_to_node, min/max
+// per node, raw weights, atomicAdd sums, normalize, 2x inclusive_scan_by_key)
+// with a single kernel:
+//  - Pass 1 (tiled): compute raw_fwd / raw_bwd into scratch, block-reduce
+//    per-tile sums into per-node running sums in shared memory.
+//  - Pass 2 (tiled): divide raw by node-sum, BlockScan::InclusiveSum with a
+//    running carry across tiles, write cumulative normalized weights.
+//
+// __syncthreads() between passes is both a barrier AND a memory fence for
+// the block's writes to raw_*_scratch. Each block only touches its own
+// [out_start, out_end) range, so scratch has no inter-block contention.
+template <int BLOCK_SIZE>
+__global__ void compute_outbound_weights_fused_kernel(
+    const size_t* __restrict__ group_offsets,        // count_ts_group_per_node_outbound
+    const size_t* __restrict__ group_to_edge_start,  // node_ts_group_outbound_offsets
+    const size_t* __restrict__ node_to_edge_offsets, // node_group_outbound_offsets
+    const size_t* __restrict__ edge_sorted_indices,  // node_ts_sorted_outbound_indices
+    const int64_t* __restrict__ timestamps,
+    const double timescale_bound,
+    double* __restrict__ raw_fwd_scratch,
+    double* __restrict__ raw_bwd_scratch,
+    double* __restrict__ cum_fwd_out,
+    double* __restrict__ cum_bwd_out) {
+
+    const size_t node = blockIdx.x;
+    const int tid = static_cast<int>(threadIdx.x);
+
+    const size_t out_start = group_offsets[node];
+    const size_t out_end   = group_offsets[node + 1];
+    if (out_start >= out_end) return;
+
+    __shared__ int64_t s_min_ts;
+    __shared__ int64_t s_max_ts;
+    __shared__ double  s_scale;
+    if (tid == 0) {
+        const size_t first_group_start = group_to_edge_start[out_start];
+        const size_t last_group_start  = group_to_edge_start[out_end - 1];
+        const int64_t min_ts = timestamps[edge_sorted_indices[first_group_start]];
+        const int64_t max_ts = timestamps[edge_sorted_indices[last_group_start]];
+        const double time_diff = static_cast<double>(max_ts - min_ts);
+        s_min_ts = min_ts;
+        s_max_ts = max_ts;
+        s_scale  = (timescale_bound > 0.0 && time_diff > 0.0)
+                       ? (timescale_bound / time_diff)
+                       : 1.0;
+    }
+    __syncthreads();
+
+    const int64_t min_ts = s_min_ts;
+    const int64_t max_ts = s_max_ts;
+    const double  scale  = s_scale;
+
+    using BlockReduce = cub::BlockReduce<double, BLOCK_SIZE>;
+    using BlockScan   = cub::BlockScan<double, BLOCK_SIZE>;
+
+    __shared__ typename BlockReduce::TempStorage reduce_storage;
+    __shared__ typename BlockScan::TempStorage   scan_storage;
+
+    __shared__ double s_sum_fwd;
+    __shared__ double s_sum_bwd;
+    __shared__ double s_carry_fwd;
+    __shared__ double s_carry_bwd;
+    if (tid == 0) {
+        s_sum_fwd   = 0.0;
+        s_sum_bwd   = 0.0;
+        s_carry_fwd = 0.0;
+        s_carry_bwd = 0.0;
+    }
+    __syncthreads();
+
+    const size_t num_groups = out_end - out_start;
+    const size_t num_tiles  = (num_groups + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    for (size_t tile = 0; tile < num_tiles; ++tile) {
+        const size_t local_idx = tile * BLOCK_SIZE + tid;
+        double raw_f = 0.0;
+        double raw_b = 0.0;
+        if (local_idx < num_groups) {
+            const size_t pos = out_start + local_idx;
+            const size_t edge_start = group_to_edge_start[pos];
+            const size_t edge_end = (local_idx + 1 < num_groups)
+                ? group_to_edge_start[pos + 1]
+                : node_to_edge_offsets[node + 1];
+            const double group_sz  = static_cast<double>(edge_end - edge_start);
+            const int64_t group_ts = timestamps[edge_sorted_indices[edge_start]];
+            const double tf = static_cast<double>(max_ts - group_ts) * scale;
+            const double tb = static_cast<double>(group_ts - min_ts) * scale;
+            raw_f = group_sz * exp(tf);
+            raw_b = group_sz * exp(tb);
+            raw_fwd_scratch[pos] = raw_f;
+            raw_bwd_scratch[pos] = raw_b;
+        }
+
+        const double tile_sum_f = BlockReduce(reduce_storage).Sum(raw_f);
+        __syncthreads(); // reuse reduce_storage
+        const double tile_sum_b = BlockReduce(reduce_storage).Sum(raw_b);
+        if (tid == 0) {
+            s_sum_fwd += tile_sum_f;
+            s_sum_bwd += tile_sum_b;
+        }
+        __syncthreads();
+    }
+
+    const double sum_fwd = s_sum_fwd;
+    const double sum_bwd = s_sum_bwd;
+
+    for (size_t tile = 0; tile < num_tiles; ++tile) {
+        const size_t local_idx = tile * BLOCK_SIZE + tid;
+        double n_f = 0.0;
+        double n_b = 0.0;
+        const bool in_range = (local_idx < num_groups);
+        if (in_range) {
+            const size_t pos = out_start + local_idx;
+            n_f = raw_fwd_scratch[pos] / sum_fwd;
+            n_b = raw_bwd_scratch[pos] / sum_bwd;
+        }
+        double scanned_f;
+        double scanned_b;
+        double agg_f;
+        double agg_b;
+        BlockScan(scan_storage).InclusiveSum(n_f, scanned_f, agg_f);
+        __syncthreads();
+        BlockScan(scan_storage).InclusiveSum(n_b, scanned_b, agg_b);
+
+        if (in_range) {
+            const size_t pos = out_start + local_idx;
+            cum_fwd_out[pos] = scanned_f + s_carry_fwd;
+            cum_bwd_out[pos] = scanned_b + s_carry_bwd;
+        }
+        __syncthreads();
+        if (tid == 0) {
+            s_carry_fwd += agg_f;
+            s_carry_bwd += agg_b;
+        }
+        __syncthreads();
+    }
+}
+
+// Inbound variant: backward weights only (no forward arrays).
+template <int BLOCK_SIZE>
+__global__ void compute_inbound_weights_fused_kernel(
+    const size_t* __restrict__ group_offsets,        // count_ts_group_per_node_inbound
+    const size_t* __restrict__ group_to_edge_start,  // node_ts_group_inbound_offsets
+    const size_t* __restrict__ node_to_edge_offsets, // node_group_inbound_offsets
+    const size_t* __restrict__ edge_sorted_indices,  // node_ts_sorted_inbound_indices
+    const int64_t* __restrict__ timestamps,
+    const double timescale_bound,
+    double* __restrict__ raw_bwd_scratch,
+    double* __restrict__ cum_bwd_out) {
+
+    const size_t node = blockIdx.x;
+    const int tid = static_cast<int>(threadIdx.x);
+
+    const size_t in_start = group_offsets[node];
+    const size_t in_end   = group_offsets[node + 1];
+    if (in_start >= in_end) return;
+
+    __shared__ int64_t s_min_ts;
+    __shared__ double  s_scale;
+    if (tid == 0) {
+        const size_t first_group_start = group_to_edge_start[in_start];
+        const size_t last_group_start  = group_to_edge_start[in_end - 1];
+        const int64_t min_ts = timestamps[edge_sorted_indices[first_group_start]];
+        const int64_t max_ts = timestamps[edge_sorted_indices[last_group_start]];
+        const double time_diff = static_cast<double>(max_ts - min_ts);
+        s_min_ts = min_ts;
+        s_scale  = (timescale_bound > 0.0 && time_diff > 0.0)
+                       ? (timescale_bound / time_diff)
+                       : 1.0;
+    }
+    __syncthreads();
+
+    const int64_t min_ts = s_min_ts;
+    const double  scale  = s_scale;
+
+    using BlockReduce = cub::BlockReduce<double, BLOCK_SIZE>;
+    using BlockScan   = cub::BlockScan<double, BLOCK_SIZE>;
+
+    __shared__ typename BlockReduce::TempStorage reduce_storage;
+    __shared__ typename BlockScan::TempStorage   scan_storage;
+
+    __shared__ double s_sum_bwd;
+    __shared__ double s_carry_bwd;
+    if (tid == 0) {
+        s_sum_bwd   = 0.0;
+        s_carry_bwd = 0.0;
+    }
+    __syncthreads();
+
+    const size_t num_groups = in_end - in_start;
+    const size_t num_tiles  = (num_groups + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    for (size_t tile = 0; tile < num_tiles; ++tile) {
+        const size_t local_idx = tile * BLOCK_SIZE + tid;
+        double raw_b = 0.0;
+        if (local_idx < num_groups) {
+            const size_t pos = in_start + local_idx;
+            const size_t edge_start = group_to_edge_start[pos];
+            const size_t edge_end = (local_idx + 1 < num_groups)
+                ? group_to_edge_start[pos + 1]
+                : node_to_edge_offsets[node + 1];
+            const double group_sz  = static_cast<double>(edge_end - edge_start);
+            const int64_t group_ts = timestamps[edge_sorted_indices[edge_start]];
+            const double tb = static_cast<double>(group_ts - min_ts) * scale;
+            raw_b = group_sz * exp(tb);
+            raw_bwd_scratch[pos] = raw_b;
+        }
+        const double tile_sum_b = BlockReduce(reduce_storage).Sum(raw_b);
+        if (tid == 0) s_sum_bwd += tile_sum_b;
+        __syncthreads();
+    }
+
+    const double sum_bwd = s_sum_bwd;
+
+    for (size_t tile = 0; tile < num_tiles; ++tile) {
+        const size_t local_idx = tile * BLOCK_SIZE + tid;
+        double n_b = 0.0;
+        const bool in_range = (local_idx < num_groups);
+        if (in_range) {
+            const size_t pos = in_start + local_idx;
+            n_b = raw_bwd_scratch[pos] / sum_bwd;
+        }
+        double scanned_b;
+        double agg_b;
+        BlockScan(scan_storage).InclusiveSum(n_b, scanned_b, agg_b);
+
+        if (in_range) {
+            const size_t pos = in_start + local_idx;
+            cum_bwd_out[pos] = scanned_b + s_carry_bwd;
+        }
+        __syncthreads();
+        if (tid == 0) s_carry_bwd += agg_b;
+        __syncthreads();
+    }
+}
+
+}  // namespace
+
 HOST void node_edge_index::update_temporal_weights_cuda(
     TemporalGraphData& data,
     double timescale_bound) {
-    size_t node_index_capacity = data.node_group_outbound_offsets.size() - 1;
+    const size_t node_index_capacity = data.node_group_outbound_offsets.size() - 1;
     const size_t outbound_groups_size = data.node_ts_group_outbound_offsets.size();
 
     data.outbound_forward_cumulative_weights_exponential.resize(outbound_groups_size);
@@ -1143,298 +1387,68 @@ HOST void node_edge_index::update_temporal_weights_cuda(
     }
 
     int64_t* timestamps_ptr = data.timestamps.data();
+    constexpr int BLOCK_SIZE = 128;
 
-    auto build_group_to_node = [](size_t* offsets_ptr,
-                                  const size_t node_count,
-                                  const size_t groups_size,
-                                  thrust::device_vector<size_t>& group_to_node) {
-        thrust::upper_bound(
-            DEVICE_EXECUTION_POLICY,
-            offsets_ptr,
-            offsets_ptr + node_count + 1,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(groups_size),
-            group_to_node.begin()
-        );
+    // === OUTBOUND weights (single fused kernel per rebuild) ===
+    if (outbound_groups_size > 0) {
+        Buffer<double> raw_fwd_scratch(/*use_gpu=*/true);
+        Buffer<double> raw_bwd_scratch(/*use_gpu=*/true);
+        raw_fwd_scratch.resize(outbound_groups_size);
+        raw_bwd_scratch.resize(outbound_groups_size);
 
-        thrust::transform(
-            DEVICE_EXECUTION_POLICY,
-            group_to_node.begin(), group_to_node.end(),
-            group_to_node.begin(),
-            [] DEVICE(const size_t x) { return (x == 0) ? 0 : (x - 1); }
-        );
-    };
+        const size_t* group_offsets_ptr       = data.count_ts_group_per_node_outbound.data();
+        const size_t* group_to_edge_start_ptr = data.node_ts_group_outbound_offsets.data();
+        const size_t* node_to_edge_offsets_ptr= data.node_group_outbound_offsets.data();
+        const size_t* edge_indices_ptr        = data.node_ts_sorted_outbound_indices.data();
 
-    // === OUTBOUND weights ===
-    {
-        MemoryView<size_t> outbound_offsets = get_timestamp_offset_vector(data, true);
-        size_t* outbound_offsets_ptr = outbound_offsets.data;
+        double* cum_fwd_out = data.outbound_forward_cumulative_weights_exponential.data();
+        double* cum_bwd_out = data.outbound_backward_cumulative_weights_exponential.data();
 
-        thrust::device_vector<size_t> group_to_node(outbound_groups_size);
-        build_group_to_node(outbound_offsets_ptr, node_index_capacity, outbound_groups_size, group_to_node);
-        auto group_to_node_ptr = thrust::raw_pointer_cast(group_to_node.data());
-
-        thrust::device_vector<int64_t> node_min_ts(node_index_capacity);
-        thrust::device_vector<int64_t> node_max_ts(node_index_capacity);
-        thrust::device_vector<double>  node_time_scale(node_index_capacity);
-
-        auto node_min_ts_ptr     = thrust::raw_pointer_cast(node_min_ts.data());
-        auto node_max_ts_ptr     = thrust::raw_pointer_cast(node_max_ts.data());
-        auto node_time_scale_ptr = thrust::raw_pointer_cast(node_time_scale.data());
-
-        size_t* outbound_indices_ptr       = data.node_ts_sorted_outbound_indices.data();
-        size_t* outbound_group_indices_ptr = data.node_ts_group_outbound_offsets.data();
-
-        thrust::for_each(
-            DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(node_index_capacity),
-            [=] DEVICE(const size_t node) {
-                const size_t out_start = outbound_offsets_ptr[node];
-                const size_t out_end   = outbound_offsets_ptr[node + 1];
-
-                if (out_start >= out_end) {
-                    node_min_ts_ptr[node] = 0;
-                    node_max_ts_ptr[node] = 0;
-                    node_time_scale_ptr[node] = 1.0;
-                    return;
-                }
-
-                const size_t first_group_start = outbound_group_indices_ptr[out_start];
-                const size_t last_group_start  = outbound_group_indices_ptr[out_end - 1];
-
-                const int64_t min_ts = timestamps_ptr[outbound_indices_ptr[first_group_start]];
-                const int64_t max_ts = timestamps_ptr[outbound_indices_ptr[last_group_start]];
-
-                const auto time_diff = static_cast<double>(max_ts - min_ts);
-                const double time_scale = (timescale_bound > 0.0 && time_diff > 0.0)
-                    ? (timescale_bound / time_diff)
-                    : 1.0;
-
-                node_min_ts_ptr[node] = min_ts;
-                node_max_ts_ptr[node] = max_ts;
-                node_time_scale_ptr[node] = time_scale;
-            }
-        );
-
-        thrust::device_vector<double> raw_forward_weights(outbound_groups_size);
-        thrust::device_vector<double> raw_backward_weights(outbound_groups_size);
-
-        auto raw_forward_weights_ptr  = thrust::raw_pointer_cast(raw_forward_weights.data());
-        auto raw_backward_weights_ptr = thrust::raw_pointer_cast(raw_backward_weights.data());
-
-        size_t* node_group_outbound_offsets = data.node_group_outbound_offsets.data();
-
-        thrust::for_each(
-            DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(outbound_groups_size),
-            [=] DEVICE(const size_t pos) {
-                const size_t node = group_to_node_ptr[pos];
-
-                const size_t edge_start = outbound_group_indices_ptr[pos];
-
-                const size_t edge_end =
-                    (pos + 1 < outbound_groups_size && group_to_node_ptr[pos + 1] == node)
-                        ? outbound_group_indices_ptr[pos + 1]
-                        : node_group_outbound_offsets[node + 1];
-
-                const auto group_size = static_cast<double>(edge_end - edge_start);
-
-                const int64_t group_ts  = timestamps_ptr[outbound_indices_ptr[edge_start]];
-
-                const int64_t min_ts = node_min_ts_ptr[node];
-                const int64_t max_ts = node_max_ts_ptr[node];
-                const double  scale  = node_time_scale_ptr[node];
-
-                const double tf = static_cast<double>(max_ts - group_ts) * scale;
-                const double tb = static_cast<double>(group_ts - min_ts) * scale;
-
-                raw_forward_weights_ptr[pos]  = group_size * exp(tf);
-                raw_backward_weights_ptr[pos] = group_size * exp(tb);
-            }
-        );
-
-        thrust::device_vector<double> node_forward_sums(node_index_capacity, 0.0);
-        thrust::device_vector<double> node_backward_sums(node_index_capacity, 0.0);
-
-        auto node_forward_sums_ptr  = thrust::raw_pointer_cast(node_forward_sums.data());
-        auto node_backward_sums_ptr = thrust::raw_pointer_cast(node_backward_sums.data());
-
-        thrust::for_each(
-            DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(outbound_groups_size),
-            [=] DEVICE(const size_t pos) {
-                const size_t node = group_to_node_ptr[pos];
-                atomicAdd(&node_forward_sums_ptr[node],  raw_forward_weights_ptr[pos]);
-                atomicAdd(&node_backward_sums_ptr[node], raw_backward_weights_ptr[pos]);
-            }
-        );
-
-        thrust::device_vector<double> normalized_forward_weights(outbound_groups_size);
-        thrust::device_vector<double> normalized_backward_weights(outbound_groups_size);
-
-        auto normalized_forward_weights_ptr  = thrust::raw_pointer_cast(normalized_forward_weights.data());
-        auto normalized_backward_weights_ptr = thrust::raw_pointer_cast(normalized_backward_weights.data());
-
-        thrust::for_each(
-            DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(outbound_groups_size),
-            [=] DEVICE(const size_t pos) {
-                const size_t node = group_to_node_ptr[pos];
-                const double fsum = node_forward_sums_ptr[node];
-                const double bsum = node_backward_sums_ptr[node];
-
-                normalized_forward_weights_ptr[pos]  = raw_forward_weights_ptr[pos]  / fsum;
-                normalized_backward_weights_ptr[pos] = raw_backward_weights_ptr[pos] / bsum;
-            }
-        );
-
-        double* final_forward  = data.outbound_forward_cumulative_weights_exponential.data();
-        double* final_backward = data.outbound_backward_cumulative_weights_exponential.data();
-
-        thrust::inclusive_scan_by_key(
-            DEVICE_EXECUTION_POLICY,
-            group_to_node.begin(), group_to_node.end(),
-            normalized_forward_weights_ptr,
-            final_forward
-        );
-
-        thrust::inclusive_scan_by_key(
-            DEVICE_EXECUTION_POLICY,
-            group_to_node.begin(), group_to_node.end(),
-            normalized_backward_weights_ptr,
-            final_backward
-        );
-
+        const dim3 grid(static_cast<unsigned int>(node_index_capacity));
+        const dim3 block(BLOCK_SIZE);
+        compute_outbound_weights_fused_kernel<BLOCK_SIZE><<<grid, block>>>(
+            group_offsets_ptr,
+            group_to_edge_start_ptr,
+            node_to_edge_offsets_ptr,
+            edge_indices_ptr,
+            timestamps_ptr,
+            timescale_bound,
+            raw_fwd_scratch.data(),
+            raw_bwd_scratch.data(),
+            cum_fwd_out,
+            cum_bwd_out);
         CUDA_KERNEL_CHECK("After outbound weights processing in update_temporal_weights_cuda");
     }
 
-    // === INBOUND weights ===
+    // === INBOUND weights (directed only) ===
     if (is_directed) {
-        node_index_capacity = data.node_group_inbound_offsets.size() - 1;
-
-        MemoryView<size_t> inbound_offsets = get_timestamp_offset_vector(data, false);
-        size_t* inbound_offsets_ptr = inbound_offsets.data;
         const size_t inbound_groups_size = data.node_ts_group_inbound_offsets.size();
+        if (inbound_groups_size > 0) {
+            const size_t inbound_node_capacity = data.node_group_inbound_offsets.size() - 1;
 
-        thrust::device_vector<size_t> group_to_node(inbound_groups_size);
-        build_group_to_node(inbound_offsets_ptr, node_index_capacity, inbound_groups_size, group_to_node);
-        auto group_to_node_ptr = thrust::raw_pointer_cast(group_to_node.data());
+            Buffer<double> raw_bwd_scratch(/*use_gpu=*/true);
+            raw_bwd_scratch.resize(inbound_groups_size);
 
-        thrust::device_vector<int64_t> node_min_ts(node_index_capacity);
-        thrust::device_vector<int64_t> node_max_ts(node_index_capacity);
-        thrust::device_vector<double>  node_time_scale(node_index_capacity);
+            const size_t* group_offsets_ptr       = data.count_ts_group_per_node_inbound.data();
+            const size_t* group_to_edge_start_ptr = data.node_ts_group_inbound_offsets.data();
+            const size_t* node_to_edge_offsets_ptr= data.node_group_inbound_offsets.data();
+            const size_t* edge_indices_ptr        = data.node_ts_sorted_inbound_indices.data();
 
-        auto node_min_ts_ptr     = thrust::raw_pointer_cast(node_min_ts.data());
-        auto node_max_ts_ptr     = thrust::raw_pointer_cast(node_max_ts.data());
-        auto node_time_scale_ptr = thrust::raw_pointer_cast(node_time_scale.data());
+            double* cum_bwd_out = data.inbound_backward_cumulative_weights_exponential.data();
 
-        size_t* inbound_indices_ptr       = data.node_ts_sorted_inbound_indices.data();
-        size_t* inbound_group_indices_ptr = data.node_ts_group_inbound_offsets.data();
-
-        thrust::for_each(
-            DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(node_index_capacity),
-            [=] DEVICE(const size_t node) {
-                const size_t in_start = inbound_offsets_ptr[node];
-                const size_t in_end   = inbound_offsets_ptr[node + 1];
-
-                if (in_start >= in_end) {
-                    node_min_ts_ptr[node] = 0;
-                    node_max_ts_ptr[node] = 0;
-                    node_time_scale_ptr[node] = 1.0;
-                    return;
-                }
-
-                const size_t first_group_start = inbound_group_indices_ptr[in_start];
-                const size_t last_group_start  = inbound_group_indices_ptr[in_end - 1];
-
-                const int64_t min_ts = timestamps_ptr[inbound_indices_ptr[first_group_start]];
-                const int64_t max_ts = timestamps_ptr[inbound_indices_ptr[last_group_start]];
-
-                const auto time_diff = static_cast<double>(max_ts - min_ts);
-                const double time_scale = (timescale_bound > 0.0 && time_diff > 0.0)
-                    ? (timescale_bound / time_diff)
-                    : 1.0;
-
-                node_min_ts_ptr[node] = min_ts;
-                node_max_ts_ptr[node] = max_ts;
-                node_time_scale_ptr[node] = time_scale;
-            }
-        );
-
-        thrust::device_vector<double> raw_backward_weights(inbound_groups_size);
-        auto raw_backward_weights_ptr = thrust::raw_pointer_cast(raw_backward_weights.data());
-
-        size_t* node_group_inbound_offsets_ptr = data.node_group_inbound_offsets.data();
-
-        thrust::for_each(
-            DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(inbound_groups_size),
-            [=] DEVICE(const size_t pos) {
-                const size_t node = group_to_node_ptr[pos];
-
-                const size_t edge_start = inbound_group_indices_ptr[pos];
-
-                const size_t edge_end =
-                    (pos + 1 < inbound_groups_size && group_to_node_ptr[pos + 1] == node)
-                        ? inbound_group_indices_ptr[pos + 1]
-                        : node_group_inbound_offsets_ptr[node + 1];
-
-                const auto group_size = static_cast<double>(edge_end - edge_start);
-
-                const int64_t group_ts  = timestamps_ptr[inbound_indices_ptr[edge_start]];
-
-                const int64_t min_ts = node_min_ts_ptr[node];
-                const double  scale  = node_time_scale_ptr[node];
-
-                const double tb = static_cast<double>(group_ts - min_ts) * scale;
-                raw_backward_weights_ptr[pos] = group_size * exp(tb);
-            }
-        );
-
-        thrust::device_vector<double> node_backward_sums(node_index_capacity, 0.0);
-        auto node_backward_sums_ptr = thrust::raw_pointer_cast(node_backward_sums.data());
-
-        thrust::for_each(
-            DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(inbound_groups_size),
-            [=] DEVICE(const size_t pos) {
-                const size_t node = group_to_node_ptr[pos];
-                atomicAdd(&node_backward_sums_ptr[node], raw_backward_weights_ptr[pos]);
-            }
-        );
-
-        thrust::device_vector<double> normalized_backward_weights(inbound_groups_size);
-        auto normalized_backward_weights_ptr = thrust::raw_pointer_cast(normalized_backward_weights.data());
-
-        thrust::for_each(
-            DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(inbound_groups_size),
-            [=] DEVICE(const size_t pos) {
-                const size_t node = group_to_node_ptr[pos];
-                const double bsum = node_backward_sums_ptr[node];
-                normalized_backward_weights_ptr[pos] = raw_backward_weights_ptr[pos] / bsum;
-            }
-        );
-
-        double* final_backward = data.inbound_backward_cumulative_weights_exponential.data();
-
-        thrust::inclusive_scan_by_key(
-            DEVICE_EXECUTION_POLICY,
-            group_to_node.begin(), group_to_node.end(),
-            normalized_backward_weights_ptr,
-            final_backward
-        );
-
-        CUDA_KERNEL_CHECK("After inbound weights processing in update_temporal_weights_cuda");
+            const dim3 grid(static_cast<unsigned int>(inbound_node_capacity));
+            const dim3 block(BLOCK_SIZE);
+            compute_inbound_weights_fused_kernel<BLOCK_SIZE><<<grid, block>>>(
+                group_offsets_ptr,
+                group_to_edge_start_ptr,
+                node_to_edge_offsets_ptr,
+                edge_indices_ptr,
+                timestamps_ptr,
+                timescale_bound,
+                raw_bwd_scratch.data(),
+                cum_bwd_out);
+            CUDA_KERNEL_CHECK("After inbound weights processing in update_temporal_weights_cuda");
+        }
     }
 }
 
