@@ -154,18 +154,37 @@ TYPED_TEST(TemporalGraphDataTest, ViewAliasesDataFields) {
 
 // -----------------------------------------------------------------------
 // WalkSetDevice / Host / View
+//
+// Both typed suites below cover the host path on use_gpu=false and the
+// device-allocation + D->H download path on use_gpu=true. They are the
+// natural CPU/GPU pairing per test/CPU_GPU_PAIRING.md: on the host side
+// we exercise a WalkSetHost directly; on the device side we build a
+// WalkSetDevice, download to host, and then exercise the same surface.
 // -----------------------------------------------------------------------
-#ifdef HAS_CUDA
-TEST(WalkSetRoundTripTest, DeviceToHostPreservesInitialPadding) {
+template <typename T>
+class WalkSetRoundTripTest : public ::testing::Test {};
+TYPED_TEST_SUITE(WalkSetRoundTripTest, BACKEND_TYPES);
+
+TYPED_TEST(WalkSetRoundTripTest, PreservesInitialPadding) {
+    constexpr bool use_gpu = TypeParam::value;
     const size_t num_walks = 3;
     const size_t max_len   = 5;
     const int padding      = -1;
 
-    WalkSetDevice d(num_walks, max_len, padding);
-    WalkSetHost h = std::move(d).download_to_host();
+    WalkSetHost h;
+    if (use_gpu) {
+#ifdef HAS_CUDA
+        WalkSetDevice d(num_walks, max_len, padding);
+        h = std::move(d).download_to_host();
+#else
+        GTEST_SKIP() << "HAS_CUDA not defined; use_gpu=true is unreachable.";
+#endif
+    } else {
+        h = WalkSetHost(num_walks, max_len, padding);
+    }
 
-    EXPECT_EQ(h.num_walks(), num_walks);
-    EXPECT_EQ(h.max_len(), max_len);
+    EXPECT_EQ(h.num_walks(),     num_walks);
+    EXPECT_EQ(h.max_len(),       max_len);
     EXPECT_EQ(h.padding_value(), padding);
 
     ASSERT_NE(h.nodes_ptr(), nullptr);
@@ -178,12 +197,31 @@ TEST(WalkSetRoundTripTest, DeviceToHostPreservesInitialPadding) {
     EXPECT_EQ(h.non_empty_count(), 0u);
 }
 
-TEST(WalkSetHostTest, ReleaseTransfersOwnership) {
-    WalkSetHost h(2, 3, -1);
+template <typename T>
+class WalkSetHostReleaseTest : public ::testing::Test {};
+TYPED_TEST_SUITE(WalkSetHostReleaseTest, BACKEND_TYPES);
+
+TYPED_TEST(WalkSetHostReleaseTest, ReleaseTransfersOwnership) {
+    constexpr bool use_gpu = TypeParam::value;
+    const size_t num_walks = 2;
+    const size_t max_len   = 3;
+    const int padding      = -1;
+
+    WalkSetHost h;
+    if (use_gpu) {
+#ifdef HAS_CUDA
+        WalkSetDevice d(num_walks, max_len, padding);
+        h = std::move(d).download_to_host();
+#else
+        GTEST_SKIP() << "HAS_CUDA not defined; use_gpu=true is unreachable.";
+#endif
+    } else {
+        h = WalkSetHost(num_walks, max_len, padding);
+    }
+
     int* n_raw = h.release_nodes_as_raw();
     ASSERT_NE(n_raw, nullptr);
-    for (size_t i = 0; i < 2 * 3; ++i) EXPECT_EQ(n_raw[i], -1);
+    for (size_t i = 0; i < num_walks * max_len; ++i) EXPECT_EQ(n_raw[i], padding);
     EXPECT_EQ(h.nodes_ptr(), nullptr);
     std::free(n_raw);
 }
-#endif

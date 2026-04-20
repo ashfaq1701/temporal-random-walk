@@ -8,8 +8,10 @@
 #ifdef HAS_CUDA
 #include <cuda/std/__algorithm/lower_bound.h>
 #include <cuda/std/__algorithm/upper_bound.h>
-#include <thrust/count.h>
+#include <thrust/binary_search.h>
 #include <thrust/copy.h>
+#include <thrust/count.h>
+#include <thrust/device_ptr.h>
 #include <thrust/execution_policy.h>
 #include <thrust/fill.h>
 #include <thrust/for_each.h>
@@ -19,6 +21,7 @@
 #include "../common/macros.cuh"
 #include "../common/error_handlers.cuh"
 #include "../common/cuda_config.cuh"
+#include "../common/memory.cuh"
 #include "../data/structs.cuh"
 #include "../data/temporal_graph_data.cuh"
 #include "../data/temporal_graph_view.cuh"
@@ -76,38 +79,64 @@ namespace edge_data {
         return data.max_node_id;
     }
 
-    HOST DEVICE inline SizeRange get_timestamp_group_range(
+    // Host-safe: these query functions dispatch on data.use_gpu.
+    // For GPU-resident data, they copy the few size_t values they need
+    // from device to host (or use thrust bounds), so callers can query
+    // freely from host without knowing whether the buffers are on GPU.
+    HOST inline SizeRange get_timestamp_group_range(
         const TemporalGraphData& data, const size_t group_idx) {
         if (group_idx >= data.unique_timestamps.size()) {
             return SizeRange{0, 0};
         }
+        const size_t* offsets = data.timestamp_group_offsets.data();
         return SizeRange{
-            data.timestamp_group_offsets.data()[group_idx],
-            data.timestamp_group_offsets.data()[group_idx + 1]};
+            read_one_host_safe(offsets + group_idx,     data.use_gpu),
+            read_one_host_safe(offsets + group_idx + 1, data.use_gpu),
+        };
     }
 
-    HOST DEVICE inline size_t get_timestamp_group_count(const TemporalGraphData& data) {
+    HOST inline size_t get_timestamp_group_count(const TemporalGraphData& data) {
         return data.unique_timestamps.size();
     }
 
     HOST inline size_t find_group_after_timestamp(
         const TemporalGraphData& data, const int64_t timestamp) {
-        if (data.unique_timestamps.size() == 0) return 0;
+        const size_t n = data.unique_timestamps.size();
+        if (n == 0) return 0;
 
         const int64_t* begin = data.unique_timestamps.data();
-        const int64_t* end = begin + data.unique_timestamps.size();
-
+#ifdef HAS_CUDA
+        if (data.use_gpu) {
+            const auto it = thrust::upper_bound(
+                DEVICE_EXECUTION_POLICY,
+                thrust::device_pointer_cast(begin),
+                thrust::device_pointer_cast(begin + n),
+                timestamp);
+            return it - thrust::device_pointer_cast(begin);
+        }
+#endif
+        const int64_t* end = begin + n;
         const auto it = std::upper_bound(begin, end, timestamp);
         return it - begin;
     }
 
     HOST inline size_t find_group_before_timestamp(
         const TemporalGraphData& data, const int64_t timestamp) {
-        if (data.unique_timestamps.size() == 0) return 0;
+        const size_t n = data.unique_timestamps.size();
+        if (n == 0) return 0;
 
         const int64_t* begin = data.unique_timestamps.data();
-        const int64_t* end = begin + data.unique_timestamps.size();
-
+#ifdef HAS_CUDA
+        if (data.use_gpu) {
+            const auto it = thrust::lower_bound(
+                DEVICE_EXECUTION_POLICY,
+                thrust::device_pointer_cast(begin),
+                thrust::device_pointer_cast(begin + n),
+                timestamp);
+            return (it - thrust::device_pointer_cast(begin)) - 1;
+        }
+#endif
+        const int64_t* end = begin + n;
         const auto it = std::lower_bound(begin, end, timestamp);
         return (it - begin) - 1;
     }

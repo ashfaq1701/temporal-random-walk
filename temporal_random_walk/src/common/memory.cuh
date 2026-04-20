@@ -18,6 +18,28 @@ __global__ void fill_kernel(T* memory, const size_t size, T* value) {
 }
 #endif
 
+/**
+ * Read a single T from a pointer whose allocator depends on use_gpu.
+ *
+ * Safe to call from host for both host and device allocations: on GPU
+ * data it does a one-element cudaMemcpy, on host data it does a direct
+ * load. Host-only — the device side can always dereference its own
+ * pointers and needs no wrapper.
+ */
+template <typename T>
+HOST inline T read_one_host_safe(const T* p, const bool use_gpu) {
+#ifdef HAS_CUDA
+    if (use_gpu) {
+        T out;
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&out, p, sizeof(T), cudaMemcpyDeviceToHost));
+        return out;
+    }
+#else
+    (void)use_gpu;
+#endif
+    return *p;
+}
+
 template <typename T>
 HOST void allocate_memory(T** data_ptr, const size_t size, const bool use_gpu) {
     if (size == 0) {

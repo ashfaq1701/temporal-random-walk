@@ -205,21 +205,10 @@ TYPED_TEST(NodeEdgeIndexTest, UndirectedTimestampGroupTest) {
 }
 
 TYPED_TEST(NodeEdgeIndexTest, EdgeCasesTest) {
-    // Edge-case queries that exercise invalid indices dereference offset
-    // buffers on the host path, so use a CPU-backed fixture regardless of
-    // TypeParam. GPU query paths are already covered by the non-edge-case
-    // tests above.
-    core::TemporalRandomWalk local(/*is_directed=*/true, /*use_gpu=*/false);
+    auto local = this->make_simple_directed_graph();
     auto& data = local.data();
-    edge_data::push_back(data, 10, 20, 100);
-    edge_data::push_back(data, 10, 30, 100);
-    edge_data::push_back(data, 10, 20, 200);
-    edge_data::push_back(data, 20, 30, 300);
-    edge_data::push_back(data, 20, 10, 300);
-    do_update_timestamp_groups(data);
-    node_edge_index::rebuild(data);
 
-    // Invalid node id -> 0 groups.
+    // Invalid node id -> 0 groups (host-safe dispatch; see node_edge_index.cu).
     EXPECT_EQ(node_edge_index::get_timestamp_group_count(data, -1, /*forward=*/true), 0u);
 
     // Invalid group index -> {0, 0}.

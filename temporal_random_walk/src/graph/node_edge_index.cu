@@ -23,6 +23,7 @@
 #include "../common/nvtx_utils.h"
 #include "../common/parallel_algorithms.cuh"
 #include "../common/cuda_config.cuh"
+#include "../common/memory.cuh"
 
 /**
  * Common Functions
@@ -42,69 +43,62 @@ HOST void node_edge_index::clear(TemporalGraphData& data) {
     data.inbound_backward_cumulative_weights_exponential.shrink_to_fit_empty();
 }
 
-HOST DEVICE SizeRange node_edge_index::get_edge_range(
+HOST SizeRange node_edge_index::get_edge_range(
     const TemporalGraphData& data,
     const int dense_node_id,
     const bool forward) {
+    const size_t* offsets;
+    size_t offsets_size;
+
     if (data.is_directed) {
-        const size_t* offsets = forward
+        offsets = forward
             ? data.node_group_outbound_offsets.data()
             : data.node_group_inbound_offsets.data();
-        const size_t offsets_size = forward
+        offsets_size = forward
             ? data.node_group_outbound_offsets.size()
             : data.node_group_inbound_offsets.size();
-
-        if (dense_node_id < 0 || dense_node_id >= static_cast<int>(offsets_size) - 1) {
-            return SizeRange{0, 0};
-        }
-
-        const size_t start = offsets[dense_node_id];
-        const size_t end = offsets[dense_node_id + 1];
-
-        return SizeRange{start, end};
     } else {
-        const size_t* offsets = data.node_group_outbound_offsets.data();
-        const size_t offsets_size = data.node_group_outbound_offsets.size();
-
-        if (dense_node_id < 0 || dense_node_id >= static_cast<int>(offsets_size) - 1) {
-            return SizeRange{0, 0};
-        }
-
-        const size_t start = offsets[dense_node_id];
-        const size_t end = offsets[dense_node_id + 1];
-
-        return SizeRange{start, end};
+        offsets = data.node_group_outbound_offsets.data();
+        offsets_size = data.node_group_outbound_offsets.size();
     }
+
+    if (dense_node_id < 0 || dense_node_id >= static_cast<int>(offsets_size) - 1) {
+        return SizeRange{0, 0};
+    }
+
+    const size_t start = read_one_host_safe(offsets + dense_node_id,     data.use_gpu);
+    const size_t end   = read_one_host_safe(offsets + dense_node_id + 1, data.use_gpu);
+    return SizeRange{start, end};
 }
 
-HOST DEVICE SizeRange node_edge_index::get_timestamp_group_range(
+HOST SizeRange node_edge_index::get_timestamp_group_range(
     const TemporalGraphData& data,
     const int dense_node_id,
     const size_t group_idx,
     const bool forward) {
-    const size_t* group_offsets = nullptr;
-    size_t group_offsets_size = 0;
-    const size_t* group_indices = nullptr;
-    const size_t* edge_offsets = nullptr;
+    const size_t* group_offsets;
+    size_t group_offsets_size;
+    const size_t* group_indices;
+    const size_t* edge_offsets;
 
     if (data.is_directed && !forward) {
-        group_offsets = data.count_ts_group_per_node_inbound.data();
+        group_offsets      = data.count_ts_group_per_node_inbound.data();
         group_offsets_size = data.count_ts_group_per_node_inbound.size();
-        group_indices = data.node_ts_group_inbound_offsets.data();
-        edge_offsets = data.node_group_inbound_offsets.data();
+        group_indices      = data.node_ts_group_inbound_offsets.data();
+        edge_offsets       = data.node_group_inbound_offsets.data();
     } else {
-        group_offsets = data.count_ts_group_per_node_outbound.data();
+        group_offsets      = data.count_ts_group_per_node_outbound.data();
         group_offsets_size = data.count_ts_group_per_node_outbound.size();
-        group_indices = data.node_ts_group_outbound_offsets.data();
-        edge_offsets = data.node_group_outbound_offsets.data();
+        group_indices      = data.node_ts_group_outbound_offsets.data();
+        edge_offsets       = data.node_group_outbound_offsets.data();
     }
 
     if (dense_node_id < 0 || dense_node_id >= static_cast<int>(group_offsets_size) - 1) {
         return SizeRange{0, 0};
     }
 
-    const size_t node_group_start = group_offsets[dense_node_id];
-    const size_t node_group_end = group_offsets[dense_node_id + 1];
+    const size_t node_group_start = read_one_host_safe(group_offsets + dense_node_id,     data.use_gpu);
+    const size_t node_group_end   = read_one_host_safe(group_offsets + dense_node_id + 1, data.use_gpu);
 
     const size_t num_groups = node_group_end - node_group_start;
     if (group_idx >= num_groups) {
@@ -112,21 +106,24 @@ HOST DEVICE SizeRange node_edge_index::get_timestamp_group_range(
     }
 
     const size_t group_start_idx = node_group_start + group_idx;
-    const size_t group_start = group_indices[group_start_idx];
+    const size_t group_start     = read_one_host_safe(group_indices + group_start_idx, data.use_gpu);
 
-    size_t group_end = 0;
+    size_t group_end;
     if (group_idx == num_groups - 1) {
-        group_end = edge_offsets[dense_node_id + 1];
+        group_end = read_one_host_safe(edge_offsets + dense_node_id + 1, data.use_gpu);
     } else {
-        group_end = group_indices[group_start_idx + 1];
+        group_end = read_one_host_safe(group_indices + group_start_idx + 1, data.use_gpu);
     }
 
     return SizeRange{group_start, group_end};
 }
 
-HOST DEVICE MemoryView<size_t> node_edge_index::get_timestamp_offset_vector(
+HOST MemoryView<size_t> node_edge_index::get_timestamp_offset_vector(
     const TemporalGraphData& data,
     const bool forward) {
+    // Returns a raw (possibly-device) pointer + size. The pointer is only
+    // dereferenceable on the side (host / device) matching data.use_gpu;
+    // callers on the host side must copy through cudaMemcpy if use_gpu.
     if (data.is_directed && !forward) {
         return MemoryView<size_t>{
             const_cast<size_t*>(data.count_ts_group_per_node_inbound.data()),
@@ -140,21 +137,20 @@ HOST DEVICE MemoryView<size_t> node_edge_index::get_timestamp_offset_vector(
     }
 }
 
-HOST DEVICE size_t node_edge_index::get_timestamp_group_count(
+HOST size_t node_edge_index::get_timestamp_group_count(
     const TemporalGraphData& data,
     const int dense_node_id,
     const bool forward) {
-    MemoryView<size_t> offsets_block = get_timestamp_offset_vector(data, forward);
-    const size_t* offsets = offsets_block.data;
-    const size_t offsets_size = offsets_block.size;
+    const MemoryView<size_t> offsets_block = get_timestamp_offset_vector(data, forward);
+    const size_t* offsets      = offsets_block.data;
+    const size_t  offsets_size = offsets_block.size;
 
     if (dense_node_id < 0 || dense_node_id >= static_cast<int>(offsets_size) - 1) {
         return 0;
     }
 
-    const size_t start = offsets[dense_node_id];
-    const size_t end = offsets[dense_node_id + 1];
-
+    const size_t start = read_one_host_safe(offsets + dense_node_id,     data.use_gpu);
+    const size_t end   = read_one_host_safe(offsets + dense_node_id + 1, data.use_gpu);
     return end - start;
 }
 
@@ -178,40 +174,17 @@ HOST void node_edge_index::allocate_node_group_offsets(
 
 HOST void node_edge_index::allocate_node_ts_sorted_indices(TemporalGraphData& data) {
     const size_t outbound_offsets_size = data.node_group_outbound_offsets.size();
-    size_t num_outbound_edges = 0;
-
-    #ifdef HAS_CUDA
-    if (data.use_gpu) {
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(
-            &num_outbound_edges,
-            data.node_group_outbound_offsets.data() + (outbound_offsets_size - 1),
-            sizeof(size_t),
-            cudaMemcpyDeviceToHost));
-    } else
-    #endif
-    {
-        num_outbound_edges = data.node_group_outbound_offsets.data()[outbound_offsets_size - 1];
-    }
+    const size_t num_outbound_edges = read_one_host_safe(
+        data.node_group_outbound_offsets.data() + (outbound_offsets_size - 1),
+        data.use_gpu);
 
     data.node_ts_sorted_outbound_indices.resize(num_outbound_edges);
 
     if (data.is_directed) {
         const size_t inbound_offsets_size = data.node_group_inbound_offsets.size();
-        size_t num_inbound_edges = 0;
-
-        #ifdef HAS_CUDA
-        if (data.use_gpu) {
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(
-                &num_inbound_edges,
-                data.node_group_inbound_offsets.data() + (inbound_offsets_size - 1),
-                sizeof(size_t),
-                cudaMemcpyDeviceToHost));
-        } else
-        #endif
-        {
-            num_inbound_edges = data.node_group_inbound_offsets.data()[inbound_offsets_size - 1];
-        }
-
+        const size_t num_inbound_edges = read_one_host_safe(
+            data.node_group_inbound_offsets.data() + (inbound_offsets_size - 1),
+            data.use_gpu);
         data.node_ts_sorted_inbound_indices.resize(num_inbound_edges);
     } else {
         data.node_ts_sorted_inbound_indices.shrink_to_fit_empty();

@@ -19,22 +19,27 @@ namespace node_edge_index {
      */
     HOST void clear(TemporalGraphData& data);
 
-    HOST DEVICE SizeRange get_edge_range(
+    // Host-safe queries: branch on data.use_gpu internally. For GPU data,
+    // they cudaMemcpy the few size_t values they need. Safe to call from
+    // host regardless of where the buffers live. Device-side equivalents
+    // for these same queries operate on TemporalGraphView and live in
+    // edge_selectors.cuh / temporal_node2vec_helpers.cuh.
+    HOST SizeRange get_edge_range(
         const TemporalGraphData& data,
         int dense_node_id,
         bool forward);
 
-    HOST DEVICE SizeRange get_timestamp_group_range(
+    HOST SizeRange get_timestamp_group_range(
         const TemporalGraphData& data,
         int dense_node_id,
         size_t group_idx,
         bool forward);
 
-    HOST DEVICE MemoryView<size_t> get_timestamp_offset_vector(
+    HOST MemoryView<size_t> get_timestamp_offset_vector(
         const TemporalGraphData& data,
         bool forward);
 
-    HOST DEVICE size_t get_timestamp_group_count(
+    HOST size_t get_timestamp_group_count(
         const TemporalGraphData& data,
         int dense_node_id,
         bool forward);
