@@ -46,6 +46,31 @@ inline void cub_inclusive_sum(
 }
 
 /**
+ * CUB-backed exclusive-sum scan. Same two-call convention as the inclusive
+ * variant. Used for boundary-flag -> scatter-index conversion where we need
+ * exclusive prefixes (so flag_scan[i] is the output slot for the i'th entry).
+ */
+template <typename InputIteratorT, typename OutputIteratorT>
+inline void cub_exclusive_sum(
+    InputIteratorT d_in,
+    OutputIteratorT d_out,
+    const size_t num_items,
+    const cudaStream_t stream = 0) {
+
+    if (num_items == 0) return;
+
+    size_t temp_bytes = 0;
+    CUB_CHECK(cub::DeviceScan::ExclusiveSum(
+        nullptr, temp_bytes, d_in, d_out, num_items, stream));
+
+    Buffer<uint8_t> temp(/*use_gpu=*/true);
+    temp.resize(temp_bytes);
+
+    CUB_CHECK(cub::DeviceScan::ExclusiveSum(
+        temp.data(), temp_bytes, d_in, d_out, num_items, stream));
+}
+
+/**
  * CUB-backed even-binned histogram. Each sample in [lower_level, upper_level)
  * is placed into one of num_buckets bins; bin[i] counts samples in
  * [lower_level + i * width, lower_level + (i+1) * width) where

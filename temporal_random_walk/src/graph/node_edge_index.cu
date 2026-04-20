@@ -991,40 +991,28 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
 
         size_t* group_indices_out = data.node_ts_group_outbound_offsets.data();
 
-        thrust::device_vector<size_t> flag_scan(num_edges + 1, 0);
-        thrust::exclusive_scan(
-            DEVICE_EXECUTION_POLICY,
-            flags.begin(),
-            flags.end(),
-            flag_scan.begin()
-        );
-
+        thrust::device_vector<size_t> flag_scan(num_edges);
         auto flag_scan_ptr = thrust::raw_pointer_cast(flag_scan.data());
-
-        thrust::for_each(
-            DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(num_edges),
-            [flags_ptr, flag_scan_ptr, group_indices_out] DEVICE(size_t i) {
-                if (flags_ptr[i]) {
-                    group_indices_out[flag_scan_ptr[i]] = i;
-                }
-            }
-        );
+        cub_exclusive_sum(flags_ptr, flag_scan_ptr, num_edges);
 
         thrust::device_vector<unsigned int> group_counts(node_count, 0);
         auto group_counts_ptr = thrust::raw_pointer_cast(group_counts.data());
 
+        // Fused pass: each thread reads flags[i] once and, if set, both
+        // scatters i into group_indices_out AND bumps the per-node group
+        // count. Previously two independent for_each kernels, both
+        // num_edges-sized, both memory-bound on flags[i].
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(num_edges),
-            [flags_ptr, outbound_node_ids, group_counts_ptr, node_count] DEVICE(size_t i) {
-                if (flags_ptr[i]) {
-                    const int node = outbound_node_ids[i];
-                    if (node >= 0 && node < node_count) {
-                        atomicAdd(&group_counts_ptr[node], 1u);
-                    }
+            [flags_ptr, flag_scan_ptr, group_indices_out,
+             outbound_node_ids, group_counts_ptr, node_count] DEVICE(const size_t i) {
+                if (!flags_ptr[i]) return;
+                group_indices_out[flag_scan_ptr[i]] = i;
+                const int node = outbound_node_ids[i];
+                if (node >= 0 && node < node_count) {
+                    atomicAdd(&group_counts_ptr[node], 1u);
                 }
             }
         );
@@ -1077,40 +1065,25 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
 
         size_t* group_indices_out = data.node_ts_group_inbound_offsets.data();
 
-        thrust::device_vector<size_t> flag_scan(num_edges + 1, 0);
-        thrust::exclusive_scan(
-            DEVICE_EXECUTION_POLICY,
-            flags.begin(),
-            flags.end(),
-            flag_scan.begin()
-        );
-
+        thrust::device_vector<size_t> flag_scan(num_edges);
         auto flag_scan_ptr = thrust::raw_pointer_cast(flag_scan.data());
-
-        thrust::for_each(
-            DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(num_edges),
-            [flags_ptr, flag_scan_ptr, group_indices_out] DEVICE(const size_t i) {
-                if (flags_ptr[i]) {
-                    group_indices_out[flag_scan_ptr[i]] = i;
-                }
-            }
-        );
+        cub_exclusive_sum(flags_ptr, flag_scan_ptr, num_edges);
 
         thrust::device_vector<unsigned int> group_counts(node_count, 0);
         auto group_counts_ptr = thrust::raw_pointer_cast(group_counts.data());
 
+        // Fused pass: see outbound block above for rationale.
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
             thrust::make_counting_iterator<size_t>(num_edges),
-            [flags_ptr, inbound_node_ids, group_counts_ptr, node_count] DEVICE(size_t i) {
-                if (flags_ptr[i]) {
-                    const int node = inbound_node_ids[i];
-                    if (node >= 0 && node < node_count) {
-                        atomicAdd(&group_counts_ptr[node], 1u);
-                    }
+            [flags_ptr, flag_scan_ptr, group_indices_out,
+             inbound_node_ids, group_counts_ptr, node_count] DEVICE(const size_t i) {
+                if (!flags_ptr[i]) return;
+                group_indices_out[flag_scan_ptr[i]] = i;
+                const int node = inbound_node_ids[i];
+                if (node >= 0 && node < node_count) {
+                    atomicAdd(&group_counts_ptr[node], 1u);
                 }
             }
         );
