@@ -11,6 +11,7 @@
 #include "../common/random_gen.cuh"
 #include "../common/cuda_config.cuh"
 #include "../common/error_handlers.cuh"
+#include "../common/nvtx.cuh"
 #include "../graph/edge_data.cuh"
 #include "../graph/node_edge_index.cuh"
 #include "../random/pickers.cuh"
@@ -75,8 +76,67 @@ core::TemporalRandomWalk::TemporalRandomWalk(
 #ifdef HAS_CUDA
     if (use_gpu) {
         CUDA_CHECK_AND_CLEAR(cudaGetDeviceProperties(&cuda_device_prop_, 0));
+        // Non-blocking flag ensures this stream does not synchronize
+        // against the default legacy stream — two TemporalRandomWalk
+        // instances can run GPU work concurrently.
+        CUDA_CHECK_AND_CLEAR(cudaStreamCreateWithFlags(
+            &stream_, cudaStreamNonBlocking));
     }
 #endif
+}
+
+// ==================================================================
+// core::TemporalRandomWalk destructor + move
+// ==================================================================
+
+core::TemporalRandomWalk::~TemporalRandomWalk() {
+#ifdef HAS_CUDA
+    if (stream_ != nullptr) {
+        cudaStreamSynchronize(stream_);
+        cudaStreamDestroy(stream_);
+        stream_ = nullptr;
+    }
+#endif
+}
+
+core::TemporalRandomWalk::TemporalRandomWalk(TemporalRandomWalk&& other) noexcept
+    : data_(std::move(other.data_)),
+      walk_padding_value_(other.walk_padding_value_),
+      global_seed_(other.global_seed_),
+      shuffle_walk_order_(other.shuffle_walk_order_),
+      last_batch_unique_sources_(std::move(other.last_batch_unique_sources_)),
+      last_batch_unique_targets_(std::move(other.last_batch_unique_targets_))
+#ifdef HAS_CUDA
+    , cuda_device_prop_(other.cuda_device_prop_),
+      stream_(other.stream_)
+#endif
+{
+#ifdef HAS_CUDA
+    other.stream_ = nullptr;
+#endif
+}
+
+core::TemporalRandomWalk& core::TemporalRandomWalk::operator=(
+    TemporalRandomWalk&& other) noexcept {
+    if (this == &other) return *this;
+#ifdef HAS_CUDA
+    if (stream_ != nullptr) {
+        cudaStreamSynchronize(stream_);
+        cudaStreamDestroy(stream_);
+    }
+#endif
+    data_                       = std::move(other.data_);
+    walk_padding_value_         = other.walk_padding_value_;
+    global_seed_                = other.global_seed_;
+    shuffle_walk_order_         = other.shuffle_walk_order_;
+    last_batch_unique_sources_  = std::move(other.last_batch_unique_sources_);
+    last_batch_unique_targets_  = std::move(other.last_batch_unique_targets_);
+#ifdef HAS_CUDA
+    cuda_device_prop_ = other.cuda_device_prop_;
+    stream_           = other.stream_;
+    other.stream_     = nullptr;
+#endif
+    return *this;
 }
 
 // ==================================================================
@@ -97,27 +157,26 @@ void set_last_batch_unique_std(
 }
 
 #ifdef HAS_CUDA
-// GPU path: thrust::sort + thrust::unique. `values` is a host pointer from
-// the caller of add_multiple_edges; we stage it to a device scratch buffer
-// (one H->D cudaMemcpy) to avoid mutating the caller's array, then run
-// sort+unique on device. `out` is `last_batch_unique_*_` which is
-// device-resident when data.use_gpu; downstream consumers (the _cuda walk
-// paths) read it directly on device — no D->H copy.
-void set_last_batch_unique_cuda(
-    const int* values_host, const size_t n, Buffer<int>& out) {
+// GPU path: thrust::sort + thrust::unique on a device scratch buffer
+// provided by the caller. Staging H->D is the caller's job so that the
+// two copies (sources + targets) issue back-to-back and pipeline in
+// parallel before the first sort+unique runs. `out` is
+// `last_batch_unique_*_` which is device-resident when data.use_gpu;
+// downstream consumers read it directly on device (no D->H copy).
+//
+// Runs on the default (legacy null) stream so it is naturally ordered
+// with the rest of add_multiple_edges_cuda's graph mutations. Walk
+// kernels then sync the null stream once at entry before running on
+// trw->stream().
+void set_last_batch_unique_cuda_device_input(
+    int* values_device, const size_t n, Buffer<int>& out) {
     if (n == 0) {
         out.shrink_to_fit_empty();
         return;
     }
 
-    Buffer<int> scratch(/*use_gpu=*/true);
-    scratch.resize(n);
-    CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
-        scratch.data(), values_host, n * sizeof(int),
-        cudaMemcpyHostToDevice));
-
-    thrust::device_ptr<int> s_begin(scratch.data());
-    thrust::device_ptr<int> s_end(scratch.data() + n);
+    thrust::device_ptr<int> s_begin(values_device);
+    thrust::device_ptr<int> s_end(values_device + n);
     thrust::sort(DEVICE_EXECUTION_POLICY, s_begin, s_end);
     auto new_end = thrust::unique(DEVICE_EXECUTION_POLICY, s_begin, s_end);
     const size_t unique_count = static_cast<size_t>(new_end - s_begin);
@@ -125,7 +184,7 @@ void set_last_batch_unique_cuda(
     out.shrink_to_fit_empty();
     out.resize(unique_count);
     CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
-        out.data(), scratch.data(), unique_count * sizeof(int),
+        out.data(), values_device, unique_count * sizeof(int),
         cudaMemcpyDeviceToDevice));
 }
 #endif
@@ -232,6 +291,8 @@ HOST void temporal_random_walk::add_multiple_edges(
 
     if (num_edges == 0) return;
 
+    NVTX_RANGE_COLORED("add_multiple_edges", nvtx_colors::edge_purple);
+
 #ifdef HAS_CUDA
     if (trw->data().use_gpu) {
         temporal_graph::add_multiple_edges_cuda(
@@ -245,15 +306,37 @@ HOST void temporal_random_walk::add_multiple_edges(
             edge_features, feature_dim);
     }
 
+    {
+        NVTX_RANGE_COLORED("Unique sources/targets", nvtx_colors::edge_purple);
 #ifdef HAS_CUDA
-    if (trw->data().use_gpu) {
-        set_last_batch_unique_cuda(sources, num_edges, trw->last_batch_unique_sources());
-        set_last_batch_unique_cuda(targets, num_edges, trw->last_batch_unique_targets());
-        return;
-    }
+        if (trw->data().use_gpu) {
+            // Stage both host inputs to device scratch back-to-back on the
+            // default stream so the two H->D copies pipeline before the
+            // first sort+unique, and so this work is naturally ordered
+            // with temporal_graph::add_multiple_edges_cuda above.
+            Buffer<int> src_scratch(/*use_gpu=*/true);
+            Buffer<int> tgt_scratch(/*use_gpu=*/true);
+            src_scratch.resize(num_edges);
+            tgt_scratch.resize(num_edges);
+            CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
+                src_scratch.data(), sources, num_edges * sizeof(int),
+                cudaMemcpyHostToDevice));
+            CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
+                tgt_scratch.data(), targets, num_edges * sizeof(int),
+                cudaMemcpyHostToDevice));
+
+            set_last_batch_unique_cuda_device_input(
+                src_scratch.data(), num_edges,
+                trw->last_batch_unique_sources());
+            set_last_batch_unique_cuda_device_input(
+                tgt_scratch.data(), num_edges,
+                trw->last_batch_unique_targets());
+            return;
+        }
 #endif
-    set_last_batch_unique_std(sources, num_edges, trw->last_batch_unique_sources());
-    set_last_batch_unique_std(targets, num_edges, trw->last_batch_unique_targets());
+        set_last_batch_unique_std(sources, num_edges, trw->last_batch_unique_sources());
+        set_last_batch_unique_std(targets, num_edges, trw->last_batch_unique_targets());
+    }
 }
 
 HOST size_t temporal_random_walk::get_node_count(const core::TemporalRandomWalk* trw) {
@@ -325,6 +408,7 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
     const int num_walks_per_node,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction) {
+    NVTX_RANGE_COLORED("Walk Sampling (all nodes, std)", nvtx_colors::walk_green);
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
     }
@@ -372,6 +456,7 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_std(
     const int num_walks_per_node,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction) {
+    NVTX_RANGE_COLORED("Walk Sampling (last batch, std)", nvtx_colors::walk_green);
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
     }
@@ -417,6 +502,7 @@ temporal_random_walk::get_random_walks_and_times_std(
     const int num_walks_total,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction) {
+    NVTX_RANGE_COLORED("Walk Sampling (std)", nvtx_colors::walk_green);
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
     }
@@ -476,22 +562,27 @@ void launch_walk_kernel_dispatch(
     const WalkDirection walk_direction,
     const uint64_t base_seed,
     const dim3& grid_dim,
-    const dim3& block_dim) {
+    const dim3& block_dim,
+    const cudaStream_t stream) {
     switch (kernel_launch_type) {
-        case KernelLaunchType::FULL_WALK:
+        case KernelLaunchType::FULL_WALK: {
+            NVTX_RANGE_COLORED("Launch walk kernel (full)", nvtx_colors::walk_green);
             temporal_random_walk::launch_random_walk_kernel_full_walk(
                 view, is_directed, walk_set_view, max_walk_len,
                 start_node_ids, num_walks,
                 walk_bias, initial_edge_bias, walk_direction,
-                base_seed, grid_dim, block_dim);
+                base_seed, grid_dim, block_dim, stream);
             break;
-        case KernelLaunchType::STEP_BASED:
+        }
+        case KernelLaunchType::STEP_BASED: {
+            NVTX_RANGE_COLORED("Launch walk kernel (step)", nvtx_colors::walk_green);
             temporal_random_walk::launch_random_walk_kernel_step_based(
                 view, is_directed, walk_set_view, max_walk_len,
                 start_node_ids, num_walks,
                 walk_bias, initial_edge_bias, walk_direction,
-                base_seed, grid_dim, block_dim);
+                base_seed, grid_dim, block_dim, stream);
             break;
+        }
         default:
             throw std::runtime_error("Unknown KernelLaunchType");
     }
@@ -508,9 +599,16 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
     const KernelLaunchType kernel_launch_type) {
+    NVTX_RANGE_COLORED("Walk Sampling (all nodes)", nvtx_colors::walk_green);
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
     }
+
+    // Drain any pending graph-mutation work issued on the default stream
+    // (e.g. from a prior add_multiple_edges) before we enqueue kernels
+    // on trw->stream(). trw->stream() is non-blocking, so it does not
+    // auto-sync against the legacy null stream.
+    CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
 
     std::vector<int> host_node_ids = temporal_graph::get_node_ids(trw->data());
     const DataBlock<int> repeated_node_ids = repeat_elements(
@@ -540,10 +638,16 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
         kernel_launch_type, view, trw->is_directed(), walk_set_view,
         max_walk_len, repeated_node_ids.data, repeated_node_ids.size,
         *walk_bias, *initial_edge_bias, walk_direction,
-        base_seed, grid_dim, block_dim);
+        base_seed, grid_dim, block_dim, trw->stream());
 
     CUDA_KERNEL_CHECK(
         "After generate_random_walks_kernel in get_random_walks_and_times_for_all_nodes_cuda");
+
+    // Wait for walk kernels on trw->stream() to complete before the
+    // synchronous cudaMemcpy inside download_to_host, which otherwise
+    // races (cudaMemcpy only blocks the legacy null stream, not a
+    // non-blocking stream).
+    trw->sync_stream();
 
     WalkSetHost host_walks = std::move(device_walks).download_to_host();
 
@@ -559,9 +663,15 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
     const KernelLaunchType kernel_launch_type) {
+    NVTX_RANGE_COLORED("Walk Sampling (last batch)", nvtx_colors::walk_green);
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
     }
+
+    // Drain any pending graph-mutation work on the default stream before
+    // trw->stream() kernel launches; see note in the _for_all_nodes_cuda
+    // counterpart above.
+    CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
 
     const DataBlock<int> repeated_node_ids =
         get_last_batch_start_nodes_new(trw, num_walks_per_node);
@@ -589,10 +699,15 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
         kernel_launch_type, view, trw->is_directed(), walk_set_view,
         max_walk_len, repeated_node_ids.data, repeated_node_ids.size,
         *walk_bias, *initial_edge_bias, walk_direction,
-        base_seed, grid_dim, block_dim);
+        base_seed, grid_dim, block_dim, trw->stream());
 
     CUDA_KERNEL_CHECK(
         "After generate_random_walks_kernel in get_random_walks_and_times_for_last_batch_cuda");
+
+    // Wait for walk kernels on trw->stream() before the synchronous
+    // cudaMemcpy inside download_to_host; see note in the
+    // _for_all_nodes_cuda counterpart above.
+    trw->sync_stream();
 
     WalkSetHost host_walks = std::move(device_walks).download_to_host();
 
@@ -608,9 +723,15 @@ temporal_random_walk::get_random_walks_and_times_cuda(
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
     const KernelLaunchType kernel_launch_type) {
+    NVTX_RANGE_COLORED("Walk Sampling", nvtx_colors::walk_green);
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
     }
+
+    // Drain any pending graph-mutation work on the default stream before
+    // trw->stream() kernel launches; see note in the _for_all_nodes_cuda
+    // counterpart above.
+    CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
 
     const uint64_t base_seed = resolve_base_seed(trw);
 
@@ -634,10 +755,15 @@ temporal_random_walk::get_random_walks_and_times_cuda(
         kernel_launch_type, view, trw->is_directed(), walk_set_view,
         max_walk_len, start_node_ids.data(), static_cast<size_t>(num_walks_total),
         *walk_bias, *initial_edge_bias, walk_direction,
-        base_seed, grid_dim, block_dim);
+        base_seed, grid_dim, block_dim, trw->stream());
 
     CUDA_KERNEL_CHECK(
         "After generate_random_walks_kernel in get_random_walks_and_times_cuda");
+
+    // Wait for walk kernels on trw->stream() before the synchronous
+    // cudaMemcpy inside download_to_host; see note in the
+    // _for_all_nodes_cuda counterpart above.
+    trw->sync_stream();
 
     WalkSetHost host_walks = std::move(device_walks).download_to_host();
 

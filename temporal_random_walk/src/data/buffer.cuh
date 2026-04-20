@@ -13,6 +13,10 @@
 #include "../common/macros.cuh"
 #include "../common/error_handlers.cuh"
 
+#ifdef HAS_CUDA
+#include <cuda_runtime.h>
+#endif
+
 /**
  * Buffer<T> — RAII owning container for a contiguous array of T, backed by
  * either host memory (malloc/free) or device memory (cudaMalloc/cudaFree)
@@ -108,6 +112,22 @@ public:
         capacity_ = 0;
     }
 
+#ifdef HAS_CUDA
+    void append_from_host(const T* src, const size_t n, cudaStream_t stream) {
+        if (n == 0) return;
+        const size_t new_size = size_ + n;
+        reserve(new_size);
+        if (use_gpu_) {
+            CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
+                data_ + size_, src, n * sizeof(T),
+                cudaMemcpyHostToDevice, stream));
+        } else {
+            std::memcpy(data_ + size_, src, n * sizeof(T));
+        }
+        size_ = new_size;
+    }
+#endif
+
     void append_from_host(const T* src, const size_t n) {
         if (n == 0) return;
         const size_t new_size = size_ + n;
@@ -143,6 +163,25 @@ public:
     }
 
     void fill(const T& value);
+
+    // Async D->H copy (no internal sync). On host buffers it falls back to
+    // std::memcpy. Caller must sync the passed stream before reading dst.
+    void copy_to_host_async(T* dst, size_t n
+#ifdef HAS_CUDA
+                            , cudaStream_t stream = 0
+#endif
+                            ) const {
+        if (n == 0) return;
+#ifdef HAS_CUDA
+        if (use_gpu_) {
+            CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
+                dst, data_, n * sizeof(T),
+                cudaMemcpyDeviceToHost, stream));
+            return;
+        }
+#endif
+        std::memcpy(dst, data_, n * sizeof(T));
+    }
 
     void drop_front(size_t n) {
         if (n == 0 || data_ == nullptr) return;

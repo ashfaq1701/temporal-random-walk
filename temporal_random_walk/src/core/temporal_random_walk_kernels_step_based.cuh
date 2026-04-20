@@ -8,6 +8,7 @@
 #include "../utils/utils.cuh"
 #include "helpers.cuh"
 #include "../graph/edge_selectors.cuh"
+#include "../common/picker_dispatch.cuh"
 
 namespace temporal_random_walk {
 
@@ -162,40 +163,16 @@ namespace temporal_random_walk {
         const RandomPickerType start_picker_type,
         const uint64_t base_seed,
         const dim3 &grid,
-        const dim3 &block_dim) {
+        const dim3 &block_dim,
+        const cudaStream_t stream) {
 
-        switch (start_picker_type) {
-            case RandomPickerType::Uniform:
-                pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::Uniform><<<grid, block_dim>>>(
-                    view, walk_set_view, start_node_ids, max_walk_len, num_walks, base_seed);
-                break;
-            case RandomPickerType::Linear:
-                pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::Linear><<<grid, block_dim>>>(
-                    view, walk_set_view, start_node_ids, max_walk_len, num_walks, base_seed);
-                break;
-            case RandomPickerType::ExponentialIndex:
-                pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::ExponentialIndex><<<grid, block_dim>>>(
-                    view, walk_set_view, start_node_ids, max_walk_len, num_walks, base_seed);
-                break;
-            case RandomPickerType::ExponentialWeight:
-                pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::ExponentialWeight><<<grid, block_dim>>>(
-                    view, walk_set_view, start_node_ids, max_walk_len, num_walks, base_seed);
-                break;
-            case RandomPickerType::TemporalNode2Vec:
-                pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::TemporalNode2Vec><<<grid, block_dim>>>(
-                    view, walk_set_view, start_node_ids, max_walk_len, num_walks, base_seed);
-                break;
-            case RandomPickerType::TEST_FIRST:
-                pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::TEST_FIRST><<<grid, block_dim>>>(
-                    view, walk_set_view, start_node_ids, max_walk_len, num_walks, base_seed);
-                break;
-            case RandomPickerType::TEST_LAST:
-                pick_start_edges_kernel<IsDirected, Forward, RandomPickerType::TEST_LAST><<<grid, block_dim>>>(
-                    view, walk_set_view, start_node_ids, max_walk_len, num_walks, base_seed);
-                break;
-            default:
-                break;
-        }
+        dispatch_picker_type(start_picker_type, [&](auto start_tag) {
+            constexpr auto kStart = decltype(start_tag)::value;
+            pick_start_edges_kernel<IsDirected, Forward, kStart>
+                <<<grid, block_dim, 0, stream>>>(
+                    view, walk_set_view, start_node_ids,
+                    max_walk_len, num_walks, base_seed);
+        });
     }
 
     // Helper function to dispatch intermediate edge kernels
@@ -209,40 +186,16 @@ namespace temporal_random_walk {
         const RandomPickerType edge_picker_type,
         const uint64_t base_seed,
         const dim3 &grid,
-        const dim3 &block_dim) {
+        const dim3 &block_dim,
+        const cudaStream_t stream) {
 
-        switch (edge_picker_type) {
-            case RandomPickerType::Uniform:
-                pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::Uniform><<<grid, block_dim>>>(
-                    view, walk_set_view, step_number, max_walk_len, num_walks, base_seed);
-                break;
-            case RandomPickerType::Linear:
-                pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::Linear><<<grid, block_dim>>>(
-                    view, walk_set_view, step_number, max_walk_len, num_walks, base_seed);
-                break;
-            case RandomPickerType::ExponentialIndex:
-                pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::ExponentialIndex><<<grid, block_dim>>>(
-                    view, walk_set_view, step_number, max_walk_len, num_walks, base_seed);
-                break;
-            case RandomPickerType::ExponentialWeight:
-                pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::ExponentialWeight><<<grid, block_dim>>>(
-                    view, walk_set_view, step_number, max_walk_len, num_walks, base_seed);
-                break;
-            case RandomPickerType::TemporalNode2Vec:
-                pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::TemporalNode2Vec><<<grid, block_dim>>>(
-                    view, walk_set_view, step_number, max_walk_len, num_walks, base_seed);
-                break;
-            case RandomPickerType::TEST_FIRST:
-                pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::TEST_FIRST><<<grid, block_dim>>>(
-                    view, walk_set_view, step_number, max_walk_len, num_walks, base_seed);
-                break;
-            case RandomPickerType::TEST_LAST:
-                pick_intermediate_edges_kernel<IsDirected, Forward, RandomPickerType::TEST_LAST><<<grid, block_dim>>>(
-                    view, walk_set_view, step_number, max_walk_len, num_walks, base_seed);
-                break;
-            default:
-                break;
-        }
+        dispatch_picker_type(edge_picker_type, [&](auto edge_tag) {
+            constexpr auto kEdge = decltype(edge_tag)::value;
+            pick_intermediate_edges_kernel<IsDirected, Forward, kEdge>
+                <<<grid, block_dim, 0, stream>>>(
+                    view, walk_set_view, step_number,
+                    max_walk_len, num_walks, base_seed);
+        });
     }
 
     // Helper function to handle intermediate steps with different edge picker types
@@ -255,7 +208,8 @@ namespace temporal_random_walk {
         const RandomPickerType edge_picker_type,
         const uint64_t base_seed,
         const dim3 &grid,
-        const dim3 &block_dim) {
+        const dim3 &block_dim,
+        const cudaStream_t stream) {
 
         for (int step_number = 1; step_number < max_walk_len; step_number++) {
             dispatch_intermediate_edges_kernel<IsDirected, Forward>(
@@ -267,7 +221,8 @@ namespace temporal_random_walk {
                 edge_picker_type,
                 base_seed,
                 grid,
-                block_dim);
+                block_dim,
+                stream);
         }
     }
 
@@ -283,7 +238,8 @@ namespace temporal_random_walk {
         const WalkDirection walk_direction,
         const uint64_t base_seed,
         const dim3 &grid_dim,
-        const dim3 &block_dim) {
+        const dim3 &block_dim,
+        const cudaStream_t stream = 0) {
         // Calculate grid dimensions if not provided
         dim3 grid = grid_dim;
         if (grid.x == 0) {
@@ -300,21 +256,21 @@ namespace temporal_random_walk {
             if (should_walk_forward) {
                 dispatch_start_edges_kernel<true, true>(
                     view, walk_set_view, start_node_ids, max_walk_len, num_walks_int,
-                    start_picker_type, base_seed, grid, block_dim);
+                    start_picker_type, base_seed, grid, block_dim, stream);
             } else {
                 dispatch_start_edges_kernel<true, false>(
                     view, walk_set_view, start_node_ids, max_walk_len, num_walks_int,
-                    start_picker_type, base_seed, grid, block_dim);
+                    start_picker_type, base_seed, grid, block_dim, stream);
             }
         } else {
             if (should_walk_forward) {
                 dispatch_start_edges_kernel<false, true>(
                     view, walk_set_view, start_node_ids, max_walk_len, num_walks_int,
-                    start_picker_type, base_seed, grid, block_dim);
+                    start_picker_type, base_seed, grid, block_dim, stream);
             } else {
                 dispatch_start_edges_kernel<false, false>(
                     view, walk_set_view, start_node_ids, max_walk_len, num_walks_int,
-                    start_picker_type, base_seed, grid, block_dim);
+                    start_picker_type, base_seed, grid, block_dim, stream);
             }
         }
 
@@ -322,24 +278,24 @@ namespace temporal_random_walk {
         if (is_directed) {
             if (should_walk_forward) {
                 handle_intermediate_steps<true, true>(
-                    view, walk_set_view, max_walk_len, num_walks_int, edge_picker_type, base_seed, grid, block_dim);
+                    view, walk_set_view, max_walk_len, num_walks_int, edge_picker_type, base_seed, grid, block_dim, stream);
             } else {
                 handle_intermediate_steps<true, false>(
-                    view, walk_set_view, max_walk_len, num_walks_int, edge_picker_type, base_seed, grid, block_dim);
+                    view, walk_set_view, max_walk_len, num_walks_int, edge_picker_type, base_seed, grid, block_dim, stream);
             }
         } else {
             if (should_walk_forward) {
                 handle_intermediate_steps<false, true>(
-                    view, walk_set_view, max_walk_len, num_walks_int, edge_picker_type, base_seed, grid, block_dim);
+                    view, walk_set_view, max_walk_len, num_walks_int, edge_picker_type, base_seed, grid, block_dim, stream);
             } else {
                 handle_intermediate_steps<false, false>(
-                    view, walk_set_view, max_walk_len, num_walks_int, edge_picker_type, base_seed, grid, block_dim);
+                    view, walk_set_view, max_walk_len, num_walks_int, edge_picker_type, base_seed, grid, block_dim, stream);
             }
         }
 
         // Launch reverse_walk_kernel if walking backward
         if (!should_walk_forward) {
-            reverse_walks_kernel<<<grid, block_dim>>>(walk_set_view, num_walks_int);
+            reverse_walks_kernel<<<grid, block_dim, 0, stream>>>(walk_set_view, num_walks_int);
         }
     }
 

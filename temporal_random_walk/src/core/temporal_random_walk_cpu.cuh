@@ -12,6 +12,7 @@
 #include "../utils/utils.cuh"
 #include "helpers.cuh"
 #include "../graph/edge_selectors.cuh"
+#include "../common/picker_dispatch.cuh"
 
 // STAGING FILE for task 5f. Not compiled. Swapped in by task 5g.
 
@@ -135,50 +136,19 @@ namespace temporal_random_walk {
         const double* rand_nums,
         const RandomPickerType edge_picker_type,
         const RandomPickerType start_picker_type) {
-        #define DISPATCH(EDGE, START) \
-            generate_random_walk_and_time_std_new<IsDirected, Forward, EDGE, START>( \
-                view, walk_idx, walk_set, max_walk_len, start_node_ids, rand_nums)
-
-        #define HANDLE_START_PICKER(EDGE) \
-            switch (start_picker_type) { \
-                case RandomPickerType::Uniform: DISPATCH(EDGE, RandomPickerType::Uniform); break; \
-                case RandomPickerType::Linear: DISPATCH(EDGE, RandomPickerType::Linear); break; \
-                case RandomPickerType::ExponentialIndex: DISPATCH(EDGE, RandomPickerType::ExponentialIndex); break; \
-                case RandomPickerType::ExponentialWeight: DISPATCH(EDGE, RandomPickerType::ExponentialWeight); break; \
-                case RandomPickerType::TemporalNode2Vec: DISPATCH(EDGE, RandomPickerType::TemporalNode2Vec); break; \
-                case RandomPickerType::TEST_FIRST: DISPATCH(EDGE, RandomPickerType::TEST_FIRST); break; \
-                case RandomPickerType::TEST_LAST: DISPATCH(EDGE, RandomPickerType::TEST_LAST); break; \
-                default: break; \
-            }
-
-        switch (edge_picker_type) {
-            case RandomPickerType::Uniform:
-                HANDLE_START_PICKER(RandomPickerType::Uniform);
-                break;
-            case RandomPickerType::Linear:
-                HANDLE_START_PICKER(RandomPickerType::Linear);
-                break;
-            case RandomPickerType::ExponentialIndex:
-                HANDLE_START_PICKER(RandomPickerType::ExponentialIndex);
-                break;
-            case RandomPickerType::ExponentialWeight:
-                HANDLE_START_PICKER(RandomPickerType::ExponentialWeight);
-                break;
-            case RandomPickerType::TemporalNode2Vec:
-                HANDLE_START_PICKER(RandomPickerType::TemporalNode2Vec);
-                break;
-            case RandomPickerType::TEST_FIRST:
-                HANDLE_START_PICKER(RandomPickerType::TEST_FIRST);
-                break;
-            case RandomPickerType::TEST_LAST:
-                HANDLE_START_PICKER(RandomPickerType::TEST_LAST);
-                break;
-            default:
-                break;
-        }
-
-        #undef HANDLE_START_PICKER
-        #undef DISPATCH
+        // Two-level tag dispatch: turns the runtime (edge, start) picker
+        // pair into compile-time template parameters and calls the
+        // fully-instantiated walk generator.
+        dispatch_picker_type(edge_picker_type, [&](auto edge_tag) {
+            constexpr auto kEdge = decltype(edge_tag)::value;
+            dispatch_picker_type(start_picker_type, [&](auto start_tag) {
+                constexpr auto kStart = decltype(start_tag)::value;
+                generate_random_walk_and_time_std_new<
+                    IsDirected, Forward, kEdge, kStart>(
+                    view, walk_idx, walk_set, max_walk_len,
+                    start_node_ids, rand_nums);
+            });
+        });
     }
 
     HOST inline void launch_random_walk_cpu_new(

@@ -10,6 +10,10 @@
 #include "../data/temporal_graph_data.cuh"
 #include "../data/buffer.cuh"
 
+#ifdef HAS_CUDA
+#include <cuda_runtime.h>
+#endif
+
 // STAGING FILE for task 5b. Not in CMake. Swapped in by task 5g.
 
 namespace node_edge_index {
@@ -124,20 +128,96 @@ namespace node_edge_index {
         std::vector<double> inbound_backward_cumulative_weights_exponential;
     };
 
-    HOST inline NodeEdgeIndexSnapshot snapshot(const TemporalGraphData& data) {
-        return NodeEdgeIndexSnapshot{
-            data.node_group_outbound_offsets.to_host_vector(),
-            data.node_group_inbound_offsets.to_host_vector(),
-            data.node_ts_sorted_outbound_indices.to_host_vector(),
-            data.node_ts_sorted_inbound_indices.to_host_vector(),
-            data.count_ts_group_per_node_outbound.to_host_vector(),
-            data.count_ts_group_per_node_inbound.to_host_vector(),
-            data.node_ts_group_outbound_offsets.to_host_vector(),
-            data.node_ts_group_inbound_offsets.to_host_vector(),
-            data.outbound_forward_cumulative_weights_exponential.to_host_vector(),
-            data.outbound_backward_cumulative_weights_exponential.to_host_vector(),
-            data.inbound_backward_cumulative_weights_exponential.to_host_vector(),
-        };
+    HOST inline NodeEdgeIndexSnapshot snapshot(
+        const TemporalGraphData& data
+#ifdef HAS_CUDA
+        , cudaStream_t stream = 0
+#endif
+        ) {
+        NodeEdgeIndexSnapshot snap;
+
+        snap.node_group_outbound_offsets.resize(data.node_group_outbound_offsets.size());
+        snap.node_group_inbound_offsets.resize(data.node_group_inbound_offsets.size());
+        snap.node_ts_sorted_outbound_indices.resize(data.node_ts_sorted_outbound_indices.size());
+        snap.node_ts_sorted_inbound_indices.resize(data.node_ts_sorted_inbound_indices.size());
+        snap.count_ts_group_per_node_outbound.resize(data.count_ts_group_per_node_outbound.size());
+        snap.count_ts_group_per_node_inbound.resize(data.count_ts_group_per_node_inbound.size());
+        snap.node_ts_group_outbound_offsets.resize(data.node_ts_group_outbound_offsets.size());
+        snap.node_ts_group_inbound_offsets.resize(data.node_ts_group_inbound_offsets.size());
+        snap.outbound_forward_cumulative_weights_exponential.resize(
+            data.outbound_forward_cumulative_weights_exponential.size());
+        snap.outbound_backward_cumulative_weights_exponential.resize(
+            data.outbound_backward_cumulative_weights_exponential.size());
+        snap.inbound_backward_cumulative_weights_exponential.resize(
+            data.inbound_backward_cumulative_weights_exponential.size());
+
+#ifdef HAS_CUDA
+        data.node_group_outbound_offsets.copy_to_host_async(
+            snap.node_group_outbound_offsets.data(),
+            snap.node_group_outbound_offsets.size(), stream);
+        data.node_group_inbound_offsets.copy_to_host_async(
+            snap.node_group_inbound_offsets.data(),
+            snap.node_group_inbound_offsets.size(), stream);
+        data.node_ts_sorted_outbound_indices.copy_to_host_async(
+            snap.node_ts_sorted_outbound_indices.data(),
+            snap.node_ts_sorted_outbound_indices.size(), stream);
+        data.node_ts_sorted_inbound_indices.copy_to_host_async(
+            snap.node_ts_sorted_inbound_indices.data(),
+            snap.node_ts_sorted_inbound_indices.size(), stream);
+        data.count_ts_group_per_node_outbound.copy_to_host_async(
+            snap.count_ts_group_per_node_outbound.data(),
+            snap.count_ts_group_per_node_outbound.size(), stream);
+        data.count_ts_group_per_node_inbound.copy_to_host_async(
+            snap.count_ts_group_per_node_inbound.data(),
+            snap.count_ts_group_per_node_inbound.size(), stream);
+        data.node_ts_group_outbound_offsets.copy_to_host_async(
+            snap.node_ts_group_outbound_offsets.data(),
+            snap.node_ts_group_outbound_offsets.size(), stream);
+        data.node_ts_group_inbound_offsets.copy_to_host_async(
+            snap.node_ts_group_inbound_offsets.data(),
+            snap.node_ts_group_inbound_offsets.size(), stream);
+        data.outbound_forward_cumulative_weights_exponential.copy_to_host_async(
+            snap.outbound_forward_cumulative_weights_exponential.data(),
+            snap.outbound_forward_cumulative_weights_exponential.size(), stream);
+        data.outbound_backward_cumulative_weights_exponential.copy_to_host_async(
+            snap.outbound_backward_cumulative_weights_exponential.data(),
+            snap.outbound_backward_cumulative_weights_exponential.size(), stream);
+        data.inbound_backward_cumulative_weights_exponential.copy_to_host_async(
+            snap.inbound_backward_cumulative_weights_exponential.data(),
+            snap.inbound_backward_cumulative_weights_exponential.size(), stream);
+
+        if (data.use_gpu) {
+            CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(stream));
+        }
+#else
+        data.node_group_outbound_offsets.copy_to_host_async(
+            snap.node_group_outbound_offsets.data(), snap.node_group_outbound_offsets.size());
+        data.node_group_inbound_offsets.copy_to_host_async(
+            snap.node_group_inbound_offsets.data(), snap.node_group_inbound_offsets.size());
+        data.node_ts_sorted_outbound_indices.copy_to_host_async(
+            snap.node_ts_sorted_outbound_indices.data(), snap.node_ts_sorted_outbound_indices.size());
+        data.node_ts_sorted_inbound_indices.copy_to_host_async(
+            snap.node_ts_sorted_inbound_indices.data(), snap.node_ts_sorted_inbound_indices.size());
+        data.count_ts_group_per_node_outbound.copy_to_host_async(
+            snap.count_ts_group_per_node_outbound.data(), snap.count_ts_group_per_node_outbound.size());
+        data.count_ts_group_per_node_inbound.copy_to_host_async(
+            snap.count_ts_group_per_node_inbound.data(), snap.count_ts_group_per_node_inbound.size());
+        data.node_ts_group_outbound_offsets.copy_to_host_async(
+            snap.node_ts_group_outbound_offsets.data(), snap.node_ts_group_outbound_offsets.size());
+        data.node_ts_group_inbound_offsets.copy_to_host_async(
+            snap.node_ts_group_inbound_offsets.data(), snap.node_ts_group_inbound_offsets.size());
+        data.outbound_forward_cumulative_weights_exponential.copy_to_host_async(
+            snap.outbound_forward_cumulative_weights_exponential.data(),
+            snap.outbound_forward_cumulative_weights_exponential.size());
+        data.outbound_backward_cumulative_weights_exponential.copy_to_host_async(
+            snap.outbound_backward_cumulative_weights_exponential.data(),
+            snap.outbound_backward_cumulative_weights_exponential.size());
+        data.inbound_backward_cumulative_weights_exponential.copy_to_host_async(
+            snap.inbound_backward_cumulative_weights_exponential.data(),
+            snap.inbound_backward_cumulative_weights_exponential.size());
+#endif
+
+        return snap;
     }
 
 }

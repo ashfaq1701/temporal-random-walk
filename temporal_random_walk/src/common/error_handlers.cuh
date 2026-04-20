@@ -92,6 +92,29 @@
 #endif
 
 /**
+ * Opt-in per-step stream sync for debugging async-pipeline bugs. Define
+ * TEMPORAL_RANDOM_WALK_DEBUG_SYNC at compile time to make this
+ * cudaStreamSynchronize(stream) + error check; otherwise it is a no-op
+ * and costs nothing. Use at points where you want async errors to
+ * surface synchronously without pulling in a full CUDA_KERNEL_CHECK_SYNC
+ * every time.
+ */
+#ifdef TEMPORAL_RANDOM_WALK_DEBUG_SYNC
+    #define TEMPORAL_RANDOM_WALK_STREAM_SYNC(stream, msg) do { \
+        cudaError_t _err = cudaStreamSynchronize(stream); \
+        if (_err != cudaSuccess) { \
+            std::ostringstream _oss; \
+            _oss << "CUDA sync error in " << __FILE__ << ":" << __LINE__ \
+                 << " code=" << _err << " (" << cudaGetErrorString(_err) \
+                 << ") msg=" << (msg); \
+            throw std::runtime_error(_oss.str()); \
+        } \
+    } while(0)
+#else
+    #define TEMPORAL_RANDOM_WALK_STREAM_SYNC(stream, msg) do {} while(0)
+#endif
+
+/**
  * cuRAND error check. Throws on failure.
  */
 #define CHECK_CURAND(call) do { \

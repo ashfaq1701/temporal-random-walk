@@ -223,19 +223,86 @@ namespace edge_data {
         std::vector<int>     node_adj_neighbors;
     };
 
-    HOST inline EdgeDataSnapshot snapshot(const TemporalGraphData& data) {
-        return EdgeDataSnapshot{
-            data.sources.to_host_vector(),
-            data.targets.to_host_vector(),
-            data.timestamps.to_host_vector(),
-            data.timestamp_group_offsets.to_host_vector(),
-            data.unique_timestamps.to_host_vector(),
-            data.forward_cumulative_weights_exponential.to_host_vector(),
-            data.backward_cumulative_weights_exponential.to_host_vector(),
-            data.active_node_ids.to_host_vector(),
-            data.node_adj_offsets.to_host_vector(),
-            data.node_adj_neighbors.to_host_vector(),
-        };
+    HOST inline EdgeDataSnapshot snapshot(
+        const TemporalGraphData& data
+#ifdef HAS_CUDA
+        , cudaStream_t stream = 0
+#endif
+        ) {
+        EdgeDataSnapshot snap;
+
+        // Pre-size every host vector first so .data() pointers are stable
+        // across the async copies that follow. resize never reallocates
+        // again until the trailing sync, which is what makes the batched
+        // copy pattern safe.
+        snap.sources.resize(data.sources.size());
+        snap.targets.resize(data.targets.size());
+        snap.timestamps.resize(data.timestamps.size());
+        snap.timestamp_group_offsets.resize(data.timestamp_group_offsets.size());
+        snap.unique_timestamps.resize(data.unique_timestamps.size());
+        snap.forward_cumulative_weights_exponential.resize(
+            data.forward_cumulative_weights_exponential.size());
+        snap.backward_cumulative_weights_exponential.resize(
+            data.backward_cumulative_weights_exponential.size());
+        snap.active_node_ids.resize(data.active_node_ids.size());
+        snap.node_adj_offsets.resize(data.node_adj_offsets.size());
+        snap.node_adj_neighbors.resize(data.node_adj_neighbors.size());
+
+#ifdef HAS_CUDA
+        data.sources.copy_to_host_async(
+            snap.sources.data(), snap.sources.size(), stream);
+        data.targets.copy_to_host_async(
+            snap.targets.data(), snap.targets.size(), stream);
+        data.timestamps.copy_to_host_async(
+            snap.timestamps.data(), snap.timestamps.size(), stream);
+        data.timestamp_group_offsets.copy_to_host_async(
+            snap.timestamp_group_offsets.data(),
+            snap.timestamp_group_offsets.size(), stream);
+        data.unique_timestamps.copy_to_host_async(
+            snap.unique_timestamps.data(),
+            snap.unique_timestamps.size(), stream);
+        data.forward_cumulative_weights_exponential.copy_to_host_async(
+            snap.forward_cumulative_weights_exponential.data(),
+            snap.forward_cumulative_weights_exponential.size(), stream);
+        data.backward_cumulative_weights_exponential.copy_to_host_async(
+            snap.backward_cumulative_weights_exponential.data(),
+            snap.backward_cumulative_weights_exponential.size(), stream);
+        data.active_node_ids.copy_to_host_async(
+            snap.active_node_ids.data(),
+            snap.active_node_ids.size(), stream);
+        data.node_adj_offsets.copy_to_host_async(
+            snap.node_adj_offsets.data(),
+            snap.node_adj_offsets.size(), stream);
+        data.node_adj_neighbors.copy_to_host_async(
+            snap.node_adj_neighbors.data(),
+            snap.node_adj_neighbors.size(), stream);
+
+        if (data.use_gpu) {
+            CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(stream));
+        }
+#else
+        data.sources.copy_to_host_async(snap.sources.data(), snap.sources.size());
+        data.targets.copy_to_host_async(snap.targets.data(), snap.targets.size());
+        data.timestamps.copy_to_host_async(snap.timestamps.data(), snap.timestamps.size());
+        data.timestamp_group_offsets.copy_to_host_async(
+            snap.timestamp_group_offsets.data(), snap.timestamp_group_offsets.size());
+        data.unique_timestamps.copy_to_host_async(
+            snap.unique_timestamps.data(), snap.unique_timestamps.size());
+        data.forward_cumulative_weights_exponential.copy_to_host_async(
+            snap.forward_cumulative_weights_exponential.data(),
+            snap.forward_cumulative_weights_exponential.size());
+        data.backward_cumulative_weights_exponential.copy_to_host_async(
+            snap.backward_cumulative_weights_exponential.data(),
+            snap.backward_cumulative_weights_exponential.size());
+        data.active_node_ids.copy_to_host_async(
+            snap.active_node_ids.data(), snap.active_node_ids.size());
+        data.node_adj_offsets.copy_to_host_async(
+            snap.node_adj_offsets.data(), snap.node_adj_offsets.size());
+        data.node_adj_neighbors.copy_to_host_async(
+            snap.node_adj_neighbors.data(), snap.node_adj_neighbors.size());
+#endif
+
+        return snap;
     }
 
 }

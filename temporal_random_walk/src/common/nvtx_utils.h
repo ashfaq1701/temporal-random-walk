@@ -1,16 +1,5 @@
 #pragma once
-#ifdef HAS_CUDA
-#include <nvtx3/nvToolsExt.h>
-#endif
 
-// ------------------------------
-// NVTX helper (no-op on CPU)
-// ------------------------------
-struct NvtxRange {
-#ifdef HAS_CUDA
-    explicit NvtxRange(const char* name) { nvtxRangePushA(name); }
-    ~NvtxRange() { nvtxRangePop(); }
-#else
-    explicit NvtxRange(const char*) {}
-#endif
-};
+// Back-compat shim: the canonical NvtxRange lives in nvtx.cuh. This
+// header exists only so pre-existing includes keep resolving.
+#include "nvtx.cuh"

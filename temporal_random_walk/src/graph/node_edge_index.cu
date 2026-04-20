@@ -20,7 +20,7 @@
 #endif
 
 #include "../utils/omp_utils.cuh"
-#include "../common/nvtx_utils.h"
+#include "../common/nvtx.cuh"
 #include "../common/parallel_algorithms.cuh"
 #include "../common/cuda_config.cuh"
 #include "../common/memory.cuh"
@@ -1416,19 +1416,20 @@ HOST void node_edge_index::rebuild(TemporalGraphData& data) {
     // offsets buffer to that value (which already includes the +1 sentinel).
     const size_t node_index_capacity = data.active_node_ids.size() + 1;
 
-    // Step 1: Allocate and compute node edge offsets
-    allocate_node_group_offsets(data, node_index_capacity);
-
-    #ifdef HAS_CUDA
-    if (data.use_gpu) {
-        compute_node_group_offsets_cuda(data);
-    } else
-    #endif
     {
-        compute_node_group_offsets_std(data);
+        NVTX_RANGE_COLORED("Node group offsets", nvtx_colors::index_blue);
+        allocate_node_group_offsets(data, node_index_capacity);
+
+        #ifdef HAS_CUDA
+        if (data.use_gpu) {
+            compute_node_group_offsets_cuda(data);
+        } else
+        #endif
+        {
+            compute_node_group_offsets_std(data);
+        }
     }
 
-    // Step 2: Allocate and compute node edge indices
     allocate_node_ts_sorted_indices(data);
 
     const size_t num_edges = data.timestamps.size();
@@ -1440,43 +1441,48 @@ HOST void node_edge_index::rebuild(TemporalGraphData& data) {
     Buffer<int> inbound_node_ids(data.use_gpu);
     inbound_node_ids.resize(num_edges);
 
-    #ifdef HAS_CUDA
-    if (data.use_gpu) {
-        compute_node_ts_sorted_indices_cuda(
-            data,
-            outbound_buffer_size,
-            outbound_node_ids.data(),
-            inbound_node_ids.data()
-        );
-    } else
-    #endif
     {
-        compute_node_ts_sorted_indices_std(
-            data,
-            outbound_buffer_size,
-            outbound_node_ids.data(),
-            inbound_node_ids.data()
-        );
+        NVTX_RANGE_COLORED("Sorted indices", nvtx_colors::index_blue);
+        #ifdef HAS_CUDA
+        if (data.use_gpu) {
+            compute_node_ts_sorted_indices_cuda(
+                data,
+                outbound_buffer_size,
+                outbound_node_ids.data(),
+                inbound_node_ids.data()
+            );
+        } else
+        #endif
+        {
+            compute_node_ts_sorted_indices_std(
+                data,
+                outbound_buffer_size,
+                outbound_node_ids.data(),
+                inbound_node_ids.data()
+            );
+        }
     }
 
-    // Step 3 + 4: Compute timestamp group offsets AND group indices
-    #ifdef HAS_CUDA
-    if (data.use_gpu) {
-        allocate_and_compute_node_ts_group_counts_and_offsets_cuda(
-            data,
-            data.active_node_ids.size(),
-            outbound_node_ids.data(),
-            inbound_node_ids.data()
-        );
-    } else
-    #endif
     {
-        allocate_and_compute_node_ts_group_counts_and_offsets_std(
-            data,
-            data.active_node_ids.size(),
-            outbound_node_ids.data(),
-            inbound_node_ids.data()
-        );
+        NVTX_RANGE_COLORED("TS group counts/offsets", nvtx_colors::index_blue);
+        #ifdef HAS_CUDA
+        if (data.use_gpu) {
+            allocate_and_compute_node_ts_group_counts_and_offsets_cuda(
+                data,
+                data.active_node_ids.size(),
+                outbound_node_ids.data(),
+                inbound_node_ids.data()
+            );
+        } else
+        #endif
+        {
+            allocate_and_compute_node_ts_group_counts_and_offsets_std(
+                data,
+                data.active_node_ids.size(),
+                outbound_node_ids.data(),
+                inbound_node_ids.data()
+            );
+        }
     }
     // outbound_node_ids and inbound_node_ids RAII-free on scope exit.
 }

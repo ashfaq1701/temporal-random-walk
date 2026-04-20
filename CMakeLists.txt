@@ -54,6 +54,21 @@ if(HAS_CUDA)
         set(CMAKE_CUDA_STANDARD_REQUIRED ON)
         set(CMAKE_CUDA_ARCHITECTURES 75;80;86;89;90)
         add_definitions(-DHAS_CUDA)
+
+        # NVTX3 is header-only; ships with the CUDA Toolkit. When found,
+        # define HAS_NVTX so RAII range markers compile in. Otherwise the
+        # NvtxRange class becomes a pure no-op.
+        find_path(NVTX3_INCLUDE_DIR
+            NAMES nvtx3/nvToolsExt.h
+            PATHS ${CUDAToolkit_INCLUDE_DIRS} /usr/local/cuda/include
+            NO_DEFAULT_PATH)
+        if(NVTX3_INCLUDE_DIR)
+            message(STATUS "Found NVTX3 at ${NVTX3_INCLUDE_DIR}")
+            add_compile_definitions(HAS_NVTX=1)
+            include_directories(${NVTX3_INCLUDE_DIR})
+        else()
+            message(STATUS "NVTX3 not found; profiling annotations disabled.")
+        endif()
     else()
         set(HAS_CUDA OFF)
     endif()
@@ -88,14 +103,12 @@ if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
     )
 
     set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}
-            -maxrregcount=64           # Limit register usage
-            --default-stream per-thread # Better stream handling
             --ptxas-options=-v         # Verbose PTX assembly
             -Xptxas -dlcm=ca          # Cache all operations
             -Xcompiler=-fopenmp
     )
 
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --extended-lambda --expt-relaxed-constexpr -rdc=true")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --extended-lambda --expt-relaxed-constexpr")
 
     # For debug builds
     set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -G")

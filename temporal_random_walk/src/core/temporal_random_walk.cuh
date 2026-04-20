@@ -43,12 +43,13 @@ public:
         uint64_t global_seed = EMPTY_GLOBAL_SEED,
         bool shuffle_walk_order = DEFAULT_SHUFFLE_WALK_ORDER);
 
-    ~TemporalRandomWalk() = default;
+    ~TemporalRandomWalk();
 
     TemporalRandomWalk(const TemporalRandomWalk&) = delete;
     TemporalRandomWalk& operator=(const TemporalRandomWalk&) = delete;
-    TemporalRandomWalk(TemporalRandomWalk&&) noexcept = default;
-    TemporalRandomWalk& operator=(TemporalRandomWalk&&) noexcept = default;
+    // Move semantics need to manage stream ownership, so implement manually.
+    TemporalRandomWalk(TemporalRandomWalk&&) noexcept;
+    TemporalRandomWalk& operator=(TemporalRandomWalk&&) noexcept;
 
     // Accessors
     TemporalGraphData&       data()       { return data_; }
@@ -66,6 +67,21 @@ public:
 
 #ifdef HAS_CUDA
     const cudaDeviceProp& cuda_device_prop() const { return cuda_device_prop_; }
+
+    // Non-blocking stream owned by this instance. All GPU work inside
+    // the walk pipeline (kernel launches, thrust ops, async memcpys)
+    // should eventually flow through this stream so that concurrent
+    // instances don't serialize on the default legacy stream.
+    cudaStream_t stream() const { return stream_; }
+
+    // Block the host until any outstanding async work on stream_ has
+    // completed. Called at user-visible boundaries (e.g. before
+    // returning results to the caller) so host-observed reads are safe.
+    void sync_stream() const {
+        if (data_.use_gpu && stream_ != nullptr) {
+            cudaStreamSynchronize(stream_);
+        }
+    }
 #endif
 
     // Public methods (forward to namespace free functions)
@@ -123,6 +139,7 @@ private:
     Buffer<int> last_batch_unique_targets_{/*use_gpu=*/false};
 #ifdef HAS_CUDA
     cudaDeviceProp cuda_device_prop_{};
+    cudaStream_t   stream_{nullptr};
 #endif
 };
 

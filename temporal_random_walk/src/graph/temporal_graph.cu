@@ -13,7 +13,7 @@
 #include "../common/cuda_sort.cuh"
 #endif
 
-#include "../common/nvtx_utils.h"
+#include "../common/nvtx.cuh"
 #include "../common/comparators.cuh"
 #include "../common/parallel_algorithms.cuh"
 #include "../common/cuda_config.cuh"
@@ -181,33 +181,44 @@ HOST void temporal_graph::add_multiple_edges_std(
 
     data.latest_timestamp = max_timestamp;
 
-    // Add edges to edge data
-    edge_data::add_edges(data, sources, targets, timestamps, num_new_edges,
-                         edge_features, feature_dim);
+    {
+        NVTX_RANGE_COLORED("Append edges", nvtx_colors::edge_purple);
+        edge_data::add_edges(data, sources, targets, timestamps, num_new_edges,
+                             edge_features, feature_dim);
+    }
 
-    // Sort and merge new edges
-    sort_and_merge_edges_std(data, start_idx);
+    {
+        NVTX_RANGE_COLORED("Sort-Merge", nvtx_colors::edge_purple);
+        sort_and_merge_edges_std(data, start_idx);
+    }
 
-    // Handle time window
     if (data.max_time_capacity > 0) {
+        NVTX_RANGE_COLORED("Delete old edges", nvtx_colors::edge_purple);
         delete_old_edges_std(data);
     }
 
-    // Populate active node ids
-    edge_data::populate_active_nodes_std(data);
+    {
+        NVTX_RANGE_COLORED("Active nodes", nvtx_colors::index_blue);
+        edge_data::populate_active_nodes_std(data);
+    }
 
-    // Update timestamp groups
-    edge_data::update_timestamp_groups_std(data);
+    {
+        NVTX_RANGE_COLORED("Timestamp groups", nvtx_colors::index_blue);
+        edge_data::update_timestamp_groups_std(data);
+    }
 
     if (data.enable_temporal_node2vec) {
+        NVTX_RANGE_COLORED("Adjacency CSR", nvtx_colors::index_blue);
         edge_data::build_node_adjacency_csr_std(data);
     }
 
-    // Rebuild edge indices
-    node_edge_index::rebuild(data);
+    {
+        NVTX_RANGE_COLORED("Index Rebuild", nvtx_colors::index_blue);
+        node_edge_index::rebuild(data);
+    }
 
-    // Update temporal weights if enabled
     if (data.enable_weight_computation) {
+        NVTX_RANGE_COLORED("Temporal weights", nvtx_colors::weight_orange);
         update_temporal_weights(data);
     }
 }
@@ -461,34 +472,44 @@ HOST void temporal_graph::add_multiple_edges_cuda(
     }
     data.latest_timestamp = max_timestamp;
 
-    // Add edges. The new edge_data::add_edges takes host pointers and uses
-    // Buffer::append_from_host internally to do the H->D copy.
-    edge_data::add_edges(data, sources, targets, timestamps, num_new_edges,
-                         edge_features, feature_dim);
+    {
+        NVTX_RANGE_COLORED("Append edges", nvtx_colors::edge_purple);
+        edge_data::add_edges(data, sources, targets, timestamps, num_new_edges,
+                             edge_features, feature_dim);
+    }
 
-    // Sort and merge new edges
-    sort_and_merge_edges_cuda(data, start_idx);
+    {
+        NVTX_RANGE_COLORED("Sort-Merge", nvtx_colors::edge_purple);
+        sort_and_merge_edges_cuda(data, start_idx);
+    }
 
-    // Handle time window
     if (data.max_time_capacity > 0) {
+        NVTX_RANGE_COLORED("Delete old edges", nvtx_colors::edge_purple);
         delete_old_edges_cuda(data);
     }
 
-    // Populate active node ids
-    edge_data::populate_active_nodes_cuda(data);
+    {
+        NVTX_RANGE_COLORED("Active nodes", nvtx_colors::index_blue);
+        edge_data::populate_active_nodes_cuda(data);
+    }
 
-    // Update timestamp groups
-    edge_data::update_timestamp_groups_cuda(data);
+    {
+        NVTX_RANGE_COLORED("Timestamp groups", nvtx_colors::index_blue);
+        edge_data::update_timestamp_groups_cuda(data);
+    }
 
     if (data.enable_temporal_node2vec) {
+        NVTX_RANGE_COLORED("Adjacency CSR", nvtx_colors::index_blue);
         edge_data::build_node_adjacency_csr_cuda(data);
     }
 
-    // Rebuild edge indices
-    node_edge_index::rebuild(data);
+    {
+        NVTX_RANGE_COLORED("Index Rebuild", nvtx_colors::index_blue);
+        node_edge_index::rebuild(data);
+    }
 
-    // Update temporal weights if enabled
     if (data.enable_weight_computation) {
+        NVTX_RANGE_COLORED("Temporal weights", nvtx_colors::weight_orange);
         update_temporal_weights(data);
     }
 }
