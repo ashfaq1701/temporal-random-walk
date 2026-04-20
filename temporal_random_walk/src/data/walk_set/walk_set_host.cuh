@@ -7,6 +7,7 @@
 #include "../../common/const.cuh"
 #include "../../common/macros.cuh"
 #include "../buffer.cuh"
+#include "walk_set_view.cuh"
 
 /**
  * WalkSetHost — host-resident container of finished walks. Designed for
@@ -64,6 +65,19 @@ public:
         const Buffer<int64_t>& d_timestamps,
         const Buffer<size_t>&  d_walk_lens,
         const Buffer<int64_t>& d_edge_ids);
+
+    // Build a mutable POD view for host-side walk kernels (CPU path).
+    WalkSetView make_host_view() noexcept {
+        WalkSetView v{};
+        v.nodes              = nodes_.data();
+        v.timestamps         = timestamps_.data();
+        v.walk_lens          = walk_lens_.data();
+        v.edge_ids           = edge_ids_.data();
+        v.num_walks          = num_walks_;
+        v.max_len            = max_len_;
+        v.walk_padding_value = walk_padding_value_;
+        return v;
+    }
 
 private:
     Buffer<int>     nodes_{false};

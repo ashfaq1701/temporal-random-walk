@@ -33,67 +33,76 @@
  * Common Functions
  */
 
-HOST DEVICE size_t edge_data::size(const EdgeDataStore *edge_data) {
-    return edge_data->timestamps_size;
+HOST DEVICE size_t edge_data::size(const TemporalGraphData& data) {
+    return data.timestamps.size();
 }
 
-HOST void edge_data::set_size(EdgeDataStore *edge_data, const size_t size) {
-    edge_data->sources_size = size;
-    edge_data->targets_size = size;
-    edge_data->timestamps_size = size;
+HOST void edge_data::set_size(TemporalGraphData& data, const size_t size) {
+    data.sources.resize(size);
+    data.targets.resize(size);
+    data.timestamps.resize(size);
 
-    edge_data->edge_features_size = size * edge_data->feature_dim;
+    if (data.feature_dim > 0) {
+        data.edge_features.resize(size * data.feature_dim);
+    }
 }
 
-HOST void edge_data::add_edges(EdgeDataStore *edge_data, const int *sources, const int *targets, const int64_t *timestamps,
-                           const size_t size) {
-    edge_data::add_edges(edge_data, sources, targets, timestamps, size, nullptr, 0);
+HOST bool edge_data::empty(const TemporalGraphData& data) {
+    return data.timestamps.size() == 0;
 }
 
 HOST void edge_data::add_edges(
-    EdgeDataStore *edge_data,
-    const int *sources,
-    const int *targets,
-    const int64_t *timestamps,
-    const size_t size,
-    const float *edge_features,
+    TemporalGraphData& data,
+    const int* sources,
+    const int* targets,
+    const int64_t* timestamps,
+    const size_t num_new_edges) {
+    edge_data::add_edges(data, sources, targets, timestamps, num_new_edges, nullptr, 0);
+}
+
+HOST void edge_data::add_edges(
+    TemporalGraphData& data,
+    const int* sources,
+    const int* targets,
+    const int64_t* timestamps,
+    const size_t num_new_edges,
+    const float* edge_features,
     const size_t feature_dim) {
     if (edge_features != nullptr && feature_dim == 0) {
         throw std::runtime_error("edge_features provided but feature_dim is 0");
     }
 
-    if (edge_data->sources_size != 0 && feature_dim != edge_data->feature_dim) {
-        throw std::runtime_error("feature_dim mismatch with existing edge_data->feature_dim");
+    if (data.sources.size() != 0 && feature_dim != data.feature_dim) {
+        throw std::runtime_error("feature_dim mismatch with existing data.feature_dim");
     }
 
-    if (edge_data->sources_size == 0) {
-        edge_data->feature_dim = feature_dim;
+    if (data.sources.size() == 0) {
+        data.feature_dim = feature_dim;
     }
 
     if (edge_features == nullptr && feature_dim != 0) {
         throw std::runtime_error("feature_dim must be 0 when edge_features is not provided");
     }
 
-    if (edge_data->feature_dim > 0 && edge_features == nullptr && size > 0) {
+    if (data.feature_dim > 0 && edge_features == nullptr && num_new_edges > 0) {
         throw std::runtime_error("edge features enabled; non-empty ingestion must provide edge_features");
     }
 
-    append_memory(&edge_data->sources, edge_data->sources_size, sources, size, edge_data->use_gpu);
-    append_memory(&edge_data->targets, edge_data->targets_size, targets, size, edge_data->use_gpu);
-    append_memory(&edge_data->timestamps, edge_data->timestamps_size, timestamps, size, edge_data->use_gpu);
+    data.sources.append_from_host(sources, num_new_edges);
+    data.targets.append_from_host(targets, num_new_edges);
+    data.timestamps.append_from_host(timestamps, num_new_edges);
 
-    if (edge_data->feature_dim > 0 && edge_features != nullptr && size > 0) {
-        const size_t feature_values = size * edge_data->feature_dim;
-        append_memory(&edge_data->edge_features, edge_data->edge_features_size, edge_features, feature_values, false);
+    if (data.feature_dim > 0 && edge_features != nullptr && num_new_edges > 0) {
+        const size_t feature_values = num_new_edges * data.feature_dim;
+        data.edge_features.append_from_host(edge_features, feature_values);
     }
 }
 
-HOST DataBlock<Edge> edge_data::get_edges(const EdgeDataStore *edge_data) {
-    // Always return CPU-resident edge snapshots. This is required because
-    // Edge::features points to CPU-resident edge_features rows.
-    DataBlock<Edge> result(edge_data->timestamps_size, false);
+HOST std::vector<Edge> edge_data::get_edges(const TemporalGraphData& data) {
+    const size_t n = data.timestamps.size();
+    std::vector<Edge> result(n);
 
-    if (edge_data->timestamps_size == 0) {
+    if (n == 0) {
         return result;
     }
 
@@ -101,93 +110,96 @@ HOST DataBlock<Edge> edge_data::get_edges(const EdgeDataStore *edge_data) {
     std::vector<int> host_targets;
     std::vector<int64_t> host_timestamps;
 
-    const int* sources = edge_data->sources;
-    const int* targets = edge_data->targets;
-    const int64_t* timestamps = edge_data->timestamps;
+    const int* sources = data.sources.data();
+    const int* targets = data.targets.data();
+    const int64_t* timestamps = data.timestamps.data();
 
     #ifdef HAS_CUDA
-    if (edge_data->use_gpu) {
-        host_sources.resize(edge_data->sources_size);
-        host_targets.resize(edge_data->targets_size);
-        host_timestamps.resize(edge_data->timestamps_size);
-
-        copy_memory(host_sources.data(), edge_data->sources, edge_data->sources_size, false, true);
-        copy_memory(host_targets.data(), edge_data->targets, edge_data->targets_size, false, true);
-        copy_memory(host_timestamps.data(), edge_data->timestamps, edge_data->timestamps_size, false, true);
+    if (data.use_gpu) {
+        host_sources = data.sources.to_host_vector();
+        host_targets = data.targets.to_host_vector();
+        host_timestamps = data.timestamps.to_host_vector();
 
         sources = host_sources.data();
         targets = host_targets.data();
         timestamps = host_timestamps.data();
-    } else
-    #endif
-    {
-        // CPU pointers already assigned above.
     }
+    #endif
 
-    for (size_t i = 0; i < edge_data->timestamps_size; i++) {
+    for (size_t i = 0; i < n; i++) {
         const float* edge_features = nullptr;
         int edge_feature_dim = 0;
 
-        if (edge_data->feature_dim > 0 && edge_data->edge_features != nullptr) {
-            edge_features = edge_data->edge_features + (i * edge_data->feature_dim);
-            edge_feature_dim = static_cast<int>(edge_data->feature_dim);
+        if (data.feature_dim > 0 && data.edge_features.data() != nullptr) {
+            edge_features = data.edge_features.data() + (i * data.feature_dim);
+            edge_feature_dim = static_cast<int>(data.feature_dim);
         }
 
-        result.data[i] = Edge{sources[i], targets[i], timestamps[i], edge_features, edge_feature_dim};
+        result[i] = Edge{sources[i], targets[i], timestamps[i], edge_features, edge_feature_dim};
     }
 
     return result;
 }
 
-HOST DataBlock<int> edge_data::get_active_node_ids(const EdgeDataStore *edge_data) {
+HOST std::vector<int> edge_data::get_active_node_ids(const TemporalGraphData& data) {
+    const size_t n = data.active_node_ids.size();
     size_t active_count = 0;
 
     #ifdef HAS_CUDA
-    if (edge_data->use_gpu) {
-        const thrust::device_ptr<int> d_active_nodes(edge_data->active_node_ids);
+    if (data.use_gpu) {
+        const thrust::device_ptr<int> d_active_nodes(
+            const_cast<int*>(data.active_node_ids.data()));
         active_count = thrust::count(
             DEVICE_EXECUTION_POLICY,
             d_active_nodes,
-            d_active_nodes + static_cast<long>(edge_data->active_node_ids_size),
+            d_active_nodes + static_cast<long>(n),
             1
         );
         CUDA_KERNEL_CHECK("After thrust count in get_active_node_ids");
     } else
     #endif
     {
-        for (int i = 0; i < edge_data->active_node_ids_size; i++) {
-            if (edge_data->active_node_ids[i] == 1) {
+        for (size_t i = 0; i < n; i++) {
+            if (data.active_node_ids.data()[i] == 1) {
                 active_count++;
             }
         }
     }
 
-    DataBlock<int> result(active_count, edge_data->use_gpu);
+    std::vector<int> result(active_count);
     if (active_count == 0) {
         return result;
     }
 
     #ifdef HAS_CUDA
-    if (edge_data->use_gpu) {
-        const thrust::device_ptr<int> d_active_nodes(edge_data->active_node_ids);
-        const thrust::device_ptr<int> d_result(result.data);
+    if (data.use_gpu) {
+        Buffer<int> d_result(true);
+        d_result.resize(active_count);
+
+        const thrust::device_ptr<int> d_active_nodes(
+            const_cast<int*>(data.active_node_ids.data()));
+        const thrust::device_ptr<int> d_result_ptr(d_result.data());
 
         thrust::copy_if(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<int>(0),
-            thrust::make_counting_iterator<int>(static_cast<int>(edge_data->active_node_ids_size)),
+            thrust::make_counting_iterator<int>(static_cast<int>(n)),
             d_active_nodes,
-            d_result,
+            d_result_ptr,
             [] __device__ (const int val) { return val == 1; }
         );
         CUDA_KERNEL_CHECK("After thrust copy_if in get_active_node_ids");
+
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+            result.data(), d_result.data(),
+            active_count * sizeof(int), cudaMemcpyDeviceToHost));
     } else
     #endif
     {
         size_t index = 0;
-        for (int i = 0; i < edge_data->active_node_ids_size; i++) {
-            if (edge_data->active_node_ids[i] == 1) {
-                result.data[index++] = i;
+        for (size_t i = 0; i < n; i++) {
+            if (data.active_node_ids.data()[i] == 1) {
+                result[index++] = static_cast<int>(i);
             }
         }
     }
@@ -195,24 +207,26 @@ HOST DataBlock<int> edge_data::get_active_node_ids(const EdgeDataStore *edge_dat
     return result;
 }
 
-HOST size_t edge_data::active_node_count(const EdgeDataStore *edge_data) {
+HOST size_t edge_data::active_node_count(const TemporalGraphData& data) {
+    const size_t n = data.active_node_ids.size();
     size_t count = 0;
 
     #ifdef HAS_CUDA
-    if (edge_data->use_gpu) {
-        const thrust::device_ptr<int> d_active_nodes(edge_data->active_node_ids);
+    if (data.use_gpu) {
+        const thrust::device_ptr<int> d_active_nodes(
+            const_cast<int*>(data.active_node_ids.data()));
         count = thrust::count(
             DEVICE_EXECUTION_POLICY,
             d_active_nodes,
-            d_active_nodes + static_cast<long>(edge_data->active_node_ids_size),
+            d_active_nodes + static_cast<long>(n),
             1
         );
         CUDA_KERNEL_CHECK("After thrust count in active_node_count");
     } else
     #endif
     {
-        for (size_t i = 0; i < edge_data->active_node_ids_size; i++) {
-            if (edge_data->active_node_ids[i] == 1) {
+        for (size_t i = 0; i < n; i++) {
+            if (data.active_node_ids.data()[i] == 1) {
                 count++;
             }
         }
@@ -221,12 +235,29 @@ HOST size_t edge_data::active_node_count(const EdgeDataStore *edge_data) {
     return count;
 }
 
-HOST void edge_data::populate_active_nodes_std(EdgeDataStore *edge_data) {
-    const size_t num_edges = size(edge_data);
+HOST bool edge_data::is_node_active(const TemporalGraphData& data, const int node_id) {
+    if (node_id < 0 || static_cast<size_t>(node_id) >= data.active_node_ids.size()) {
+        return false;
+    }
+
+    #ifdef HAS_CUDA
+    if (data.use_gpu) {
+        int is_active;
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+            &is_active, data.active_node_ids.data() + node_id,
+            sizeof(int), cudaMemcpyDeviceToHost));
+        return is_active == 1;
+    }
+    #endif
+
+    return data.active_node_ids.data()[node_id] == 1;
+}
+
+HOST void edge_data::populate_active_nodes_std(TemporalGraphData& data) {
+    const size_t num_edges = size(data);
     if (num_edges == 0) {
-        edge_data->max_node_id = -1;
-        clear_memory(&edge_data->active_node_ids, edge_data->use_gpu);
-        edge_data->active_node_ids_size = 0;
+        data.max_node_id = -1;
+        data.active_node_ids.shrink_to_fit_empty();
         return;
     }
 
@@ -234,61 +265,57 @@ HOST void edge_data::populate_active_nodes_std(EdgeDataStore *edge_data) {
 
     // Parallel reduction to find the max node id
     #pragma omp parallel for reduction(max:max_node_id)
-    for (size_t i = 0; i < edge_data->sources_size; i++) {
-        int src_node = edge_data->sources[i];
-        int tgt_node = edge_data->targets[i];
+    for (size_t i = 0; i < data.sources.size(); i++) {
+        int src_node = data.sources.data()[i];
+        int tgt_node = data.targets.data()[i];
         max_node_id = std::max({max_node_id, src_node, tgt_node});
     }
 
-    edge_data->max_node_id = max_node_id;
+    data.max_node_id = max_node_id;
 
-    allocate_memory(&edge_data->active_node_ids, max_node_id + 1, edge_data->use_gpu);
-    edge_data->active_node_ids_size = max_node_id + 1;
+    data.active_node_ids.resize(max_node_id + 1);
+    data.active_node_ids.fill(0);
 
-    fill_memory(edge_data->active_node_ids, max_node_id + 1, 0, edge_data->use_gpu);
+    int* active = data.active_node_ids.data();
+    const int* sources = data.sources.data();
+    const int* targets = data.targets.data();
 
     // Parallel setting of active node flags
     #pragma omp parallel for
-    for (size_t i = 0; i < size(edge_data); i++) {
-        const int src = edge_data->sources[i];
-        const int tgt = edge_data->targets[i];
+    for (size_t i = 0; i < size(data); i++) {
+        const int src = sources[i];
+        const int tgt = targets[i];
 
-        edge_data->active_node_ids[src] = 1;
-        edge_data->active_node_ids[tgt] = 1;
+        active[src] = 1;
+        active[tgt] = 1;
     }
 }
 
-HOST void edge_data::build_node_adjacency_csr_std(EdgeDataStore* edge_data) {
-    const size_t n = edge_data->active_node_ids_size;
-    const size_t m = size(edge_data);
+HOST void edge_data::build_node_adjacency_csr_std(TemporalGraphData& data) {
+    const size_t n = data.active_node_ids.size();
+    const size_t m = size(data);
 
     // Allocate CSR arrays (host)
-    resize_memory(&edge_data->node_adj_offsets,
-                  edge_data->node_adj_offsets_size,
-                  n + 1,
-                  edge_data->use_gpu);
-    edge_data->node_adj_offsets_size = n + 1;
-
-    resize_memory(&edge_data->node_adj_neighbors,
-                  edge_data->node_adj_neighbors_size,
-                  2 * m,
-                  edge_data->use_gpu);
-    edge_data->node_adj_neighbors_size = 2 * m;
+    data.node_adj_offsets.resize(n + 1);
+    data.node_adj_neighbors.resize(2 * m);
 
     // ---------------------------------------------------------------------
     // Empty graph
     // ---------------------------------------------------------------------
     if (n == 0 || m == 0) {
+        size_t* offsets = data.node_adj_offsets.data();
         #pragma omp parallel for
         for (size_t i = 0; i < n + 1; ++i) {
-            edge_data->node_adj_offsets[i] = 0;
+            offsets[i] = 0;
         }
-        edge_data->node_adj_neighbors_size = 0;
+        data.node_adj_neighbors.resize(0);
         return;
     }
 
-    const int* sources = edge_data->sources;
-    const int* targets = edge_data->targets;
+    const int* sources = data.sources.data();
+    const int* targets = data.targets.data();
+    size_t* offsets = data.node_adj_offsets.data();
+    int* neighbors = data.node_adj_neighbors.data();
 
     // ---------------------------------------------------------------------
     // 1) Degree counting
@@ -312,7 +339,7 @@ HOST void edge_data::build_node_adjacency_csr_std(EdgeDataStore* edge_data) {
     // ---------------------------------------------------------------------
     // 2) Offsets via TBB parallel_scan
     // ---------------------------------------------------------------------
-    edge_data->node_adj_offsets[0] = 0;
+    offsets[0] = 0;
 
     tbb::parallel_scan(
         tbb::blocked_range<size_t>(0, n),
@@ -321,7 +348,7 @@ HOST void edge_data::build_node_adjacency_csr_std(EdgeDataStore* edge_data) {
             for (size_t i = r.begin(); i != r.end(); ++i) {
                 const size_t d = degree[i].load(std::memory_order_relaxed);
                 if (is_final) {
-                    edge_data->node_adj_offsets[i + 1] = sum + d;
+                    offsets[i + 1] = sum + d;
                 }
                 sum += d;
             }
@@ -337,14 +364,12 @@ HOST void edge_data::build_node_adjacency_csr_std(EdgeDataStore* edge_data) {
 
     #pragma omp parallel for
     for (size_t i = 0; i < n; ++i) {
-        cursor[i].store(edge_data->node_adj_offsets[i], std::memory_order_relaxed);
+        cursor[i].store(offsets[i], std::memory_order_relaxed);
     }
 
     // ---------------------------------------------------------------------
     // 4) Fill neighbors
     // ---------------------------------------------------------------------
-    int* neighbors = edge_data->node_adj_neighbors;
-
     #pragma omp parallel for
     for (size_t i = 0; i < m; ++i) {
         const int u = sources[i];
@@ -364,8 +389,8 @@ HOST void edge_data::build_node_adjacency_csr_std(EdgeDataStore* edge_data) {
     // ---------------------------------------------------------------------
     #pragma omp parallel for schedule(dynamic)
     for (size_t node = 0; node < n; ++node) {
-        const size_t start = edge_data->node_adj_offsets[node];
-        const size_t end   = edge_data->node_adj_offsets[node + 1];
+        const size_t start = offsets[node];
+        const size_t end   = offsets[node + 1];
 
         if (end > start + 1) {
             tbb::parallel_sort(neighbors + start, neighbors + end);
@@ -373,21 +398,18 @@ HOST void edge_data::build_node_adjacency_csr_std(EdgeDataStore* edge_data) {
     }
 }
 
-HOST void edge_data::update_timestamp_groups_std(EdgeDataStore* edge_data) {
-    if (edge_data->timestamps_size == 0) {
-        clear_memory(&edge_data->timestamp_group_offsets, edge_data->use_gpu);
-        edge_data->timestamp_group_offsets_size = 0;
+HOST void edge_data::update_timestamp_groups_std(TemporalGraphData& data) {
+    if (data.timestamps.size() == 0) {
+        data.timestamp_group_offsets.shrink_to_fit_empty();
+        data.unique_timestamps.shrink_to_fit_empty();
 
-        clear_memory(&edge_data->unique_timestamps, edge_data->use_gpu);
-        edge_data->unique_timestamps_size = 0;
-
-        edge_data->max_node_id = -1;
-        clear_memory(&edge_data->active_node_ids, edge_data->use_gpu);
-        edge_data->active_node_ids_size = 0;
+        data.max_node_id = -1;
+        data.active_node_ids.shrink_to_fit_empty();
         return;
     }
 
-    const size_t n = edge_data->timestamps_size;
+    const size_t n = data.timestamps.size();
+    const int64_t* timestamps = data.timestamps.data();
 
     // Step 1: Flag where timestamps change
     std::vector<int> flags(n, 0);
@@ -395,7 +417,7 @@ HOST void edge_data::update_timestamp_groups_std(EdgeDataStore* edge_data) {
 
     #pragma omp parallel for
     for (size_t i = 1; i < n; ++i) {
-        flags[i] = (edge_data->timestamps[i] != edge_data->timestamps[i - 1]) ? 1 : 0;
+        flags[i] = (timestamps[i] != timestamps[i - 1]) ? 1 : 0;
     }
 
     // Step 2: Compute prefix sum into raw buffer (exclusive scan)
@@ -405,69 +427,52 @@ HOST void edge_data::update_timestamp_groups_std(EdgeDataStore* edge_data) {
     const int num_groups = prefix_sum[n - 1] + flags[n - 1];
 
     // Step 3: Resize output arrays
-    resize_memory(&edge_data->timestamp_group_offsets,
-                  edge_data->timestamp_group_offsets_size,
-                  num_groups + 1,
-                  edge_data->use_gpu);
-    edge_data->timestamp_group_offsets_size = num_groups + 1;
+    data.timestamp_group_offsets.resize(num_groups + 1);
+    data.unique_timestamps.resize(num_groups);
 
-    resize_memory(&edge_data->unique_timestamps,
-                  edge_data->unique_timestamps_size,
-                  num_groups,
-                  edge_data->use_gpu);
-    edge_data->unique_timestamps_size = num_groups;
+    size_t* group_offsets = data.timestamp_group_offsets.data();
+    int64_t* unique_ts = data.unique_timestamps.data();
 
     // Step 4: Write group offsets and unique timestamps
     #pragma omp parallel for
     for (size_t i = 0; i < n; ++i) {
         if (flags[i]) {
             const int idx = prefix_sum[i];
-            edge_data->timestamp_group_offsets[idx] = i;
-            edge_data->unique_timestamps[idx] = edge_data->timestamps[i];
+            group_offsets[idx] = i;
+            unique_ts[idx] = timestamps[i];
         }
     }
 
     // Step 5: Final group offset (end marker)
-    edge_data->timestamp_group_offsets[num_groups] = n;
+    group_offsets[num_groups] = n;
 
     // Step 6: Activate nodes
-    populate_active_nodes_std(edge_data);
+    populate_active_nodes_std(data);
 }
 
-HOST void edge_data::update_temporal_weights_std(EdgeDataStore* edge_data, const double timescale_bound) {
-    if (edge_data->timestamps_size == 0) {
-        clear_memory(&edge_data->forward_cumulative_weights_exponential, edge_data->use_gpu);
-        edge_data->forward_cumulative_weights_exponential_size = 0;
-
-        clear_memory(&edge_data->backward_cumulative_weights_exponential, edge_data->use_gpu);
-        edge_data->backward_cumulative_weights_exponential_size = 0;
+HOST void edge_data::update_temporal_weights_std(
+    TemporalGraphData& data, const double timescale_bound) {
+    if (data.timestamps.size() == 0) {
+        data.forward_cumulative_weights_exponential.shrink_to_fit_empty();
+        data.backward_cumulative_weights_exponential.shrink_to_fit_empty();
         return;
     }
 
-    const int64_t min_timestamp = edge_data->timestamps[0];
-    const int64_t max_timestamp = edge_data->timestamps[edge_data->timestamps_size - 1];
+    const int64_t* timestamps = data.timestamps.data();
+    const int64_t min_timestamp = timestamps[0];
+    const int64_t max_timestamp = timestamps[data.timestamps.size() - 1];
     const auto time_diff = static_cast<double>(max_timestamp - min_timestamp);
     const double time_scale = (timescale_bound > 0 && time_diff > 0) ? timescale_bound / time_diff : 1.0;
 
-    const size_t num_groups = get_timestamp_group_count(edge_data);
+    const size_t num_groups = get_timestamp_group_count(data);
 
     // Resize output arrays
-    resize_memory(&edge_data->forward_cumulative_weights_exponential,
-                  edge_data->forward_cumulative_weights_exponential_size,
-                  num_groups,
-                  edge_data->use_gpu);
-    edge_data->forward_cumulative_weights_exponential_size = num_groups;
+    data.forward_cumulative_weights_exponential.resize(num_groups);
+    data.backward_cumulative_weights_exponential.resize(num_groups);
 
-    resize_memory(&edge_data->backward_cumulative_weights_exponential,
-                  edge_data->backward_cumulative_weights_exponential_size,
-                  num_groups,
-                  edge_data->use_gpu);
-    edge_data->backward_cumulative_weights_exponential_size = num_groups;
-
-    auto* forward = edge_data->forward_cumulative_weights_exponential;
-    auto* backward = edge_data->backward_cumulative_weights_exponential;
-    const auto* timestamps = edge_data->timestamps;
-    const auto* offsets = edge_data->timestamp_group_offsets;
+    auto* forward = data.forward_cumulative_weights_exponential.data();
+    auto* backward = data.backward_cumulative_weights_exponential.data();
+    const auto* offsets = data.timestamp_group_offsets.data();
 
     double forward_sum = 0.0, backward_sum = 0.0;
 
@@ -509,17 +514,16 @@ HOST void edge_data::update_temporal_weights_std(EdgeDataStore* edge_data, const
 
 #ifdef HAS_CUDA
 
-HOST void edge_data::populate_active_nodes_cuda(EdgeDataStore *edge_data) {
-    const size_t num_edges = size(edge_data);
+HOST void edge_data::populate_active_nodes_cuda(TemporalGraphData& data) {
+    const size_t num_edges = size(data);
     if (num_edges == 0) {
-        edge_data->max_node_id = -1;
-        clear_memory(&edge_data->active_node_ids, edge_data->use_gpu);
-        edge_data->active_node_ids_size = 0;
+        data.max_node_id = -1;
+        data.active_node_ids.shrink_to_fit_empty();
         return;
     }
 
-    const thrust::device_ptr<int> d_sources(edge_data->sources);
-    const thrust::device_ptr<int> d_targets(edge_data->targets);
+    const thrust::device_ptr<int> d_sources(data.sources.data());
+    const thrust::device_ptr<int> d_targets(data.targets.data());
 
     const int max_source = thrust::reduce(
         DEVICE_EXECUTION_POLICY,
@@ -538,14 +542,12 @@ HOST void edge_data::populate_active_nodes_cuda(EdgeDataStore *edge_data) {
     );
 
     const int max_node_id = std::max(max_source, max_target);
-    edge_data->max_node_id = max_node_id;
+    data.max_node_id = max_node_id;
 
-    allocate_memory(&edge_data->active_node_ids, max_node_id + 1, edge_data->use_gpu);
-    edge_data->active_node_ids_size = max_node_id + 1;
+    data.active_node_ids.resize(max_node_id + 1);
+    data.active_node_ids.fill(0);
 
-    fill_memory(edge_data->active_node_ids, max_node_id + 1, 0, edge_data->use_gpu);
-
-    thrust::device_ptr<int> d_active_nodes(edge_data->active_node_ids);
+    thrust::device_ptr<int> d_active_nodes(data.active_node_ids.data());
 
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
@@ -568,29 +570,19 @@ HOST void edge_data::populate_active_nodes_cuda(EdgeDataStore *edge_data) {
     CUDA_KERNEL_CHECK("After thrust for_each targets in populate_active_nodes_cuda");
 }
 
-HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
-    const size_t n = edge_data->active_node_ids_size;
-    const size_t m = size(edge_data);
+HOST void edge_data::build_node_adjacency_csr_cuda(TemporalGraphData& data) {
+    const size_t n = data.active_node_ids.size();
+    const size_t m = size(data);
 
     // Allocate CSR arrays (device)
-    resize_memory(&edge_data->node_adj_offsets,
-                  edge_data->node_adj_offsets_size,
-                  n + 1,
-                  edge_data->use_gpu);
-    edge_data->node_adj_offsets_size = n + 1;
-
-    resize_memory(&edge_data->node_adj_neighbors,
-                  edge_data->node_adj_neighbors_size,
-                  2 * m,
-                  edge_data->use_gpu);
-    edge_data->node_adj_neighbors_size = 2 * m;
+    data.node_adj_offsets.resize(n + 1);
+    data.node_adj_neighbors.resize(2 * m);
 
     // Handle empty graph
     if (n == 0 || m == 0) {
-        // offsets[0] = 0 (and n==0 => size is 1)
         thrust::fill_n(
             DEVICE_EXECUTION_POLICY,
-            thrust::device_pointer_cast(edge_data->node_adj_offsets),
+            thrust::device_pointer_cast(data.node_adj_offsets.data()),
             static_cast<long>(n + 1),
             static_cast<size_t>(0)
         );
@@ -599,10 +591,10 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
     }
 
     // Device pointers to input edges and output CSR arrays
-    const auto d_sources   = thrust::device_pointer_cast(edge_data->sources);
-    const auto d_targets   = thrust::device_pointer_cast(edge_data->targets);
-    const auto d_offsets   = thrust::device_pointer_cast(edge_data->node_adj_offsets);
-    const auto d_neighbors = thrust::device_pointer_cast(edge_data->node_adj_neighbors);
+    const auto d_sources   = thrust::device_pointer_cast(data.sources.data());
+    const auto d_targets   = thrust::device_pointer_cast(data.targets.data());
+    const auto d_offsets   = thrust::device_pointer_cast(data.node_adj_offsets.data());
+    const auto d_neighbors = thrust::device_pointer_cast(data.node_adj_neighbors.data());
 
     // ---------------------------------------------------------------------
     // 1) Degree counting (device): degree[u]++, degree[v]++
@@ -619,7 +611,6 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
         [d_sources, d_targets, d_degree_raw] __device__ (const size_t i) {
             const int u = d_sources[static_cast<long>(i)];
             const int v = d_targets[static_cast<long>(i)];
-            // Assumes u and v are valid dense node IDs in [0, n).
             atomicAdd(d_degree_raw + u, 1u);
             atomicAdd(d_degree_raw + v, 1u);
         }
@@ -650,12 +641,9 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
 
     // ---------------------------------------------------------------------
     // 3) Cursor: initialize from offsets[0..n)
-    //    cursor[u] starts at offsets[u], then atomicAdd during fill.
     // ---------------------------------------------------------------------
     thrust::device_vector<unsigned int> cursor(n, 0u);
 
-    // Copy offsets[0..n) into cursor as unsigned int.
-    // Note: This assumes offsets fit into 32-bit (true if 2m fits in uint32).
     thrust::transform(
         DEVICE_EXECUTION_POLICY,
         d_offsets,
@@ -689,15 +677,11 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
 
     // ---------------------------------------------------------------------
     // 5) GPU segmented sort (thrust-only, no loops)
-    //    Build key array node_ids[i] = owning node of neighbors[i],
-    //    then sort (node_id, neighbor) pairs lexicographically.
     // ---------------------------------------------------------------------
     const auto nnz = static_cast<size_t>(2 * m);
 
     thrust::device_vector<int> node_ids(nnz);
 
-    // node_ids[pos] = upper_bound(offsets, pos) - 1
-    // Search range must be offsets[0..n] inclusive => n+1 elements.
     thrust::upper_bound(
         DEVICE_EXECUTION_POLICY,
         d_offsets,
@@ -708,7 +692,6 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
     );
     CUDA_KERNEL_CHECK("After thrust upper_bound in build_node_adjacency_csr_cuda");
 
-    // upper_bound returns (node+1); subtract 1 to get node id
     thrust::transform(
         DEVICE_EXECUTION_POLICY,
         node_ids.begin(),
@@ -718,7 +701,6 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
     );
     CUDA_KERNEL_CHECK("After node_ids subtract-one transform in build_node_adjacency_csr_cuda");
 
-    // Sort pairs (node_id, neighbor)
     const auto zipped_begin = thrust::make_zip_iterator(
         thrust::make_tuple(
             node_ids.begin(),
@@ -734,31 +716,24 @@ HOST void edge_data::build_node_adjacency_csr_cuda(EdgeDataStore *edge_data) {
     CUDA_KERNEL_CHECK("After thrust segmented sort (key,neighbor) in build_node_adjacency_csr_cuda");
 }
 
+HOST void edge_data::update_timestamp_groups_cuda(TemporalGraphData& data) {
+    if (data.timestamps.size() == 0) {
+        data.timestamp_group_offsets.shrink_to_fit_empty();
+        data.unique_timestamps.shrink_to_fit_empty();
 
-HOST void edge_data::update_timestamp_groups_cuda(EdgeDataStore *edge_data) {
-    if (edge_data->timestamps_size == 0) {
-        // Just clear memory and update sizes
-        clear_memory(&edge_data->timestamp_group_offsets, edge_data->use_gpu);
-        edge_data->timestamp_group_offsets_size = 0;
-
-        clear_memory(&edge_data->unique_timestamps, edge_data->use_gpu);
-        edge_data->unique_timestamps_size = 0;
-
-        edge_data->max_node_id = -1;
-        clear_memory(&edge_data->active_node_ids, edge_data->use_gpu);
-        edge_data->active_node_ids_size = 0;
+        data.max_node_id = -1;
+        data.active_node_ids.shrink_to_fit_empty();
         return;
     }
 
-    const size_t n = edge_data->timestamps_size;
+    const size_t n = data.timestamps.size();
 
-    // Create flags vector on device
-    int *d_flags = nullptr;
-    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_flags, n * sizeof(int)));
+    // Scratch flags buffer (device, RAII-freed)
+    Buffer<int> d_flags(true);
+    d_flags.resize(n);
 
-    // Wrap raw pointers with thrust device pointers for algorithm use
-    const thrust::device_ptr<int64_t> d_timestamps(edge_data->timestamps);
-    const thrust::device_ptr<int> d_flags_ptr(d_flags);
+    const thrust::device_ptr<int64_t> d_timestamps(data.timestamps.data());
+    const thrust::device_ptr<int> d_flags_ptr(d_flags.data());
 
     // Compute flags: 1 where timestamp changes, 0 otherwise
     thrust::transform(
@@ -779,23 +754,11 @@ HOST void edge_data::update_timestamp_groups_cuda(EdgeDataStore *edge_data) {
     CUDA_KERNEL_CHECK("After thrust reduce in update_timestamp_groups_cuda");
 
     // Resize output arrays
-    resize_memory(
-        &edge_data->timestamp_group_offsets,
-        edge_data->timestamp_group_offsets_size,
-        num_groups + 1,
-        edge_data->use_gpu);
-    edge_data->timestamp_group_offsets_size = num_groups + 1;
+    data.timestamp_group_offsets.resize(num_groups + 1);
+    data.unique_timestamps.resize(num_groups);
 
-    resize_memory(
-        &edge_data->unique_timestamps,
-        edge_data->unique_timestamps_size,
-        num_groups,
-        edge_data->use_gpu);
-    edge_data->unique_timestamps_size = num_groups;
-
-    // Wrap pointers for algorithm use
-    const thrust::device_ptr<size_t> d_group_offsets(edge_data->timestamp_group_offsets);
-    const thrust::device_ptr<int64_t> d_unique_timestamps(edge_data->unique_timestamps);
+    const thrust::device_ptr<size_t> d_group_offsets(data.timestamp_group_offsets.data());
+    const thrust::device_ptr<int64_t> d_unique_timestamps(data.unique_timestamps.data());
 
     // Find positions of group boundaries
     thrust::copy_if(
@@ -821,60 +784,46 @@ HOST void edge_data::update_timestamp_groups_cuda(EdgeDataStore *edge_data) {
         [] HOST DEVICE (const int flag) { return flag == 1; });
     CUDA_KERNEL_CHECK("After thrust copy_if unique timestamps in update_timestamp_groups_cuda");
 
-    // Free temporary memory
-    CUDA_CHECK_AND_CLEAR(cudaFree(d_flags));
-
-    populate_active_nodes_cuda(edge_data);
+    populate_active_nodes_cuda(data);
 }
 
-HOST void edge_data::update_temporal_weights_cuda(EdgeDataStore *edge_data, double timescale_bound) {
-    if (edge_data->timestamps_size == 0) {
-        clear_memory(&edge_data->forward_cumulative_weights_exponential, edge_data->use_gpu);
-        edge_data->forward_cumulative_weights_exponential_size = 0;
-
-        clear_memory(&edge_data->backward_cumulative_weights_exponential, edge_data->use_gpu);
-        edge_data->backward_cumulative_weights_exponential_size = 0;
+HOST void edge_data::update_temporal_weights_cuda(
+    TemporalGraphData& data, const double timescale_bound) {
+    if (data.timestamps.size() == 0) {
+        data.forward_cumulative_weights_exponential.shrink_to_fit_empty();
+        data.backward_cumulative_weights_exponential.shrink_to_fit_empty();
         return;
     }
 
+    const size_t n = data.timestamps.size();
+
     int64_t min_timestamp, max_timestamp;
-    CUDA_CHECK_AND_CLEAR(cudaMemcpy(&min_timestamp, edge_data->timestamps, sizeof(int64_t), cudaMemcpyDeviceToHost))
-    ;
-    CUDA_CHECK_AND_CLEAR(
-        cudaMemcpy(&max_timestamp, edge_data->timestamps + (edge_data->timestamps_size - 1), sizeof(int64_t),
-            cudaMemcpyDeviceToHost));
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+        &min_timestamp, data.timestamps.data(),
+        sizeof(int64_t), cudaMemcpyDeviceToHost));
+    CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+        &max_timestamp, data.timestamps.data() + (n - 1),
+        sizeof(int64_t), cudaMemcpyDeviceToHost));
 
     const auto time_diff = static_cast<double>(max_timestamp - min_timestamp);
     const double time_scale = (timescale_bound > 0 && time_diff > 0) ? timescale_bound / time_diff : 1.0;
 
-    const size_t num_groups = get_timestamp_group_count(edge_data);
+    const size_t num_groups = get_timestamp_group_count(data);
 
-    // Allocate memory for the weights
-    resize_memory(
-        &edge_data->forward_cumulative_weights_exponential,
-        edge_data->forward_cumulative_weights_exponential_size,
-        num_groups,
-        edge_data->use_gpu);
-    edge_data->forward_cumulative_weights_exponential_size = num_groups;
+    // Allocate output arrays
+    data.forward_cumulative_weights_exponential.resize(num_groups);
+    data.backward_cumulative_weights_exponential.resize(num_groups);
 
-    resize_memory(
-        &edge_data->backward_cumulative_weights_exponential,
-        edge_data->backward_cumulative_weights_exponential_size,
-        num_groups,
-        edge_data->use_gpu);
-    edge_data->backward_cumulative_weights_exponential_size = num_groups;
+    // Scratch buffers for unnormalized weights (device, RAII-freed)
+    Buffer<double> d_forward_weights(true);
+    d_forward_weights.resize(num_groups);
+    Buffer<double> d_backward_weights(true);
+    d_backward_weights.resize(num_groups);
 
-    // Allocate temporary memory for unnormalized weights
-    double *d_forward_weights = nullptr;
-    double *d_backward_weights = nullptr;
-    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_forward_weights, num_groups * sizeof(double)));
-    CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_backward_weights, num_groups * sizeof(double)));
-
-    // Wrap raw pointers with thrust device pointers
-    thrust::device_ptr<int64_t> d_timestamps(edge_data->timestamps);
-    thrust::device_ptr<size_t> d_offsets(edge_data->timestamp_group_offsets);
-    thrust::device_ptr<double> d_forward_weights_ptr(d_forward_weights);
-    thrust::device_ptr<double> d_backward_weights_ptr(d_backward_weights);
+    thrust::device_ptr<int64_t> d_timestamps(data.timestamps.data());
+    thrust::device_ptr<size_t> d_offsets(data.timestamp_group_offsets.data());
+    thrust::device_ptr<double> d_forward_weights_ptr(d_forward_weights.data());
+    thrust::device_ptr<double> d_backward_weights_ptr(d_backward_weights.data());
 
     // Calculate weights
     thrust::transform(
@@ -942,9 +891,10 @@ HOST void edge_data::update_temporal_weights_cuda(EdgeDataStore *edge_data, doub
     );
     CUDA_KERNEL_CHECK("After thrust transform backward weight normalization in update_temporal_weights_cuda");
 
-    // Wrap result pointers
-    thrust::device_ptr<double> d_forward_cumulative(edge_data->forward_cumulative_weights_exponential);
-    thrust::device_ptr<double> d_backward_cumulative(edge_data->backward_cumulative_weights_exponential);
+    thrust::device_ptr<double> d_forward_cumulative(
+        data.forward_cumulative_weights_exponential.data());
+    thrust::device_ptr<double> d_backward_cumulative(
+        data.backward_cumulative_weights_exponential.data());
 
     // Compute cumulative sums
     thrust::inclusive_scan(
@@ -962,163 +912,35 @@ HOST void edge_data::update_temporal_weights_cuda(EdgeDataStore *edge_data, doub
         d_backward_cumulative
     );
     CUDA_KERNEL_CHECK("After thrust inclusive_scan backward weights in update_temporal_weights_cuda");
-
-    // Free temporary memory
-    CUDA_CHECK_AND_CLEAR(cudaFree(d_forward_weights));
-    CUDA_CHECK_AND_CLEAR(cudaFree(d_backward_weights));
-}
-
-HOST EdgeDataStore* edge_data::to_device_ptr(const EdgeDataStore *edge_data) {
-    // Create a new EdgeData object on the device
-    EdgeDataStore *device_edge_data;
-    CUDA_CHECK_AND_CLEAR(cudaMalloc(&device_edge_data, sizeof(EdgeDataStore)));
-
-    // Create a temporary copy to modify for device pointers
-    EdgeDataStore temp_edge_data = *edge_data;
-    temp_edge_data.owns_data = false;
-    // Edge features stay CPU-resident even for CUDA ingestion/topology paths.
-    temp_edge_data.edge_features = nullptr;
-
-    // If already using GPU, just copy the struct with its pointers
-    if (!edge_data->use_gpu) {
-        temp_edge_data.owns_data = true;
-
-        // Copy each array to device if it exists
-        if (edge_data->sources) {
-            int *d_sources;
-            CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_sources, edge_data->sources_size * sizeof(int)));
-            CUDA_CHECK_AND_CLEAR(
-                cudaMemcpy(d_sources, edge_data->sources, edge_data->sources_size * sizeof(int),
-                    cudaMemcpyHostToDevice));
-            temp_edge_data.sources = d_sources;
-        }
-
-        if (edge_data->targets) {
-            int *d_targets;
-            CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_targets, edge_data->targets_size * sizeof(int)));
-            CUDA_CHECK_AND_CLEAR(
-                cudaMemcpy(d_targets, edge_data->targets, edge_data->targets_size * sizeof(int),
-                    cudaMemcpyHostToDevice));
-            temp_edge_data.targets = d_targets;
-        }
-
-        if (edge_data->timestamps) {
-            int64_t *d_timestamps;
-            CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_timestamps, edge_data->timestamps_size * sizeof(int64_t)));
-            CUDA_CHECK_AND_CLEAR(
-                cudaMemcpy(d_timestamps, edge_data->timestamps, edge_data->timestamps_size * sizeof(int64_t),
-                    cudaMemcpyHostToDevice));
-            temp_edge_data.timestamps = d_timestamps;
-        }
-
-        if (edge_data->active_node_ids) {
-            int *d_active_node_ids;
-            CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_active_node_ids, edge_data->active_node_ids_size * sizeof(int)));
-            CUDA_CHECK_AND_CLEAR(
-                cudaMemcpy(d_active_node_ids, edge_data->active_node_ids, edge_data->active_node_ids_size * sizeof(
-                    int), cudaMemcpyHostToDevice));
-            temp_edge_data.active_node_ids = d_active_node_ids;
-        }
-
-        if (edge_data->node_adj_offsets) {
-            size_t *d_node_adj_offsets;
-            CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_node_adj_offsets, edge_data->node_adj_offsets_size * sizeof(size_t)));
-            CUDA_CHECK_AND_CLEAR(
-                cudaMemcpy(d_node_adj_offsets,
-                           edge_data->node_adj_offsets,
-                           edge_data->node_adj_offsets_size * sizeof(size_t),
-                           cudaMemcpyHostToDevice));
-            temp_edge_data.node_adj_offsets = d_node_adj_offsets;
-        }
-
-        if (edge_data->node_adj_neighbors) {
-            int *d_node_adj_neighbors;
-            CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_node_adj_neighbors, edge_data->node_adj_neighbors_size * sizeof(int)));
-            CUDA_CHECK_AND_CLEAR(
-                cudaMemcpy(d_node_adj_neighbors,
-                           edge_data->node_adj_neighbors,
-                           edge_data->node_adj_neighbors_size * sizeof(int),
-                           cudaMemcpyHostToDevice));
-            temp_edge_data.node_adj_neighbors = d_node_adj_neighbors;
-        }
-
-        if (edge_data->timestamp_group_offsets) {
-            size_t *d_timestamp_group_offsets;
-            CUDA_CHECK_AND_CLEAR(
-                cudaMalloc(&d_timestamp_group_offsets, edge_data->timestamp_group_offsets_size * sizeof(size_t)));
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_timestamp_group_offsets, edge_data->timestamp_group_offsets,
-                edge_data->timestamp_group_offsets_size * sizeof(size_t), cudaMemcpyHostToDevice));
-            temp_edge_data.timestamp_group_offsets = d_timestamp_group_offsets;
-        }
-
-        if (edge_data->unique_timestamps) {
-            int64_t *d_unique_timestamps;
-            CUDA_CHECK_AND_CLEAR(
-                cudaMalloc(&d_unique_timestamps, edge_data->unique_timestamps_size * sizeof(int64_t)));
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_unique_timestamps, edge_data->unique_timestamps,
-                edge_data->unique_timestamps_size * sizeof(int64_t), cudaMemcpyHostToDevice));
-            temp_edge_data.unique_timestamps = d_unique_timestamps;
-        }
-
-        if (edge_data->forward_cumulative_weights_exponential) {
-            double *d_forward_weights;
-            CUDA_CHECK_AND_CLEAR(
-                cudaMalloc(&d_forward_weights, edge_data->forward_cumulative_weights_exponential_size * sizeof(
-                    double)));
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_forward_weights, edge_data->forward_cumulative_weights_exponential,
-                edge_data->forward_cumulative_weights_exponential_size * sizeof(double), cudaMemcpyHostToDevice));
-            temp_edge_data.forward_cumulative_weights_exponential = d_forward_weights;
-        }
-
-        if (edge_data->backward_cumulative_weights_exponential) {
-            double *d_backward_weights;
-            CUDA_CHECK_AND_CLEAR(
-                cudaMalloc(&d_backward_weights, edge_data->backward_cumulative_weights_exponential_size * sizeof(
-                    double)));
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_backward_weights, edge_data->backward_cumulative_weights_exponential,
-                edge_data->backward_cumulative_weights_exponential_size * sizeof(double), cudaMemcpyHostToDevice));
-            temp_edge_data.backward_cumulative_weights_exponential = d_backward_weights;
-        }
-
-        // Make sure use_gpu is set to true
-        temp_edge_data.use_gpu = true;
-    }
-
-    CUDA_CHECK_AND_CLEAR(
-        cudaMemcpy(device_edge_data, &temp_edge_data, sizeof(EdgeDataStore), cudaMemcpyHostToDevice));
-
-    temp_edge_data.owns_data = false;
-
-    return device_edge_data;
 }
 
 #endif
 
-HOST size_t edge_data::get_memory_used(EdgeDataStore* edge_data) {
+HOST size_t edge_data::get_memory_used(const TemporalGraphData& data) {
     size_t total_memory = 0;
 
     // Basic edge data arrays
-    total_memory += edge_data->sources_size * sizeof(int);
-    total_memory += edge_data->targets_size * sizeof(int);
-    total_memory += edge_data->timestamps_size * sizeof(int64_t);
+    total_memory += data.sources.size() * sizeof(int);
+    total_memory += data.targets.size() * sizeof(int);
+    total_memory += data.timestamps.size() * sizeof(int64_t);
 
     // Optional edge feature matrix
-    total_memory += edge_data->edge_features_size * sizeof(float);
+    total_memory += data.edge_features.size() * sizeof(float);
 
     // Active nodes array
-    total_memory += edge_data->active_node_ids_size * sizeof(int);
+    total_memory += data.active_node_ids.size() * sizeof(int);
 
     // Node adjacency CSR arrays
-    total_memory += edge_data->node_adj_offsets_size * sizeof(size_t);
-    total_memory += edge_data->node_adj_neighbors_size * sizeof(int);
+    total_memory += data.node_adj_offsets.size() * sizeof(size_t);
+    total_memory += data.node_adj_neighbors.size() * sizeof(int);
 
     // Timestamp grouping arrays
-    total_memory += edge_data->timestamp_group_offsets_size * sizeof(size_t);
-    total_memory += edge_data->unique_timestamps_size * sizeof(int64_t);
+    total_memory += data.timestamp_group_offsets.size() * sizeof(size_t);
+    total_memory += data.unique_timestamps.size() * sizeof(int64_t);
 
     // Weight computation arrays (if allocated)
-    total_memory += edge_data->forward_cumulative_weights_exponential_size * sizeof(double);
-    total_memory += edge_data->backward_cumulative_weights_exponential_size * sizeof(double);
+    total_memory += data.forward_cumulative_weights_exponential.size() * sizeof(double);
+    total_memory += data.backward_cumulative_weights_exponential.size() * sizeof(double);
 
     return total_memory;
 }

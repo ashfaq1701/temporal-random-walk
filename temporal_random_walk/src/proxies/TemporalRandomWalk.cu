@@ -1,316 +1,152 @@
 #include "TemporalRandomWalk.cuh"
 
 #include <algorithm>
-#include <iterator>
+#include <cstring>
 
-#include "../common/error_handlers.cuh"
-
-#ifdef HAS_CUDA
-
-__global__ void get_edge_count_kernel(size_t* result, const TemporalRandomWalkStore* temporal_random_walk) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = temporal_random_walk::get_edge_count(temporal_random_walk);
-    }
-}
-
-#endif
+#include "../data/walks_with_edge_features_host.cuh"
 
 TemporalRandomWalk::TemporalRandomWalk(
-        const bool is_directed,
-        const bool use_gpu,
+    const bool is_directed, const bool use_gpu,
+    const int64_t max_time_capacity,
+    const bool enable_weight_computation,
+    const bool enable_temporal_node2vec,
+    const double timescale_bound,
+    const double node2vec_p, const double node2vec_q,
+    const int walk_padding_value,
+    const uint64_t global_seed,
+    const bool shuffle_walk_order)
+    : impl_(std::make_unique<core::TemporalRandomWalk>(
+        is_directed, use_gpu, max_time_capacity,
+        enable_weight_computation, enable_temporal_node2vec,
+        timescale_bound, node2vec_p, node2vec_q,
+        walk_padding_value, global_seed, shuffle_walk_order)) {}
 
-        const int64_t max_time_capacity,
-        const bool enable_weight_computation,
-        const bool enable_temporal_node2vec,
-        const double timescale_bound,
-
-        const double node2vec_p,
-        const double node2vec_q,
-
-        const int walk_padding_value,
-        const uint64_t global_seed,
-        const bool shuffle_walk_order): use_gpu(use_gpu) {
-
-    temporal_random_walk = new TemporalRandomWalkStore(
-        is_directed,
-        use_gpu,
-
-        max_time_capacity,
-        enable_weight_computation,
-        enable_temporal_node2vec,
-        timescale_bound,
-
-        node2vec_p,
-        node2vec_q,
-
-        walk_padding_value,
-        global_seed,
-        shuffle_walk_order);
-    node_features = new NodeFeatures();
-}
-
-TemporalRandomWalk::~TemporalRandomWalk() {
-    delete node_features;
-    delete temporal_random_walk;
-}
+TemporalRandomWalk::~TemporalRandomWalk() = default;
 
 void TemporalRandomWalk::add_multiple_edges(
-    const int* sources,
-    const int* targets,
-    const int64_t* timestamps,
-    const size_t edges_size,
-    const float* edge_features,
+    const int* sources, const int* targets, const int64_t* timestamps,
+    const size_t edges_size, const float* edge_features,
     const size_t feature_dim) const {
-    temporal_random_walk::add_multiple_edges(
-        temporal_random_walk,
-        sources,
-        targets,
-        timestamps,
-        edges_size,
-        edge_features,
-        feature_dim);
+    impl_->add_multiple_edges(
+        sources, targets, timestamps, edges_size,
+        edge_features, feature_dim);
 }
 
 void TemporalRandomWalk::add_multiple_edges(
     const std::vector<std::tuple<int, int, int64_t>>& edges,
-    const float* edge_features,
-    const size_t feature_dim) const {
-    std::vector<int> sources;
-    std::vector<int> targets;
-    std::vector<int64_t> timestamps;
+    const float* edge_features, const size_t feature_dim) const {
+    impl_->add_multiple_edges(edges, edge_features, feature_dim);
+}
 
-    sources.reserve(edges.size());
-    targets.reserve(edges.size());
-    timestamps.reserve(edges.size());
+namespace {
 
-    for (const auto& edge : edges) {
-        sources.push_back(std::get<0>(edge));
-        targets.push_back(std::get<1>(edge));
-        timestamps.push_back(std::get<2>(edge));
+// Adapter: new WalksWithEdgeFeaturesHost -> legacy WalksWithEdgeFeatures.
+// Both sides are host-resident; runs a host memcpy per buffer.
+WalksWithEdgeFeatures adapt_to_legacy(
+    WalksWithEdgeFeaturesHost src, const int walk_padding_value) {
+    const size_t num_walks = src.walk_set.num_walks();
+    const size_t max_len   = src.walk_set.max_len();
+
+    WalkSet legacy(num_walks, max_len, walk_padding_value, /*use_gpu=*/false);
+
+    if (src.walk_set.nodes_size() > 0) {
+        std::memcpy(legacy.nodes, src.walk_set.nodes_ptr(),
+                    src.walk_set.nodes_size() * sizeof(int));
+    }
+    if (src.walk_set.timestamps_size() > 0) {
+        std::memcpy(legacy.timestamps, src.walk_set.timestamps_ptr(),
+                    src.walk_set.timestamps_size() * sizeof(int64_t));
+    }
+    if (src.walk_set.walk_lens_size() > 0) {
+        std::memcpy(legacy.walk_lens, src.walk_set.walk_lens_ptr(),
+                    src.walk_set.walk_lens_size() * sizeof(size_t));
+    }
+    if (src.walk_set.edge_ids_size() > 0) {
+        std::memcpy(legacy.edge_ids, src.walk_set.edge_ids_ptr(),
+                    src.walk_set.edge_ids_size() * sizeof(int64_t));
     }
 
-    add_multiple_edges(sources.data(), targets.data(), timestamps.data(), timestamps.size(), edge_features, feature_dim);
+    WalksWithEdgeFeatures out(std::move(legacy), src.feature_dim);
+    if (src.feature_dim > 0 && src.walk_edge_features.size() > 0 &&
+        out.walk_edge_features) {
+        std::memcpy(out.walk_edge_features,
+                    src.walk_edge_features.data(),
+                    src.walk_edge_features.size() * sizeof(float));
+    }
+    return out;
+}
+
+} // namespace
+
+WalksWithEdgeFeatures
+TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
+    const int max_walk_len, const RandomPickerType* walk_bias,
+    const int num_walks_per_node,
+    const RandomPickerType* initial_edge_bias,
+    const WalkDirection walk_direction,
+    const KernelLaunchType kernel_launch_type) const {
+    auto host_result = impl_->get_random_walks_and_times_for_all_nodes(
+        max_walk_len, walk_bias, num_walks_per_node,
+        initial_edge_bias, walk_direction, kernel_launch_type);
+    return adapt_to_legacy(std::move(host_result), impl_->walk_padding_value());
+}
+
+WalksWithEdgeFeatures
+TemporalRandomWalk::get_random_walks_and_times_for_last_batch(
+    const int max_walk_len, const RandomPickerType* walk_bias,
+    const int num_walks_per_node,
+    const RandomPickerType* initial_edge_bias,
+    const WalkDirection walk_direction,
+    const KernelLaunchType kernel_launch_type) const {
+    auto host_result = impl_->get_random_walks_and_times_for_last_batch(
+        max_walk_len, walk_bias, num_walks_per_node,
+        initial_edge_bias, walk_direction, kernel_launch_type);
+    return adapt_to_legacy(std::move(host_result), impl_->walk_padding_value());
+}
+
+WalksWithEdgeFeatures
+TemporalRandomWalk::get_random_walks_and_times(
+    const int max_walk_len, const RandomPickerType* walk_bias,
+    const int num_walks_total,
+    const RandomPickerType* initial_edge_bias,
+    const WalkDirection walk_direction,
+    const KernelLaunchType kernel_launch_type) const {
+    auto host_result = impl_->get_random_walks_and_times(
+        max_walk_len, walk_bias, num_walks_total,
+        initial_edge_bias, walk_direction, kernel_launch_type);
+    return adapt_to_legacy(std::move(host_result), impl_->walk_padding_value());
 }
 
 void TemporalRandomWalk::set_node_features(
-    const int* node_ids,
-    const size_t num_nodes,
-    const float* node_features_data,
-    const size_t feature_dim) const {
-    node_features->set_node_features(
-        temporal_random_walk->temporal_graph->edge_data->max_node_id,
-        node_ids,
-        num_nodes,
-        node_features_data,
-        feature_dim);
+    const int* node_ids, const size_t num_nodes,
+    const float* node_features_data, const size_t feature_dim) const {
+    impl_->set_node_features(node_ids, num_nodes, node_features_data, feature_dim);
 }
 
-NodeFeaturesStore* TemporalRandomWalk::get_node_features() const {
-    return node_features->get_node_features();
-}
-
-WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
-        const int max_walk_len,
-        const RandomPickerType* walk_bias,
-        const int num_walks_per_node,
-        const RandomPickerType* initial_edge_bias,
-        const WalkDirection walk_direction,
-        const KernelLaunchType kernel_launch_type) const {
-    WalkSet walk_set;
-
-    #ifdef HAS_CUDA
-    if (use_gpu) {
-        walk_set = temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
-            temporal_random_walk,
-            max_walk_len,
-            walk_bias,
-            num_walks_per_node,
-            initial_edge_bias,
-            walk_direction,
-            kernel_launch_type);
-    }
-    else
-    #endif
-    {
-        walk_set = temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
-            temporal_random_walk,
-            max_walk_len,
-            walk_bias,
-            num_walks_per_node,
-            initial_edge_bias,
-            walk_direction);
-    }
-
-    WalksWithEdgeFeatures walks_with_edge_features(
-        std::move(walk_set),
-        static_cast<int>(temporal_random_walk->temporal_graph->edge_data->feature_dim));
-    walks_with_edge_features.populate_walk_edge_features(temporal_random_walk->temporal_graph->edge_data->edge_features);
-
-    return walks_with_edge_features;
-}
-
-WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times_for_last_batch(
-        const int max_walk_len,
-        const RandomPickerType* walk_bias,
-        const int num_walks_per_node,
-        const RandomPickerType* initial_edge_bias,
-        const WalkDirection walk_direction,
-        const KernelLaunchType kernel_launch_type) const {
-    WalkSet walk_set;
-
-    #ifdef HAS_CUDA
-    if (use_gpu) {
-        walk_set = temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
-            temporal_random_walk,
-            max_walk_len,
-            walk_bias,
-            num_walks_per_node,
-            initial_edge_bias,
-            walk_direction,
-            kernel_launch_type);
-    }
-    else
-    #endif
-    {
-        walk_set = temporal_random_walk::get_random_walks_and_times_for_last_batch_std(
-            temporal_random_walk,
-            max_walk_len,
-            walk_bias,
-            num_walks_per_node,
-            initial_edge_bias,
-            walk_direction);
-    }
-
-    WalksWithEdgeFeatures walks_with_edge_features(
-        std::move(walk_set),
-        static_cast<int>(temporal_random_walk->temporal_graph->edge_data->feature_dim));
-    walks_with_edge_features.populate_walk_edge_features(temporal_random_walk->temporal_graph->edge_data->edge_features);
-
-    return walks_with_edge_features;
-}
-
-WalksWithEdgeFeatures TemporalRandomWalk::get_random_walks_and_times(
-        const int max_walk_len,
-        const RandomPickerType* walk_bias,
-        const int num_walks_total,
-        const RandomPickerType* initial_edge_bias,
-        const WalkDirection walk_direction,
-        const KernelLaunchType kernel_launch_type) const {
-
-    WalkSet walk_set;
-
-    #ifdef HAS_CUDA
-    if (use_gpu) {
-        walk_set = temporal_random_walk::get_random_walks_and_times_cuda(
-            temporal_random_walk,
-            max_walk_len,
-            walk_bias,
-            num_walks_total,
-            initial_edge_bias,
-            walk_direction,
-            kernel_launch_type);
-    }
-    else
-    #endif
-    {
-        walk_set = temporal_random_walk::get_random_walks_and_times_std(
-            temporal_random_walk,
-            max_walk_len,
-            walk_bias,
-            num_walks_total,
-            initial_edge_bias,
-            walk_direction);
-    }
-
-    WalksWithEdgeFeatures walks_with_edge_features(
-        std::move(walk_set),
-        static_cast<int>(temporal_random_walk->temporal_graph->edge_data->feature_dim));
-    walks_with_edge_features.populate_walk_edge_features(temporal_random_walk->temporal_graph->edge_data->edge_features);
-
-    return walks_with_edge_features;
-}
-
-size_t TemporalRandomWalk::get_node_count() const {
-    return temporal_random_walk::get_node_count(temporal_random_walk);
-}
-
-size_t TemporalRandomWalk::get_edge_count() const {
-    #ifdef HAS_CUDA
-    if (use_gpu) {
-        // Call via CUDA kernel for GPU implementation
-        size_t* d_result;
-        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_result, sizeof(size_t)));
-
-        TemporalRandomWalkStore* d_temporal_random_walk = temporal_random_walk::to_device_ptr(temporal_random_walk);
-        get_edge_count_kernel<<<1, 1>>>(d_result, d_temporal_random_walk);
-        CUDA_KERNEL_CHECK("After get_edge_count_kernel execution");
-
-        size_t host_result;
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(&host_result, d_result, sizeof(size_t), cudaMemcpyDeviceToHost));
-
-        CUDA_CHECK_AND_CLEAR(cudaFree(d_result));
-        temporal_random_walk::free_device_pointers(d_temporal_random_walk);
-
-        return host_result;
-    }
-    else
-    #endif
-    {
-        // Direct call for CPU implementation
-        return temporal_random_walk::get_edge_count(temporal_random_walk);
-    }
-}
-
-std::vector<int> TemporalRandomWalk::get_node_ids() const {
-    const DataBlock<int> node_ids = temporal_random_walk::get_node_ids(temporal_random_walk);
-    std::vector<int> result;
-
-    #ifdef HAS_CUDA
-    if (node_ids.use_gpu) {
-        // Allocate temporary host memory
-        int* host_data = new int[node_ids.size];
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(host_data, node_ids.data,
-                                     node_ids.size * sizeof(int),
-                                     cudaMemcpyDeviceToHost));
-
-        result.assign(host_data, host_data + node_ids.size);
-
-        delete[] host_data;
-    }
-    else
-    #endif
-    {
-        result.assign(node_ids.data, node_ids.data + node_ids.size);
-    }
-
-    return result;
-}
+size_t TemporalRandomWalk::get_node_count() const { return impl_->get_node_count(); }
+size_t TemporalRandomWalk::get_edge_count() const { return impl_->get_edge_count(); }
+std::vector<int> TemporalRandomWalk::get_node_ids() const { return impl_->get_node_ids(); }
 
 std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() const {
-    // temporal_random_walk::get_edges ultimately delegates to edge_data::get_edges,
-    // which always returns CPU-resident edges.
-    const DataBlock<Edge> edges = temporal_random_walk::get_edges(temporal_random_walk);
-    std::vector<std::tuple<int, int, int64_t>> result;
-    result.reserve(edges.size);
-
-    for (size_t i = 0; i < edges.size; i++) {
-        result.emplace_back(
-            edges.data[i].u,
-            edges.data[i].i,
-            edges.data[i].ts);
-    }
-
-    return result;
+    const auto edges = impl_->get_edges();
+    std::vector<std::tuple<int, int, int64_t>> out;
+    out.reserve(edges.size());
+    for (const auto& e : edges) out.emplace_back(e.u, e.i, e.ts);
+    return out;
 }
 
-bool TemporalRandomWalk::get_is_directed() const {
-    return temporal_random_walk::get_is_directed(temporal_random_walk);
+bool TemporalRandomWalk::get_is_directed() const { return impl_->get_is_directed(); }
+void TemporalRandomWalk::clear() const { impl_->clear(); }
+size_t TemporalRandomWalk::get_memory_used() const { return impl_->get_memory_used(); }
+
+int TemporalRandomWalk::node_feature_dim() const {
+    return static_cast<int>(impl_->data().node_feature_dim);
 }
 
-void TemporalRandomWalk::clear() const {
-    temporal_random_walk::clear(temporal_random_walk);
+int TemporalRandomWalk::node_features_max_node_id() const {
+    return impl_->data().max_node_id;
 }
 
-size_t TemporalRandomWalk::get_memory_used() const {
-    return temporal_random_walk::get_memory_used(temporal_random_walk);
+std::vector<float> TemporalRandomWalk::node_features_dense() const {
+    return impl_->data().node_features.to_host_vector();
 }

@@ -22,6 +22,7 @@
  */
 struct TemporalGraphView {
     bool    is_directed;
+    bool    enable_temporal_node2vec;
     int64_t latest_timestamp;
     double  inv_p;
     double  inv_q;
@@ -83,10 +84,11 @@ struct TemporalGraphView {
 HOST inline TemporalGraphView make_temporal_graph_view(
     const TemporalGraphData& data) {
     TemporalGraphView v{};
-    v.is_directed       = data.is_directed;
-    v.latest_timestamp  = data.latest_timestamp;
-    v.inv_p             = data.inv_p;
-    v.inv_q             = data.inv_q;
+    v.is_directed              = data.is_directed;
+    v.enable_temporal_node2vec = data.enable_temporal_node2vec;
+    v.latest_timestamp         = data.latest_timestamp;
+    v.inv_p                    = data.inv_p;
+    v.inv_q                    = data.inv_q;
 
     v.sources           = data.sources.data();
     v.targets           = data.targets.data();

@@ -1,263 +1,64 @@
 #ifndef NODE_EDGE_INDEX_H
 #define NODE_EDGE_INDEX_H
 
+#include <cstddef>
+#include <memory>
+#include <utility>
 #include <vector>
+
+#include "../data/temporal_graph_data.cuh"
 #include "../graph/node_edge_index.cuh"
-#include "../graph/edge_data.cuh"
-#include "../common/error_handlers.cuh"
-
-#ifdef HAS_CUDA
-
-__global__ void get_edge_range_kernel(SizeRange* result, const NodeEdgeIndexStore* node_edge_index, int dense_node_id, bool forward, bool is_directed);
-
-__global__ void get_timestamp_group_range_kernel(SizeRange* result, const NodeEdgeIndexStore* node_edge_index, int dense_node_id, size_t group_idx, bool forward, bool is_directed);
-
-__global__ void get_timestamp_group_count_kernel(size_t* result, const NodeEdgeIndexStore* node_edge_index, int dense_node_id, bool forward, bool is_directed);
-
-#endif
+#include "TemporalRandomWalk.cuh"
 
 class NodeEdgeIndex {
+    std::unique_ptr<TemporalRandomWalk> self_owned_;
+
 public:
-
-    NodeEdgeIndexStore* node_edge_index;
-    bool owns_node_edge_index;
-
-    std::vector<size_t> node_group_outbound_offsets() const {
-        #ifdef HAS_CUDA
-        if (node_edge_index->use_gpu) {
-            std::vector<size_t> result(node_edge_index->node_group_outbound_offsets_size);
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), node_edge_index->node_group_outbound_offsets,
-                      node_edge_index->node_group_outbound_offsets_size * sizeof(size_t),
-                      cudaMemcpyDeviceToHost));
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<size_t>(node_edge_index->node_group_outbound_offsets,
-                                     node_edge_index->node_group_outbound_offsets +
-                                     node_edge_index->node_group_outbound_offsets_size);
-        }
-    }
-
-    std::vector<size_t> node_group_inbound_offsets() const {
-        #ifdef HAS_CUDA
-        if (node_edge_index->use_gpu) {
-            std::vector<size_t> result(node_edge_index->node_group_inbound_offsets_size);
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), node_edge_index->node_group_inbound_offsets,
-                      node_edge_index->node_group_inbound_offsets_size * sizeof(size_t),
-                      cudaMemcpyDeviceToHost));
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<size_t>(node_edge_index->node_group_inbound_offsets,
-                                     node_edge_index->node_group_inbound_offsets +
-                                     node_edge_index->node_group_inbound_offsets_size);
-        }
-    }
-
-    std::vector<size_t> node_ts_sorted_outbound_indices() const {
-        #ifdef HAS_CUDA
-        if (node_edge_index->use_gpu) {
-            std::vector<size_t> result(node_edge_index->node_ts_sorted_outbound_indices_size);
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), node_edge_index->node_ts_sorted_outbound_indices,
-                      node_edge_index->node_ts_sorted_outbound_indices_size * sizeof(size_t),
-                      cudaMemcpyDeviceToHost));
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<size_t>(node_edge_index->node_ts_sorted_outbound_indices,
-                                     node_edge_index->node_ts_sorted_outbound_indices +
-                                     node_edge_index->node_ts_sorted_outbound_indices_size);
-        }
-    }
-
-    std::vector<size_t> node_ts_sorted_inbound_indices() const {
-        #ifdef HAS_CUDA
-        if (node_edge_index->use_gpu) {
-            std::vector<size_t> result(node_edge_index->node_ts_sorted_inbound_indices_size);
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), node_edge_index->node_ts_sorted_inbound_indices,
-                      node_edge_index->node_ts_sorted_inbound_indices_size * sizeof(size_t),
-                      cudaMemcpyDeviceToHost));
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<size_t>(node_edge_index->node_ts_sorted_inbound_indices,
-                                     node_edge_index->node_ts_sorted_inbound_indices +
-                                     node_edge_index->node_ts_sorted_inbound_indices_size);
-        }
-    }
-
-    std::vector<size_t> count_ts_group_per_node_outbound() const {
-        #ifdef HAS_CUDA
-        if (node_edge_index->use_gpu) {
-            std::vector<size_t> result(node_edge_index->count_ts_group_per_node_outbound_size);
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), node_edge_index->count_ts_group_per_node_outbound,
-                      node_edge_index->count_ts_group_per_node_outbound_size * sizeof(size_t),
-                      cudaMemcpyDeviceToHost));
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<size_t>(node_edge_index->count_ts_group_per_node_outbound,
-                                     node_edge_index->count_ts_group_per_node_outbound +
-                                     node_edge_index->count_ts_group_per_node_outbound_size);
-        }
-    }
-
-    std::vector<size_t> count_ts_group_per_node_inbound() const {
-        #ifdef HAS_CUDA
-        if (node_edge_index->use_gpu) {
-            std::vector<size_t> result(node_edge_index->count_ts_group_per_node_inbound_size);
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), node_edge_index->count_ts_group_per_node_inbound,
-                      node_edge_index->count_ts_group_per_node_inbound_size * sizeof(size_t),
-                      cudaMemcpyDeviceToHost));
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<size_t>(node_edge_index->count_ts_group_per_node_inbound,
-                                     node_edge_index->count_ts_group_per_node_inbound +
-                                     node_edge_index->count_ts_group_per_node_inbound_size);
-        }
-    }
-
-    std::vector<size_t> node_ts_group_outbound_offsets() const {
-        #ifdef HAS_CUDA
-        if (node_edge_index->use_gpu) {
-            std::vector<size_t> result(node_edge_index->node_ts_group_outbound_offsets_size);
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), node_edge_index->node_ts_group_outbound_offsets,
-                      node_edge_index->node_ts_group_outbound_offsets_size * sizeof(size_t),
-                      cudaMemcpyDeviceToHost));
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<size_t>(node_edge_index->node_ts_group_outbound_offsets,
-                                     node_edge_index->node_ts_group_outbound_offsets +
-                                     node_edge_index->node_ts_group_outbound_offsets_size);
-        }
-    }
-
-    std::vector<size_t> node_ts_group_inbound_offsets() const {
-        #ifdef HAS_CUDA
-        if (node_edge_index->use_gpu) {
-            std::vector<size_t> result(node_edge_index->node_ts_group_inbound_offsets_size);
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), node_edge_index->node_ts_group_inbound_offsets,
-                      node_edge_index->node_ts_group_inbound_offsets_size * sizeof(size_t),
-                      cudaMemcpyDeviceToHost));
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<size_t>(node_edge_index->node_ts_group_inbound_offsets,
-                                     node_edge_index->node_ts_group_inbound_offsets +
-                                     node_edge_index->node_ts_group_inbound_offsets_size);
-        }
-    }
-
-    std::vector<double> outbound_forward_cumulative_weights_exponential() const {
-        if (!node_edge_index->outbound_forward_cumulative_weights_exponential) {
-            return std::vector<double>();
-        }
-
-        #ifdef HAS_CUDA
-        if (node_edge_index->use_gpu) {
-            std::vector<double> result(node_edge_index->outbound_forward_cumulative_weights_exponential_size);
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), node_edge_index->outbound_forward_cumulative_weights_exponential,
-                      node_edge_index->outbound_forward_cumulative_weights_exponential_size * sizeof(double),
-                      cudaMemcpyDeviceToHost));
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<double>(
-                node_edge_index->outbound_forward_cumulative_weights_exponential,
-                node_edge_index->outbound_forward_cumulative_weights_exponential +
-                node_edge_index->outbound_forward_cumulative_weights_exponential_size);
-        }
-    }
-
-    std::vector<double> outbound_backward_cumulative_weights_exponential() const {
-        if (!node_edge_index->outbound_backward_cumulative_weights_exponential) {
-            return std::vector<double>();
-        }
-
-        #ifdef HAS_CUDA
-        if (node_edge_index->use_gpu) {
-            std::vector<double> result(node_edge_index->outbound_backward_cumulative_weights_exponential_size);
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), node_edge_index->outbound_backward_cumulative_weights_exponential,
-                      node_edge_index->outbound_backward_cumulative_weights_exponential_size * sizeof(double),
-                      cudaMemcpyDeviceToHost));
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<double>(
-                node_edge_index->outbound_backward_cumulative_weights_exponential,
-                node_edge_index->outbound_backward_cumulative_weights_exponential +
-                node_edge_index->outbound_backward_cumulative_weights_exponential_size);
-        }
-    }
-
-    std::vector<double> inbound_backward_cumulative_weights_exponential() const {
-        if (!node_edge_index->inbound_backward_cumulative_weights_exponential) {
-            return std::vector<double>();
-        }
-
-        #ifdef HAS_CUDA
-        if (node_edge_index->use_gpu) {
-            std::vector<double> result(node_edge_index->inbound_backward_cumulative_weights_exponential_size);
-            CUDA_CHECK_AND_CLEAR(cudaMemcpy(result.data(), node_edge_index->inbound_backward_cumulative_weights_exponential,
-                      node_edge_index->inbound_backward_cumulative_weights_exponential_size * sizeof(double),
-                      cudaMemcpyDeviceToHost));
-            return result;
-        }
-        else
-        #endif
-        {
-            return std::vector<double>(
-                node_edge_index->inbound_backward_cumulative_weights_exponential,
-                node_edge_index->inbound_backward_cumulative_weights_exponential +
-                node_edge_index->inbound_backward_cumulative_weights_exponential_size);
-        }
-    }
+    TemporalGraphData* node_edge_index;
 
     explicit NodeEdgeIndex(bool use_gpu);
 
-    explicit NodeEdgeIndex(NodeEdgeIndexStore* existing_node_edge_index);
+    explicit NodeEdgeIndex(TemporalGraphData* shared) : node_edge_index(shared) {}
 
     ~NodeEdgeIndex();
 
-    NodeEdgeIndex& operator=(const NodeEdgeIndex& other);
+    NodeEdgeIndex(const NodeEdgeIndex&) = delete;
+    NodeEdgeIndex& operator=(const NodeEdgeIndex&) = delete;
+    NodeEdgeIndex(NodeEdgeIndex&&) noexcept = default;
+    NodeEdgeIndex& operator=(NodeEdgeIndex&&) noexcept = default;
 
-    void clear() const;
+    // --- Read-back accessors (return host vectors) ---
+    std::vector<size_t> node_group_outbound_offsets() const         { return node_edge_index->node_group_outbound_offsets.to_host_vector(); }
+    std::vector<size_t> node_group_inbound_offsets() const          { return node_edge_index->node_group_inbound_offsets.to_host_vector(); }
+    std::vector<size_t> node_ts_sorted_outbound_indices() const     { return node_edge_index->node_ts_sorted_outbound_indices.to_host_vector(); }
+    std::vector<size_t> node_ts_sorted_inbound_indices() const      { return node_edge_index->node_ts_sorted_inbound_indices.to_host_vector(); }
+    std::vector<size_t> count_ts_group_per_node_outbound() const    { return node_edge_index->count_ts_group_per_node_outbound.to_host_vector(); }
+    std::vector<size_t> count_ts_group_per_node_inbound() const     { return node_edge_index->count_ts_group_per_node_inbound.to_host_vector(); }
+    std::vector<size_t> node_ts_group_outbound_offsets() const      { return node_edge_index->node_ts_group_outbound_offsets.to_host_vector(); }
+    std::vector<size_t> node_ts_group_inbound_offsets() const       { return node_edge_index->node_ts_group_inbound_offsets.to_host_vector(); }
+    std::vector<double> outbound_forward_cumulative_weights_exponential() const {
+        return node_edge_index->outbound_forward_cumulative_weights_exponential.to_host_vector();
+    }
+    std::vector<double> outbound_backward_cumulative_weights_exponential() const {
+        return node_edge_index->outbound_backward_cumulative_weights_exponential.to_host_vector();
+    }
+    std::vector<double> inbound_backward_cumulative_weights_exponential() const {
+        return node_edge_index->inbound_backward_cumulative_weights_exponential.to_host_vector();
+    }
 
-    void rebuild(const EdgeDataStore* edge_data, bool is_directed) const;
+    void clear() const { node_edge_index::clear(*node_edge_index); }
+
+    void rebuild(TemporalGraphData* shared_data, bool is_directed) const;
 
     [[nodiscard]] std::pair<size_t, size_t> get_edge_range(int dense_node_id, bool forward, bool is_directed) const;
-
     [[nodiscard]] std::pair<size_t, size_t> get_timestamp_group_range(int dense_node_id, size_t group_idx, bool forward, bool is_directed) const;
-
     [[nodiscard]] size_t get_timestamp_group_count(int dense_node_id, bool forward, bool is_directed) const;
 
-    void update_temporal_weights(const EdgeDataStore* edge_data, double timescale_bound) const;
+    void update_temporal_weights(TemporalGraphData* shared_data, double timescale_bound) const;
 
-    [[nodiscard]] NodeEdgeIndexStore* get_node_edge_index() const;
-
-    [[nodiscard]] size_t get_memory_used() const;
+    [[nodiscard]] size_t get_memory_used() const {
+        return node_edge_index::get_memory_used(*node_edge_index);
+    }
 };
 
 #endif // NODE_EDGE_INDEX_H

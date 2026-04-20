@@ -248,19 +248,18 @@ PYBIND11_MODULE(_temporal_random_walk, m)
 
         .def("get_node_features", [](const TemporalRandomWalk& tw)
         {
-            const NodeFeaturesStore* node_feature_store = tw.get_node_features();
+            const int feature_dim_int = tw.node_feature_dim();
+            const int max_node_id_int = tw.node_features_max_node_id();
+            const std::vector<float> dense = tw.node_features_dense();
 
-            if (node_feature_store == nullptr ||
-                node_feature_store->node_feature_dim == 0 ||
-                node_feature_store->max_node_id < 0 ||
-                node_feature_store->node_features == nullptr) {
+            if (feature_dim_int == 0 || max_node_id_int < 0 || dense.empty()) {
                 return py::array_t<float>(
                     py::array::ShapeContainer{0, 0},
                     py::array::StridesContainer{0, 0});
             }
 
-            const auto num_rows = static_cast<ssize_t>(node_feature_store->max_node_id + 1);
-            const auto feature_dim = static_cast<ssize_t>(node_feature_store->node_feature_dim);
+            const auto num_rows    = static_cast<ssize_t>(max_node_id_int + 1);
+            const auto feature_dim = static_cast<ssize_t>(feature_dim_int);
 
             py::array_t<float> dense_node_features(
                 py::array::ShapeContainer{num_rows, feature_dim},
@@ -270,7 +269,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
 
             const size_t total_values = static_cast<size_t>(num_rows) * static_cast<size_t>(feature_dim);
             std::copy_n(
-                node_feature_store->node_features,
+                dense.data(),
                 total_values,
                 static_cast<float*>(dense_node_features.request().ptr));
 

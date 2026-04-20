@@ -1,45 +1,24 @@
 #ifndef TEMPORAL_GRAPH_H
 #define TEMPORAL_GRAPH_H
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <vector>
-#include "../graph/temporal_graph.cuh"
-#include "../data/structs.cuh"
-#include "../data/enums.cuh"
-#include "../graph/edge_selectors.cuh"
+
 #include "../common/const.cuh"
-
-#ifdef HAS_CUDA
-
-__global__ void get_total_edges_kernel(size_t* result, const TemporalGraphStore* graph);
-
-template <bool Forward, RandomPickerType PickerType>
-__global__ void get_edge_at_kernel(Edge* result, const TemporalGraphStore* graph, const int64_t timestamp, const double* rand_nums) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = temporal_graph::get_edge_at_device<Forward, PickerType>(
-            graph, timestamp, rand_nums[0], rand_nums[1]);
-    }
-}
-
-template <bool IsDirected, bool Forward, RandomPickerType PickerType>
-__global__ void get_node_edge_at_kernel(Edge* result, TemporalGraphStore* graph, const int node_id, const int64_t timestamp, const int prev_node, const double* rand_nums) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *result = temporal_graph::get_node_edge_at_device<Forward, PickerType, IsDirected>(
-        graph, node_id, timestamp, prev_node, rand_nums[0], rand_nums[1]);
-    }
-}
-
-__global__ void compute_node2vec_beta_kernel(
-    double* result,
-    const TemporalGraphStore* graph,
-    int prev_node,
-    int w);
-
-#endif
+#include "../data/structs.cuh"
+#include "../data/temporal_graph_data.cuh"
+#include "../data/enums.cuh"
+#include "../graph/temporal_graph.cuh"
+#include "../graph/edge_selectors.cuh"
+#include "TemporalRandomWalk.cuh"
 
 class TemporalGraph {
+    std::unique_ptr<TemporalRandomWalk> self_owned_;
+
 public:
-    TemporalGraphStore* graph;
-    bool owns_graph;
+    TemporalGraphData* graph;
 
     explicit TemporalGraph(
         bool is_directed,
@@ -51,23 +30,38 @@ public:
         double node2vec_p = DEFAULT_NODE2VEC_P,
         double node2vec_q = DEFAULT_NODE2VEC_Q);
 
-    explicit TemporalGraph(TemporalGraphStore* existing_graph);
+    explicit TemporalGraph(TemporalGraphData* shared) : graph(shared) {}
 
     ~TemporalGraph();
 
-    TemporalGraph& operator=(const TemporalGraph& other);
+    TemporalGraph(const TemporalGraph&) = delete;
+    TemporalGraph& operator=(const TemporalGraph&) = delete;
+    TemporalGraph(TemporalGraph&&) noexcept = default;
+    TemporalGraph& operator=(TemporalGraph&&) noexcept = default;
 
-    void update_temporal_weights() const;
+    void update_temporal_weights() const {
+        temporal_graph::update_temporal_weights(*graph);
+    }
 
-    [[nodiscard]] size_t get_total_edges() const;
+    [[nodiscard]] size_t get_total_edges() const {
+        return temporal_graph::get_total_edges(*graph);
+    }
 
-    [[nodiscard]] size_t get_node_count() const;
+    [[nodiscard]] size_t get_node_count() const {
+        return temporal_graph::get_node_count(*graph);
+    }
 
-    [[nodiscard]] int64_t get_latest_timestamp() const;
+    [[nodiscard]] int64_t get_latest_timestamp() const {
+        return temporal_graph::get_latest_timestamp(*graph);
+    }
 
-    [[nodiscard]] std::vector<int> get_node_ids() const;
+    [[nodiscard]] std::vector<int> get_node_ids() const {
+        return temporal_graph::get_node_ids(*graph);
+    }
 
-    [[nodiscard]] std::vector<Edge> get_edges() const;
+    [[nodiscard]] std::vector<Edge> get_edges() const {
+        return temporal_graph::get_edges(*graph);
+    }
 
     void add_multiple_edges(
         const std::vector<int>& sources,
@@ -83,24 +77,26 @@ public:
     void delete_old_edges() const;
 
     [[nodiscard]] size_t count_timestamps_less_than(int64_t timestamp) const;
-
     [[nodiscard]] size_t count_timestamps_greater_than(int64_t timestamp) const;
-
     [[nodiscard]] size_t count_node_timestamps_less_than(int node_id, int64_t timestamp) const;
-
     [[nodiscard]] size_t count_node_timestamps_greater_than(int node_id, int64_t timestamp) const;
 
     [[nodiscard]] double compute_node2vec_beta(int prev_node, int w) const;
 
-    [[nodiscard]] Edge get_edge_at_with_provided_nums(RandomPickerType picker_type, const double * rand_nums, int64_t timestamp = -1, bool forward = true) const;
+    [[nodiscard]] Edge get_edge_at_with_provided_nums(
+        RandomPickerType picker_type, const double* rand_nums,
+        int64_t timestamp = -1, bool forward = true) const;
 
-    [[nodiscard]] Edge get_edge_at(RandomPickerType picker_type, int64_t timestamp = -1, bool forward = true) const;
+    [[nodiscard]] Edge get_edge_at(
+        RandomPickerType picker_type, int64_t timestamp = -1, bool forward = true) const;
 
-    [[nodiscard]] Edge get_node_edge_at(int node_id, RandomPickerType picker_type, int64_t timestamp, int prev_node, bool forward = true) const;
+    [[nodiscard]] Edge get_node_edge_at(
+        int node_id, RandomPickerType picker_type,
+        int64_t timestamp, int prev_node, bool forward = true) const;
 
-    [[nodiscard]] TemporalGraphStore* get_graph() const;
-
-    [[nodiscard]] size_t get_memory_used() const;
+    [[nodiscard]] size_t get_memory_used() const {
+        return temporal_graph::get_memory_used(*graph);
+    }
 };
 
 #endif // TEMPORAL_GRAPH_H

@@ -55,14 +55,10 @@ namespace {
             });
         }
 
-        [[nodiscard]] const TemporalGraphStore *store() const {
-            return graph.get_graph();
-        }
-
-        // Always collect edges through EdgeData proxy (CPU/GPU safe)
+        // Always collect edges through the proxy's get_edges (CPU/GPU safe;
+        // backing data is now a TemporalGraphData held by the proxy).
         [[nodiscard]] std::vector<Edge> collect_outbound_edges(int u) const {
-            EdgeData edges(store()->edge_data);
-            const auto all = edges.get_edges();
+            const auto all = graph.get_edges();
 
             std::vector<Edge> out;
             for (const auto &e: all) {
@@ -198,7 +194,7 @@ namespace {
     // ------------------------------------------------------------
 
     TYPED_TEST(TemporalNode2VecTest, NodeAdjacencyCSRIsValid) {
-        EdgeData edges(this->store()->edge_data);
+        EdgeData edges(this->graph.graph);
 
         const auto offsets = edges.node_adj_offsets();
         const auto neighbors = edges.node_adj_neighbors();

@@ -72,7 +72,7 @@ TYPED_TEST(TemporalGraphWeightTest, EdgeWeightComputation) {
         -1);
     graph.add_multiple_edges(this->test_edges);
 
-    EdgeData edge_data_proxy(graph.graph->edge_data);
+    EdgeData edge_data_proxy(graph.graph);
 
     // Should have 4 timestamp groups (10,20,30,40)
     ASSERT_EQ(edge_data_proxy.forward_cumulative_weights_exponential().size(), 4);
@@ -103,7 +103,7 @@ TYPED_TEST(TemporalGraphWeightTest, NodeWeightComputation) {
     TemporalGraph graph(/*is_directed=*/true, /*use_gpu=*/TypeParam::value, /*max_time_capacity=*/-1, /*enable_weight_computation=*/true);
     graph.add_multiple_edges(this->test_edges);
 
-    const auto& node_index = NodeEdgeIndex(graph.graph->node_edge_index);
+    const auto& node_index = NodeEdgeIndex(graph.graph);
 
     // Check weights for node 2 which has both in/out edges
     constexpr int node_id = 2;
@@ -178,8 +178,8 @@ TYPED_TEST(TemporalGraphWeightTest, EdgeCases) {
     {
         const TemporalGraph empty_graph(false, TypeParam::value, -1, true);
 
-        EXPECT_EQ(empty_graph.graph->edge_data->forward_cumulative_weights_exponential_size, 0);
-        EXPECT_EQ(empty_graph.graph->edge_data->backward_cumulative_weights_exponential_size, 0);
+        EXPECT_EQ(empty_graph.graph->forward_cumulative_weights_exponential.size(), 0);
+        EXPECT_EQ(empty_graph.graph->backward_cumulative_weights_exponential.size(), 0);
     }
 
     // Single edge graph test
@@ -187,10 +187,10 @@ TYPED_TEST(TemporalGraphWeightTest, EdgeCases) {
         TemporalGraph single_edge_graph(false, TypeParam::value, -1, true);
         single_edge_graph.add_multiple_edges({Edge{1, 2, 10}});
 
-        EXPECT_EQ(single_edge_graph.graph->edge_data->forward_cumulative_weights_exponential_size, 1);
-        EXPECT_EQ(single_edge_graph.graph->edge_data->backward_cumulative_weights_exponential_size, 1);
+        EXPECT_EQ(single_edge_graph.graph->forward_cumulative_weights_exponential.size(), 1);
+        EXPECT_EQ(single_edge_graph.graph->backward_cumulative_weights_exponential.size(), 1);
 
-        EdgeData edge_data_proxy = EdgeData(single_edge_graph.graph->edge_data);
+        EdgeData edge_data_proxy = EdgeData(single_edge_graph.graph);
         EXPECT_NEAR(edge_data_proxy.forward_cumulative_weights_exponential()[0], 1.0, 1e-6);
         EXPECT_NEAR(edge_data_proxy.backward_cumulative_weights_exponential()[0], 1.0, 1e-6);
     }
@@ -207,7 +207,7 @@ TYPED_TEST(TemporalGraphWeightTest, TimescaleBoundZero) {
     graph.add_multiple_edges(this->test_edges);
 
     // Should behave like -1 (unscaled)
-    EdgeData edge_data_proxy = EdgeData(graph.graph->edge_data);
+    EdgeData edge_data_proxy = EdgeData(graph.graph);
     this->verify_cumulative_weights(edge_data_proxy.forward_cumulative_weights_exponential());
     this->verify_cumulative_weights(edge_data_proxy.backward_cumulative_weights_exponential());
 }
@@ -269,7 +269,7 @@ TYPED_TEST(TemporalGraphWeightTest, WeightScalingPrecision) {
     });
 
     // Get individual weights using helper
-    EdgeData edge_data_proxy = EdgeData(graph.graph->edge_data);
+    EdgeData edge_data_proxy = EdgeData(graph.graph);
     const auto weights = this->get_individual_weights(edge_data_proxy.forward_cumulative_weights_exponential());
     ASSERT_EQ(weights.size(), 3);
 
@@ -289,7 +289,7 @@ TYPED_TEST(TemporalGraphWeightTest, WeightScalingPrecision) {
     constexpr int node_id = 1;
 
     // Get node's group range
-    auto node_edge_index = NodeEdgeIndex(graph.graph->node_edge_index);
+    auto node_edge_index = NodeEdgeIndex(graph.graph);
     const auto host_offsets = node_edge_index.count_ts_group_per_node_outbound();
     const size_t start = host_offsets[node_id];
 
@@ -359,7 +359,7 @@ TYPED_TEST(TemporalGraphWeightTest, SingleTimestampWithBounds) {
             bound);
         graph.add_multiple_edges(single_ts_edges);
 
-        auto edge_data_proxy = EdgeData(graph.graph->edge_data);
+        auto edge_data_proxy = EdgeData(graph.graph);
 
         ASSERT_EQ(edge_data_proxy.forward_cumulative_weights_exponential().size(), 1);
         ASSERT_EQ(edge_data_proxy.backward_cumulative_weights_exponential().size(), 1);

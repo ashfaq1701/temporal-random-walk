@@ -4,62 +4,63 @@
 #include <stdexcept>
 #include <omp.h>
 
-void node_features::ensure_size(NodeFeaturesStore* node_features_store, const int max_node_id) {
-    if (max_node_id <= node_features_store->max_node_id) {
+void node_features::ensure_size(
+    TemporalGraphData& data,
+    const int max_node_id) {
+
+    if (data.node_feature_dim == 0) {
         return;
     }
 
-    if (node_features_store->node_feature_dim == 0) {
-        node_features_store->max_node_id = max_node_id;
-        return;
-    }
+    const size_t needed_values =
+        static_cast<size_t>(max_node_id + 1) * data.node_feature_dim;
+    const size_t current_values = data.node_features.size();
 
-    const size_t old_values = node_features_store->node_features_size;
-    const size_t new_values = static_cast<size_t>(max_node_id + 1) * node_features_store->node_feature_dim;
+    if (needed_values <= current_values) return;
 
-    resize_memory(
-        &node_features_store->node_features,
-        old_values,
-        new_values,
-        false);
+    data.node_features.resize(needed_values);
 
-    if (new_values > old_values) {
-        std::memset(node_features_store->node_features + old_values, 0, (new_values - old_values) * sizeof(float));
-    }
-
-    node_features_store->node_features_size = new_values;
-    node_features_store->max_node_id = max_node_id;
+    std::memset(
+        data.node_features.data() + current_values,
+        0,
+        (needed_values - current_values) * sizeof(float));
 }
 
 void node_features::set_node_features(
-    NodeFeaturesStore* store,
+    TemporalGraphData& data,
     const int max_node_id,
     const int* node_ids,
     const size_t num_nodes,
-    const float* node_features,
+    const float* node_features_src,
     const size_t feature_dim) {
 
     if (num_nodes == 0) {
-        store->node_feature_dim = feature_dim;
+        data.node_feature_dim = feature_dim;
         return;
     }
 
     if (feature_dim == 0) {
-        throw std::runtime_error("feature_dim must be greater than 0 when setting node features");
+        throw std::runtime_error(
+            "feature_dim must be greater than 0 when setting node features");
     }
 
-    if (store->node_feature_dim != 0 && store->node_feature_dim != feature_dim) {
-        throw std::runtime_error("feature_dim mismatch with existing NodeFeaturesStore");
+    if (data.node_feature_dim != 0 &&
+        data.node_feature_dim != feature_dim) {
+        throw std::runtime_error(
+            "feature_dim mismatch with existing TemporalGraphData node features");
     }
 
-    store->node_feature_dim = feature_dim;
-    ensure_size(store, max_node_id);
+    data.node_feature_dim = feature_dim;
+    ensure_size(data, max_node_id);
+
+    float* dst_base = data.node_features.data();
 
     #pragma omp parallel for schedule(static)
     for (size_t i = 0; i < num_nodes; ++i) {
         const int node_id = node_ids[i];
-        float* dst = store->node_features + (static_cast<size_t>(node_id) * feature_dim);
-        const float* src = node_features + (i * feature_dim);
+        float* dst = dst_base +
+            static_cast<size_t>(node_id) * feature_dim;
+        const float* src = node_features_src + (i * feature_dim);
         std::memcpy(dst, src, feature_dim * sizeof(float));
     }
 }

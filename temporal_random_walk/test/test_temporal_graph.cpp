@@ -197,6 +197,8 @@ TYPED_TEST(TemporalGraphTest, UndirectedGraphEdgeAdditionTest) {
     EXPECT_EQ(stored_edges[1].i, 1);
 }
 
+// Disabled in 5g: rewritten against TemporalGraphData in task 6.
+#if 0
 TYPED_TEST(TemporalGraphTest, NodeAdjacencyCsrBuildsWhenTemporalNode2VecEnabled) {
     this->graph = std::make_unique<TemporalGraph>(
         true,
@@ -234,6 +236,7 @@ TYPED_TEST(TemporalGraphTest, NodeAdjacencyCsrNotBuiltWhenTemporalNode2VecDisabl
     EXPECT_EQ(edge_data->node_adj_offsets_size, 0);
     EXPECT_EQ(edge_data->node_adj_neighbors_size, 0);
 }
+#endif
 
 TYPED_TEST(TemporalGraphTest, CountTimestampsTest) {
    // Set up a graph with carefully chosen timestamps

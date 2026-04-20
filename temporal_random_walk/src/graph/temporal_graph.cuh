@@ -1,168 +1,111 @@
-#ifndef TEMPORAL_GRAPH_STORE_H
-#define TEMPORAL_GRAPH_STORE_H
+#ifndef TEMPORAL_GRAPH_CUH
+#define TEMPORAL_GRAPH_CUH
 
+#include <cstddef>
+#include <vector>
+
+#include "../common/macros.cuh"
+#include "../common/const.cuh"
+#include "../common/error_handlers.cuh"
+#include "../data/structs.cuh"
+#include "../data/temporal_graph_data.cuh"
+#include "../data/temporal_graph_view.cuh"
+#include "../data/buffer.cuh"
+
+// Include the OTHER parallel-file headers so temporal_graph_new.cu
+// can call the new overloads of edge_data::, node_edge_index::,
+// node_features::.
 #include "edge_data.cuh"
 #include "node_edge_index.cuh"
-#include "../common/const.cuh"
-#include "../data/temporal_graph_view.cuh"
+#include "node_features.cuh"
 
-struct TemporalGraphStore {
-    bool is_directed;
-    bool use_gpu;
-    bool owns_data;
-
-    int64_t max_time_capacity;
-    bool enable_weight_computation;
-    bool enable_temporal_node2vec = false;
-    double timescale_bound;
-    double node2vec_p;
-    double node2vec_q;
-
-    double inv_p;
-    double inv_q;
-
-    EdgeDataStore *edge_data;
-    NodeEdgeIndexStore *node_edge_index;
-
-    int64_t latest_timestamp;
-
-    TemporalGraphStore(): is_directed(false), use_gpu(false), owns_data(true) {
-        max_time_capacity = 0;
-        enable_weight_computation = false;
-        enable_temporal_node2vec = false;
-        timescale_bound = -1;
-        node2vec_p = DEFAULT_NODE2VEC_P;
-        node2vec_q = DEFAULT_NODE2VEC_Q;
-
-        inv_p = 1.0 / node2vec_p;
-        inv_q = 1.0 / node2vec_q;
-        edge_data = nullptr;
-        node_edge_index = nullptr;
-        latest_timestamp = 0;
-    }
-
-    explicit TemporalGraphStore(
-        const bool is_directed,
-        const bool use_gpu,
-
-        const int64_t max_time_capacity,
-        const bool enable_weight_computation,
-        const bool enable_temporal_node2vec,
-        const double timescale_bound,
-
-        const double node2vec_p = DEFAULT_NODE2VEC_P,
-        const double node2vec_q = DEFAULT_NODE2VEC_Q):
-        is_directed(is_directed), use_gpu(use_gpu), owns_data(true),
-        max_time_capacity(max_time_capacity),
-        enable_weight_computation(enable_weight_computation || enable_temporal_node2vec),
-        enable_temporal_node2vec(enable_temporal_node2vec),
-        timescale_bound(timescale_bound),
-        node2vec_p(node2vec_p), node2vec_q(node2vec_q),
-        inv_p(1.0 / node2vec_p), inv_q(1.0 / node2vec_q), latest_timestamp(0) {
-
-        edge_data = new EdgeDataStore(use_gpu, this->enable_weight_computation, this->enable_temporal_node2vec);
-        node_edge_index = new NodeEdgeIndexStore(use_gpu);
-    }
-
-    ~TemporalGraphStore() {
-        if (owns_data) {
-            delete edge_data;
-            delete node_edge_index;
-        }
-    }
-};
+// STAGING FILE for task 5d. Not in CMake. Swapped in by task 5g
+// alongside all the other parallel files; the _new suffixes are
+// removed from includes at that time.
 
 namespace temporal_graph {
 
     /**
-     * Common functions
+     * Common
      */
+    HOST void update_temporal_weights(TemporalGraphData& data);
 
-    HOST void update_temporal_weights(const TemporalGraphStore* graph);
+    HOST DEVICE size_t get_total_edges(const TemporalGraphData& data);
 
-    HOST DEVICE size_t get_total_edges(const TemporalGraphStore* graph);
+    HOST size_t get_node_count(const TemporalGraphData& data);
 
-    HOST size_t get_node_count(const TemporalGraphStore* graph);
+    HOST int64_t get_latest_timestamp(const TemporalGraphData& data);
 
-    HOST int64_t get_latest_timestamp(const TemporalGraphStore* graph);
+    HOST std::vector<int> get_node_ids(const TemporalGraphData& data);
 
-    HOST DataBlock<int> get_node_ids(const TemporalGraphStore* graph);
-
-    HOST DataBlock<Edge> get_edges(const TemporalGraphStore* graph);
+    HOST std::vector<Edge> get_edges(const TemporalGraphData& data);
 
     /**
      * Std implementations
      */
+    HOST void sort_and_merge_edges_std(
+        TemporalGraphData& data,
+        size_t start_idx);
 
-    HOST void sort_and_merge_edges_std(TemporalGraphStore *graph, size_t start_idx);
-
-    HOST void delete_old_edges_std(TemporalGraphStore* graph);
+    HOST void delete_old_edges_std(TemporalGraphData& data);
 
     HOST void add_multiple_edges_std(
-        TemporalGraphStore *graph,
-        const int *sources,
-        const int *targets,
-        const int64_t *timestamps,
-        size_t num_new_edges,
-        const float *edge_features = nullptr,
-        size_t feature_dim = 0);
-
-    HOST size_t count_timestamps_less_than_std(const TemporalGraphStore* graph, int64_t timestamp);
-
-    HOST size_t count_timestamps_greater_than_std(const TemporalGraphStore* graph, int64_t timestamp);
-
-    HOST size_t count_node_timestamps_less_than_std(TemporalGraphStore* graph, int node_id, int64_t timestamp);
-
-    HOST size_t count_node_timestamps_greater_than_std(TemporalGraphStore* graph, int node_id, int64_t timestamp);
-
-    /**
-     * CUDA implementations
-     */
-
-    #ifdef HAS_CUDA
-
-    HOST void sort_and_merge_edges_cuda(TemporalGraphStore *graph, size_t start_idx);
-
-    HOST void delete_old_edges_cuda(TemporalGraphStore *graph);
-
-    HOST void add_multiple_edges_cuda(
-        TemporalGraphStore *graph,
+        TemporalGraphData& data,
         const int* sources,
         const int* targets,
         const int64_t* timestamps,
         size_t num_new_edges,
-        const float *edge_features = nullptr,
+        const float* edge_features = nullptr,
         size_t feature_dim = 0);
 
-    HOST size_t count_timestamps_less_than_cuda(const TemporalGraphStore* graph, int64_t timestamp);
+    HOST size_t count_timestamps_less_than_std(
+        const TemporalGraphData& data, int64_t timestamp);
 
-    HOST size_t count_timestamps_greater_than_cuda(const TemporalGraphStore* graph, int64_t timestamp);
+    HOST size_t count_timestamps_greater_than_std(
+        const TemporalGraphData& data, int64_t timestamp);
 
-    HOST size_t count_node_timestamps_less_than_cuda(const TemporalGraphStore* graph, int node_id, int64_t timestamp);
+    HOST size_t count_node_timestamps_less_than_std(
+        const TemporalGraphData& data, int node_id, int64_t timestamp);
 
-    HOST size_t count_node_timestamps_greater_than_cuda(const TemporalGraphStore* graph, int node_id, int64_t timestamp);
-
-    HOST TemporalGraphStore* to_device_ptr(const TemporalGraphStore* graph);
-
-    HOST void free_device_pointers(TemporalGraphStore* d_graph);
+    HOST size_t count_node_timestamps_greater_than_std(
+        const TemporalGraphData& data, int node_id, int64_t timestamp);
 
     /**
-     * Bridge helper: build a TemporalGraphView from an old TemporalGraphStore.
-     *
-     * This lives for exactly one task. Task 4 uses it to feed views into
-     * walk kernels without yet having a TemporalGraphData. Task 5 deletes
-     * this function (along with the old *Store types) and replaces callers
-     * with make_temporal_graph_view(data) from data/temporal_graph_view.cuh.
-     *
-     * The returned view aliases into graph->edge_data and
-     * graph->node_edge_index. It must not outlive either.
+     * CUDA implementations
      */
-    HOST TemporalGraphView make_view_from_old_store(const TemporalGraphStore* graph);
+    #ifdef HAS_CUDA
+
+    HOST void sort_and_merge_edges_cuda(
+        TemporalGraphData& data,
+        size_t start_idx);
+
+    HOST void delete_old_edges_cuda(TemporalGraphData& data);
+
+    HOST void add_multiple_edges_cuda(
+        TemporalGraphData& data,
+        const int* sources,
+        const int* targets,
+        const int64_t* timestamps,
+        size_t num_new_edges,
+        const float* edge_features = nullptr,
+        size_t feature_dim = 0);
+
+    HOST size_t count_timestamps_less_than_cuda(
+        const TemporalGraphData& data, int64_t timestamp);
+
+    HOST size_t count_timestamps_greater_than_cuda(
+        const TemporalGraphData& data, int64_t timestamp);
+
+    HOST size_t count_node_timestamps_less_than_cuda(
+        const TemporalGraphData& data, int node_id, int64_t timestamp);
+
+    HOST size_t count_node_timestamps_greater_than_cuda(
+        const TemporalGraphData& data, int node_id, int64_t timestamp);
 
     #endif
 
-    HOST size_t get_memory_used(TemporalGraphStore* graph);
+    HOST size_t get_memory_used(const TemporalGraphData& data);
 
 }
 
-#endif // TEMPORAL_GRAPH_STORE_H
+#endif // TEMPORAL_GRAPH_CUH
