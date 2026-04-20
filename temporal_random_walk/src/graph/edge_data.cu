@@ -25,6 +25,8 @@
 #include <thrust/binary_search.h>
 #include <thrust/iterator/counting_iterator.h>
 
+#include "../common/cuda_scan.cuh"
+
 #endif
 
 #include "../utils/omp_utils.cuh"
@@ -891,27 +893,24 @@ HOST void edge_data::update_temporal_weights_cuda(
     );
     CUDA_KERNEL_CHECK("After thrust transform backward weight normalization in update_temporal_weights_cuda");
 
-    thrust::device_ptr<double> d_forward_cumulative(
-        data.forward_cumulative_weights_exponential.data());
-    thrust::device_ptr<double> d_backward_cumulative(
-        data.backward_cumulative_weights_exponential.data());
+    double* d_forward_cumulative  = data.forward_cumulative_weights_exponential.data();
+    double* d_backward_cumulative = data.backward_cumulative_weights_exponential.data();
 
-    // Compute cumulative sums
-    thrust::inclusive_scan(
-        DEVICE_EXECUTION_POLICY,
+    // CUB specializes scans for primitive double; faster than thrust on
+    // large group weight arrays.
+    cub_inclusive_sum(
         d_forward_weights_ptr,
-        d_forward_weights_ptr + static_cast<long>(num_groups),
-        d_forward_cumulative
+        d_forward_cumulative,
+        num_groups
     );
-    CUDA_KERNEL_CHECK("After thrust inclusive_scan forward weights in update_temporal_weights_cuda");
+    CUDA_KERNEL_CHECK("After cub inclusive_sum forward weights in update_temporal_weights_cuda");
 
-    thrust::inclusive_scan(
-        DEVICE_EXECUTION_POLICY,
+    cub_inclusive_sum(
         d_backward_weights_ptr,
-        d_backward_weights_ptr + static_cast<long>(num_groups),
-        d_backward_cumulative
+        d_backward_cumulative,
+        num_groups
     );
-    CUDA_KERNEL_CHECK("After thrust inclusive_scan backward weights in update_temporal_weights_cuda");
+    CUDA_KERNEL_CHECK("After cub inclusive_sum backward weights in update_temporal_weights_cuda");
 }
 
 #endif
