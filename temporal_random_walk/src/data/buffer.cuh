@@ -1,14 +1,16 @@
 #ifndef DATA_BUFFER_CUH
 #define DATA_BUFFER_CUH
 
+#include <atomic>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
-#include <utility>
-#include <stdexcept>
-#include <algorithm>
-#include <vector>
+#include <iostream>
+#include <mutex>
 #include <new>
+#include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include "../common/macros.cuh"
 #include "../common/error_handlers.cuh"
@@ -37,14 +39,42 @@
  *
  * Not yet stream-aware: alloc/free happen on the default stream.
  * Stream-ordered allocation is a later task.
+ *
+ * Pinned host allocation: when pinned_host=true is passed to the
+ * constructor AND use_gpu=false AND CUDA is available, host memory is
+ * allocated via cudaMallocHost. This roughly doubles effective PCIe
+ * bandwidth for subsequent H<->D copies and lets cudaMemcpyAsync truly
+ * overlap kernel work. The flag is ignored on CUDA-less builds and on
+ * device-resident buffers (use_gpu=true).
+ *
+ * On cudaMallocHost failure (pinned pool exhausted), the allocator falls
+ * back to plain malloc and logs once per process. The caller still gets
+ * working memory; copies just lose the bandwidth advantage.
  */
+
+// Process-wide counter of currently-allocated pinned host bytes. Used to
+// emit a one-time warning when the footprint exceeds a soft threshold.
+inline std::atomic<size_t> g_total_pinned_host_bytes{0};
+inline constexpr size_t kPinnedHostWarnThreshold =
+    4ULL * 1024ULL * 1024ULL * 1024ULL;  // 4 GiB
+
 template <typename T>
 class Buffer {
 public:
-    Buffer() noexcept : data_(nullptr), size_(0), capacity_(0), use_gpu_(false) {}
+    Buffer() noexcept
+        : data_(nullptr), size_(0), capacity_(0),
+          use_gpu_(false), pinned_host_(false) {}
 
     explicit Buffer(const bool use_gpu) noexcept
-        : data_(nullptr), size_(0), capacity_(0), use_gpu_(use_gpu) {}
+        : data_(nullptr), size_(0), capacity_(0),
+          use_gpu_(use_gpu), pinned_host_(false) {}
+
+    Buffer(const bool use_gpu, const bool pinned_host) noexcept
+        : data_(nullptr), size_(0), capacity_(0),
+          use_gpu_(use_gpu),
+          // Pinning only applies to host buffers. On device buffers the
+          // flag is meaningless, so collapse it to false for clarity.
+          pinned_host_(!use_gpu && pinned_host) {}
 
     Buffer(const size_t n, const bool use_gpu) : Buffer(use_gpu) {
         reserve(n);
@@ -60,7 +90,7 @@ public:
 
     Buffer(Buffer&& other) noexcept
         : data_(other.data_), size_(other.size_), capacity_(other.capacity_),
-          use_gpu_(other.use_gpu_) {
+          use_gpu_(other.use_gpu_), pinned_host_(other.pinned_host_) {
         other.data_ = nullptr;
         other.size_ = 0;
         other.capacity_ = 0;
@@ -73,6 +103,7 @@ public:
             size_ = other.size_;
             capacity_ = other.capacity_;
             use_gpu_ = other.use_gpu_;
+            pinned_host_ = other.pinned_host_;
             other.data_ = nullptr;
             other.size_ = 0;
             other.capacity_ = 0;
@@ -80,21 +111,31 @@ public:
         return *this;
     }
 
-    T*       data()       noexcept { return data_; }
-    const T* data() const noexcept { return data_; }
-    size_t   size()     const noexcept { return size_; }
-    size_t   capacity() const noexcept { return capacity_; }
-    bool     empty()    const noexcept { return size_ == 0; }
-    bool     is_gpu()   const noexcept { return use_gpu_; }
+    HOST DEVICE T*       data()       noexcept { return data_; }
+    HOST DEVICE const T* data() const noexcept { return data_; }
+    HOST DEVICE size_t   size()     const noexcept { return size_; }
+    HOST DEVICE size_t   capacity() const noexcept { return capacity_; }
+    HOST DEVICE bool     empty()    const noexcept { return size_ == 0; }
+    HOST DEVICE bool     is_gpu()   const noexcept { return use_gpu_; }
+    HOST DEVICE bool     is_pinned_host() const noexcept { return pinned_host_; }
 
     void reserve(size_t n) {
         if (n <= capacity_) return;
         size_t new_cap = capacity_ == 0 ? n : std::max(capacity_ * 2, n);
+        // Snapshot allocator state for the OLD buffer before raw_allocate
+        // runs: a cudaMallocHost fallback inside raw_allocate flips
+        // pinned_host_ to false, which would otherwise mislead deallocate()
+        // into calling std::free on a pinned pointer.
+        T* const   old_data       = data_;
+        const size_t old_capacity = capacity_;
+        const bool old_pinned     = pinned_host_;
+        const bool old_use_gpu    = use_gpu_;
+
         T* new_ptr = raw_allocate(new_cap);
-        if (data_ && size_ > 0) {
-            raw_copy_device_to_device_or_host_to_host(new_ptr, data_, size_);
+        if (old_data && size_ > 0) {
+            raw_copy_device_to_device_or_host_to_host(new_ptr, old_data, size_);
         }
-        deallocate();
+        deallocate_ptr(old_data, old_capacity, old_use_gpu, old_pinned);
         data_ = new_ptr;
         capacity_ = new_cap;
     }
@@ -207,6 +248,7 @@ private:
     size_t size_;
     size_t capacity_;
     bool   use_gpu_;
+    bool   pinned_host_;
 
     T* raw_allocate(size_t n) {
         if (n == 0) return nullptr;
@@ -214,12 +256,43 @@ private:
 #ifdef HAS_CUDA
         if (use_gpu_) {
             CUDA_CHECK_AND_CLEAR(cudaMalloc(&p, n * sizeof(T)));
-        } else
-#endif
-        {
-            p = static_cast<T*>(std::malloc(n * sizeof(T)));
-            if (!p) throw std::bad_alloc();
+            return p;
         }
+        if (pinned_host_) {
+            const cudaError_t err = cudaMallocHost(
+                reinterpret_cast<void**>(&p), n * sizeof(T));
+            if (err == cudaSuccess) {
+                const size_t new_total =
+                    g_total_pinned_host_bytes.fetch_add(
+                        n * sizeof(T), std::memory_order_relaxed)
+                    + n * sizeof(T);
+                if (new_total > kPinnedHostWarnThreshold) {
+                    static std::once_flag warn_once;
+                    std::call_once(warn_once, []() {
+                        std::cerr << "[Buffer] Total pinned host memory "
+                                     "exceeds 4 GiB. Consider reducing "
+                                     "batch size or walk count if you see "
+                                     "cudaMallocHost failures."
+                                  << std::endl;
+                    });
+                }
+                return p;
+            }
+            // Fallback path. Disable pinning for this buffer's subsequent
+            // grows so we don't keep hitting the failing allocator.
+            static std::once_flag fallback_once;
+            std::call_once(fallback_once, [err]() {
+                std::cerr << "[Buffer] cudaMallocHost failed ("
+                          << cudaGetErrorString(err)
+                          << "); falling back to malloc. H<->D copies "
+                             "will be slower." << std::endl;
+            });
+            pinned_host_ = false;
+            (void)cudaGetLastError();
+        }
+#endif
+        p = static_cast<T*>(std::malloc(n * sizeof(T)));
+        if (!p) throw std::bad_alloc();
         return p;
     }
 
@@ -235,17 +308,34 @@ private:
         std::memcpy(dst, src, n * sizeof(T));
     }
 
-    void deallocate() noexcept {
-        if (!data_) return;
+    // Free `ptr` using the allocator implied by (use_gpu, pinned_host). Used
+    // both by deallocate() (which reads the live members) and by reserve()
+    // (which must use a snapshot taken before raw_allocate may have flipped
+    // pinned_host_ on a fallback).
+    static void deallocate_ptr(
+        T* ptr, [[maybe_unused]] size_t cap,
+        [[maybe_unused]] bool use_gpu,
+        [[maybe_unused]] bool pinned_host) noexcept {
+        if (!ptr) return;
 #ifdef HAS_CUDA
-        if (use_gpu_) {
-            cudaFree(data_);
+        if (use_gpu) {
+            cudaFree(ptr);
             cudaGetLastError();
-        } else
-#endif
-        {
-            std::free(data_);
+            return;
         }
+        if (pinned_host) {
+            cudaFreeHost(ptr);
+            cudaGetLastError();
+            g_total_pinned_host_bytes.fetch_sub(
+                cap * sizeof(T), std::memory_order_relaxed);
+            return;
+        }
+#endif
+        std::free(ptr);
+    }
+
+    void deallocate() noexcept {
+        deallocate_ptr(data_, capacity_, use_gpu_, pinned_host_);
         data_ = nullptr;
     }
 };

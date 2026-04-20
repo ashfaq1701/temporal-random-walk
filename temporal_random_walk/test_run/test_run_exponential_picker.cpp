@@ -1,4 +1,8 @@
+#include <algorithm>
+#include <cctype>
 #include <iostream>
+#include <string>
+
 #include <proxies/RandomPicker.cuh>
 
 constexpr int TOTAL_TIMESTEPS = 100000000;

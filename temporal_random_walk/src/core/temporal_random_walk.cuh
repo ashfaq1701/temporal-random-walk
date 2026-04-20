@@ -65,6 +65,13 @@ public:
     Buffer<int>&       last_batch_unique_targets()       { return last_batch_unique_targets_; }
     const Buffer<int>& last_batch_unique_targets() const { return last_batch_unique_targets_; }
 
+    // Pinned host staging for add_multiple_edges H->D. Allocated on
+    // demand (pinned_host=true when data_.use_gpu, else unused). Kept
+    // alive across batches to amortize the cudaMallocHost cost and
+    // benefit from geometric-growth reuse.
+    Buffer<int>& h_stage_sources() { return h_stage_sources_; }
+    Buffer<int>& h_stage_targets() { return h_stage_targets_; }
+
 #ifdef HAS_CUDA
     const cudaDeviceProp& cuda_device_prop() const { return cuda_device_prop_; }
 
@@ -137,6 +144,8 @@ private:
     bool     shuffle_walk_order_;
     Buffer<int> last_batch_unique_sources_{/*use_gpu=*/false};
     Buffer<int> last_batch_unique_targets_{/*use_gpu=*/false};
+    Buffer<int> h_stage_sources_{/*use_gpu=*/false};
+    Buffer<int> h_stage_targets_{/*use_gpu=*/false};
 #ifdef HAS_CUDA
     cudaDeviceProp cuda_device_prop_{};
     cudaStream_t   stream_{nullptr};

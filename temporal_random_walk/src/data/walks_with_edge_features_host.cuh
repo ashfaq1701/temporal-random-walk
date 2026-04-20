@@ -23,6 +23,12 @@ struct WalksWithEdgeFeaturesHost {
 
     WalksWithEdgeFeaturesHost(WalkSetHost ws, const int fdim)
         : walk_set(std::move(ws)), feature_dim(fdim) {
+        // Inherit pinned-host state from the incoming WalkSetHost: if the
+        // walk data came out of a device download, the edge-feature gather
+        // buffer should also live in pinned host memory so the caller's
+        // upstream D->H copy gets full bandwidth.
+        walk_edge_features = Buffer<float>(
+            /*use_gpu=*/false, /*pinned_host=*/walk_set.is_pinned_host());
         const size_t n = walk_set.edge_ids_size();
         if (feature_dim > 0 && n > 0) {
             walk_edge_features.resize(n * static_cast<size_t>(feature_dim));

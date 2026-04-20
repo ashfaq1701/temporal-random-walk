@@ -39,7 +39,8 @@ WalkSetView WalkSetDevice::make_view() {
 }
 
 WalkSetHost WalkSetDevice::download_to_host() && {
-    WalkSetHost host(num_walks_, max_len_, walk_padding_value_);
+    WalkSetHost host(num_walks_, max_len_, walk_padding_value_,
+                     /*pinned_host=*/true);
 
     host.overwrite_from_device_buffers(nodes_, timestamps_,
                                        walk_lens_, edge_ids_);

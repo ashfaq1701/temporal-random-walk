@@ -3,6 +3,7 @@
 #include "../src/proxies/RandomPicker.cuh"
 #include "../src/utils/utils.cuh"
 #include "../src/common/random_gen.cuh"
+#include "../src/common/memory.cuh"
 
 template<typename T>
 class WeightBasedRandomPickerTest : public ::testing::Test
@@ -21,7 +22,7 @@ protected:
     {
         std::map<int, int> sample_counts;
 
-        const double* random_nums = generate_n_random_numbers(num_samples, T::value);
+        double* random_nums = generate_n_random_numbers(num_samples, T::value);
 
         for (int i = 0; i < num_samples; i++)
         {
@@ -30,6 +31,7 @@ protected:
             EXPECT_LT(picked, end) << "Sampled index at or above end";
             ++sample_counts[picked];
         }
+        clear_memory(&random_nums, T::value);
 
         // Verify all valid indices were sampled
         for (int i = start; i < end; i++)
@@ -88,13 +90,14 @@ TYPED_TEST(WeightBasedRandomPickerTest, SingleElementRange)
     std::vector<double> weights = {0.2, 0.5, 0.7, 1.0};
     constexpr int num_samples = 100;
 
-    const double* random_nums = generate_n_random_numbers(num_samples, TypeParam::value);
+    double* random_nums = generate_n_random_numbers(num_samples, TypeParam::value);
 
     // When sampling single element, should always return that index
     for (int i = 0; i < num_samples; i++)
     {
         EXPECT_EQ(this->picker.pick_random_with_provided_number(weights, 1, 2, random_nums + i), 1);
     }
+    clear_memory(&random_nums, TypeParam::value);
 }
 
 TYPED_TEST(WeightBasedRandomPickerTest, WeightDistributionTest)
@@ -105,13 +108,14 @@ TYPED_TEST(WeightBasedRandomPickerTest, WeightDistributionTest)
     std::map<int, int> sample_counts;
     constexpr int num_samples = 100000;
 
-    const double* random_nums = generate_n_random_numbers(num_samples, TypeParam::value);
+    double* random_nums = generate_n_random_numbers(num_samples, TypeParam::value);
 
     for (int i = 0; i < num_samples; i++)
     {
         int picked = this->picker.pick_random_with_provided_number(weights, 0, 4, random_nums + i);
         ++sample_counts[picked];
     }
+    clear_memory(&random_nums, TypeParam::value);
 
     // Each index should be sampled roughly equally since weights
     // have equal increments

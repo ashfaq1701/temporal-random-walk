@@ -12,8 +12,12 @@
 
 WalkSetHost::WalkSetHost(const size_t num_walks,
                          const size_t max_len,
-                         const int walk_padding_value)
-    : nodes_(false), timestamps_(false), walk_lens_(false), edge_ids_(false),
+                         const int walk_padding_value,
+                         const bool pinned_host)
+    : nodes_(false, pinned_host),
+      timestamps_(false, pinned_host),
+      walk_lens_(false, pinned_host),
+      edge_ids_(false, pinned_host),
       num_walks_(num_walks), max_len_(max_len),
       walk_padding_value_(walk_padding_value) {
 

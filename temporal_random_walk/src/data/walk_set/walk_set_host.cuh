@@ -32,7 +32,8 @@ class WalkSetHost {
 public:
     WalkSetHost() = default;
 
-    WalkSetHost(size_t num_walks, size_t max_len, int walk_padding_value);
+    WalkSetHost(size_t num_walks, size_t max_len, int walk_padding_value,
+                bool pinned_host = false);
 
     WalkSetHost(const WalkSetHost&)            = delete;
     WalkSetHost& operator=(const WalkSetHost&) = delete;
@@ -54,6 +55,8 @@ public:
     size_t edge_ids_size()   const { return edge_ids_.size(); }
 
     size_t non_empty_count() const noexcept;
+
+    bool is_pinned_host() const noexcept { return nodes_.is_pinned_host(); }
 
     int*     release_nodes_as_raw()      noexcept;
     int64_t* release_timestamps_as_raw() noexcept;
