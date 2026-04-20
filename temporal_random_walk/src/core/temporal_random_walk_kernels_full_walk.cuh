@@ -27,12 +27,14 @@ namespace temporal_random_walk {
 
         if (max_walk_len == 0) return;
 
-        // Optimize rand_nums access - use direct formula instead of storing offset
-        // Calculate indices directly to reduce register usage
-        const size_t base_idx = static_cast<size_t>(walk_idx) * (1 + static_cast<size_t>(max_walk_len) * 2);
+        // Philox is counter-based: one init per thread, then step the
+        // counter via successive draw_u01_philox calls for each of the
+        // ~2*max_walk_len draws this walk needs.
+        PhiloxState rng;
+        init_philox_state(rng, base_seed, static_cast<uint64_t>(walk_idx));
 
-        const double r0 = rng_u01_philox(base_seed, walk_idx, base_idx + 0);
-        const double r1 = rng_u01_philox(base_seed, walk_idx, base_idx + 1);
+        const double r0 = draw_u01_philox(rng);
+        const double r1 = draw_u01_philox(rng);
 
         // Get start edge based on whether we have a starting node
         const auto padding_value = walk_set.nodes[walk_idx * max_walk_len];
@@ -77,7 +79,7 @@ namespace temporal_random_walk {
                 current_node = start_src;
             }
         } else {
-            const double r2 = rng_u01_philox(base_seed, walk_idx, base_idx + 2);
+            const double r2 = draw_u01_philox(rng);
 
             // For undirected graphs, use specified start node or pick a random node
             const int picked_node = (start_node_ids[walk_idx] != -1)
@@ -94,11 +96,8 @@ namespace temporal_random_walk {
         // Main walk loop
         int walk_len = 1; // Start at 1 since we already added first hop
         while (walk_len < max_walk_len && current_node != -1) {
-            // Calculate random number indices directly based on walk_len
-            const size_t step_base_idx = base_idx + static_cast<size_t>(walk_len) * 2 + 1;
-
-            const double r_step0 = rng_u01_philox(base_seed, walk_idx, step_base_idx);
-            const double r_step1 = rng_u01_philox(base_seed, walk_idx, step_base_idx + 1);
+            const double r_step0 = draw_u01_philox(rng);
+            const double r_step1 = draw_u01_philox(rng);
 
             walk_set.add_hop(walk_idx, current_node, current_timestamp, current_edge_id);
 

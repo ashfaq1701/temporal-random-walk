@@ -47,13 +47,31 @@ inline double* generate_n_random_numbers_cpu(const size_t n) {
 
 #ifdef HAS_CUDA
 
-DEVICE __forceinline__ double rng_u01_philox(
+// Thread-local Philox state + draw helpers.
+//
+// Philox4_32_10 is counter-based: initialize once per thread at kernel
+// entry, step the counter with curand_uniform_double(state) for each
+// draw. The previous rng_u01_philox(seed, walk_idx, draw_idx) helper
+// did a full curand_init for every draw, which for the walk kernels
+// meant ~N_hops * init cost per walk (~200 inits per full-walk thread).
+//
+// Call init_philox_state once per thread after the bounds check; use
+// draw_u01_philox(state) for each uniform-[0,1) draw.
+using PhiloxState = curandStatePhilox4_32_10_t;
+
+DEVICE __forceinline__ void init_philox_state(
+    PhiloxState& state,
     const uint64_t base_seed,
     const uint64_t walk_idx,
-    const uint64_t draw_idx) {
+    const uint64_t offset = 0ULL) {
+    // subsequence = walk_idx distinguishes threads. Each walk has its
+    // own Philox stream. offset lets step-kernel variants start at a
+    // non-zero position in that stream so successive step launches do
+    // not draw from the same counter positions.
+    curand_init(base_seed, walk_idx, offset, &state);
+}
 
-    curandStatePhilox4_32_10_t state;
-    curand_init(base_seed, walk_idx, draw_idx, &state);
+DEVICE __forceinline__ double draw_u01_philox(PhiloxState& state) {
     return curand_uniform_double(&state);
 }
 

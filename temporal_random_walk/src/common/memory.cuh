@@ -1,22 +1,45 @@
 #ifndef MEMORY_H
 #define MEMORY_H
 
+#include <algorithm>
 #include <cstddef>
-#include <iostream>
 #include <cstring>
+#include <iostream>
 
 #include "error_handlers.cuh"
 #include "macros.cuh"
 
 #ifdef HAS_CUDA
-template <typename T>
-__global__ void fill_kernel(T* memory, const size_t size, T* value) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < size) {
-        memory[idx] = *value;
-    }
-}
+#include <cuda_runtime.h>
+#include <thrust/device_ptr.h>
+#include <thrust/execution_policy.h>
+#include <thrust/fill.h>
 #endif
+
+namespace fill_memory_detail {
+
+// Predicates for byte-pattern fast paths. Compare bytewise to an all-0
+// buffer (for cudaMemsetAsync(0)) or all-0xFF buffer (for
+// cudaMemsetAsync(0xFF)). Works for any trivially-copyable T:
+//   int(0), size_t(0), double(+0.0) -> all-0 bytes
+//   int(-1), size_t::max()          -> all-0xFF bytes
+// and cheap enough to run on every fill call.
+template <typename T>
+inline bool is_zero_value(const T& v) {
+    constexpr size_t N = sizeof(T);
+    alignas(T) unsigned char zero[N] = {};
+    return std::memcmp(&v, zero, N) == 0;
+}
+
+template <typename T>
+inline bool is_all_0xff_value(const T& v) {
+    constexpr size_t N = sizeof(T);
+    alignas(T) unsigned char ffs[N];
+    std::memset(ffs, 0xFF, N);
+    return std::memcmp(&v, ffs, N) == 0;
+}
+
+} // namespace fill_memory_detail
 
 /**
  * Read a single T from a pointer whose allocator depends on use_gpu.
@@ -105,26 +128,31 @@ HOST void resize_memory(T** data_ptr, const size_t size, size_t new_size, bool u
 
 template <typename T>
 HOST void fill_memory(T* memory, size_t size, T value, bool use_gpu) {
-    if (!memory) {
-        std::cerr << "Error: memory is NULL!" << std::endl;
-        return;
-    }
+    if (!memory || size == 0) return;
 
     #ifdef HAS_CUDA
     if (use_gpu) {
-        T* d_value = nullptr;
-        CUDA_CHECK_AND_CLEAR(cudaMalloc(&d_value, sizeof(T)));
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_value, &value, sizeof(T), cudaMemcpyHostToDevice));
-
-        constexpr int threadsPerBlock = 256;
-        int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
-
-        fill_kernel<<<blocksPerGrid, threadsPerBlock>>>(memory, size, d_value);
-        CUDA_KERNEL_CHECK_SYNC("After fill_kernel execution");
-
-        CUDA_CHECK_AND_CLEAR(cudaFree(d_value));
+        // Fast path: byte-repeatable patterns go through cudaMemsetAsync,
+        // avoiding both the hand-rolled fill kernel and the scalar-in-
+        // device-memory alloc/copy/free that used to surround it.
+        if (fill_memory_detail::is_zero_value(value)) {
+            CUDA_CHECK_AND_CLEAR(cudaMemsetAsync(
+                memory, 0, size * sizeof(T)));
+            return;
+        }
+        if (fill_memory_detail::is_all_0xff_value(value)) {
+            CUDA_CHECK_AND_CLEAR(cudaMemsetAsync(
+                memory, 0xFF, size * sizeof(T)));
+            return;
+        }
+        // General path: thrust dispatches its own kernel; no scratch alloc.
+        thrust::fill_n(
+            thrust::device,
+            thrust::device_pointer_cast(memory),
+            size,
+            value);
+        return;
     }
-    else
     #endif
     {
         std::fill(memory, memory + size, value);

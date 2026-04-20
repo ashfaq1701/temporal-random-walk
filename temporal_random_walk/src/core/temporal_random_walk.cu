@@ -18,6 +18,13 @@
 #include "../utils/random.cuh"
 
 #ifdef HAS_CUDA
+#include <thrust/device_ptr.h>
+#include <thrust/execution_policy.h>
+#include <thrust/iterator/counting_iterator.h>
+#include <thrust/sort.h>
+#include <thrust/transform.h>
+#include <thrust/unique.h>
+
 #include "temporal_random_walk_kernels_full_walk.cuh"
 #include "temporal_random_walk_kernels_step_based.cuh"
 #include "../data/walk_set/walk_set_device.cuh"
@@ -46,6 +53,14 @@ core::TemporalRandomWalk::TemporalRandomWalk(
       global_seed_(global_seed),
       shuffle_walk_order_(shuffle_walk_order) {
 
+    // last_batch_unique_* track the source/target nodes of the most recent
+    // add_multiple_edges batch. They live on the same side as the graph so
+    // the cuda walk paths can consume them with no H<->D staging. Default
+    // construction in the header pinned them to use_gpu=false; re-bind here
+    // to match data_.use_gpu.
+    last_batch_unique_sources_ = Buffer<int>(use_gpu);
+    last_batch_unique_targets_ = Buffer<int>(use_gpu);
+
     data_.is_directed              = is_directed;
     data_.max_time_capacity        = max_time_capacity;
     data_.timescale_bound          = timescale_bound;
@@ -70,7 +85,8 @@ core::TemporalRandomWalk::TemporalRandomWalk(
 
 namespace {
 
-void set_last_batch_unique(
+// Host path: std::set dedup. values is a host pointer.
+void set_last_batch_unique_std(
     const int* values, const size_t n, Buffer<int>& out) {
     std::set<int> s(values, values + n);
     out.shrink_to_fit_empty();
@@ -80,12 +96,112 @@ void set_last_batch_unique(
     }
 }
 
+#ifdef HAS_CUDA
+// GPU path: thrust::sort + thrust::unique. `values` is a host pointer from
+// the caller of add_multiple_edges; we stage it to a device scratch buffer
+// (one H->D cudaMemcpy) to avoid mutating the caller's array, then run
+// sort+unique on device. `out` is `last_batch_unique_*_` which is
+// device-resident when data.use_gpu; downstream consumers (the _cuda walk
+// paths) read it directly on device — no D->H copy.
+void set_last_batch_unique_cuda(
+    const int* values_host, const size_t n, Buffer<int>& out) {
+    if (n == 0) {
+        out.shrink_to_fit_empty();
+        return;
+    }
+
+    Buffer<int> scratch(/*use_gpu=*/true);
+    scratch.resize(n);
+    CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
+        scratch.data(), values_host, n * sizeof(int),
+        cudaMemcpyHostToDevice));
+
+    thrust::device_ptr<int> s_begin(scratch.data());
+    thrust::device_ptr<int> s_end(scratch.data() + n);
+    thrust::sort(DEVICE_EXECUTION_POLICY, s_begin, s_end);
+    auto new_end = thrust::unique(DEVICE_EXECUTION_POLICY, s_begin, s_end);
+    const size_t unique_count = static_cast<size_t>(new_end - s_begin);
+
+    out.shrink_to_fit_empty();
+    out.resize(unique_count);
+    CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
+        out.data(), scratch.data(), unique_count * sizeof(int),
+        cudaMemcpyDeviceToDevice));
+}
+#endif
+
+#ifdef HAS_CUDA
+// Build (src-only directed / src+tgt deduped undirected) start-node list
+// on device, then repeat each by num_walks_per_node. Output is a device
+// DataBlock<int> ready for consumption by the _cuda walk kernels.
+DataBlock<int> get_last_batch_start_nodes_device(
+    const core::TemporalRandomWalk* trw,
+    const int num_walks_per_node) {
+    const Buffer<int>& src = trw->last_batch_unique_sources();
+
+    Buffer<int> start_device(/*use_gpu=*/true);
+
+    if (trw->is_directed()) {
+        start_device.resize(src.size());
+        if (src.size() > 0) {
+            CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
+                start_device.data(), src.data(),
+                src.size() * sizeof(int), cudaMemcpyDeviceToDevice));
+        }
+    } else {
+        const Buffer<int>& dst = trw->last_batch_unique_targets();
+        const size_t total = src.size() + dst.size();
+        start_device.resize(total);
+        if (src.size() > 0) {
+            CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
+                start_device.data(), src.data(),
+                src.size() * sizeof(int), cudaMemcpyDeviceToDevice));
+        }
+        if (dst.size() > 0) {
+            CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
+                start_device.data() + src.size(), dst.data(),
+                dst.size() * sizeof(int), cudaMemcpyDeviceToDevice));
+        }
+        if (total > 0) {
+            thrust::device_ptr<int> d_begin(start_device.data());
+            thrust::device_ptr<int> d_end(start_device.data() + total);
+            thrust::sort(DEVICE_EXECUTION_POLICY, d_begin, d_end);
+            auto new_end = thrust::unique(DEVICE_EXECUTION_POLICY, d_begin, d_end);
+            const size_t unique_count = static_cast<size_t>(new_end - d_begin);
+            // Shrink the logical size; keep capacity — scratch is freed on scope exit.
+            start_device.resize(unique_count);
+        }
+    }
+
+    const size_t out_size = start_device.size() * static_cast<size_t>(num_walks_per_node);
+    DataBlock<int> repeated(out_size, /*use_gpu=*/true);
+    if (start_device.size() > 0 && num_walks_per_node > 0) {
+        const int* src_ptr = start_device.data();
+        thrust::transform(
+            DEVICE_EXECUTION_POLICY,
+            thrust::counting_iterator<size_t>(0),
+            thrust::counting_iterator<size_t>(out_size),
+            thrust::device_pointer_cast(repeated.data),
+            [src_ptr, num_walks_per_node] DEVICE (const size_t idx) {
+                return src_ptr[idx / static_cast<size_t>(num_walks_per_node)];
+            });
+        CUDA_KERNEL_CHECK(
+            "After thrust transform in get_last_batch_start_nodes_device");
+    }
+    return repeated;
+}
+#endif
+
 DataBlock<int> get_last_batch_start_nodes_new(
     const core::TemporalRandomWalk* trw,
     const int num_walks_per_node) {
+#ifdef HAS_CUDA
+    if (trw->data().use_gpu) {
+        return get_last_batch_start_nodes_device(trw, num_walks_per_node);
+    }
+#endif
 
     std::vector<int> start_nodes;
-
     if (trw->is_directed()) {
         const Buffer<int>& src = trw->last_batch_unique_sources();
         start_nodes.assign(src.data(), src.data() + src.size());
@@ -99,7 +215,7 @@ DataBlock<int> get_last_batch_start_nodes_new(
 
     return repeat_elements(
         start_nodes.data(), start_nodes.size(),
-        num_walks_per_node, trw->data().use_gpu);
+        num_walks_per_node, /*use_gpu=*/false);
 }
 
 } // namespace
@@ -129,8 +245,15 @@ HOST void temporal_random_walk::add_multiple_edges(
             edge_features, feature_dim);
     }
 
-    set_last_batch_unique(sources, num_edges, trw->last_batch_unique_sources());
-    set_last_batch_unique(targets, num_edges, trw->last_batch_unique_targets());
+#ifdef HAS_CUDA
+    if (trw->data().use_gpu) {
+        set_last_batch_unique_cuda(sources, num_edges, trw->last_batch_unique_sources());
+        set_last_batch_unique_cuda(targets, num_edges, trw->last_batch_unique_targets());
+        return;
+    }
+#endif
+    set_last_batch_unique_std(sources, num_edges, trw->last_batch_unique_sources());
+    set_last_batch_unique_std(targets, num_edges, trw->last_batch_unique_targets());
 }
 
 HOST size_t temporal_random_walk::get_node_count(const core::TemporalRandomWalk* trw) {

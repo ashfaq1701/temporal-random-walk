@@ -26,9 +26,14 @@ namespace temporal_random_walk {
 
         if (max_walk_len == 0) return;
 
-        const size_t rand_nums_start_offset =
-            static_cast<size_t>(walk_idx) +                                           // To account extra value in all previous walk's start pickers.
-            (static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) * 2);  // To account all 2 rand numbers for all other steps in the previous walks.
+        // Start kernel draws from the head of this walk's Philox stream.
+        // Intermediate-step kernels skip past these 3 positions (see
+        // pick_intermediate_edges_kernel's offset argument).
+        PhiloxState rng;
+        init_philox_state(rng, base_seed, static_cast<uint64_t>(walk_idx));
+
+        const double r_start_a = draw_u01_philox(rng);
+        const double r_start_b = draw_u01_philox(rng);
 
         const auto padding_value = walk_set.nodes[walk_idx * max_walk_len];
         InternalEdge start_edge;
@@ -36,8 +41,8 @@ namespace temporal_random_walk {
             start_edge = temporal_graph::get_edge_at_device<Forward, StartPickerType>(
                 view,
                 -1, // timestamp
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1));
+                r_start_a,
+                r_start_b);
         } else {
             walk_set.nodes[walk_idx * max_walk_len] = start_node_ids[walk_idx];
 
@@ -46,8 +51,8 @@ namespace temporal_random_walk {
                 start_node_ids[walk_idx],
                 -1, // timestamp
                 -1,
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1));
+                r_start_a,
+                r_start_b);
         }
 
         if (start_edge.i == -1) {
@@ -69,15 +74,26 @@ namespace temporal_random_walk {
                 walk_set.add_hop(walk_idx, start_src, start_ts, start_edge.edge_id);
             }
         } else {
-            // For undirected graphs, use specified start node or pick a random node
+            // For undirected graphs, use specified start node or pick a random node.
+            // This consumes the 3rd draw from the start kernel's budget so the
+            // step-kernel's offset (below) always lands past it.
             const int picked_node = (start_node_ids[walk_idx] != -1)
                                         ? start_node_ids[walk_idx]
-                                        : pick_random_number(start_src, start_dst, rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 2));
+                                        : pick_random_number(start_src, start_dst, draw_u01_philox(rng));
             const int other_node = pick_other_number(start_src, start_dst, picked_node);
 
             walk_set.add_hop(walk_idx, picked_node, sentinel_timestamp);
             walk_set.add_hop(walk_idx, other_node, start_ts, start_edge.edge_id);
         }
+    }
+
+    // Offset in this walk's Philox stream that each step kernel starts from.
+    // The start kernel reserves up to 3 positions (directed: 2, undirected: 3);
+    // we skip past the max so the two kernels never draw overlapping positions
+    // for any walk. Each step kernel consumes exactly 2 positions.
+    DEVICE __forceinline__ uint64_t step_kernel_philox_offset(const int step_number) {
+        constexpr uint64_t START_KERNEL_BUDGET = 3ULL;
+        return START_KERNEL_BUDGET + static_cast<uint64_t>(step_number) * 2ULL;
     }
 
     template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
@@ -101,18 +117,21 @@ namespace temporal_random_walk {
         const int last_ts = walk_set.timestamps[offset];
         const int prev_node = step_number > 0 ? walk_set.nodes[offset - 1] : -1;
 
-        const size_t rand_nums_start_offset =
-            static_cast<size_t>(walk_idx) +                                               // To account extra value in all previous walk's start pickers.
-            (static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) * 2) +     // To account all 2 rand numbers for all other steps in the previous walks.
-            (static_cast<size_t>(step_number) * 2 + 1);                                   // To account for random numbers used in the current walk.
+        // One Philox init per thread at the correct step offset, two draws.
+        PhiloxState rng;
+        init_philox_state(rng, base_seed, static_cast<uint64_t>(walk_idx),
+                          step_kernel_philox_offset(step_number));
+
+        const double r_edge_a = draw_u01_philox(rng);
+        const double r_edge_b = draw_u01_philox(rng);
 
         const InternalEdge next_edge = temporal_graph::get_node_edge_at_device<Forward, EdgePickerType, IsDirected>(
                 view,
                 last_node,
                 last_ts,
                 prev_node,
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset),
-                rng_u01_philox(base_seed, walk_idx, rand_nums_start_offset + 1));
+                r_edge_a,
+                r_edge_b);
 
         if (next_edge.ts == -1) {
             return;

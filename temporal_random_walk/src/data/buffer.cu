@@ -1,28 +1,14 @@
 #include "buffer.cuh"
 
 #include <vector>
-#include <algorithm>
 #include <cstring>
 #include <cstdint>
 
-#ifdef HAS_CUDA
-#include <thrust/fill.h>
-#include <thrust/device_ptr.h>
-#include <thrust/execution_policy.h>
-#endif
+#include "../common/memory.cuh"
 
 template <typename T>
 void Buffer<T>::fill(const T& value) {
-    if (size_ == 0 || data_ == nullptr) return;
-#ifdef HAS_CUDA
-    if (use_gpu_) {
-        thrust::fill_n(thrust::device,
-                       thrust::device_pointer_cast(data_),
-                       size_, value);
-        return;
-    }
-#endif
-    std::fill_n(data_, size_, value);
+    fill_memory(data_, size_, value, use_gpu_);
 }
 
 template <typename T>
