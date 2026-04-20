@@ -1,11 +1,13 @@
 #include "edge_data.cuh"
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 #include <atomic>
 #include <cstddef>
 #include <cstring>
 #include <stdexcept>
+#include <utility>
 
 #include <tbb/parallel_scan.h>
 #include <tbb/parallel_sort.h>
@@ -263,33 +265,41 @@ HOST void edge_data::populate_active_nodes_std(TemporalGraphData& data) {
         return;
     }
 
-    int max_node_id = -1;
+    const int* sources = data.sources.data();
+    const int* targets = data.targets.data();
 
-    // Parallel reduction to find the max node id
-    #pragma omp parallel for reduction(max:max_node_id)
-    for (size_t i = 0; i < data.sources.size(); i++) {
-        int src_node = data.sources.data()[i];
-        int tgt_node = data.targets.data()[i];
-        max_node_id = std::max({max_node_id, src_node, tgt_node});
+    // Two separate parallel max reductions — mirrors populate_active_nodes_cuda's
+    // two thrust::reduce passes over sources and targets.
+    int max_source = -1;
+    #pragma omp parallel for reduction(max:max_source)
+    for (size_t i = 0; i < num_edges; ++i) {
+        max_source = std::max(max_source, sources[i]);
     }
 
+    int max_target = -1;
+    #pragma omp parallel for reduction(max:max_target)
+    for (size_t i = 0; i < num_edges; ++i) {
+        max_target = std::max(max_target, targets[i]);
+    }
+
+    const int max_node_id = std::max(max_source, max_target);
     data.max_node_id = max_node_id;
 
     data.active_node_ids.resize(max_node_id + 1);
     data.active_node_ids.fill(0);
 
     int* active = data.active_node_ids.data();
-    const int* sources = data.sources.data();
-    const int* targets = data.targets.data();
 
-    // Parallel setting of active node flags
+    // Two separate flag-setting passes — mirrors the GPU's two thrust::for_each
+    // kernels (one over sources, one over targets).
     #pragma omp parallel for
-    for (size_t i = 0; i < size(data); i++) {
-        const int src = sources[i];
-        const int tgt = targets[i];
+    for (size_t i = 0; i < num_edges; ++i) {
+        active[sources[i]] = 1;
+    }
 
-        active[src] = 1;
-        active[tgt] = 1;
+    #pragma omp parallel for
+    for (size_t i = 0; i < num_edges; ++i) {
+        active[targets[i]] = 1;
     }
 }
 
@@ -387,16 +397,26 @@ HOST void edge_data::build_node_adjacency_csr_std(TemporalGraphData& data) {
     }
 
     // ---------------------------------------------------------------------
-    // 5) Sort adjacency lists (OpenMP outer, TBB inner)
+    // 5) Segmented sort via (node_id, neighbor) pair sort — mirrors GPU.
+    //    Use std::upper_bound on offsets to tag each position with its
+    //    owning node, then tbb::parallel_sort on (node_id, neighbor) pairs
+    //    so each segment sorts in place (lexicographic on pair).
     // ---------------------------------------------------------------------
-    #pragma omp parallel for schedule(dynamic)
-    for (size_t node = 0; node < n; ++node) {
-        const size_t start = offsets[node];
-        const size_t end   = offsets[node + 1];
+    const size_t nnz = 2 * m;
+    std::vector<std::pair<int, int>> key_neighbor(nnz);
 
-        if (end > start + 1) {
-            tbb::parallel_sort(neighbors + start, neighbors + end);
-        }
+    #pragma omp parallel for
+    for (size_t i = 0; i < nnz; ++i) {
+        const auto it  = std::upper_bound(offsets, offsets + n + 1, i);
+        const int owner = static_cast<int>((it - offsets) - 1);
+        key_neighbor[i] = {owner, neighbors[i]};
+    }
+
+    tbb::parallel_sort(key_neighbor.begin(), key_neighbor.end());
+
+    #pragma omp parallel for
+    for (size_t i = 0; i < nnz; ++i) {
+        neighbors[i] = key_neighbor[i].second;
     }
 }
 
@@ -476,10 +496,9 @@ HOST void edge_data::update_temporal_weights_std(
     auto* backward = data.backward_cumulative_weights_exponential.data();
     const auto* offsets = data.timestamp_group_offsets.data();
 
-    double forward_sum = 0.0, backward_sum = 0.0;
-
-    // Step 1: Compute unnormalized weights and sums
-    #pragma omp parallel for reduction(+:forward_sum, backward_sum)
+    // Step 1: Compute unnormalized forward+backward weights (mirrors the GPU's
+    // tuple-returning thrust::transform in update_temporal_weights_cuda).
+    #pragma omp parallel for
     for (size_t group = 0; group < num_groups; ++group) {
         const size_t start = offsets[group];
         const size_t group_size = offsets[group + 1] - offsets[group];
@@ -492,24 +511,33 @@ HOST void edge_data::update_temporal_weights_std(
         const double fwd_scaled = (timescale_bound > 0) ? t_fwd * time_scale : t_fwd;
         const double bwd_scaled = (timescale_bound > 0) ? t_bwd * time_scale : t_bwd;
 
-        const double f_weight = static_cast<double>(group_size) * std::exp(fwd_scaled);
-        const double b_weight = static_cast<double>(group_size) * std::exp(bwd_scaled);
-
-        forward[group] = f_weight;
-        backward[group] = b_weight;
-
-        forward_sum += f_weight;
-        backward_sum += b_weight;
+        forward[group]  = static_cast<double>(group_size) * std::exp(fwd_scaled);
+        backward[group] = static_cast<double>(group_size) * std::exp(bwd_scaled);
     }
 
-    // Step 2: Normalize
+    // Step 2: Separate forward sum reduction (mirrors thrust::reduce forward).
+    double forward_sum = 0.0;
+    #pragma omp parallel for reduction(+:forward_sum)
+    for (size_t group = 0; group < num_groups; ++group) {
+        forward_sum += forward[group];
+    }
+
+    // Step 3: Separate backward sum reduction (mirrors thrust::reduce backward).
+    double backward_sum = 0.0;
+    #pragma omp parallel for reduction(+:backward_sum)
+    for (size_t group = 0; group < num_groups; ++group) {
+        backward_sum += backward[group];
+    }
+
+    // Step 4: Fused normalize pass for both directions (mirrors the GPU's
+    // fused zip-iterator transform).
     #pragma omp parallel for
     for (size_t group = 0; group < num_groups; ++group) {
-        forward[group] /= forward_sum;
+        forward[group]  /= forward_sum;
         backward[group] /= backward_sum;
     }
 
-    // Step 3: Inclusive scan
+    // Step 5/6: Inclusive scans (mirrors cub_inclusive_sum forward/backward).
     parallel_inclusive_scan(forward, num_groups);
     parallel_inclusive_scan(backward, num_groups);
 }
@@ -874,24 +902,22 @@ HOST void edge_data::update_temporal_weights_cuda(
     );
     CUDA_KERNEL_CHECK("After thrust reduce backward weights in update_temporal_weights_cuda");
 
-    // Normalize weights
+    // Normalize forward and backward in a single fused elementwise pass.
+    const auto norm_in = thrust::make_zip_iterator(
+        thrust::make_tuple(d_forward_weights_ptr, d_backward_weights_ptr));
     thrust::transform(
         DEVICE_EXECUTION_POLICY,
-        d_forward_weights_ptr,
-        d_forward_weights_ptr + static_cast<long>(num_groups),
-        d_forward_weights_ptr,
-        [=] HOST DEVICE (const double w) { return w / forward_sum; }
+        norm_in,
+        norm_in + static_cast<long>(num_groups),
+        norm_in,
+        [forward_sum, backward_sum] HOST DEVICE (
+            const thrust::tuple<double, double>& w) {
+            return thrust::make_tuple(
+                thrust::get<0>(w) / forward_sum,
+                thrust::get<1>(w) / backward_sum);
+        }
     );
-    CUDA_KERNEL_CHECK("After thrust transform forward weight normalization in update_temporal_weights_cuda");
-
-    thrust::transform(
-        DEVICE_EXECUTION_POLICY,
-        d_backward_weights_ptr,
-        d_backward_weights_ptr + static_cast<long>(num_groups),
-        d_backward_weights_ptr,
-        [=] HOST DEVICE (const double w) { return w / backward_sum; }
-    );
-    CUDA_KERNEL_CHECK("After thrust transform backward weight normalization in update_temporal_weights_cuda");
+    CUDA_KERNEL_CHECK("After thrust transform fused weight normalization in update_temporal_weights_cuda");
 
     double* d_forward_cumulative  = data.forward_cumulative_weights_exponential.data();
     double* d_backward_cumulative = data.backward_cumulative_weights_exponential.data();

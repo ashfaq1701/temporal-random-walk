@@ -376,34 +376,28 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
         std::vector<size_t> flag_scan(num_outbound + 1, 0);
         parallel_exclusive_scan(flags.data(), flag_scan.data(), num_outbound);
 
-        #pragma omp parallel for
-        for (size_t i = 0; i < num_outbound; ++i) {
-            if (flags[i]) {
-                group_indices_out[flag_scan[i]] = i;
-            }
-        }
-
+        // Fused pass (mirrors GPU thrust::for_each): if flags[i] is set,
+        // scatter i into group_indices_out AND atomically bump the per-node
+        // group count in one loop.
         std::vector<size_t> group_counts(node_count, 0);
         #pragma omp parallel for
         for (size_t i = 0; i < num_outbound; ++i) {
             if (!flags[i]) continue;
+            group_indices_out[flag_scan[i]] = i;
             const int node = outbound_node_ids[i];
-
             if (node >= 0 && node < static_cast<int>(node_count)) {
                 #pragma omp atomic
                 group_counts[node]++;
             }
         }
 
+        // Exclusive scan into count_ts_group_per_node_outbound — mirrors the
+        // GPU's memset(data, 0) + inclusive_scan(group_counts -> data + 1).
         data.count_ts_group_per_node_outbound.resize(node_count + 1);
-
-        data.count_ts_group_per_node_outbound.data()[0] = 0;
-        parallel_inclusive_scan(group_counts.data(), node_count);
-
-        #pragma omp parallel for
-        for (size_t i = 0; i < node_count; ++i) {
-            data.count_ts_group_per_node_outbound.data()[i + 1] = group_counts[i];
-        }
+        parallel_exclusive_scan(
+            group_counts.data(),
+            data.count_ts_group_per_node_outbound.data(),
+            node_count);
     }
 
     // === INBOUND ===
@@ -436,33 +430,177 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
         std::vector<size_t> flag_scan(num_inbound + 1, 0);
         parallel_exclusive_scan(flags.data(), flag_scan.data(), num_inbound);
 
-        #pragma omp parallel for
-        for (size_t i = 0; i < num_inbound; ++i) {
-            if (flags[i]) {
-                group_indices_out[flag_scan[i]] = i;
-            }
-        }
-
+        // Fused pass: see outbound block above for rationale. Mirrors the
+        // inbound GPU fused thrust::for_each.
         std::vector<size_t> group_counts(node_count, 0);
         #pragma omp parallel for
         for (size_t i = 0; i < num_inbound; ++i) {
             if (!flags[i]) continue;
+            group_indices_out[flag_scan[i]] = i;
             const int node = inbound_node_ids[i];
-            #pragma omp atomic
-            group_counts[node]++;
+            if (node >= 0 && node < static_cast<int>(node_count)) {
+                #pragma omp atomic
+                group_counts[node]++;
+            }
         }
 
+        // Exclusive scan into count_ts_group_per_node_inbound — mirrors the
+        // GPU's memset(data, 0) + inclusive_scan(group_counts -> data + 1).
         data.count_ts_group_per_node_inbound.resize(node_count + 1);
+        parallel_exclusive_scan(
+            group_counts.data(),
+            data.count_ts_group_per_node_inbound.data(),
+            node_count);
+    }
+}
 
-        data.count_ts_group_per_node_inbound.data()[0] = 0;
-        parallel_inclusive_scan(group_counts.data(), node_count);
+namespace {
 
-        #pragma omp parallel for
-        for (size_t i = 0; i < node_count; ++i) {
-            data.count_ts_group_per_node_inbound.data()[i + 1] = group_counts[i];
+// Host-side per-direction pipeline used by update_temporal_weights_std.
+// Runs the full weight stack (group→node map, per-node min/max + time
+// scale, raw weights, per-node sums, normalize, per-node inclusive
+// cumulative) for a single direction. Outbound calls with ComputeForward
+// = true (sampler reads both fwd and bwd cumulative arrays); the inbound
+// call in directed graphs uses ComputeForward = false (only bwd needed).
+template <bool ComputeForward>
+void compute_per_node_direction_weights_std(
+    const size_t* ts_group_per_node_offsets, // count_ts_group_per_node_(out|in)bound
+    const size_t* node_ts_group_offsets,     // node_ts_group_(out|in)bound_offsets
+    const size_t* edge_sorted_indices,       // node_ts_sorted_(out|in)bound_indices
+    const size_t* node_to_edge_offsets,      // node_group_(out|in)bound_offsets
+    const int64_t* timestamps,
+    const size_t groups_size,
+    const size_t node_index_capacity,
+    const double timescale_bound,
+    double* forward_cum_out,                 // unused when !ComputeForward
+    double* backward_cum_out)
+{
+    if (groups_size == 0 || node_index_capacity == 0) return;
+
+    // Group index -> owning node.
+    std::vector<size_t> group_to_node(groups_size);
+    #pragma omp parallel for
+    for (size_t node = 0; node < node_index_capacity; ++node) {
+        const size_t start = ts_group_per_node_offsets[node];
+        const size_t end   = ts_group_per_node_offsets[node + 1];
+        for (size_t pos = start; pos < end; ++pos) {
+            group_to_node[pos] = node;
+        }
+    }
+
+    // Per-node min/max timestamps and time-scale factor.
+    std::vector<int64_t> node_min_ts(node_index_capacity);
+    std::vector<int64_t> node_max_ts(ComputeForward ? node_index_capacity : 0);
+    std::vector<double>  node_time_scale(node_index_capacity);
+
+    #pragma omp parallel for
+    for (size_t node = 0; node < node_index_capacity; ++node) {
+        const size_t start = ts_group_per_node_offsets[node];
+        const size_t end   = ts_group_per_node_offsets[node + 1];
+        if (start >= end) {
+            node_min_ts[node] = 0;
+            if constexpr (ComputeForward) node_max_ts[node] = 0;
+            node_time_scale[node] = 1.0;
+            continue;
+        }
+        const int64_t min_ts = timestamps[edge_sorted_indices[node_ts_group_offsets[start]]];
+        const int64_t max_ts = timestamps[edge_sorted_indices[node_ts_group_offsets[end - 1]]];
+        const auto time_diff = static_cast<double>(max_ts - min_ts);
+        const double time_scale = (timescale_bound > 0 && time_diff > 0)
+                                      ? timescale_bound / time_diff
+                                      : 1.0;
+        node_min_ts[node] = min_ts;
+        if constexpr (ComputeForward) node_max_ts[node] = max_ts;
+        node_time_scale[node] = time_scale;
+    }
+
+    // Raw (unnormalized) weights per group position.
+    std::vector<double> raw_forward (ComputeForward ? groups_size : 0);
+    std::vector<double> raw_backward(groups_size);
+
+    #pragma omp parallel for
+    for (size_t pos = 0; pos < groups_size; ++pos) {
+        const size_t node       = group_to_node[pos];
+        const size_t edge_start = node_ts_group_offsets[pos];
+        const size_t edge_end   =
+            (pos + 1 < groups_size && group_to_node[pos + 1] == node)
+                ? node_ts_group_offsets[pos + 1]
+                : node_to_edge_offsets[node + 1];
+
+        const auto group_sz = static_cast<double>(edge_end - edge_start);
+        const int64_t group_ts = timestamps[edge_sorted_indices[edge_start]];
+        const int64_t min_ts   = node_min_ts[node];
+        const double  scale    = node_time_scale[node];
+
+        const double b_scaled = (timescale_bound > 0)
+                                    ? static_cast<double>(group_ts - min_ts) * scale
+                                    : static_cast<double>(group_ts - min_ts);
+        raw_backward[pos] = group_sz * std::exp(b_scaled);
+
+        if constexpr (ComputeForward) {
+            const int64_t max_ts = node_max_ts[node];
+            const double f_scaled = (timescale_bound > 0)
+                                        ? static_cast<double>(max_ts - group_ts) * scale
+                                        : static_cast<double>(max_ts - group_ts);
+            raw_forward[pos] = group_sz * std::exp(f_scaled);
+        }
+    }
+
+    // Per-node sums via scattered atomic adds.
+    std::vector<double> node_fwd_sum(ComputeForward ? node_index_capacity : 0, 0.0);
+    std::vector<double> node_bwd_sum(node_index_capacity, 0.0);
+
+    #pragma omp parallel for
+    for (size_t pos = 0; pos < groups_size; ++pos) {
+        const size_t node = group_to_node[pos];
+        #pragma omp atomic
+        node_bwd_sum[node] += raw_backward[pos];
+        if constexpr (ComputeForward) {
+            #pragma omp atomic
+            node_fwd_sum[node] += raw_forward[pos];
+        }
+    }
+
+    // Normalize raw -> probability mass per group position.
+    std::vector<double> norm_forward (ComputeForward ? groups_size : 0);
+    std::vector<double> norm_backward(groups_size);
+
+    #pragma omp parallel for
+    for (size_t pos = 0; pos < groups_size; ++pos) {
+        const size_t node = group_to_node[pos];
+        norm_backward[pos] = raw_backward[pos] / node_bwd_sum[node];
+        if constexpr (ComputeForward) {
+            norm_forward[pos] = raw_forward[pos] / node_fwd_sum[node];
+        }
+    }
+
+    // Per-node inclusive cumulative (sequential within each node,
+    // parallel across nodes).
+    #pragma omp parallel for
+    for (size_t node = 0; node < node_index_capacity; ++node) {
+        const size_t start = ts_group_per_node_offsets[node];
+        const size_t end   = ts_group_per_node_offsets[node + 1];
+        if (start >= end) continue;
+
+        double b_cum = 0.0;
+        if constexpr (ComputeForward) {
+            double f_cum = 0.0;
+            for (size_t pos = start; pos < end; ++pos) {
+                f_cum += norm_forward[pos];
+                b_cum += norm_backward[pos];
+                forward_cum_out[pos]  = f_cum;
+                backward_cum_out[pos] = b_cum;
+            }
+        } else {
+            for (size_t pos = start; pos < end; ++pos) {
+                b_cum += norm_backward[pos];
+                backward_cum_out[pos] = b_cum;
+            }
         }
     }
 }
+
+} // namespace
 
 HOST void node_edge_index::update_temporal_weights_std(
     TemporalGraphData& data,
@@ -475,235 +613,36 @@ HOST void node_edge_index::update_temporal_weights_std(
 
     const bool is_directed = data.node_group_inbound_offsets.size() > 0;
 
+    // Outbound: both fwd and bwd cumulative (sampler uses both directions).
+    compute_per_node_direction_weights_std</*ComputeForward=*/true>(
+        data.count_ts_group_per_node_outbound.data(),
+        data.node_ts_group_outbound_offsets.data(),
+        data.node_ts_sorted_outbound_indices.data(),
+        data.node_group_outbound_offsets.data(),
+        data.timestamps.data(),
+        outbound_groups_size,
+        node_index_capacity,
+        timescale_bound,
+        data.outbound_forward_cumulative_weights_exponential.data(),
+        data.outbound_backward_cumulative_weights_exponential.data());
+
+    // Inbound: bwd cumulative only (directed graphs only).
     if (is_directed) {
         const size_t inbound_groups_size = data.node_ts_group_inbound_offsets.size();
+        const size_t inbound_node_capacity = data.node_group_inbound_offsets.size() - 1;
         data.inbound_backward_cumulative_weights_exponential.resize(inbound_groups_size);
-    }
 
-    // Process outbound weights
-    {
-        const size_t* outbound_offsets =
-            get_timestamp_offset_vector(data, true).data();
-
-        std::vector<size_t> group_to_node(outbound_groups_size);
-
-        #pragma omp parallel for
-        for (size_t node = 0; node < node_index_capacity; ++node) {
-            const size_t out_start = outbound_offsets[node];
-            const size_t out_end = outbound_offsets[node + 1];
-
-            for (size_t pos = out_start; pos < out_end; ++pos) {
-                group_to_node[pos] = node;
-            }
-        }
-
-        std::vector<int64_t> node_min_ts(node_index_capacity);
-        std::vector<int64_t> node_max_ts(node_index_capacity);
-        std::vector<double> node_time_scale(node_index_capacity);
-
-        const auto* ts_group_indices = data.node_ts_group_outbound_offsets.data();
-        const auto* edge_indices = data.node_ts_sorted_outbound_indices.data();
-        const auto* timestamps = data.timestamps.data();
-
-        #pragma omp parallel for
-        for (size_t node = 0; node < node_index_capacity; ++node) {
-            const size_t out_start = outbound_offsets[node];
-            const size_t out_end = outbound_offsets[node + 1];
-
-            if (out_start >= out_end) {
-                node_min_ts[node] = 0;
-                node_max_ts[node] = 0;
-                node_time_scale[node] = 1.0;
-                continue;
-            }
-
-            const int64_t min_ts = timestamps[edge_indices[ts_group_indices[out_start]]];
-            const int64_t max_ts = timestamps[edge_indices[ts_group_indices[out_end - 1]]];
-            const auto time_diff = static_cast<double>(max_ts - min_ts);
-            const double time_scale = (timescale_bound > 0 && time_diff > 0) ? timescale_bound / time_diff : 1.0;
-
-            node_min_ts[node] = min_ts;
-            node_max_ts[node] = max_ts;
-            node_time_scale[node] = time_scale;
-        }
-
-        std::vector<double> raw_forward_weights(outbound_groups_size);
-        std::vector<double> raw_backward_weights(outbound_groups_size);
-
-        #pragma omp parallel for
-        for (size_t pos = 0; pos < outbound_groups_size; ++pos) {
-            const size_t node = group_to_node[pos];
-            const size_t edge_start = ts_group_indices[pos];
-            const size_t edge_end =
-                (pos + 1 < outbound_groups_size && group_to_node[pos + 1] == node)
-                    ? ts_group_indices[pos + 1]
-                    : data.node_group_outbound_offsets.data()[node + 1];
-
-            const auto group_size = static_cast<double>(edge_end - edge_start);
-
-            const int64_t group_ts = timestamps[edge_indices[edge_start]];
-            const int64_t min_ts = node_min_ts[node];
-            const int64_t max_ts = node_max_ts[node];
-            const double time_scale = node_time_scale[node];
-
-            const double f_scaled = (timescale_bound > 0) ? static_cast<double>(max_ts - group_ts) * time_scale : static_cast<double>(max_ts - group_ts);
-            const double b_scaled = (timescale_bound > 0) ? static_cast<double>(group_ts - min_ts) * time_scale : static_cast<double>(group_ts - min_ts);
-
-            raw_forward_weights[pos] = group_size * std::exp(f_scaled);
-            raw_backward_weights[pos] = group_size * std::exp(b_scaled);
-        }
-
-        std::vector<double> node_forward_sums(node_index_capacity, 0.0);
-        std::vector<double> node_backward_sums(node_index_capacity, 0.0);
-
-        #pragma omp parallel for
-        for (size_t pos = 0; pos < outbound_groups_size; ++pos) {
-            const size_t node = group_to_node[pos];
-
-            #pragma omp atomic
-            node_forward_sums[node] += raw_forward_weights[pos];
-
-            #pragma omp atomic
-            node_backward_sums[node] += raw_backward_weights[pos];
-        }
-
-        std::vector<double> normalized_forward_weights(outbound_groups_size);
-        std::vector<double> normalized_backward_weights(outbound_groups_size);
-
-        #pragma omp parallel for
-        for (size_t pos = 0; pos < outbound_groups_size; ++pos) {
-            const size_t node = group_to_node[pos];
-            const double forward_sum = node_forward_sums[node];
-            const double backward_sum = node_backward_sums[node];
-
-            normalized_forward_weights[pos] = raw_forward_weights[pos] / forward_sum;
-            normalized_backward_weights[pos] = raw_backward_weights[pos] / backward_sum;
-        }
-
-        auto* f_weights = data.outbound_forward_cumulative_weights_exponential.data();
-        auto* b_weights = data.outbound_backward_cumulative_weights_exponential.data();
-
-        #pragma omp parallel for
-        for (size_t node = 0; node < node_index_capacity; ++node) {
-            const size_t out_start = outbound_offsets[node];
-            const size_t out_end = outbound_offsets[node + 1];
-
-            if (out_start >= out_end) continue;
-
-            double f_cumsum = 0.0;
-            double b_cumsum = 0.0;
-            for (size_t pos = out_start; pos < out_end; ++pos) {
-                f_cumsum += normalized_forward_weights[pos];
-                b_cumsum += normalized_backward_weights[pos];
-                f_weights[pos] = f_cumsum;
-                b_weights[pos] = b_cumsum;
-            }
-        }
-    }
-
-    // Process inbound weights (only backward)
-    if (is_directed) {
-        const size_t* inbound_offsets =
-            get_timestamp_offset_vector(data, false).data();
-        const size_t inbound_groups_size = data.node_ts_group_inbound_offsets.size();
-
-        std::vector<size_t> group_to_node(inbound_groups_size);
-
-        #pragma omp parallel for
-        for (size_t node = 0; node < node_index_capacity; ++node) {
-            const size_t in_start = inbound_offsets[node];
-            const size_t in_end = inbound_offsets[node + 1];
-
-            for (size_t pos = in_start; pos < in_end; ++pos) {
-                group_to_node[pos] = node;
-            }
-        }
-
-        std::vector<int64_t> node_min_ts(node_index_capacity);
-        std::vector<int64_t> node_max_ts(node_index_capacity);
-        std::vector<double> node_time_scale(node_index_capacity);
-
-        const auto* ts_group_indices = data.node_ts_group_inbound_offsets.data();
-        const auto* edge_indices = data.node_ts_sorted_inbound_indices.data();
-        const auto* timestamps = data.timestamps.data();
-
-        #pragma omp parallel for
-        for (size_t node = 0; node < node_index_capacity; ++node) {
-            const size_t in_start = inbound_offsets[node];
-            const size_t in_end = inbound_offsets[node + 1];
-
-            if (in_start >= in_end) {
-                node_min_ts[node] = 0;
-                node_max_ts[node] = 0;
-                node_time_scale[node] = 1.0;
-                continue;
-            }
-
-            const int64_t min_ts = timestamps[edge_indices[ts_group_indices[in_start]]];
-            const int64_t max_ts = timestamps[edge_indices[ts_group_indices[in_end - 1]]];
-            const auto time_diff = static_cast<double>(max_ts - min_ts);
-            const double time_scale = (timescale_bound > 0 && time_diff > 0) ? timescale_bound / time_diff : 1.0;
-
-            node_min_ts[node] = min_ts;
-            node_max_ts[node] = max_ts;
-            node_time_scale[node] = time_scale;
-        }
-
-        std::vector<double> raw_backward_weights(inbound_groups_size);
-
-        #pragma omp parallel for
-        for (size_t pos = 0; pos < inbound_groups_size; ++pos) {
-            const size_t node = group_to_node[pos];
-            const size_t edge_start = ts_group_indices[pos];
-            const size_t edge_end =
-                (pos + 1 < inbound_groups_size && group_to_node[pos + 1] == node)
-                    ? ts_group_indices[pos + 1]
-                    : data.node_group_inbound_offsets.data()[node + 1];
-
-            const auto group_size = static_cast<double>(edge_end - edge_start);
-
-            const int64_t group_ts = timestamps[edge_indices[edge_start]];
-            const int64_t min_ts = node_min_ts[node];
-            const double time_scale = node_time_scale[node];
-
-            const double b_scaled = (timescale_bound > 0) ? static_cast<double>(group_ts - min_ts) * time_scale : static_cast<double>(group_ts - min_ts);
-            raw_backward_weights[pos] = group_size * std::exp(b_scaled);
-        }
-
-        std::vector<double> node_backward_sums(node_index_capacity, 0.0);
-
-        #pragma omp parallel for
-        for (size_t pos = 0; pos < inbound_groups_size; ++pos) {
-            const size_t node = group_to_node[pos];
-
-            #pragma omp atomic
-            node_backward_sums[node] += raw_backward_weights[pos];
-        }
-
-        std::vector<double> normalized_backward_weights(inbound_groups_size);
-
-        #pragma omp parallel for
-        for (size_t pos = 0; pos < inbound_groups_size; ++pos) {
-            const size_t node = group_to_node[pos];
-            const double backward_sum = node_backward_sums[node];
-            normalized_backward_weights[pos] = raw_backward_weights[pos] / backward_sum;
-        }
-
-        auto* b_weights = data.inbound_backward_cumulative_weights_exponential.data();
-
-        #pragma omp parallel for
-        for (size_t node = 0; node < node_index_capacity; ++node) {
-            const size_t in_start = inbound_offsets[node];
-            const size_t in_end = inbound_offsets[node + 1];
-
-            if (in_start >= in_end) continue;
-
-            double b_cumsum = 0.0;
-            for (size_t pos = in_start; pos < in_end; ++pos) {
-                b_cumsum += normalized_backward_weights[pos];
-                b_weights[pos] = b_cumsum;
-            }
-        }
+        compute_per_node_direction_weights_std</*ComputeForward=*/false>(
+            data.count_ts_group_per_node_inbound.data(),
+            data.node_ts_group_inbound_offsets.data(),
+            data.node_ts_sorted_inbound_indices.data(),
+            data.node_group_inbound_offsets.data(),
+            data.timestamps.data(),
+            inbound_groups_size,
+            inbound_node_capacity,
+            timescale_bound,
+            /*forward_cum_out=*/nullptr,
+            data.inbound_backward_cumulative_weights_exponential.data());
     }
 }
 
@@ -1099,7 +1038,9 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
 
 namespace {
 
-// Fused outbound-weight kernel (one block per node).
+// Per-node fused fwd+bwd weight kernel (one block per node). Used for the
+// outbound path, where the sampler needs both forward and backward
+// cumulative weights.
 //
 // Replaces the old 8-kernel thrust pipeline (build_group_to_node, min/max
 // per node, raw weights, atomicAdd sums, normalize, 2x inclusive_scan_by_key)
@@ -1113,7 +1054,7 @@ namespace {
 // the block's writes to raw_*_scratch. Each block only touches its own
 // [out_start, out_end) range, so scratch has no inter-block contention.
 template <int BLOCK_SIZE>
-__global__ void compute_outbound_weights_fused_kernel(
+__global__ void compute_per_node_weights_fwd_bwd_kernel(
     const size_t* __restrict__ group_offsets,        // count_ts_group_per_node_outbound
     const size_t* __restrict__ group_to_edge_start,  // node_ts_group_outbound_offsets
     const size_t* __restrict__ node_to_edge_offsets, // node_group_outbound_offsets
@@ -1239,9 +1180,15 @@ __global__ void compute_outbound_weights_fused_kernel(
     }
 }
 
-// Inbound variant: backward weights only (no forward arrays).
+// Per-node bwd-only weight kernel. Used for the inbound path in directed
+// graphs, where the sampler only needs the backward cumulative weights.
+//
+// Structural mirror of compute_per_node_weights_fwd_bwd_kernel with the
+// forward pipeline stripped out — same tiling, same BlockReduce/BlockScan
+// cadence, same carry-across-tiles logic. Keep the two in sync when
+// touching the shared pattern.
 template <int BLOCK_SIZE>
-__global__ void compute_inbound_weights_fused_kernel(
+__global__ void compute_per_node_weights_bwd_only_kernel(
     const size_t* __restrict__ group_offsets,        // count_ts_group_per_node_inbound
     const size_t* __restrict__ group_to_edge_start,  // node_ts_group_inbound_offsets
     const size_t* __restrict__ node_to_edge_offsets, // node_group_inbound_offsets
@@ -1374,7 +1321,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
 
         const dim3 grid(static_cast<unsigned int>(node_index_capacity));
         const dim3 block(BLOCK_SIZE);
-        compute_outbound_weights_fused_kernel<BLOCK_SIZE><<<grid, block>>>(
+        compute_per_node_weights_fwd_bwd_kernel<BLOCK_SIZE><<<grid, block>>>(
             group_offsets_ptr,
             group_to_edge_start_ptr,
             node_to_edge_offsets_ptr,
@@ -1406,7 +1353,7 @@ HOST void node_edge_index::update_temporal_weights_cuda(
 
             const dim3 grid(static_cast<unsigned int>(inbound_node_capacity));
             const dim3 block(BLOCK_SIZE);
-            compute_inbound_weights_fused_kernel<BLOCK_SIZE><<<grid, block>>>(
+            compute_per_node_weights_bwd_only_kernel<BLOCK_SIZE><<<grid, block>>>(
                 group_offsets_ptr,
                 group_to_edge_start_ptr,
                 node_to_edge_offsets_ptr,
