@@ -9,6 +9,7 @@
 #include "../utils/utils.cuh"
 #include "../common/picker_dispatch.cuh"
 #include "../common/cuda_config.cuh"
+#include "../common/warp_coop_config.cuh"
 #include "helpers.cuh"
 
 namespace temporal_random_walk {
@@ -165,7 +166,7 @@ __global__ void pick_start_edges_kernel(
     // Constrained walks whose start-node group exceeds the solo tier's
     // upper bound are served by the cooperative tiers.
     if constexpr (Constrained) {
-        if (walk_to_group_size[walk_idx] > NODE_GROUPED_T_WARP) return;
+        if (walk_to_group_size[walk_idx] > TRW_NODE_GROUPED_T_WARP) return;
     }
 
     PhiloxState rng;
@@ -346,7 +347,7 @@ __global__ void pick_intermediate_edges_kernel(
     // intermediate edges early-exits on this picker — so solo must
     // service Node2Vec walks regardless of group size.
     if constexpr (EdgePickerType != RandomPickerType::TemporalNode2Vec) {
-        if (walk_to_group_size[walk_idx_int] > NODE_GROUPED_T_WARP) return;
+        if (walk_to_group_size[walk_idx_int] > TRW_NODE_GROUPED_T_WARP) return;
     }
 
     const size_t walk_idx = static_cast<size_t>(walk_idx_int);
