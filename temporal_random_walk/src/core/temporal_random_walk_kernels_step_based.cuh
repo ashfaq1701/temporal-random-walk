@@ -115,7 +115,16 @@ namespace temporal_random_walk {
 
         const size_t offset = static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) + static_cast<size_t>(step_number); // Get endpoint of previous step (step_number - 1). And endpoint is (step_number - 1 + 1).
         const int last_node = walk_set.nodes[offset];
-        const int last_ts = walk_set.timestamps[offset];
+
+        // Short-circuit walks that already dead-ended at an earlier step:
+        // the unwritten slot still holds walk_set.walk_padding_value (the
+        // WalkSet's initial fill), not the in-band -1 used elsewhere as a
+        // "no next hop" marker, so compare against the configured padding.
+        if (last_node == walk_set.walk_padding_value) {
+            return;
+        }
+
+        const auto last_ts = walk_set.timestamps[offset];
         const int prev_node = step_number > 0 ? walk_set.nodes[offset - 1] : -1;
 
         // One Philox init per thread at the correct step offset, two draws.

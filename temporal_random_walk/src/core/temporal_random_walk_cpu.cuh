@@ -27,6 +27,8 @@ namespace temporal_random_walk {
 
         if (max_walk_len == 0) return;
 
+        const int walk_padding_value = walk_set.walk_padding_value;
+
         const size_t rand_nums_start_idx_for_walk = static_cast<size_t>(walk_idx)
             + static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len) * 2;
 
@@ -85,7 +87,7 @@ namespace temporal_random_walk {
         int64_t current_edge_id = start_edge.edge_id;
 
         int walk_len = 1;
-        while (walk_len < max_walk_len && current_node != -1) {
+        while (walk_len < max_walk_len && current_node != walk_padding_value) {
             const auto step_start_idx = rand_nums_start_idx_for_walk + walk_len * 2 + 1;
             const auto group_selector_rand_num = rand_nums[step_start_idx];
             const auto edge_selector_rand_num = rand_nums[step_start_idx + 1];
@@ -102,7 +104,7 @@ namespace temporal_random_walk {
             );
 
             if (next_edge.ts == -1) {
-                current_node = -1;
+                current_node = walk_padding_value;
                 continue;
             }
 
