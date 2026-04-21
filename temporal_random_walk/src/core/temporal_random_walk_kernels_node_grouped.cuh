@@ -8,6 +8,7 @@
 #include "../utils/random.cuh"
 #include "../utils/utils.cuh"
 #include "../common/picker_dispatch.cuh"
+#include "../common/cuda_config.cuh"
 #include "helpers.cuh"
 
 namespace temporal_random_walk {
@@ -161,10 +162,10 @@ __global__ void pick_start_edges_kernel(
     if (walk_idx >= num_walks) return;
     if (max_walk_len == 0) return;
 
-    // Constrained walks whose start-node group has >1 members are served by
-    // the cooperative tier.
+    // Constrained walks whose start-node group exceeds the solo tier's
+    // upper bound are served by the cooperative tiers.
     if constexpr (Constrained) {
-        if (walk_to_group_size[walk_idx] > 1) return;
+        if (walk_to_group_size[walk_idx] > NODE_GROUPED_T_WARP) return;
     }
 
     PhiloxState rng;
@@ -335,9 +336,18 @@ __global__ void pick_intermediate_edges_kernel(
     const int walk_idx_int = sorted_walk_idx[i];
     if (walk_idx_int < 0) return;
 
-    // Walks in cooperative groups (group_size >= 2) are handled by the
-    // warp-per-run kernel; solo only touches singletons.
-    if (walk_to_group_size[walk_idx_int] > 1) return;
+    // Walks above the solo tier's upper bound are handled by the
+    // cooperative kernels; solo only touches runs within T_WARP.
+    //
+    // Node2Vec is exempt: its edge-selection weight depends on the
+    // per-walk prev_node (see pick_random_temporal_node2vec_device),
+    // so two walks sharing a current node still need independent CDFs.
+    // No cooperative panel can be shared, and the coop dispatcher for
+    // intermediate edges early-exits on this picker — so solo must
+    // service Node2Vec walks regardless of group size.
+    if constexpr (EdgePickerType != RandomPickerType::TemporalNode2Vec) {
+        if (walk_to_group_size[walk_idx_int] > NODE_GROUPED_T_WARP) return;
+    }
 
     const size_t walk_idx = static_cast<size_t>(walk_idx_int);
     const size_t offset = walk_idx * static_cast<size_t>(max_walk_len)
@@ -437,13 +447,25 @@ inline void dispatch_intermediate_edges_cooperative_kernel(
     const uint64_t base_seed,
     const dim3& block_dim,
     const cudaStream_t stream) {
+    // Node2Vec walks stay in the solo tier regardless of group size.
+    // pick_random_temporal_node2vec_device weights each timestamp group
+    // by Σ β(prev_node, w) over edges in that group, and prev_node is
+    // per-walk — so no cooperative panel can be shared across walks in
+    // a group. The solo kernel's group-size gate is compile-time
+    // specialized to skip its T_WARP cutoff for Node2Vec (see
+    // pick_intermediate_edges_kernel), so the picker always has a
+    // servicing path.
+    if (edge_picker_type == RandomPickerType::TemporalNode2Vec) {
+        return;
+    }
+
     // TODO(node-grouped-coop): wire once kernel body lands. Same grid math
     // as dispatch_start_edges_cooperative_kernel.
     (void)view; (void)walk_set_view;
     (void)unique_last_nodes; (void)run_starts; (void)run_lengths;
     (void)num_runs_ptr; (void)sorted_walk_idx;
     (void)step_number; (void)max_walk_len; (void)num_walks;
-    (void)edge_picker_type; (void)base_seed; (void)block_dim; (void)stream;
+    (void)base_seed; (void)block_dim; (void)stream;
 }
 
 // ==========================================================================
