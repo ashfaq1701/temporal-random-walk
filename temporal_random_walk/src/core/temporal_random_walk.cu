@@ -650,6 +650,13 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
 
     const TemporalGraphView view = make_temporal_graph_view(trw->data());
 
+    // Drain stream-0 work issued by the prep phase (repeat_elements,
+    // shuffle_vector_device, WalkSetDevice::fill) before launching the
+    // kernel on the non-blocking trw->stream(); non-blocking streams do
+    // not auto-sync with the legacy null stream, so without this the
+    // kernel can observe partially written prep buffers.
+    CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
+
     launch_walk_kernel_dispatch(
         kernel_launch_type, view, trw->is_directed(), walk_set_view,
         max_walk_len, repeated_node_ids.data, repeated_node_ids.size,
@@ -711,6 +718,10 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
 
     const TemporalGraphView view = make_temporal_graph_view(trw->data());
 
+    // Drain stream-0 prep work before launching on trw->stream(); see note
+    // in the _for_all_nodes_cuda counterpart above.
+    CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
+
     launch_walk_kernel_dispatch(
         kernel_launch_type, view, trw->is_directed(), walk_set_view,
         max_walk_len, repeated_node_ids.data, repeated_node_ids.size,
@@ -766,6 +777,10 @@ temporal_random_walk::get_random_walks_and_times_cuda(
     const WalkSetView walk_set_view = device_walks.make_view();
 
     const TemporalGraphView view = make_temporal_graph_view(trw->data());
+
+    // Drain stream-0 prep work before launching on trw->stream(); see note
+    // in the _for_all_nodes_cuda counterpart above.
+    CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
 
     launch_walk_kernel_dispatch(
         kernel_launch_type, view, trw->is_directed(), walk_set_view,
