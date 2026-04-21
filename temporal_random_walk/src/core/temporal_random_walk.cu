@@ -27,7 +27,7 @@
 #include <thrust/unique.h>
 
 #include "temporal_random_walk_kernels_full_walk.cuh"
-#include "temporal_random_walk_kernels_step_based.cuh"
+#include "temporal_random_walk_node_grouped_dispatch.cuh"
 #include "../data/walk_set/walk_set_device.cuh"
 #endif
 
@@ -573,6 +573,7 @@ void launch_walk_kernel_dispatch(
     const int max_walk_len,
     const int* start_node_ids,
     const size_t num_walks,
+    const bool all_starts_unconstrained,
     const RandomPickerType walk_bias,
     const RandomPickerType initial_edge_bias,
     const WalkDirection walk_direction,
@@ -590,11 +591,11 @@ void launch_walk_kernel_dispatch(
                 base_seed, grid_dim, block_dim, stream);
             break;
         }
-        case KernelLaunchType::STEP_BASED: {
-            NVTX_RANGE_COLORED("Launch walk kernel (step)", nvtx_colors::walk_green);
-            temporal_random_walk::launch_random_walk_kernel_step_based(
+        case KernelLaunchType::NODE_GROUPED: {
+            NVTX_RANGE_COLORED("Launch walk kernel (node-grouped)", nvtx_colors::walk_green);
+            temporal_random_walk::dispatch_node_grouped_kernel(
                 view, is_directed, walk_set_view, max_walk_len,
-                start_node_ids, num_walks,
+                start_node_ids, num_walks, all_starts_unconstrained,
                 walk_bias, initial_edge_bias, walk_direction,
                 base_seed, grid_dim, block_dim, stream);
             break;
@@ -657,9 +658,12 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
     // kernel can observe partially written prep buffers.
     CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
 
+    // All-nodes variant seeds start_node_ids from the graph's node list, so
+    // every entry is a real node id. → constrained path.
     launch_walk_kernel_dispatch(
         kernel_launch_type, view, trw->is_directed(), walk_set_view,
         max_walk_len, repeated_node_ids.data, repeated_node_ids.size,
+        /*all_starts_unconstrained=*/false,
         *walk_bias, *initial_edge_bias, walk_direction,
         base_seed, grid_dim, block_dim, trw->stream());
 
@@ -722,9 +726,12 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
     // in the _for_all_nodes_cuda counterpart above.
     CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
 
+    // Last-batch variant seeds start_node_ids from real edge endpoints, so
+    // every entry is a valid node id. → constrained path.
     launch_walk_kernel_dispatch(
         kernel_launch_type, view, trw->is_directed(), walk_set_view,
         max_walk_len, repeated_node_ids.data, repeated_node_ids.size,
+        /*all_starts_unconstrained=*/false,
         *walk_bias, *initial_edge_bias, walk_direction,
         base_seed, grid_dim, block_dim, trw->stream());
 
@@ -782,9 +789,12 @@ temporal_random_walk::get_random_walks_and_times_cuda(
     // in the _for_all_nodes_cuda counterpart above.
     CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
 
+    // start_node_ids is filled with -1 above; every entry is a random-start
+    // sentinel. → fully unconstrained path.
     launch_walk_kernel_dispatch(
         kernel_launch_type, view, trw->is_directed(), walk_set_view,
         max_walk_len, start_node_ids.data(), static_cast<size_t>(num_walks_total),
+        /*all_starts_unconstrained=*/true,
         *walk_bias, *initial_edge_bias, walk_direction,
         base_seed, grid_dim, block_dim, trw->stream());
 

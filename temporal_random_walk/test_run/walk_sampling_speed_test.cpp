@@ -155,7 +155,7 @@ int main(int argc, char* argv[])
     bool enable_temporal_node2vec = edge_picker_enum == RandomPickerType::TemporalNode2Vec;
     bool enable_weight_computation = edge_picker_enum == RandomPickerType::ExponentialWeight || start_picker_enum == RandomPickerType::ExponentialWeight;
 
-    KernelLaunchType kernel_launch_type = kernel_launch_type_str == "FULL_WALK" ? KernelLaunchType::FULL_WALK : KernelLaunchType::STEP_BASED;
+    KernelLaunchType kernel_launch_type = kernel_launch_type_str == "FULL_WALK" ? KernelLaunchType::FULL_WALK : KernelLaunchType::NODE_GROUPED;
 
     TemporalRandomWalk walker(
         is_directed,

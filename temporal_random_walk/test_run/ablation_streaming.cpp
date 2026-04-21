@@ -30,7 +30,7 @@ RandomPickerType parse_picker(const std::string &s) {
 
 KernelLaunchType parse_kernel_launch_type(const std::string &s) {
     if (s == "full_walk") return KernelLaunchType::FULL_WALK;
-    if (s == "step_based") return KernelLaunchType::STEP_BASED;
+    if (s == "node_grouped") return KernelLaunchType::NODE_GROUPED;
     throw std::runtime_error("Invalid kernel launch type");
 }
 

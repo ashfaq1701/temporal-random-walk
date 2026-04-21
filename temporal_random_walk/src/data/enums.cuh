@@ -20,7 +20,7 @@ enum WalkDirection {
 
 enum KernelLaunchType {
     FULL_WALK,
-    STEP_BASED
+    NODE_GROUPED
 };
 
 #endif // ENUMS_H
