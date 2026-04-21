@@ -17,7 +17,7 @@ set(TEST_FILES
         test_temporal_node2vec.cpp
         test_data_layer.cpp
         test_node_grouped_parity.cpp
-        test_gpu_scheduling.cpp
+        test_node_grouped_w_partition.cpp
 )
 
 set(MODULE_SRC_FILES ${SRC_FILES} ${TEST_FILES})

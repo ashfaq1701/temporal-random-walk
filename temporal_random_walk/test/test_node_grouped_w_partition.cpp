@@ -1,15 +1,27 @@
-// GPU-only tests for the NODE_GROUPED scheduler.
+// GPU-only tests for the NODE_GROUPED scheduler's W-partition stage.
 //
-// Focus: the W-partition produced by NodeGroupedScheduler::run_step. We
-// construct a controllable WalkSetView (manually allocated device buffers,
-// specific node values at a chosen step) and assert the partition output
-// satisfies:
-//   - the three tier lists are disjoint and cover exactly the active walks,
-//   - tier-count identity: num_solo + sum(warp_counts) + sum(block_counts)
+// The W-partition (task 5) classifies each unique node at a step into one
+// of three tiers based on its walk count W:
+//   W <= TRW_NODE_GROUPED_T_WARP   (==1)   -> solo_walks
+//   T_WARP <  W <= T_BLOCK         (<=255) -> warp_nodes + walk_starts/counts
+//   W  >  T_BLOCK                  (>=256) -> block_nodes + walk_starts/counts
+//
+// Scope covered here:
+//   - disjoint coverage: the three tier lists partition exactly the active
+//     walks, no duplicates, no terminated leaks,
+//   - count identity: num_solo + sum(warp_counts) + sum(block_counts)
 //     == num_active,
-//   - tier boundaries are correct at W={1,2} and W={T_BLOCK, T_BLOCK+1},
-//   - terminated walks (current node == walk_padding_value) are filtered
-//     before the partition runs.
+//   - tier boundaries: W={1,2} (solo/warp) and W={T_BLOCK, T_BLOCK+1}
+//     (warp/block),
+//   - termination filtering: walks with walk_padding_value at the current
+//     step never reach the partition,
+//   - walk-idx preservation: solo_walks carries original sparse indices.
+//
+// Scope deferred to sibling files:
+//   - G-partition of warp/block into (smem, global) variants by per-node
+//     timestamp-group count ->  test_node_grouped_g_partition.cpp
+//   - Block-task expansion of W>BLOCK_WALK_CAP nodes into multiple tasks
+//     ->                         test_node_grouped_block_task_expansion.cpp
 //
 // This file is guarded by HAS_CUDA. It is NOT paired with a CPU variant
 // because the scheduler only exists on GPU.
