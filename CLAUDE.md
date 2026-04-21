@@ -259,15 +259,21 @@ the progress log; §5's kernel matrix is the target state.
 **Open**
 - Cooperative kernel scaffolds (`node_grouped_warp_smem_kernel`,
   `_warp_global_kernel`, `_block_smem_kernel`, `_block_global_kernel`)
-  exist, each a thin wrapper around the shared `node_grouped_solo_step_body`
-  helper. Dispatcher still launches only solo. Task 5 wires the scaffolds
-  into their task lists; tasks 8–11 replace each body with its tier-specific
-  implementation.
-- No pre-partitioned task lists yet. Scheduler emits one sorted walk-idx
-  list and every active walk goes through the solo kernel. Spec requires
-  five disjoint lists (solo_walks, warp_smem_nodes, warp_global_nodes,
-  block_smem_tasks, block_global_tasks) — lands across tasks 5–7.
-- No W-partition, no G-partition, no block-task expansion for mega-hubs.
+  exist, each consuming a node-level task list
+  (sorted_walk_idx + walk_starts + walk_counts). Task 5 wires solo / warp-smem
+  / block-smem into their own task lists; tasks 8–11 replace each body with
+  its tier-specific cooperative implementation. The shared per-walk helper
+  is `advance_one_walk` (takes a concrete walk_idx_int; no list indexing).
+- G-partition (task 6) will split warp / block into (smem, global) variants
+  by per-node G against `TRW_NODE_GROUPED_G_CAP_*`. Until then warp_global
+  and block_global scaffolds are declared but unused; every coop walk goes
+  through the smem variant.
+- Block-task expansion (task 7) splits mega-hub nodes
+  (`W > TRW_NODE_GROUPED_BLOCK_WALK_CAP`) into multiple block-tasks of
+  disjoint walk slices. Not implemented yet.
+- Cooperative kernel bodies are still per-node sequential scaffolds (one
+  thread iterates all walks in its node's range via advance_one_walk).
+  Real cooperative preload + stride loop lands in tasks 8–11.
 
 ## 7. Architecture guardrails
 
@@ -359,12 +365,34 @@ Behavior-preserving — parity harness remains the acceptance gate.
 
 ### Phase II — Partition (behavior change, distribution unchanged)
 
-**Task 5 — W partition.** Scheduler emits three disjoint task lists:
-`solo_walks`, `warp_nodes`, `block_nodes`. Solo kernel consumes `solo_walks`
-(group-size guard removed — kernel no longer receives walks it skips).
-Warp-smem launches over `warp_nodes`, block-smem over `block_nodes`. All
-four cooperative bodies still solo-copies, so distribution is identical to
-task 4. Parity harness passes.
+**Task 5 — W partition.** ✓ Done. Scheduler's `run_step` now classifies
+each unique node (RLE run) into one of three tiers via
+`partition_by_w_kernel` (atomicAdd into `int[3]` counters):
+- `W <= TRW_NODE_GROUPED_T_WARP` (==1) → **solo_walks** (one walk_idx per
+  entry).
+- `T_WARP < W <= TRW_NODE_GROUPED_T_BLOCK` (==255) → **warp_nodes** (tasks
+  carry node_id, walk_start offset into sorted_walk_idx, walk_count).
+- `W > T_BLOCK` → **block_nodes** (same shape as warp_nodes).
+
+`StepOutputs` exposes the three lists + their device counters + host
+counts (second D2H sync per step reads the three counters in one shot).
+Dispatcher launches up to three kernels per step, each grid sized to its
+own tier count. `warp_global` and `block_global` scaffolds are declared
+but unused — task 6's G-partition is their first consumer.
+
+The per-walk kernel helper was renamed from `node_grouped_solo_step_body`
+to `advance_one_walk` and no longer does list indexing — it takes a
+concrete `walk_idx_int`. Solo kernel is one thread per walk, indexing
+`solo_walks[i]`. The four coop scaffolds consume
+`(sorted_walk_idx, node_walk_starts, node_walk_counts, num_tasks_ptr)` —
+one thread per node task, sequentially iterating walks via
+`advance_one_walk`. Distribution still matches solo because each walk's
+outcome depends only on `(walk_idx, step_number, base_seed)`.
+
+Cleanup: `setup_step0_constrained`, `walk_to_group_size_`, the
+`scatter_walk_group_sizes_kernel` helper, and the `zero_int_buffer_kernel`
+are gone — all dead after task 2 removed their consumers. Parity harness
+is still the acceptance gate.
 
 **Task 6 — G partition.** Scheduler splits `warp_nodes` →
 `warp_smem_nodes` + `warp_global_nodes` using

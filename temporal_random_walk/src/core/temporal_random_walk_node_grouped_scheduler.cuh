@@ -23,52 +23,61 @@ namespace temporal_random_walk {
 // size their grids and CUB extents.
 //
 // Scratch lifetime:
-//   - iota_src_ and walk_to_group_size_ are batch-persistent (Buffer<int>).
+//   - iota_src_ is batch-persistent (Buffer<int>) — reused as the input
+//     to cub_partition_flagged every step.
 //   - All per-step scratch lives in a DeviceArena, reset at the top of
 //     every run_step call. Pointers returned in StepOutputs are valid
 //     only until the next run_step call.
 class NodeGroupedScheduler {
 public:
+    // One run_step call produces three disjoint task lists (W-partition):
+    //   solo_walks:  walk_idx list for W=1 groups (consumed by solo kernel).
+    //   warp_tasks:  node-level tasks for W in [2, TRW_NODE_GROUPED_T_BLOCK].
+    //   block_tasks: node-level tasks for W > TRW_NODE_GROUPED_T_BLOCK.
+    // Pointers are valid only until the next run_step call (arena is reset
+    // at the top of each run).
     struct StepOutputs {
-        // Compacted active walks sorted by current-node. Payload preserves
-        // original walk_idx so downstream kernels address walk_set directly.
+        // Compacted active walks sorted by current-node. Coop scaffolds
+        // index into this via (walk_start, walk_count) per node task.
         int* sorted_walk_idx;
 
-        // Device-side num_active counter. Kernels gate on *ptr in addition
-        // to the host-sized grid — belt-and-suspenders for the last block.
-        int* num_active_device;
-
-        // Per-walk count of walks sharing this walk's current node this
-        // step. Bookkeeping today — task 5's W-partition is the first real
-        // consumer.
-        int* step_group_size;
-
-        // Host-side num_active from the D2H readback. 0 means every walk
-        // terminated before this step; caller should skip the pick launch.
+        // Host-side num_active from the first D2H readback. 0 means every
+        // walk terminated before this step; caller skips pick launches.
         int num_active_host;
+
+        // ---- Solo tier (W == 1) --------------------------------------
+        int* solo_walks;               // walk_idx list, length num_solo_host
+        int* num_solo_walks_device;    // device counter (kernel gate)
+        int  num_solo_walks_host;      // post-partition D2H readback
+
+        // ---- Warp tier (W in [2, T_BLOCK]) ---------------------------
+        int* warp_nodes;               // node_id per task (for panel preload
+                                       // in the real body, task 10)
+        int* warp_walk_starts;         // offset into sorted_walk_idx
+        int* warp_walk_counts;         // walks per task (W value)
+        int* num_warp_tasks_device;
+        int  num_warp_tasks_host;
+
+        // ---- Block tier (W > T_BLOCK) --------------------------------
+        int* block_nodes;              // node_id per task
+        int* block_walk_starts;
+        int* block_walk_counts;
+        int* num_block_tasks_device;
+        int  num_block_tasks_host;
     };
 
     NodeGroupedScheduler(std::size_t num_walks,
                          dim3 block_dim,
                          cudaStream_t stream);
 
-    // Populate walk_to_group_size from start_node_ids (sort -> RLE ->
-    // scatter by start_node_id). Run once per batch for constrained step
-    // 0; skipped for unconstrained. The unconstrained case leaves
-    // walk_to_group_size zero-initialized (by the constructor).
-    void setup_step0_constrained(const int* start_node_ids);
-
-    // Run one intermediate step's pipeline. Blocks once on a D2H stream
-    // sync to read num_active into host so CUB sort/RLE/scan operate on
-    // the tight compacted extent. Cost: one sync per step, negligible next
-    // to the sort/RLE work it saves.
+    // Run one intermediate step's pipeline. Blocks twice on D2H stream
+    // syncs per step: first for num_active (drives CUB extents), second
+    // for the three tier counts (drives kernel grids). Both are one-int
+    // (or three-int) readbacks; cost is trivial next to the sort/RLE
+    // work they save.
     StepOutputs run_step(WalkSetView walk_set_view,
                          int step_number,
                          int max_walk_len);
-
-    // Batch-persistent buffer populated by setup_step0_constrained. Task 5
-    // is the first real consumer (W-partition key for step 0).
-    const int* walk_to_group_size() const { return walk_to_group_size_.data(); }
 
 private:
     std::size_t  num_walks_;
@@ -78,7 +87,6 @@ private:
 
     DeviceArena arena_;
     Buffer<int> iota_src_;
-    Buffer<int> walk_to_group_size_;
 };
 
 #endif  // HAS_CUDA

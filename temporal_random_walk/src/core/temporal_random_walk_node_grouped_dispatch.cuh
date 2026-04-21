@@ -13,19 +13,18 @@ namespace temporal_random_walk {
 // ==========================================================================
 // Top-level router for the node-grouped walk path.
 //
-//   Step 0 — start edges.
-//     Unconstrained (all start_node_ids == -1): short-circuit to
-//     pick_start_edges_kernel<..., Constrained=false>, no scheduler.
-//     Constrained: NodeGroupedScheduler::setup_step0_constrained populates
-//     walk_to_group_size by start_node_id (bookkeeping for task 5's
-//     W-partition); pick runs through pick_start_edges_kernel<..., true>.
-//     Both branches collapse into a single dispatch_start_edges_kernel call.
+//   Step 0 — start edges. pick_start_edges_kernel handles both
+//   unconstrained and constrained start today. Task 5 leaves step 0
+//   outside the W-partition; a future task moves constrained step 0
+//   into the solo_walks list if profiling justifies it.
 //
 //   Steps 1..max_walk_len-1 — per-step pipeline in
-//   NodeGroupedScheduler::run_step: filter (by walk_padding_value) ->
-//   compact -> num_active D2H readback -> gather -> sort -> RLE ->
-//   exclusive-scan -> scatter. Output is a compacted/sorted walk_idx list
-//   that the pick kernel iterates. Grids sized by host_num_active.
+//   NodeGroupedScheduler::run_step: filter -> compact -> num_active D2H
+//   readback -> gather -> sort -> RLE -> exclusive-scan -> W-partition
+//   (solo / warp / block tiers). The scheduler returns three disjoint
+//   task lists; the dispatcher launches up to three kernels per step:
+//   solo on solo_walks, warp-smem on warp tasks, block-smem on block tasks.
+//   Each launch is skipped if its tier count is 0.
 //
 //   Reverse — backward-in-time walks get reverse_walks_kernel flipped in
 //   place after the step loop.
@@ -61,10 +60,6 @@ inline void dispatch_node_grouped_kernel(
 
     NodeGroupedScheduler scheduler(num_walks, block_dim, stream);
 
-    if (!all_starts_unconstrained) {
-        scheduler.setup_step0_constrained(start_node_ids);
-    }
-
     dispatch_bool(is_directed, [&](auto dir_tag) {
         constexpr bool kDir = decltype(dir_tag)::value;
         dispatch_bool(should_walk_forward, [&](auto fwd_tag) {
@@ -73,9 +68,6 @@ inline void dispatch_node_grouped_kernel(
             // ---- 1. Step 0 — start edges ------------------------------
             {
                 NVTX_RANGE_COLORED("NG step0 pick", nvtx_colors::walk_green);
-                // Unconstrained and constrained step 0 both go through
-                // pick_start_edges_kernel today; task 5 moves constrained
-                // into the solo_walks list.
                 dispatch_start_edges_kernel<kDir, kFwd>(
                     view, walk_set_view, start_node_ids,
                     /*constrained=*/!all_starts_unconstrained,
@@ -90,19 +82,62 @@ inline void dispatch_node_grouped_kernel(
 
                 if (step_outs.num_active_host <= 0) continue;
 
-                const size_t active_blocks =
-                    (static_cast<size_t>(step_outs.num_active_host)
-                     + block_dim.x - 1) / block_dim.x;
-                const dim3 active_grid(static_cast<unsigned>(active_blocks));
-
                 NVTX_RANGE_COLORED("NG pick", nvtx_colors::walk_green);
-                dispatch_node_grouped_solo_kernel<kDir, kFwd>(
-                    view, walk_set_view,
-                    step_outs.sorted_walk_idx,
-                    step_outs.num_active_device,
-                    step_number, max_walk_len,
-                    edge_picker_type, base_seed,
-                    active_grid, block_dim, stream);
+
+                // Solo tier: one thread per walk in solo_walks.
+                if (step_outs.num_solo_walks_host > 0) {
+                    const size_t solo_blocks =
+                        (static_cast<size_t>(step_outs.num_solo_walks_host)
+                         + block_dim.x - 1) / block_dim.x;
+                    const dim3 solo_grid(static_cast<unsigned>(solo_blocks));
+                    dispatch_node_grouped_solo_kernel<kDir, kFwd>(
+                        view, walk_set_view,
+                        step_outs.solo_walks,
+                        step_outs.num_solo_walks_device,
+                        step_number, max_walk_len,
+                        edge_picker_type, base_seed,
+                        solo_grid, block_dim, stream);
+                }
+
+                // Warp-smem tier: one task per node (W in [2, T_BLOCK]).
+                if (step_outs.num_warp_tasks_host > 0) {
+                    const size_t warp_blocks =
+                        (static_cast<size_t>(step_outs.num_warp_tasks_host)
+                         + block_dim.x - 1) / block_dim.x;
+                    const dim3 warp_grid(static_cast<unsigned>(warp_blocks));
+                    dispatch_node_grouped_warp_smem_kernel<kDir, kFwd>(
+                        view, walk_set_view,
+                        step_outs.sorted_walk_idx,
+                        step_outs.warp_walk_starts,
+                        step_outs.warp_walk_counts,
+                        step_outs.num_warp_tasks_device,
+                        step_number, max_walk_len,
+                        edge_picker_type, base_seed,
+                        warp_grid, block_dim, stream);
+                }
+
+                // Block-smem tier: one task per node (W > T_BLOCK).
+                if (step_outs.num_block_tasks_host > 0) {
+                    const size_t block_blocks =
+                        (static_cast<size_t>(step_outs.num_block_tasks_host)
+                         + block_dim.x - 1) / block_dim.x;
+                    const dim3 block_grid(static_cast<unsigned>(block_blocks));
+                    dispatch_node_grouped_block_smem_kernel<kDir, kFwd>(
+                        view, walk_set_view,
+                        step_outs.sorted_walk_idx,
+                        step_outs.block_walk_starts,
+                        step_outs.block_walk_counts,
+                        step_outs.num_block_tasks_device,
+                        step_number, max_walk_len,
+                        edge_picker_type, base_seed,
+                        block_grid, block_dim, stream);
+                }
+
+                // warp_global and block_global scaffolds are declared but
+                // unused at task-5 state — all G-fitting decisions deferred
+                // to task 6. Until then every coop walk goes through the
+                // smem variant (distribution identical either way since
+                // both bodies are still solo-copies).
             }
 
             // ---- 3. Reverse if walking backward -----------------------

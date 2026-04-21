@@ -147,40 +147,33 @@ inline void dispatch_start_edges_kernel(
 }
 
 // ==========================================================================
-// Per-step advance body — shared by solo and the four cooperative scaffolds.
+// Single-walk advance helper — the sole primitive that computes one walk's
+// hop at step_number. Doesn't index any list; caller supplies walk_idx.
 //
-// One thread of work per active walk. Reads (last_node, last_ts, prev_node)
-// from the walk's slot at step_number, draws two Philox values, samples the
-// next edge via get_node_edge_at_device, and writes one hop.
+// Shared by solo and the four cooperative scaffolds. Each walk's outcome is
+// a function of (walk_idx, step_number, base_seed) alone — Philox is keyed
+// on walk_idx, last_node/last_ts/prev_node are read from walk_set at fixed
+// offsets. So any thread can call advance_one_walk for any walk_idx and get
+// the same result as solo would.
 //
-// Four cooperative kernels reuse this body verbatim as scaffolding (task 3):
-// they exist so the Phase-II W/G partition (tasks 5-6) can wire five
-// distinct launch paths before the cooperative bodies themselves are
-// written (tasks 8-11). When each cooperative body lands, that kernel
-// stops calling the helper and gets its own tier-specific implementation.
-// Until then, any walk routed through a cooperative kernel gets the same
-// treatment as in solo — distribution is mathematically identical and the
-// parity harness anchors that guarantee.
+// Scaffold cooperative kernels (see below) exploit this: they consume
+// node-level task lists (start/count into sorted_walk_idx) and loop
+// advance_one_walk sequentially for the walks in their node's range —
+// distribution matches solo, but the launch topology matches the eventual
+// cooperative design that tasks 8–11 will fill in.
 // ==========================================================================
 
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
-DEVICE __forceinline__ void node_grouped_solo_step_body(
+DEVICE __forceinline__ void advance_one_walk(
     TemporalGraphView view,
     WalkSetView walk_set,
-    const int* __restrict__ walk_idx_list,
-    const int* __restrict__ num_active_ptr,
+    const int walk_idx_int,
     const int step_number,
     const int max_walk_len,
     const uint64_t base_seed) {
 
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    const int num_active = *num_active_ptr;
-    if (i >= num_active) return;
-
-    if (step_number >= max_walk_len - 1) return;
-
-    const int walk_idx_int = walk_idx_list[i];
     if (walk_idx_int < 0) return;
+    if (step_number >= max_walk_len - 1) return;
 
     const size_t walk_idx = static_cast<size_t>(walk_idx_int);
     const size_t offset = walk_idx * static_cast<size_t>(max_walk_len)
@@ -213,20 +206,24 @@ DEVICE __forceinline__ void node_grouped_solo_step_body(
 }
 
 // ==========================================================================
-// Solo kernel — one thread per walk. Today services every active walk;
-// task 5's W-partition narrows it to the solo_walks list (W=1 groups).
+// Solo kernel — one thread per walk. Services the solo_walks list (W=1
+// groups after the scheduler's W-partition).
 // ==========================================================================
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_solo_kernel(
     TemporalGraphView view,
     WalkSetView walk_set,
-    const int* __restrict__ walk_idx_list,
-    const int* __restrict__ num_active_ptr,
+    const int* __restrict__ solo_walks,
+    const int* __restrict__ num_solo_walks_ptr,
     const int step_number,
     const int max_walk_len,
     const uint64_t base_seed) {
-    node_grouped_solo_step_body<IsDirected, Forward, EdgePickerType>(
-        view, walk_set, walk_idx_list, num_active_ptr,
+
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= *num_solo_walks_ptr) return;
+
+    advance_one_walk<IsDirected, Forward, EdgePickerType>(
+        view, walk_set, solo_walks[i],
         step_number, max_walk_len, base_seed);
 }
 
@@ -234,8 +231,8 @@ template <bool IsDirected, bool Forward>
 inline void dispatch_node_grouped_solo_kernel(
     const TemporalGraphView& view,
     WalkSetView walk_set_view,
-    const int* walk_idx_list,
-    const int* num_active_ptr,
+    const int* solo_walks,
+    const int* num_solo_walks_ptr,
     const int step_number,
     const int max_walk_len,
     const RandomPickerType edge_picker_type,
@@ -249,44 +246,63 @@ inline void dispatch_node_grouped_solo_kernel(
         node_grouped_solo_kernel<IsDirected, Forward, kEdge>
             <<<grid, block_dim, 0, stream>>>(
                 view, walk_set_view,
-                walk_idx_list, num_active_ptr,
+                solo_walks, num_solo_walks_ptr,
                 step_number, max_walk_len, base_seed);
     });
 }
 
 // ==========================================================================
-// Cooperative-tier scaffolds (task 3 — declared but not yet launched).
+// Cooperative-tier scaffolds.
 //
-// Each kernel calls the shared solo step body. Task 5 wires these into the
-// dispatcher over their own task lists; tasks 8–11 replace the body of one
-// kernel at a time with its real tier-specific implementation:
-//   task 8  -> node_grouped_block_smem_kernel   (cooperative block preload)
-//   task 9  -> node_grouped_block_global_kernel (cooperative block fallback)
-//   task 10 -> node_grouped_warp_smem_kernel    (cooperative warp preload)
-//   task 11 -> node_grouped_warp_global_kernel  (cooperative warp fallback)
+// Each kernel consumes a node-level task list (walks belonging to each
+// unique node, identified by offsets into sorted_walk_idx). Task 5 wires
+// these into the dispatcher; tasks 8–11 replace each scaffold body with
+// the real tier-specific implementation (cooperative preload + stride
+// loop).
+//
+// Scaffold semantics: one thread per node task, sequentially iterating
+// every walk in its node's range via advance_one_walk. Inefficient — each
+// walk runs on one thread instead of sharing work within a warp/block —
+// but produces identical per-walk output to solo. Real cooperation lands
+// with the bodies:
+//   task 8  -> node_grouped_block_smem_kernel   (block preload)
+//   task 9  -> node_grouped_block_global_kernel (block fallback)
+//   task 10 -> node_grouped_warp_smem_kernel    (warp preload)
+//   task 11 -> node_grouped_warp_global_kernel  (warp fallback)
 // ==========================================================================
 
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_warp_smem_kernel(
     TemporalGraphView view,
     WalkSetView walk_set,
-    const int* __restrict__ walk_idx_list,
-    const int* __restrict__ num_active_ptr,
+    const int* __restrict__ sorted_walk_idx,
+    const int* __restrict__ node_walk_starts,
+    const int* __restrict__ node_walk_counts,
+    const int* __restrict__ num_tasks_ptr,
     const int step_number,
     const int max_walk_len,
     const uint64_t base_seed) {
-    // SCAFFOLD (task 3): solo-equivalent body. Real warp-smem body in task 10.
-    node_grouped_solo_step_body<IsDirected, Forward, EdgePickerType>(
-        view, walk_set, walk_idx_list, num_active_ptr,
-        step_number, max_walk_len, base_seed);
+    // SCAFFOLD (task 3): per-node sequential loop. Real warp-smem body in task 10.
+    const int t = blockIdx.x * blockDim.x + threadIdx.x;
+    if (t >= *num_tasks_ptr) return;
+
+    const int walk_start = node_walk_starts[t];
+    const int walk_count = node_walk_counts[t];
+    for (int k = 0; k < walk_count; ++k) {
+        advance_one_walk<IsDirected, Forward, EdgePickerType>(
+            view, walk_set, sorted_walk_idx[walk_start + k],
+            step_number, max_walk_len, base_seed);
+    }
 }
 
 template <bool IsDirected, bool Forward>
 inline void dispatch_node_grouped_warp_smem_kernel(
     const TemporalGraphView& view,
     WalkSetView walk_set_view,
-    const int* walk_idx_list,
-    const int* num_active_ptr,
+    const int* sorted_walk_idx,
+    const int* node_walk_starts,
+    const int* node_walk_counts,
+    const int* num_tasks_ptr,
     const int step_number,
     const int max_walk_len,
     const RandomPickerType edge_picker_type,
@@ -300,7 +316,8 @@ inline void dispatch_node_grouped_warp_smem_kernel(
         node_grouped_warp_smem_kernel<IsDirected, Forward, kEdge>
             <<<grid, block_dim, 0, stream>>>(
                 view, walk_set_view,
-                walk_idx_list, num_active_ptr,
+                sorted_walk_idx, node_walk_starts, node_walk_counts,
+                num_tasks_ptr,
                 step_number, max_walk_len, base_seed);
     });
 }
@@ -309,23 +326,34 @@ template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_warp_global_kernel(
     TemporalGraphView view,
     WalkSetView walk_set,
-    const int* __restrict__ walk_idx_list,
-    const int* __restrict__ num_active_ptr,
+    const int* __restrict__ sorted_walk_idx,
+    const int* __restrict__ node_walk_starts,
+    const int* __restrict__ node_walk_counts,
+    const int* __restrict__ num_tasks_ptr,
     const int step_number,
     const int max_walk_len,
     const uint64_t base_seed) {
-    // SCAFFOLD (task 3): solo-equivalent body. Real warp-global body in task 11.
-    node_grouped_solo_step_body<IsDirected, Forward, EdgePickerType>(
-        view, walk_set, walk_idx_list, num_active_ptr,
-        step_number, max_walk_len, base_seed);
+    // SCAFFOLD (task 3): per-node sequential loop. Real warp-global body in task 11.
+    const int t = blockIdx.x * blockDim.x + threadIdx.x;
+    if (t >= *num_tasks_ptr) return;
+
+    const int walk_start = node_walk_starts[t];
+    const int walk_count = node_walk_counts[t];
+    for (int k = 0; k < walk_count; ++k) {
+        advance_one_walk<IsDirected, Forward, EdgePickerType>(
+            view, walk_set, sorted_walk_idx[walk_start + k],
+            step_number, max_walk_len, base_seed);
+    }
 }
 
 template <bool IsDirected, bool Forward>
 inline void dispatch_node_grouped_warp_global_kernel(
     const TemporalGraphView& view,
     WalkSetView walk_set_view,
-    const int* walk_idx_list,
-    const int* num_active_ptr,
+    const int* sorted_walk_idx,
+    const int* node_walk_starts,
+    const int* node_walk_counts,
+    const int* num_tasks_ptr,
     const int step_number,
     const int max_walk_len,
     const RandomPickerType edge_picker_type,
@@ -339,7 +367,8 @@ inline void dispatch_node_grouped_warp_global_kernel(
         node_grouped_warp_global_kernel<IsDirected, Forward, kEdge>
             <<<grid, block_dim, 0, stream>>>(
                 view, walk_set_view,
-                walk_idx_list, num_active_ptr,
+                sorted_walk_idx, node_walk_starts, node_walk_counts,
+                num_tasks_ptr,
                 step_number, max_walk_len, base_seed);
     });
 }
@@ -348,23 +377,34 @@ template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_block_smem_kernel(
     TemporalGraphView view,
     WalkSetView walk_set,
-    const int* __restrict__ walk_idx_list,
-    const int* __restrict__ num_active_ptr,
+    const int* __restrict__ sorted_walk_idx,
+    const int* __restrict__ node_walk_starts,
+    const int* __restrict__ node_walk_counts,
+    const int* __restrict__ num_tasks_ptr,
     const int step_number,
     const int max_walk_len,
     const uint64_t base_seed) {
-    // SCAFFOLD (task 3): solo-equivalent body. Real block-smem body in task 8.
-    node_grouped_solo_step_body<IsDirected, Forward, EdgePickerType>(
-        view, walk_set, walk_idx_list, num_active_ptr,
-        step_number, max_walk_len, base_seed);
+    // SCAFFOLD (task 3): per-node sequential loop. Real block-smem body in task 8.
+    const int t = blockIdx.x * blockDim.x + threadIdx.x;
+    if (t >= *num_tasks_ptr) return;
+
+    const int walk_start = node_walk_starts[t];
+    const int walk_count = node_walk_counts[t];
+    for (int k = 0; k < walk_count; ++k) {
+        advance_one_walk<IsDirected, Forward, EdgePickerType>(
+            view, walk_set, sorted_walk_idx[walk_start + k],
+            step_number, max_walk_len, base_seed);
+    }
 }
 
 template <bool IsDirected, bool Forward>
 inline void dispatch_node_grouped_block_smem_kernel(
     const TemporalGraphView& view,
     WalkSetView walk_set_view,
-    const int* walk_idx_list,
-    const int* num_active_ptr,
+    const int* sorted_walk_idx,
+    const int* node_walk_starts,
+    const int* node_walk_counts,
+    const int* num_tasks_ptr,
     const int step_number,
     const int max_walk_len,
     const RandomPickerType edge_picker_type,
@@ -378,7 +418,8 @@ inline void dispatch_node_grouped_block_smem_kernel(
         node_grouped_block_smem_kernel<IsDirected, Forward, kEdge>
             <<<grid, block_dim, 0, stream>>>(
                 view, walk_set_view,
-                walk_idx_list, num_active_ptr,
+                sorted_walk_idx, node_walk_starts, node_walk_counts,
+                num_tasks_ptr,
                 step_number, max_walk_len, base_seed);
     });
 }
@@ -387,23 +428,34 @@ template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_block_global_kernel(
     TemporalGraphView view,
     WalkSetView walk_set,
-    const int* __restrict__ walk_idx_list,
-    const int* __restrict__ num_active_ptr,
+    const int* __restrict__ sorted_walk_idx,
+    const int* __restrict__ node_walk_starts,
+    const int* __restrict__ node_walk_counts,
+    const int* __restrict__ num_tasks_ptr,
     const int step_number,
     const int max_walk_len,
     const uint64_t base_seed) {
-    // SCAFFOLD (task 3): solo-equivalent body. Real block-global body in task 9.
-    node_grouped_solo_step_body<IsDirected, Forward, EdgePickerType>(
-        view, walk_set, walk_idx_list, num_active_ptr,
-        step_number, max_walk_len, base_seed);
+    // SCAFFOLD (task 3): per-node sequential loop. Real block-global body in task 9.
+    const int t = blockIdx.x * blockDim.x + threadIdx.x;
+    if (t >= *num_tasks_ptr) return;
+
+    const int walk_start = node_walk_starts[t];
+    const int walk_count = node_walk_counts[t];
+    for (int k = 0; k < walk_count; ++k) {
+        advance_one_walk<IsDirected, Forward, EdgePickerType>(
+            view, walk_set, sorted_walk_idx[walk_start + k],
+            step_number, max_walk_len, base_seed);
+    }
 }
 
 template <bool IsDirected, bool Forward>
 inline void dispatch_node_grouped_block_global_kernel(
     const TemporalGraphView& view,
     WalkSetView walk_set_view,
-    const int* walk_idx_list,
-    const int* num_active_ptr,
+    const int* sorted_walk_idx,
+    const int* node_walk_starts,
+    const int* node_walk_counts,
+    const int* num_tasks_ptr,
     const int step_number,
     const int max_walk_len,
     const RandomPickerType edge_picker_type,
@@ -417,7 +469,8 @@ inline void dispatch_node_grouped_block_global_kernel(
         node_grouped_block_global_kernel<IsDirected, Forward, kEdge>
             <<<grid, block_dim, 0, stream>>>(
                 view, walk_set_view,
-                walk_idx_list, num_active_ptr,
+                sorted_walk_idx, node_walk_starts, node_walk_counts,
+                num_tasks_ptr,
                 step_number, max_walk_len, base_seed);
     });
 }
