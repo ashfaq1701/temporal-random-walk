@@ -187,32 +187,75 @@ tag-dispatch helpers. No runtime branching inside kernel hot paths.
 
 ## 6. Where we are
 
+Accurate snapshot of the tree on `feature/warp-collaboration`. This section is
+the progress log; §5's kernel matrix is the target state.
+
 **Done**
 - Rename: `STEP_BASED` → `NODE_GROUPED` across enum, kernel file, dispatcher,
   tests, ablations.
-- `src/common/warp_coop_config.cuh` — single source of truth for thresholds,
-  launch shape, smem budget, derived G caps.
-- Scheduler infrastructure (`temporal_random_walk_node_grouped_scheduler.cu`)
-  with filter, gather, argsort, RLE, tier partition by W, fit partition by G,
-  block-task expansion. Device-side counters, host-sync-free.
-- Scheduler outputs the 5 task lists. Arena-backed scratch (`DeviceArena`),
-  reset once per step.
-- `WalkSetView.walk_padding_value` consumed in the filter kernel.
-- Solo kernel functional. Warp-smem, warp-global, block-smem, block-global
-  are copies of the solo body — scaffolding only.
-- Dispatcher routes step 0 unconstrained to the existing start kernel;
-  intermediate steps and constrained step 0 flow through the scheduler +
-  solo kernel (no cooperation yet).
-- All three entry points in `temporal_random_walk.cu` pass the arena through.
+- `src/common/warp_coop_config.cuh` — single source of truth for tier
+  boundaries (`T_WARP=1`, `T_BLOCK=255`), launch shape (8 warps/block,
+  256 threads/block), per-block walk cap (`BLOCK_WALK_CAP=8192`), smem panel
+  budget (`SMEM_PANEL_BYTES=45056`, 44 KB), and the four derived G caps
+  (block/index 2800, block/weighted 1800, warp/index 340, warp/weighted 220).
+- Solo kernels functional for every picker × directed/undirected × forward/
+  backward combination. Current names are still old-style
+  (`pick_start_edges_kernel`, `pick_intermediate_edges_kernel`); rename to
+  `node_grouped_solo_kernel` lands in task 2.
+- Per-step pipeline inline inside `dispatch_node_grouped_kernel`: filter
+  (`walk_alive_flags_kernel`) → compact (`cub_partition_flagged`) → gather
+  (`gather_last_nodes_kernel`) → sort (`cub_sort_pairs`) → RLE
+  (`cub_run_length_encode`) → exclusive-scan → scatter
+  (`scatter_walk_group_sizes_kernel`) → solo+coop launch.
+- Pipeline extents driven by `num_active`: sort / RLE / scan / gather /
+  scatter / pick all run on `host_num_active` read once per step via a D2H
+  copy + stream sync on `trw->stream()` (CUB's `num_items` is host-side, no
+  device-pointer overload exists). Filter and the `walk_to_group_size`
+  zero-init deliberately retain `num_walks` extent — the former reads every
+  walk by design; the latter is indexed by original `walk_idx` and must clear
+  slots from walks that terminated in prior steps.
+- `walk_idx` preserved end-to-end: iota → `cub_partition_flagged` → sort-by-key
+  values → scatter back by walk_idx. No dense renumbering.
+- Unconstrained step-0 short-circuit: `if (!all_starts_unconstrained) { … }`
+  skips sort/RLE/scatter for the all-`-1` case; solo start kernel services
+  every walk through `get_edge_at_device` (global edge stream). All three
+  entry points (`_for_all_nodes_cuda`, `_for_last_batch_cuda`, `_cuda`)
+  thread the flag correctly.
+- `TemporalNode2Vec` pinned to the solo tier: coop dispatcher early-exits on
+  that picker; solo's group-size guard is compile-time elided for the
+  Node2Vec specialization. Per-walk `prev_node` bias makes a shared
+  cooperative panel impossible by construction.
+- NVTX ranges on every pipeline stage (`NG step0 setup`, `NG step`,
+  `NG filter alive`, `NG compact`, `NG num_active readback`, `NG gather`,
+  `NG sort`, `NG RLE+scan`, `NG scatter`, `NG pick`, `NG reverse`) for
+  nsys legibility.
+- Structural parity harness in `test_node_grouped_parity.cpp` —
+  `FULL_WALK` vs `NODE_GROUPED` across forward-constrained, unconstrained,
+  and backward cases. Not bit-exact (Philox counter offsets differ between
+  the two paths); asserts walk validity, slot-0 agreement, and mean-length
+  ratio band.
+- `WalkSetView.walk_padding_value` consumed in the filter kernel — no
+  hardcoded `-1`.
 
 **Open**
-- Warp-smem, warp-global, block-smem, block-global bodies are still solo
-  copies. No cooperation implemented yet.
-- Scheduler runs over full `num_walks` extent in sort + RLE rather than
-  `num_active` — correctness holds because scatter uses `num_active` as slot
-  count, dead-tail runs never reach task lists. Marked `TODO(perf)`.
-- No block-task cap wiring yet on the kernel side (scheduler emits them,
-  block-smem kernel body still single-task shape).
+- Kernel naming still old-style. Rename `pick_*_edges_kernel` →
+  `node_grouped_solo_kernel` in task 2.
+- Cooperative tier is two TODO stubs (`pick_start_edges_cooperative_kernel`,
+  `pick_intermediate_edges_cooperative_kernel`), not the four scaffolds the
+  spec requires (`node_grouped_warp_smem_kernel`, `_warp_global_kernel`,
+  `_block_smem_kernel`, `_block_global_kernel`). Scaffolds land in task 3.
+- No `temporal_random_walk_node_grouped_scheduler.cu`. Pipeline is inline in
+  the dispatcher. Extraction (with `DeviceArena`-backed scratch, reset once
+  per step) lands in task 4.
+- Tier routing is still guard-and-exit: solo kernel gates on
+  `walk_to_group_size[walk_idx] > TRW_NODE_GROUPED_T_WARP`, coop stubs are
+  no-ops. Spec requires pre-partitioned task lists (solo_walks,
+  warp_smem_nodes, warp_global_nodes, block_smem_tasks, block_global_tasks)
+  — lands across tasks 5–7.
+- `DeviceArena` exists (`src/data/device_arena.cuh`) but the dispatcher
+  still allocates per-invocation `Buffer<T>` scratch. Arena switch lands
+  with the scheduler extraction in task 4.
+- No W-partition, no G-partition, no block-task expansion for mega-hubs.
 
 ## 7. Architecture guardrails
 
@@ -245,66 +288,112 @@ Standing rules, imposed by the project owner, respected going forward.
 
 ## 8. Future tasks
 
-Ordered by dependency.
+Ordered so each task leaves the build green, the parity harness green, and
+one acceptance boundary the owner can review in isolation. Phases I–II are
+non-behavioral or distribution-preserving (bodies stay solo-copies); Phase
+III introduces cooperative behavior; Phase IV validates.
 
-### Task 6 — Block-smem kernel body
+### Phase I — Foundation (non-behavioral)
 
-Replace the solo-copy body of `node_grouped_block_smem_kernel` with the
-cooperative design:
+**Task 1 — `warp_coop_config.cuh`.** ✓ Done (commit `212d822`). Single source
+of truth for tier constants, launch shape, smem budget, derived G caps, and
+per-group byte costs. Misaligned constants removed from `cuda_config.cuh`.
+Solo-kernel guard sites renamed to the new constants.
 
-- Read the block-task record (node_id, walk_start, walk_count).
-- Cooperative preload of the per-node panel into smem: `s_group_offsets[G]`
-  and `s_first_ts[G]` for index pickers; add `s_cum_weights[G]` for weighted.
-- One `__syncthreads()` after header broadcast, one after panel load.
-- Stride loop over walks in the task's slice: thread `t` processes walks at
-  positions `t, t+256, t+512, …` up to `walk_count`. Binary search runs
-  against smem; picker runs against smem; final edge load goes to global.
-- No intra-loop syncs. Writes to `walk_set` go to distinct walk indices.
+**Task 2 — Rename kernels to spec.** Collapse `pick_start_edges_kernel` and
+`pick_intermediate_edges_kernel` under the single `node_grouped_solo_kernel`
+name; keep the internal `<IsDirected, Forward, EdgePickerType, Constrained>`
+template specializations (start edges retain the `Constrained` tag, step
+edges don't need it). Tear out the two cooperative stubs
+(`pick_*_cooperative_kernel`) — superseded by the four scaffolds in task 3.
+Update `dispatch_start_edges_kernel`, `dispatch_intermediate_edges_kernel`,
+and their cooperative counterparts. Parity harness passes.
 
-Out of scope for this task: warp-tier, global fallback, start-kernel. Keep
-the function focused.
+**Task 3 — Five-kernel scaffold.** Introduce
+`node_grouped_warp_smem_kernel`, `_warp_global_kernel`, `_block_smem_kernel`,
+`_block_global_kernel` — each a verbatim copy of the solo body so
+distribution is mathematically unchanged. Dispatcher still launches only
+the solo kernel (scaffold kernels are declared but unused). Template
+specialization on `<IsDirected, Forward, EdgePickerType>` matches spec.
+Parity harness passes.
 
-Distribution tests pass. This is the first task where real speedup appears
-on hub-clustered workloads.
+**Task 4 — Scheduler extraction.** Move filter / gather / argsort / RLE /
+exclusive-scan / scatter / `num_active` readback / NVTX markers out of
+`dispatch_node_grouped_kernel` into `temporal_random_walk_node_grouped_scheduler.cu`.
+Per-invocation `Buffer<T>` scratch → `DeviceArena`-allocated, reset once per
+step. Behavior-preserving refactor. Parity harness passes.
 
-### Task 7 — Block-global fallback kernel body
+### Phase II — Partition (behavior change, distribution unchanged)
 
-Replace the solo-copy body of `node_grouped_block_global_kernel` with the
-same stride-loop structure as Task 6, but without the smem panel. Binary
-search goes against the original global-memory path (same access pattern as
-the solo kernel, just inside a cooperative stride loop).
+**Task 5 — W partition.** Scheduler emits three disjoint task lists:
+`solo_walks`, `warp_nodes`, `block_nodes`. Solo kernel consumes `solo_walks`
+(group-size guard removed — kernel no longer receives walks it skips).
+Warp-smem launches over `warp_nodes`, block-smem over `block_nodes`. All
+four cooperative bodies still solo-copies, so distribution is identical to
+task 4. Parity harness passes.
 
-Distribution tests pass.
+**Task 6 — G partition.** Scheduler splits `warp_nodes` →
+`warp_smem_nodes` + `warp_global_nodes` using
+`TRW_NODE_GROUPED_G_CAP_WARP_{INDEX,WEIGHTED}`; same for block with
+`G_CAP_BLOCK_*`. Dispatcher launches all five kernels over their five
+task lists. Bodies still solo-copies. Parity harness passes.
 
-### Task 8 — Warp-smem kernel body
+**Task 7 — Block-task expansion.** Nodes with
+`W > TRW_NODE_GROUPED_BLOCK_WALK_CAP` (8192) split into ⌈W/cap⌉ block-tasks
+of disjoint walk slices. `block_smem_nodes` → `block_smem_tasks`; same for
+global. Block-smem and block-global kernels consume
+`(node_id, walk_start, walk_count)` tasks, not raw nodes. Parity harness
+passes.
 
-Replace the solo-copy body of `node_grouped_warp_smem_kernel` with the warp
-equivalent of Task 6:
+### Phase III — Kernel bodies (first real speedup)
 
-- One warp per unique node. 8 warps per block (`COOP_WARPS_PER_BLOCK`).
-- Per-warp smem slice (5.5 KB): same panel contents, scaled to per-warp G
-  caps (340 index / 220 weighted).
-- Lane-strided preload, `__syncwarp()` in place of `__syncthreads()`.
-- Intra-warp stride loop: lane `l` processes walks at positions
-  `l, l+32, l+64, …` up to `walk_count`. At W=255 this is ⌈255/32⌉ = 8
-  iterations.
+**Task 8 — Block-smem body.** Replace solo-copy with the cooperative design:
+read the block-task record, cooperative preload of `s_group_offsets[G]` and
+`s_first_ts[G]` (index pickers) plus `s_cum_weights[G]` (weighted),
+`__syncthreads()` after header broadcast and after panel load, stride loop
+of 256 threads over `walk_count` walks. Binary search and picker run
+against smem; final edge load goes to global. compute-sanitizer +
+memcheck/racecheck clean. ncu report for baseline→cooperative delta.
 
-Distribution tests pass.
+**Task 9 — Block-global body.** Same task-consumption shape and stride loop
+as task 8, without the smem panel. Binary search goes against global arrays
+— same access pattern as solo, inside a cooperative stride loop.
+compute-sanitizer + ncu report.
 
-### Task 9 — Warp-global fallback kernel body
+**Task 10 — Warp-smem body.** Warp equivalent of task 8: 8 warps per block
+(`TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK`), per-warp 5.5 KB panel slice
+(`SMEM_PANEL_BYTES_PER_WARP`), lane-strided preload, `__syncwarp()` in
+place of `__syncthreads()`. Intra-warp stride loop: lane `l` processes
+walks at `l, l+32, l+64, …` up to `walk_count`. At `W=255` this is 8
+iterations. compute-sanitizer + ncu report.
 
-Warp-tier equivalent of Task 7. Same structure as warp-smem, no smem panel.
+**Task 11 — Warp-global body.** Warp equivalent of task 9.
+compute-sanitizer + ncu report.
 
-Distribution tests pass.
+### Phase IV — Validation & polish
 
-### Task 10 — Validation
-
-Run distribution tests across all picker types, directed/undirected, forward/
-backward. Measure on at least:
-- Alibaba microservices (the clustering workload)
+**Task 12 — Distribution & performance validation.** Run distribution tests
+across every picker × directed/undirected × forward/backward. Measure on
+at least:
+- Alibaba microservices (clustering workload)
 - One TGB dataset (tgbl-wiki or tgbl-review)
-- A uniform-degree synthetic graph as a low-clustering control
+- Uniform-degree synthetic graph as a low-clustering control
 
-Write up: per-tier fraction of walks, per-tier fraction of time, speedup vs.
-`FULL_WALK`, distribution of G on each dataset (validates the G cap choices).
-No paper-ready framing yet — just numbers.
+Write up: per-tier fraction of walks, per-tier fraction of time, speedup
+vs `FULL_WALK`, G distribution on each dataset (validates the G cap choices).
+Numbers only — paper framing deferred.
+
+**Task 13 — Doc sweep + Python smoke.** Update this dossier's §6 to reflect
+the landed state. Pybind smoke test exercising `NODE_GROUPED` with a
+non-default picker through the Python path. CLI example refreshed if
+binding surface changed.
+
+### Cross-cutting, folded into the primary tasks
+
+- **NVTX ranges.** Already land-good in the current dispatcher; port to the
+  scheduler in task 4, extend to the five kernel launches in task 5. Not
+  its own task.
+- **compute-sanitizer + ncu.** Run with every cooperative kernel body in
+  tasks 8–11. Keeps blame windows tight. Not standalone.
+- **Parity harness.** Runs as the gate on every Phase I–II task; anchors
+  "distribution unchanged" across tasks 5–7.
