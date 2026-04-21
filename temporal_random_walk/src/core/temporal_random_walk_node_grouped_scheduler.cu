@@ -10,6 +10,7 @@
 #include "../common/error_handlers.cuh"
 #include "../common/nvtx.cuh"
 #include "../common/warp_coop_config.cuh"
+#include "../random/pickers.cuh"
 
 namespace temporal_random_walk {
 
@@ -117,6 +118,54 @@ __global__ void partition_by_w_kernel(
     }
 }
 
+// G-partition: splits one tier's task list into (smem, global) variants
+// based on per-node G (distinct-timestamp-group count). G <= g_cap fits
+// the smem panel; G > g_cap routes to the global-fallback kernel.
+//
+// Called twice per step — once for the warp tier, once for the block tier,
+// each with its own g_cap (index vs weighted picker class resolved by
+// run_step's caller).
+__global__ void partition_by_g_kernel(
+    const int* __restrict__ tier_nodes,
+    const int* __restrict__ tier_walk_starts,
+    const int* __restrict__ tier_walk_counts,
+    const int* __restrict__ num_tier_tasks_ptr,
+    const std::size_t* __restrict__ count_ts_group_per_node,
+    const int g_cap,
+    int* __restrict__ smem_nodes,
+    int* __restrict__ smem_walk_starts,
+    int* __restrict__ smem_walk_counts,
+    int* __restrict__ global_nodes,
+    int* __restrict__ global_walk_starts,
+    int* __restrict__ global_walk_counts,
+    int* __restrict__ g_counters) {     // int[2]: {num_smem, num_global}
+
+    const int t = blockIdx.x * blockDim.x + threadIdx.x;
+    if (t >= *num_tier_tasks_ptr) return;
+
+    const int node_id    = tier_nodes[t];
+    const int walk_start = tier_walk_starts[t];
+    const int walk_count = tier_walk_counts[t];
+
+    // G = number of distinct timestamp groups at node_id (directional —
+    // count_ts_group_per_node is the caller's already-resolved array).
+    const std::size_t group_begin = count_ts_group_per_node[node_id];
+    const std::size_t group_end   = count_ts_group_per_node[node_id + 1];
+    const int G = static_cast<int>(group_end - group_begin);
+
+    if (G <= g_cap) {
+        const int idx = atomicAdd(&g_counters[0], 1);
+        smem_nodes[idx]        = node_id;
+        smem_walk_starts[idx]  = walk_start;
+        smem_walk_counts[idx]  = walk_count;
+    } else {
+        const int idx = atomicAdd(&g_counters[1], 1);
+        global_nodes[idx]        = node_id;
+        global_walk_starts[idx]  = walk_start;
+        global_walk_counts[idx]  = walk_count;
+    }
+}
+
 }  // namespace
 
 // ==========================================================================
@@ -148,12 +197,15 @@ NodeGroupedScheduler::NodeGroupedScheduler(
 NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
     WalkSetView walk_set_view,
     const int step_number,
-    const int max_walk_len) {
+    const int max_walk_len,
+    const std::size_t* count_ts_group_per_node,
+    const RandomPickerType edge_picker_type) {
 
     NVTX_RANGE_COLORED("NG step", nvtx_colors::walk_green);
 
     arena_.reset();
 
+    // Per-stage scratch.
     uint8_t* alive_flags       = arena_.acquire<uint8_t>(num_walks_);
     int*     active_walk_idx   = arena_.acquire<int>(num_walks_);
     int*     step_num_active   = arena_.acquire<int>(1);
@@ -165,17 +217,55 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
     int*     step_run_starts   = arena_.acquire<int>(num_walks_);
     int*     step_num_runs     = arena_.acquire<int>(1);
 
-    // W-partition outputs. Upper-bound-sized to num_walks: sum across tiers
-    // equals num_active <= num_walks, so each tier's list fits. Atomic
-    // counters live in a single int[3] block for a single D2H copy later.
+    // W-partition outputs. The warp/block lists here are INTERMEDIATE —
+    // they feed the two G-partition passes below. Only solo_walks and the
+    // four (smem|global) tier lists from the G-partition are exposed in
+    // StepOutputs. All upper-bound-sized to num_walks.
     int*     solo_walks         = arena_.acquire<int>(num_walks_);
-    int*     warp_nodes         = arena_.acquire<int>(num_walks_);
-    int*     warp_walk_starts   = arena_.acquire<int>(num_walks_);
-    int*     warp_walk_counts   = arena_.acquire<int>(num_walks_);
-    int*     block_nodes        = arena_.acquire<int>(num_walks_);
-    int*     block_walk_starts  = arena_.acquire<int>(num_walks_);
-    int*     block_walk_counts  = arena_.acquire<int>(num_walks_);
-    int*     tier_counters      = arena_.acquire<int>(3);
+    int*     warp_nodes_w       = arena_.acquire<int>(num_walks_);
+    int*     warp_walk_starts_w = arena_.acquire<int>(num_walks_);
+    int*     warp_walk_counts_w = arena_.acquire<int>(num_walks_);
+    int*     block_nodes_w      = arena_.acquire<int>(num_walks_);
+    int*     block_walk_starts_w= arena_.acquire<int>(num_walks_);
+    int*     block_walk_counts_w= arena_.acquire<int>(num_walks_);
+
+    // G-partition outputs for the warp tier.
+    int*     warp_smem_nodes    = arena_.acquire<int>(num_walks_);
+    int*     warp_smem_starts   = arena_.acquire<int>(num_walks_);
+    int*     warp_smem_counts   = arena_.acquire<int>(num_walks_);
+    int*     warp_global_nodes  = arena_.acquire<int>(num_walks_);
+    int*     warp_global_starts = arena_.acquire<int>(num_walks_);
+    int*     warp_global_counts = arena_.acquire<int>(num_walks_);
+
+    // G-partition outputs for the block tier.
+    int*     block_smem_nodes    = arena_.acquire<int>(num_walks_);
+    int*     block_smem_starts   = arena_.acquire<int>(num_walks_);
+    int*     block_smem_counts   = arena_.acquire<int>(num_walks_);
+    int*     block_global_nodes  = arena_.acquire<int>(num_walks_);
+    int*     block_global_starts = arena_.acquire<int>(num_walks_);
+    int*     block_global_counts = arena_.acquire<int>(num_walks_);
+
+    // Counter layout (int[7]) — single contiguous block for one D2H:
+    //   [0] num_solo        (from W-partition)
+    //   [1] num_warp_w      (W-partition intermediate, consumed by G-partition)
+    //   [2] num_block_w     (W-partition intermediate)
+    //   [3] num_warp_smem   (warp G-partition output)
+    //   [4] num_warp_global (warp G-partition output)
+    //   [5] num_block_smem  (block G-partition output)
+    //   [6] num_block_global (block G-partition output)
+    constexpr int kCounterSlots = 7;
+    int* tier_counters = arena_.acquire<int>(kCounterSlots);
+
+    // Pick G caps by picker class (runtime — switch lifts to compile time
+    // via template specialization in the real coop bodies, tasks 8–11).
+    const bool is_index_picker =
+        random_pickers::is_index_based_picker(edge_picker_type);
+    const int g_cap_warp = is_index_picker
+        ? TRW_NODE_GROUPED_G_CAP_WARP_INDEX
+        : TRW_NODE_GROUPED_G_CAP_WARP_WEIGHTED;
+    const int g_cap_block = is_index_picker
+        ? TRW_NODE_GROUPED_G_CAP_BLOCK_INDEX
+        : TRW_NODE_GROUPED_G_CAP_BLOCK_WEIGHTED;
 
     const std::size_t flag_blocks =
         (num_walks_ + block_dim_.x - 1) / block_dim_.x;
@@ -199,8 +289,7 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
             num_walks_, stream_);
     }
 
-    // D2H readback of num_active. CUB sort/RLE/scan need host-side
-    // num_items; this is the only way to drive them by num_active.
+    // D2H readback of num_active (drives CUB sort/RLE/scan extents).
     int host_num_active = 0;
     {
         NVTX_RANGE_COLORED("NG num_active readback", nvtx_colors::io_grey);
@@ -210,9 +299,20 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
         CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(stream_));
     }
 
-    // Zero the tier counters up front; partition kernel atomic-adds into them.
+    // Zero all tier counters up front; partition kernels atomic-add.
     CUDA_CHECK_AND_CLEAR(cudaMemsetAsync(
-        tier_counters, 0, 3 * sizeof(int), stream_));
+        tier_counters, 0, kCounterSlots * sizeof(int), stream_));
+
+    auto empty_tier = [&](const int device_counter_slot) {
+        // Empty TierTaskList (num_tasks_host=0). Nodes/starts/counts
+        // pointers can be nullptr — caller gates on num_tasks_host.
+        return TierTaskList{
+            /*nodes=*/nullptr,
+            /*walk_starts=*/nullptr,
+            /*walk_counts=*/nullptr,
+            /*num_tasks_device=*/&tier_counters[device_counter_slot],
+            /*num_tasks_host=*/0};
+    };
 
     if (host_num_active <= 0) {
         return StepOutputs{
@@ -221,16 +321,10 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
             /*solo_walks=*/solo_walks,
             /*num_solo_walks_device=*/&tier_counters[0],
             /*num_solo_walks_host=*/0,
-            /*warp_nodes=*/warp_nodes,
-            /*warp_walk_starts=*/warp_walk_starts,
-            /*warp_walk_counts=*/warp_walk_counts,
-            /*num_warp_tasks_device=*/&tier_counters[1],
-            /*num_warp_tasks_host=*/0,
-            /*block_nodes=*/block_nodes,
-            /*block_walk_starts=*/block_walk_starts,
-            /*block_walk_counts=*/block_walk_counts,
-            /*num_block_tasks_device=*/&tier_counters[2],
-            /*num_block_tasks_host=*/0};
+            /*warp_smem=*/  empty_tier(3),
+            /*warp_global=*/empty_tier(4),
+            /*block_smem=*/ empty_tier(5),
+            /*block_global=*/empty_tier(6)};
     }
 
     const std::size_t active_items =
@@ -274,9 +368,7 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
     }
 
     // (g) W-partition: classify each run into solo / warp / block.
-    // Grid is sized to num_active as an upper bound on num_runs; the
-    // kernel early-exits threads with r >= *step_num_runs.
-    int tier_counts_host[3] = {0, 0, 0};
+    // Counters into tier_counters[0..2].
     {
         NVTX_RANGE_COLORED("NG W-partition", nvtx_colors::weight_orange);
         partition_by_w_kernel<<<active_grid, block_dim_, 0, stream_>>>(
@@ -285,14 +377,45 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
             TRW_NODE_GROUPED_T_WARP,
             TRW_NODE_GROUPED_T_BLOCK,
             solo_walks,
-            warp_nodes, warp_walk_starts, warp_walk_counts,
-            block_nodes, block_walk_starts, block_walk_counts,
-            tier_counters);
+            warp_nodes_w,  warp_walk_starts_w,  warp_walk_counts_w,
+            block_nodes_w, block_walk_starts_w, block_walk_counts_w,
+            tier_counters);   // int[3] slots [0..2]
+    }
 
-        // Second per-step D2H sync: read the three tier counts so the
-        // dispatcher can grid-size each kernel launch tightly.
+    // (h) G-partition: warp tier -> (warp_smem, warp_global).
+    // Grid upper-bound is active_grid; kernel threads with
+    // t >= *tier_counters[1] early-exit. Counters into tier_counters[3..4].
+    {
+        NVTX_RANGE_COLORED("NG G-partition (warp)", nvtx_colors::weight_orange);
+        partition_by_g_kernel<<<active_grid, block_dim_, 0, stream_>>>(
+            warp_nodes_w, warp_walk_starts_w, warp_walk_counts_w,
+            &tier_counters[1],   // num_warp_w
+            count_ts_group_per_node,
+            g_cap_warp,
+            warp_smem_nodes,  warp_smem_starts,  warp_smem_counts,
+            warp_global_nodes, warp_global_starts, warp_global_counts,
+            &tier_counters[3]);  // int[2] slots [3..4]
+    }
+
+    // (i) G-partition: block tier -> (block_smem, block_global).
+    {
+        NVTX_RANGE_COLORED("NG G-partition (block)", nvtx_colors::weight_orange);
+        partition_by_g_kernel<<<active_grid, block_dim_, 0, stream_>>>(
+            block_nodes_w, block_walk_starts_w, block_walk_counts_w,
+            &tier_counters[2],   // num_block_w
+            count_ts_group_per_node,
+            g_cap_block,
+            block_smem_nodes,  block_smem_starts,  block_smem_counts,
+            block_global_nodes, block_global_starts, block_global_counts,
+            &tier_counters[5]);  // int[2] slots [5..6]
+    }
+
+    // Final per-step D2H: read all seven counters in one copy.
+    int counts_host[kCounterSlots] = {};
+    {
+        NVTX_RANGE_COLORED("NG tier-count readback", nvtx_colors::io_grey);
         CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
-            tier_counts_host, tier_counters, 3 * sizeof(int),
+            counts_host, tier_counters, kCounterSlots * sizeof(int),
             cudaMemcpyDeviceToHost, stream_));
         CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(stream_));
     }
@@ -302,17 +425,19 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
         /*num_active_host=*/host_num_active,
         /*solo_walks=*/solo_walks,
         /*num_solo_walks_device=*/&tier_counters[0],
-        /*num_solo_walks_host=*/tier_counts_host[0],
-        /*warp_nodes=*/warp_nodes,
-        /*warp_walk_starts=*/warp_walk_starts,
-        /*warp_walk_counts=*/warp_walk_counts,
-        /*num_warp_tasks_device=*/&tier_counters[1],
-        /*num_warp_tasks_host=*/tier_counts_host[1],
-        /*block_nodes=*/block_nodes,
-        /*block_walk_starts=*/block_walk_starts,
-        /*block_walk_counts=*/block_walk_counts,
-        /*num_block_tasks_device=*/&tier_counters[2],
-        /*num_block_tasks_host=*/tier_counts_host[2]};
+        /*num_solo_walks_host=*/counts_host[0],
+        /*warp_smem=*/TierTaskList{
+            warp_smem_nodes, warp_smem_starts, warp_smem_counts,
+            &tier_counters[3], counts_host[3]},
+        /*warp_global=*/TierTaskList{
+            warp_global_nodes, warp_global_starts, warp_global_counts,
+            &tier_counters[4], counts_host[4]},
+        /*block_smem=*/TierTaskList{
+            block_smem_nodes, block_smem_starts, block_smem_counts,
+            &tier_counters[5], counts_host[5]},
+        /*block_global=*/TierTaskList{
+            block_global_nodes, block_global_starts, block_global_counts,
+            &tier_counters[6], counts_host[6]}};
 }
 
 }  // namespace temporal_random_walk

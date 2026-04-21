@@ -10,6 +10,7 @@
 #include "../data/buffer.cuh"
 #include "../data/device_arena.cuh"
 #include "../data/walk_set/walk_set_view.cuh"
+#include "../data/enums.cuh"
 
 namespace temporal_random_walk {
 
@@ -30,40 +31,44 @@ namespace temporal_random_walk {
 //     only until the next run_step call.
 class NodeGroupedScheduler {
 public:
-    // One run_step call produces three disjoint task lists (W-partition):
-    //   solo_walks:  walk_idx list for W=1 groups (consumed by solo kernel).
-    //   warp_tasks:  node-level tasks for W in [2, TRW_NODE_GROUPED_T_BLOCK].
-    //   block_tasks: node-level tasks for W > TRW_NODE_GROUPED_T_BLOCK.
-    // Pointers are valid only until the next run_step call (arena is reset
+    // Node-level task list shared by the four cooperative tiers. Every
+    // task identifies a unique node (for panel preload in the real coop
+    // body) plus the walks to service (offset + count into sorted_walk_idx).
+    struct TierTaskList {
+        int* nodes;              // node_id per task
+        int* walk_starts;        // offset into sorted_walk_idx
+        int* walk_counts;        // W per task (walks sharing this node)
+        int* num_tasks_device;   // device counter (kernel gate)
+        int  num_tasks_host;     // post-partition D2H readback
+    };
+
+    // One run_step call produces five disjoint task lists:
+    //   solo_walks        — walk_idx list for W=1 (single-thread path).
+    //   warp_smem         — warp tasks that fit in per-warp smem panel.
+    //   warp_global       — warp tasks with G > cap (global fallback).
+    //   block_smem        — block tasks that fit in per-block smem panel.
+    //   block_global      — block tasks with G > cap.
+    // Pointers are valid only until the next run_step call (arena resets
     // at the top of each run).
     struct StepOutputs {
-        // Compacted active walks sorted by current-node. Coop scaffolds
+        // Compacted active walks sorted by current-node. Coop kernels
         // index into this via (walk_start, walk_count) per node task.
         int* sorted_walk_idx;
 
         // Host-side num_active from the first D2H readback. 0 means every
-        // walk terminated before this step; caller skips pick launches.
+        // walk terminated before this step; caller skips all pick launches.
         int num_active_host;
 
         // ---- Solo tier (W == 1) --------------------------------------
-        int* solo_walks;               // walk_idx list, length num_solo_host
-        int* num_solo_walks_device;    // device counter (kernel gate)
-        int  num_solo_walks_host;      // post-partition D2H readback
+        int* solo_walks;               // walk_idx list
+        int* num_solo_walks_device;
+        int  num_solo_walks_host;
 
-        // ---- Warp tier (W in [2, T_BLOCK]) ---------------------------
-        int* warp_nodes;               // node_id per task (for panel preload
-                                       // in the real body, task 10)
-        int* warp_walk_starts;         // offset into sorted_walk_idx
-        int* warp_walk_counts;         // walks per task (W value)
-        int* num_warp_tasks_device;
-        int  num_warp_tasks_host;
-
-        // ---- Block tier (W > T_BLOCK) --------------------------------
-        int* block_nodes;              // node_id per task
-        int* block_walk_starts;
-        int* block_walk_counts;
-        int* num_block_tasks_device;
-        int  num_block_tasks_host;
+        // ---- Cooperative tiers (four variants after W+G partition) ---
+        TierTaskList warp_smem;        // W in [2, T_BLOCK] AND G ≤ warp cap
+        TierTaskList warp_global;      // W in [2, T_BLOCK] AND G > warp cap
+        TierTaskList block_smem;       // W > T_BLOCK        AND G ≤ block cap
+        TierTaskList block_global;     // W > T_BLOCK        AND G > block cap
     };
 
     NodeGroupedScheduler(std::size_t num_walks,
@@ -72,12 +77,20 @@ public:
 
     // Run one intermediate step's pipeline. Blocks twice on D2H stream
     // syncs per step: first for num_active (drives CUB extents), second
-    // for the three tier counts (drives kernel grids). Both are one-int
-    // (or three-int) readbacks; cost is trivial next to the sort/RLE
-    // work they save.
+    // for the tier counts (drives kernel grids).
+    //
+    // count_ts_group_per_node: per-node offset into the global timestamp-
+    //   group arrays. Caller resolves this from the graph view based on
+    //   walk direction (outbound for forward; inbound for backward-directed;
+    //   outbound for backward-undirected).
+    // edge_picker_type: determines which G cap applies to each tier:
+    //   TRW_NODE_GROUPED_G_CAP_{WARP,BLOCK}_INDEX for index-based pickers
+    //   (Uniform / Linear / ExponentialIndex), _WEIGHTED for the rest.
     StepOutputs run_step(WalkSetView walk_set_view,
                          int step_number,
-                         int max_walk_len);
+                         int max_walk_len,
+                         const std::size_t* count_ts_group_per_node,
+                         RandomPickerType edge_picker_type);
 
 private:
     std::size_t  num_walks_;

@@ -264,10 +264,14 @@ the progress log; §5's kernel matrix is the target state.
   / block-smem into their own task lists; tasks 8–11 replace each body with
   its tier-specific cooperative implementation. The shared per-walk helper
   is `advance_one_walk` (takes a concrete walk_idx_int; no list indexing).
-- G-partition (task 6) will split warp / block into (smem, global) variants
-  by per-node G against `TRW_NODE_GROUPED_G_CAP_*`. Until then warp_global
-  and block_global scaffolds are declared but unused; every coop walk goes
-  through the smem variant.
+- G-partition is live (task 6): each warp task splits into warp_smem or
+  warp_global by `G <= TRW_NODE_GROUPED_G_CAP_WARP_{INDEX,WEIGHTED}`; same
+  for block. The picker-class choice of cap is a runtime branch on
+  `is_index_based_picker(edge_picker_type)`. G is read per-node as
+  `count_ts_group_per_node[node+1] - count_ts_group_per_node[node]`; the
+  caller resolves the directional variant of that array (forward →
+  outbound; backward directed → inbound; backward undirected → outbound)
+  before passing it to `run_step`.
 - Block-task expansion (task 7) splits mega-hub nodes
   (`W > TRW_NODE_GROUPED_BLOCK_WALK_CAP`) into multiple block-tasks of
   disjoint walk slices. Not implemented yet.
@@ -394,11 +398,33 @@ Cleanup: `setup_step0_constrained`, `walk_to_group_size_`, the
 are gone — all dead after task 2 removed their consumers. Parity harness
 is still the acceptance gate.
 
-**Task 6 — G partition.** Scheduler splits `warp_nodes` →
-`warp_smem_nodes` + `warp_global_nodes` using
-`TRW_NODE_GROUPED_G_CAP_WARP_{INDEX,WEIGHTED}`; same for block with
-`G_CAP_BLOCK_*`. Dispatcher launches all five kernels over their five
-task lists. Bodies still solo-copies. Parity harness passes.
+**Task 6 — G partition.** ✓ Done. Scheduler runs two additional
+`partition_by_g_kernel` passes after the W-partition — one per coop tier
+— that split each node task into smem or global based on
+`G <= TRW_NODE_GROUPED_G_CAP_{WARP,BLOCK}_{INDEX,WEIGHTED}`. G is read
+from `count_ts_group_per_node[node+1] - count_ts_group_per_node[node]`;
+direction resolution (outbound/inbound) happens at the dispatcher call
+site from the template tags `kDir`/`kFwd`.
+
+`StepOutputs` refactored: a nested `TierTaskList` struct carries
+`{nodes, walk_starts, walk_counts, num_tasks_device, num_tasks_host}`,
+and there are now four of them — `warp_smem`, `warp_global`,
+`block_smem`, `block_global` — plus the standalone solo-walks tier.
+
+Counter layout is a single `int[7]` in the arena (num_solo,
+num_warp_intermediate, num_block_intermediate, num_warp_smem,
+num_warp_global, num_block_smem, num_block_global). The two
+intermediate W-partition counts stay on-device only; the host readback
+grabs all seven in one D2H copy at end-of-step (still two syncs total:
+one for num_active before the sort, one for tier counts at the end).
+
+Dispatcher now launches five kernels per step: solo on `solo_walks`,
+the four coop scaffolds on their respective `TierTaskList`s. Each
+launch is skipped if its tier count is 0. Bodies are still solo-copies,
+so distribution is identical to task 5 — parity harness stays green
+and the W-partition test file still passes (it uses a trivial
+all-zero `count_ts_group_per_node` that forces every coop task into
+the smem variant; the G-partition tests live in a sibling file).
 
 **Task 7 — Block-task expansion.** Nodes with
 `W > TRW_NODE_GROUPED_BLOCK_WALK_CAP` (8192) split into ⌈W/cap⌉ block-tasks

@@ -75,10 +75,20 @@ inline void dispatch_node_grouped_kernel(
                     base_seed, grid, block_dim, stream);
             }
 
+            // Per-direction, per-directedness pick of the timestamp-group
+            // offsets array. Forward -> outbound; Backward directed -> inbound;
+            // Backward undirected -> outbound. Matches get_node_edge_at_device.
+            const std::size_t* count_ts_group_per_node =
+                kFwd
+                    ? view.count_ts_group_per_node_outbound
+                    : (kDir ? view.count_ts_group_per_node_inbound
+                            : view.count_ts_group_per_node_outbound);
+
             // ---- 2. Intermediate steps --------------------------------
             for (int step_number = 1; step_number < max_walk_len; ++step_number) {
                 auto step_outs = scheduler.run_step(
-                    walk_set_view, step_number, max_walk_len);
+                    walk_set_view, step_number, max_walk_len,
+                    count_ts_group_per_node, edge_picker_type);
 
                 if (step_outs.num_active_host <= 0) continue;
 
@@ -99,45 +109,73 @@ inline void dispatch_node_grouped_kernel(
                         solo_grid, block_dim, stream);
                 }
 
-                // Warp-smem tier: one task per node (W in [2, T_BLOCK]).
-                if (step_outs.num_warp_tasks_host > 0) {
-                    const size_t warp_blocks =
-                        (static_cast<size_t>(step_outs.num_warp_tasks_host)
+                // Warp-smem tier: W in [2, T_BLOCK] and G <= warp cap.
+                if (step_outs.warp_smem.num_tasks_host > 0) {
+                    const size_t blocks =
+                        (static_cast<size_t>(step_outs.warp_smem.num_tasks_host)
                          + block_dim.x - 1) / block_dim.x;
-                    const dim3 warp_grid(static_cast<unsigned>(warp_blocks));
+                    const dim3 warp_smem_grid(static_cast<unsigned>(blocks));
                     dispatch_node_grouped_warp_smem_kernel<kDir, kFwd>(
                         view, walk_set_view,
                         step_outs.sorted_walk_idx,
-                        step_outs.warp_walk_starts,
-                        step_outs.warp_walk_counts,
-                        step_outs.num_warp_tasks_device,
+                        step_outs.warp_smem.walk_starts,
+                        step_outs.warp_smem.walk_counts,
+                        step_outs.warp_smem.num_tasks_device,
                         step_number, max_walk_len,
                         edge_picker_type, base_seed,
-                        warp_grid, block_dim, stream);
+                        warp_smem_grid, block_dim, stream);
                 }
 
-                // Block-smem tier: one task per node (W > T_BLOCK).
-                if (step_outs.num_block_tasks_host > 0) {
-                    const size_t block_blocks =
-                        (static_cast<size_t>(step_outs.num_block_tasks_host)
+                // Warp-global tier: W in [2, T_BLOCK] and G > warp cap.
+                if (step_outs.warp_global.num_tasks_host > 0) {
+                    const size_t blocks =
+                        (static_cast<size_t>(step_outs.warp_global.num_tasks_host)
                          + block_dim.x - 1) / block_dim.x;
-                    const dim3 block_grid(static_cast<unsigned>(block_blocks));
+                    const dim3 warp_global_grid(static_cast<unsigned>(blocks));
+                    dispatch_node_grouped_warp_global_kernel<kDir, kFwd>(
+                        view, walk_set_view,
+                        step_outs.sorted_walk_idx,
+                        step_outs.warp_global.walk_starts,
+                        step_outs.warp_global.walk_counts,
+                        step_outs.warp_global.num_tasks_device,
+                        step_number, max_walk_len,
+                        edge_picker_type, base_seed,
+                        warp_global_grid, block_dim, stream);
+                }
+
+                // Block-smem tier: W > T_BLOCK and G <= block cap.
+                if (step_outs.block_smem.num_tasks_host > 0) {
+                    const size_t blocks =
+                        (static_cast<size_t>(step_outs.block_smem.num_tasks_host)
+                         + block_dim.x - 1) / block_dim.x;
+                    const dim3 block_smem_grid(static_cast<unsigned>(blocks));
                     dispatch_node_grouped_block_smem_kernel<kDir, kFwd>(
                         view, walk_set_view,
                         step_outs.sorted_walk_idx,
-                        step_outs.block_walk_starts,
-                        step_outs.block_walk_counts,
-                        step_outs.num_block_tasks_device,
+                        step_outs.block_smem.walk_starts,
+                        step_outs.block_smem.walk_counts,
+                        step_outs.block_smem.num_tasks_device,
                         step_number, max_walk_len,
                         edge_picker_type, base_seed,
-                        block_grid, block_dim, stream);
+                        block_smem_grid, block_dim, stream);
                 }
 
-                // warp_global and block_global scaffolds are declared but
-                // unused at task-5 state — all G-fitting decisions deferred
-                // to task 6. Until then every coop walk goes through the
-                // smem variant (distribution identical either way since
-                // both bodies are still solo-copies).
+                // Block-global tier: W > T_BLOCK and G > block cap.
+                if (step_outs.block_global.num_tasks_host > 0) {
+                    const size_t blocks =
+                        (static_cast<size_t>(step_outs.block_global.num_tasks_host)
+                         + block_dim.x - 1) / block_dim.x;
+                    const dim3 block_global_grid(static_cast<unsigned>(blocks));
+                    dispatch_node_grouped_block_global_kernel<kDir, kFwd>(
+                        view, walk_set_view,
+                        step_outs.sorted_walk_idx,
+                        step_outs.block_global.walk_starts,
+                        step_outs.block_global.walk_counts,
+                        step_outs.block_global.num_tasks_device,
+                        step_number, max_walk_len,
+                        edge_picker_type, base_seed,
+                        block_global_grid, block_dim, stream);
+                }
             }
 
             // ---- 3. Reverse if walking backward -----------------------

@@ -128,11 +128,17 @@ WalkSetView make_view(const DeviceWalkSet& ws) {
 // pointers to the scheduler's arena-backed buffers off the public surface
 // of each test; tests read the host vectors directly.
 // --------------------------------------------------------------------------
+// Tests here pass a trivial (all-zero) count_ts_group_per_node, so every
+// node sees G=0 <= g_cap and the G-partition routes every warp/block task
+// into its smem variant (the global variants should stay empty). Under
+// that setup, num_warp_tasks_host below == the number of warp_smem tasks
+// (same for block). The G-partition's real routing is covered by a
+// sibling file, test_node_grouped_g_partition.cpp.
 struct SchedulerResult {
     int num_active_host          = 0;
     int num_solo_walks_host      = 0;
-    int num_warp_tasks_host      = 0;
-    int num_block_tasks_host     = 0;
+    int num_warp_tasks_host      = 0;   // warp_smem (global expected empty)
+    int num_block_tasks_host     = 0;   // block_smem (global expected empty)
 
     std::vector<int> sorted_walk_idx;
     std::vector<int> solo_walks;
@@ -153,6 +159,25 @@ std::vector<int> download_ints(const int* device_ptr, const std::size_t n) {
     return h;
 }
 
+// Trivial count_ts_group_per_node — all zeros, so every node reports
+// G = 0 groups, forcing the G-partition to route every task to the smem
+// variant (G <= g_cap for any g_cap >= 0). Owned device buffer, freed
+// when the returned unique_ptr drops.
+struct DeviceG {
+    std::size_t* ptr = nullptr;
+    ~DeviceG() { if (ptr) cudaFree(ptr); }
+};
+
+std::unique_ptr<DeviceG> make_trivial_count_ts_group(int max_node_id) {
+    auto g = std::make_unique<DeviceG>();
+    // Size: (max_node_id + 2) so indices [0..max_node_id+1] are addressable
+    // (the G-partition kernel reads [node] and [node+1]). Zero-initialize.
+    const std::size_t n = static_cast<std::size_t>(max_node_id) + 2;
+    cudaMalloc(&g->ptr, n * sizeof(std::size_t));
+    cudaMemset(g->ptr, 0, n * sizeof(std::size_t));
+    return g;
+}
+
 SchedulerResult run_and_materialize(
     const std::vector<int>& last_nodes_at_step,
     const int step_number,
@@ -165,37 +190,57 @@ SchedulerResult run_and_materialize(
                             max_walk_len, padding_value);
     const WalkSetView view = make_view(*ws);
 
+    // Largest node_id that might appear in last_nodes_at_step (ignore
+    // padding_value). Use that to size the count_ts_group_per_node array.
+    int max_node_id = 0;
+    for (int n : last_nodes_at_step) {
+        if (n != padding_value && n > max_node_id) max_node_id = n;
+    }
+    auto g = make_trivial_count_ts_group(max_node_id);
+
     NodeGroupedScheduler scheduler(ws->num_walks, block_dim, stream);
-    auto outs = scheduler.run_step(view, step_number,
-                                   static_cast<int>(max_walk_len));
+    auto outs = scheduler.run_step(
+        view, step_number, static_cast<int>(max_walk_len),
+        g->ptr,
+        RandomPickerType::Linear);   // picker class doesn't matter when G=0.
 
     // run_step already does its own stream sync. A final sync here is
     // defensive — guarantees the arena's buffers are stable before
     // we copy them down to host.
     cudaStreamSynchronize(stream);
 
+    // With G=0 everywhere, the global tiers MUST be empty. Catching this
+    // here flags a future change that breaks the W-partition tests'
+    // setup assumption.
+    EXPECT_EQ(outs.warp_global.num_tasks_host, 0)
+        << "test setup invariant broken: warp_global should be empty "
+           "when count_ts_group_per_node is all zeros";
+    EXPECT_EQ(outs.block_global.num_tasks_host, 0)
+        << "test setup invariant broken: block_global should be empty "
+           "when count_ts_group_per_node is all zeros";
+
     SchedulerResult r;
     r.num_active_host      = outs.num_active_host;
     r.num_solo_walks_host  = outs.num_solo_walks_host;
-    r.num_warp_tasks_host  = outs.num_warp_tasks_host;
-    r.num_block_tasks_host = outs.num_block_tasks_host;
+    r.num_warp_tasks_host  = outs.warp_smem.num_tasks_host;
+    r.num_block_tasks_host = outs.block_smem.num_tasks_host;
 
     r.sorted_walk_idx = download_ints(
         outs.sorted_walk_idx, static_cast<std::size_t>(outs.num_active_host));
     r.solo_walks = download_ints(
         outs.solo_walks, static_cast<std::size_t>(outs.num_solo_walks_host));
     r.warp_nodes = download_ints(
-        outs.warp_nodes, static_cast<std::size_t>(outs.num_warp_tasks_host));
+        outs.warp_smem.nodes, static_cast<std::size_t>(r.num_warp_tasks_host));
     r.warp_walk_starts = download_ints(
-        outs.warp_walk_starts, static_cast<std::size_t>(outs.num_warp_tasks_host));
+        outs.warp_smem.walk_starts, static_cast<std::size_t>(r.num_warp_tasks_host));
     r.warp_walk_counts = download_ints(
-        outs.warp_walk_counts, static_cast<std::size_t>(outs.num_warp_tasks_host));
+        outs.warp_smem.walk_counts, static_cast<std::size_t>(r.num_warp_tasks_host));
     r.block_nodes = download_ints(
-        outs.block_nodes, static_cast<std::size_t>(outs.num_block_tasks_host));
+        outs.block_smem.nodes, static_cast<std::size_t>(r.num_block_tasks_host));
     r.block_walk_starts = download_ints(
-        outs.block_walk_starts, static_cast<std::size_t>(outs.num_block_tasks_host));
+        outs.block_smem.walk_starts, static_cast<std::size_t>(r.num_block_tasks_host));
     r.block_walk_counts = download_ints(
-        outs.block_walk_counts, static_cast<std::size_t>(outs.num_block_tasks_host));
+        outs.block_smem.walk_counts, static_cast<std::size_t>(r.num_block_tasks_host));
 
     return r;
 }
