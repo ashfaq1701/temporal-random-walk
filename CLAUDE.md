@@ -198,10 +198,15 @@ the progress log; §5's kernel matrix is the target state.
   256 threads/block), per-block walk cap (`BLOCK_WALK_CAP=8192`), smem panel
   budget (`SMEM_PANEL_BYTES=45056`, 44 KB), and the four derived G caps
   (block/index 2800, block/weighted 1800, warp/index 340, warp/weighted 220).
-- Solo kernels functional for every picker × directed/undirected × forward/
-  backward combination. Current names are still old-style
-  (`pick_start_edges_kernel`, `pick_intermediate_edges_kernel`); rename to
-  `node_grouped_solo_kernel` lands in task 2.
+- Solo kernel (`node_grouped_solo_kernel`) functional for every picker ×
+  directed/undirected × forward/backward combination. Start-edges kernel
+  (`pick_start_edges_kernel`) keeps its name per §5 and handles both
+  unconstrained and constrained step 0 today — the constrained case moves
+  into the solo_walks list in task 5. Since the cooperative stubs were
+  torn out in task 2 and solo now services every active walk, the
+  previously vestigial `walk_to_group_size` group-size guards have been
+  removed from both kernels; re-introduced as pre-partitioned task lists
+  in task 5.
 - Per-step pipeline inline inside `dispatch_node_grouped_kernel`: filter
   (`walk_alive_flags_kernel`) → compact (`cub_partition_flagged`) → gather
   (`gather_last_nodes_kernel`) → sort (`cub_sort_pairs`) → RLE
@@ -238,12 +243,10 @@ the progress log; §5's kernel matrix is the target state.
   hardcoded `-1`.
 
 **Open**
-- Kernel naming still old-style. Rename `pick_*_edges_kernel` →
-  `node_grouped_solo_kernel` in task 2.
-- Cooperative tier is two TODO stubs (`pick_start_edges_cooperative_kernel`,
-  `pick_intermediate_edges_cooperative_kernel`), not the four scaffolds the
-  spec requires (`node_grouped_warp_smem_kernel`, `_warp_global_kernel`,
-  `_block_smem_kernel`, `_block_global_kernel`). Scaffolds land in task 3.
+- No cooperative tier in the tree — the two TODO stubs were deleted in
+  task 2. Four scaffolds (`node_grouped_warp_smem_kernel`,
+  `_warp_global_kernel`, `_block_smem_kernel`, `_block_global_kernel`) land
+  in task 3.
 - No `temporal_random_walk_node_grouped_scheduler.cu`. Pipeline is inline in
   the dispatcher. Extraction (with `DeviceArena`-backed scratch, reset once
   per step) lands in task 4.
@@ -300,14 +303,19 @@ of truth for tier constants, launch shape, smem budget, derived G caps, and
 per-group byte costs. Misaligned constants removed from `cuda_config.cuh`.
 Solo-kernel guard sites renamed to the new constants.
 
-**Task 2 — Rename kernels to spec.** Collapse `pick_start_edges_kernel` and
-`pick_intermediate_edges_kernel` under the single `node_grouped_solo_kernel`
-name; keep the internal `<IsDirected, Forward, EdgePickerType, Constrained>`
-template specializations (start edges retain the `Constrained` tag, step
-edges don't need it). Tear out the two cooperative stubs
-(`pick_*_cooperative_kernel`) — superseded by the four scaffolds in task 3.
-Update `dispatch_start_edges_kernel`, `dispatch_intermediate_edges_kernel`,
-and their cooperative counterparts. Parity harness passes.
+**Task 2 — Rename intermediate kernel to spec, tear out coop stubs.** ✓
+Done. Renamed `pick_intermediate_edges_kernel` → `node_grouped_solo_kernel`
+(and `dispatch_intermediate_edges_kernel` →
+`dispatch_node_grouped_solo_kernel`). `pick_start_edges_kernel` keeps its
+name per §5 — it owns the unconstrained step-0 short-circuit, and
+temporarily also services constrained step 0 until task 5 moves that case
+into the solo_walks list. Deleted both cooperative stubs
+(`pick_start_edges_cooperative_kernel`,
+`pick_intermediate_edges_cooperative_kernel`) and their dispatch wrappers;
+the four scaffolds in task 3 supersede them. Removed the now-vestigial
+`walk_to_group_size` parameter and its guard from both remaining kernels
+(the guard existed only to defer to coop; with coop gone, solo services
+every active walk). Dispatcher updates follow the same surgery.
 
 **Task 3 — Five-kernel scaffold.** Introduce
 `node_grouped_warp_smem_kernel`, `_warp_global_kernel`, `_block_smem_kernel`,

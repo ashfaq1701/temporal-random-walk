@@ -154,7 +154,6 @@ __global__ void pick_start_edges_kernel(
     TemporalGraphView view,
     WalkSetView walk_set,
     const int* __restrict__ start_node_ids,
-    const int* __restrict__ walk_to_group_size,  // only read when Constrained
     const int max_walk_len,
     const size_t num_walks,
     const uint64_t base_seed) {
@@ -163,11 +162,10 @@ __global__ void pick_start_edges_kernel(
     if (walk_idx >= num_walks) return;
     if (max_walk_len == 0) return;
 
-    // Constrained walks whose start-node group exceeds the solo tier's
-    // upper bound are served by the cooperative tiers.
-    if constexpr (Constrained) {
-        if (walk_to_group_size[walk_idx] > TRW_NODE_GROUPED_T_WARP) return;
-    }
+    // Temporary: this kernel handles both unconstrained step 0 (§5 short-circuit)
+    // and constrained step 0 while the scheduler's W-partition is not yet in
+    // place. Task 5 will move the constrained case into solo_walks and this
+    // kernel will shrink to the unconstrained path only.
 
     PhiloxState rng;
     init_philox_state(rng, base_seed, static_cast<uint64_t>(walk_idx));
@@ -224,7 +222,6 @@ inline void dispatch_start_edges_kernel(
     const TemporalGraphView& view,
     WalkSetView walk_set_view,
     const int* start_node_ids,
-    const int* walk_to_group_size,
     const bool constrained,
     const int max_walk_len,
     const size_t num_walks,
@@ -240,90 +237,28 @@ inline void dispatch_start_edges_kernel(
             constexpr bool kC = decltype(c_tag)::value;
             pick_start_edges_kernel<IsDirected, Forward, kStart, kC>
                 <<<grid, block_dim, 0, stream>>>(
-                    view, walk_set_view, start_node_ids, walk_to_group_size,
+                    view, walk_set_view, start_node_ids,
                     max_walk_len, num_walks, base_seed);
         });
     });
 }
 
 // ==========================================================================
-// Step 0 — warp-cooperative (one warp per group).  *** TODO ***
+// Solo kernel — services every active walk in the per-step pipeline.
 //
-// Services constrained start-node groups with group_size >= 2. Lanes stride
-// the run; each walk still keys its Philox substream on its original
-// walk_idx so solo and coop tiers stay bit-exact.
-// ==========================================================================
-
-template <bool IsDirected, bool Forward, RandomPickerType StartPickerType>
-__global__ void pick_start_edges_cooperative_kernel(
-    TemporalGraphView /*view*/,
-    WalkSetView /*walk_set*/,
-    const int* __restrict__ /*unique_start_nodes*/,
-    const int* __restrict__ /*run_starts*/,
-    const int* __restrict__ /*run_lengths*/,
-    const int* __restrict__ /*num_runs_ptr*/,
-    const int* __restrict__ /*sorted_walk_idx*/,
-    const int /*max_walk_len*/,
-    const uint64_t /*base_seed*/) {
-    // TODO(node-grouped-coop): implement the warp-per-run cooperative start
-    // kernel. One warp handles one run (group_size >= 2) of walks sharing a
-    // start_node_id. Lane i handles walk sorted_walk_idx[run_start + i + k*32]
-    // for k = 0,1,... until run_len is exhausted. Philox must be keyed on
-    // the original walk_idx (not lane) to stay bit-exact with the solo
-    // kernel. Early-exit when warp_global >= *num_runs_ptr and when
-    // run_lengths[warp_global] <= 1.
-}
-
-template <bool IsDirected, bool Forward>
-inline void dispatch_start_edges_cooperative_kernel(
-    const TemporalGraphView& view,
-    WalkSetView walk_set_view,
-    const int* unique_start_nodes,
-    const int* run_starts,
-    const int* run_lengths,
-    const int* num_runs_ptr,
-    const int* sorted_walk_idx,
-    const int max_walk_len,
-    const size_t num_walks,
-    const RandomPickerType start_picker_type,
-    const uint64_t base_seed,
-    const dim3& block_dim,
-    const cudaStream_t stream) {
-    // TODO(node-grouped-coop): wire a real launch once the kernel body
-    // lands. Shape:
-    //
-    //   constexpr int kWarpSize = 32;
-    //   const int warps_per_block = block_dim.x / kWarpSize;
-    //   const size_t grid_x = (num_walks + warps_per_block - 1) / warps_per_block;
-    //   pick_start_edges_cooperative_kernel<IsDirected, Forward, kStart>
-    //       <<<dim3(grid_x), block_dim, 0, stream>>>(...);
-    //
-    // Warps beyond *num_runs_ptr early-exit device-side so no host sync is
-    // required to read the run count.
-    (void)view; (void)walk_set_view;
-    (void)unique_start_nodes; (void)run_starts; (void)run_lengths;
-    (void)num_runs_ptr; (void)sorted_walk_idx;
-    (void)max_walk_len; (void)num_walks; (void)start_picker_type;
-    (void)base_seed; (void)block_dim; (void)stream;
-}
-
-// ==========================================================================
-// Steps 1..N-1 — solo intermediate kernel (over active walks)
-//
-// The dispatcher filters out terminated walks (last_node == walk_padding_value)
-// and sorts the survivors by last_node; solo services only walks in runs of
-// size 1. Cooperative groups are handled by the warp-per-run kernel below
-// (TODO). Both kernels receive *original* walk indices so writes land in
-// the correct per-walk slots regardless of compaction/sorting.
+// One thread per active walk. Receives compacted/sorted walk indices from
+// the scheduler. In the current (pre-scheduler-extraction) tree, "solo"
+// is the only kernel — the coop tiers are landing in tasks 3+. At that
+// point this kernel will service the solo_walks list only (W=1). For now
+// it services every active walk.
 // ==========================================================================
 
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
-__global__ void pick_intermediate_edges_kernel(
+__global__ void node_grouped_solo_kernel(
     TemporalGraphView view,
     WalkSetView walk_set,
-    const int* __restrict__ sorted_walk_idx,
+    const int* __restrict__ walk_idx_list,
     const int* __restrict__ num_active_ptr,
-    const int* __restrict__ walk_to_group_size,
     const int step_number,
     const int max_walk_len,
     const uint64_t base_seed) {
@@ -334,21 +269,8 @@ __global__ void pick_intermediate_edges_kernel(
 
     if (step_number >= max_walk_len - 1) return;
 
-    const int walk_idx_int = sorted_walk_idx[i];
+    const int walk_idx_int = walk_idx_list[i];
     if (walk_idx_int < 0) return;
-
-    // Walks above the solo tier's upper bound are handled by the
-    // cooperative kernels; solo only touches runs within T_WARP.
-    //
-    // Node2Vec is exempt: its edge-selection weight depends on the
-    // per-walk prev_node (see pick_random_temporal_node2vec_device),
-    // so two walks sharing a current node still need independent CDFs.
-    // No cooperative panel can be shared, and the coop dispatcher for
-    // intermediate edges early-exits on this picker — so solo must
-    // service Node2Vec walks regardless of group size.
-    if constexpr (EdgePickerType != RandomPickerType::TemporalNode2Vec) {
-        if (walk_to_group_size[walk_idx_int] > TRW_NODE_GROUPED_T_WARP) return;
-    }
 
     const size_t walk_idx = static_cast<size_t>(walk_idx_int);
     const size_t offset = walk_idx * static_cast<size_t>(max_walk_len)
@@ -381,92 +303,27 @@ __global__ void pick_intermediate_edges_kernel(
 }
 
 template <bool IsDirected, bool Forward>
-inline void dispatch_intermediate_edges_kernel(
+inline void dispatch_node_grouped_solo_kernel(
     const TemporalGraphView& view,
     WalkSetView walk_set_view,
-    const int* sorted_walk_idx,
+    const int* walk_idx_list,
     const int* num_active_ptr,
-    const int* walk_to_group_size,
     const int step_number,
     const int max_walk_len,
-    const size_t num_walks,
     const RandomPickerType edge_picker_type,
     const uint64_t base_seed,
     const dim3& grid,
     const dim3& block_dim,
     const cudaStream_t stream) {
 
-    (void)num_walks;  // grid is sized against the num_walks upper bound;
-                      // threads past *num_active_ptr early-exit.
-
     dispatch_picker_type(edge_picker_type, [&](auto edge_tag) {
         constexpr auto kEdge = decltype(edge_tag)::value;
-        pick_intermediate_edges_kernel<IsDirected, Forward, kEdge>
+        node_grouped_solo_kernel<IsDirected, Forward, kEdge>
             <<<grid, block_dim, 0, stream>>>(
                 view, walk_set_view,
-                sorted_walk_idx, num_active_ptr, walk_to_group_size,
+                walk_idx_list, num_active_ptr,
                 step_number, max_walk_len, base_seed);
     });
-}
-
-// ==========================================================================
-// Steps 1..N-1 — warp-cooperative intermediate kernel.  *** TODO ***
-// ==========================================================================
-
-template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
-__global__ void pick_intermediate_edges_cooperative_kernel(
-    TemporalGraphView /*view*/,
-    WalkSetView /*walk_set*/,
-    const int* __restrict__ /*unique_last_nodes*/,
-    const int* __restrict__ /*run_starts*/,
-    const int* __restrict__ /*run_lengths*/,
-    const int* __restrict__ /*num_runs_ptr*/,
-    const int* __restrict__ /*sorted_walk_idx*/,
-    const int /*step_number*/,
-    const int /*max_walk_len*/,
-    const uint64_t /*base_seed*/) {
-    // TODO(node-grouped-coop): implement. Same warp-per-run structure as
-    // the start-edges cooperative kernel; each lane handles one walk,
-    // keys Philox on the original walk_idx plus
-    // step_kernel_philox_offset(step_number), and reads last_ts / prev_node
-    // from the per-walk slot at step_number.
-}
-
-template <bool IsDirected, bool Forward>
-inline void dispatch_intermediate_edges_cooperative_kernel(
-    const TemporalGraphView& view,
-    WalkSetView walk_set_view,
-    const int* unique_last_nodes,
-    const int* run_starts,
-    const int* run_lengths,
-    const int* num_runs_ptr,
-    const int* sorted_walk_idx,
-    const int step_number,
-    const int max_walk_len,
-    const size_t num_walks,
-    const RandomPickerType edge_picker_type,
-    const uint64_t base_seed,
-    const dim3& block_dim,
-    const cudaStream_t stream) {
-    // Node2Vec walks stay in the solo tier regardless of group size.
-    // pick_random_temporal_node2vec_device weights each timestamp group
-    // by Σ β(prev_node, w) over edges in that group, and prev_node is
-    // per-walk — so no cooperative panel can be shared across walks in
-    // a group. The solo kernel's group-size gate is compile-time
-    // specialized to skip its T_WARP cutoff for Node2Vec (see
-    // pick_intermediate_edges_kernel), so the picker always has a
-    // servicing path.
-    if (edge_picker_type == RandomPickerType::TemporalNode2Vec) {
-        return;
-    }
-
-    // TODO(node-grouped-coop): wire once kernel body lands. Same grid math
-    // as dispatch_start_edges_cooperative_kernel.
-    (void)view; (void)walk_set_view;
-    (void)unique_last_nodes; (void)run_starts; (void)run_lengths;
-    (void)num_runs_ptr; (void)sorted_walk_idx;
-    (void)step_number; (void)max_walk_len; (void)num_walks;
-    (void)base_seed; (void)block_dim; (void)stream;
 }
 
 // ==========================================================================

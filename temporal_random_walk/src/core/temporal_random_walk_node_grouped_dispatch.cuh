@@ -202,30 +202,14 @@ inline void dispatch_node_grouped_kernel(
             // ---- 1. Step 0 — start edges ------------------------------
             {
                 NVTX_RANGE_COLORED("NG step0 pick", nvtx_colors::walk_green);
-                if (all_starts_unconstrained) {
-                    dispatch_start_edges_kernel<kDir, kFwd>(
-                        view, walk_set_view, start_node_ids,
-                        /*walk_to_group_size=*/nullptr,
-                        /*constrained=*/false,
-                        max_walk_len, num_walks, start_picker_type,
-                        base_seed, grid, block_dim, stream);
-                } else {
-                    // Solo services group_size == 1; coop (TODO) services >= 2.
-                    dispatch_start_edges_kernel<kDir, kFwd>(
-                        view, walk_set_view, start_node_ids,
-                        walk_to_group_size.data(),
-                        /*constrained=*/true,
-                        max_walk_len, num_walks, start_picker_type,
-                        base_seed, grid, block_dim, stream);
-
-                    dispatch_start_edges_cooperative_kernel<kDir, kFwd>(
-                        view, walk_set_view,
-                        unique_start_keys.data(), run_starts.data(),
-                        run_lengths.data(),
-                        d_num_runs.data(), sorted_walk_idx.data(),
-                        max_walk_len, num_walks, start_picker_type,
-                        base_seed, block_dim, stream);
-                }
+                // Unconstrained short-circuit and constrained start both go
+                // through pick_start_edges_kernel today; task 5 moves the
+                // constrained case into the solo_walks list.
+                dispatch_start_edges_kernel<kDir, kFwd>(
+                    view, walk_set_view, start_node_ids,
+                    /*constrained=*/!all_starts_unconstrained,
+                    max_walk_len, num_walks, start_picker_type,
+                    base_seed, grid, block_dim, stream);
             }
 
             // ---- 2. Intermediate steps --------------------------------
@@ -349,27 +333,22 @@ inline void dispatch_node_grouped_kernel(
                             num_walks_int);
                 }
 
-                // (h) solo + coop launches.
+                // (h) solo launch. The cooperative tiers land in tasks 3+
+                // as four distinct kernels (warp-smem / warp-global /
+                // block-smem / block-global); until then solo services every
+                // active walk. sorted_active_idx feeds the kernel in
+                // current-node-sorted order, which the solo kernel itself
+                // doesn't rely on but the future W-partition (task 5) will
+                // consume directly from the same buffer.
                 {
                     NVTX_RANGE_COLORED("NG pick", nvtx_colors::walk_green);
-                    dispatch_intermediate_edges_kernel<kDir, kFwd>(
+                    dispatch_node_grouped_solo_kernel<kDir, kFwd>(
                         view, walk_set_view,
                         sorted_active_idx.data(),
                         step_num_active.data(),
-                        step_group_size.data(),
-                        step_number, max_walk_len, num_walks,
+                        step_number, max_walk_len,
                         edge_picker_type, base_seed,
                         active_grid, block_dim, stream);
-
-                    dispatch_intermediate_edges_cooperative_kernel<kDir, kFwd>(
-                        view, walk_set_view,
-                        unique_last_nodes.data(),
-                        step_run_starts.data(),
-                        step_run_lengths.data(),
-                        step_num_runs.data(),
-                        sorted_active_idx.data(),
-                        step_number, max_walk_len, num_walks,
-                        edge_picker_type, base_seed, block_dim, stream);
                 }
             }
 
