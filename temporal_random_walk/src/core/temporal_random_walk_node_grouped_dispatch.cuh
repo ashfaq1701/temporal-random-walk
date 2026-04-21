@@ -110,6 +110,7 @@ inline void dispatch_node_grouped_kernel(
                 }
 
                 // Warp-smem tier: W in [2, T_BLOCK] and G <= warp cap.
+                // Scaffold body (per-thread-per-task) until task 10 lands.
                 if (step_outs.warp_smem.num_tasks_host > 0) {
                     const size_t blocks =
                         (static_cast<size_t>(step_outs.warp_smem.num_tasks_host)
@@ -118,6 +119,7 @@ inline void dispatch_node_grouped_kernel(
                     dispatch_node_grouped_warp_smem_kernel<kDir, kFwd>(
                         view, walk_set_view,
                         step_outs.sorted_walk_idx,
+                        step_outs.warp_smem.nodes,
                         step_outs.warp_smem.walk_starts,
                         step_outs.warp_smem.walk_counts,
                         step_outs.warp_smem.num_tasks_device,
@@ -127,6 +129,7 @@ inline void dispatch_node_grouped_kernel(
                 }
 
                 // Warp-global tier: W in [2, T_BLOCK] and G > warp cap.
+                // Scaffold body (per-thread-per-task) until task 11 lands.
                 if (step_outs.warp_global.num_tasks_host > 0) {
                     const size_t blocks =
                         (static_cast<size_t>(step_outs.warp_global.num_tasks_host)
@@ -135,6 +138,7 @@ inline void dispatch_node_grouped_kernel(
                     dispatch_node_grouped_warp_global_kernel<kDir, kFwd>(
                         view, walk_set_view,
                         step_outs.sorted_walk_idx,
+                        step_outs.warp_global.nodes,
                         step_outs.warp_global.walk_starts,
                         step_outs.warp_global.walk_counts,
                         step_outs.warp_global.num_tasks_device,
@@ -144,23 +148,28 @@ inline void dispatch_node_grouped_kernel(
                 }
 
                 // Block-smem tier: W > T_BLOCK and G <= block cap.
+                // Real cooperative body (task 8): one block per task, 256
+                // threads per block. Dynamic smem is sized inside the
+                // dispatch wrapper based on picker class.
                 if (step_outs.block_smem.num_tasks_host > 0) {
-                    const size_t blocks =
-                        (static_cast<size_t>(step_outs.block_smem.num_tasks_host)
-                         + block_dim.x - 1) / block_dim.x;
-                    const dim3 block_smem_grid(static_cast<unsigned>(blocks));
+                    const dim3 block_smem_grid(
+                        static_cast<unsigned>(step_outs.block_smem.num_tasks_host));
+                    const dim3 block_smem_block(
+                        static_cast<unsigned>(TRW_NODE_GROUPED_COOP_BLOCK_THREADS));
                     dispatch_node_grouped_block_smem_kernel<kDir, kFwd>(
                         view, walk_set_view,
                         step_outs.sorted_walk_idx,
+                        step_outs.block_smem.nodes,
                         step_outs.block_smem.walk_starts,
                         step_outs.block_smem.walk_counts,
                         step_outs.block_smem.num_tasks_device,
                         step_number, max_walk_len,
                         edge_picker_type, base_seed,
-                        block_smem_grid, block_dim, stream);
+                        block_smem_grid, block_smem_block, stream);
                 }
 
                 // Block-global tier: W > T_BLOCK and G > block cap.
+                // Scaffold body (per-thread-per-task) until task 9 lands.
                 if (step_outs.block_global.num_tasks_host > 0) {
                     const size_t blocks =
                         (static_cast<size_t>(step_outs.block_global.num_tasks_host)
@@ -169,6 +178,7 @@ inline void dispatch_node_grouped_kernel(
                     dispatch_node_grouped_block_global_kernel<kDir, kFwd>(
                         view, walk_set_view,
                         step_outs.sorted_walk_idx,
+                        step_outs.block_global.nodes,
                         step_outs.block_global.walk_starts,
                         step_outs.block_global.walk_counts,
                         step_outs.block_global.num_tasks_device,

@@ -281,9 +281,19 @@ the progress log; §5's kernel matrix is the target state.
   per-sub-task atomic is needed. Warp tier is skipped (W ≤ T_BLOCK = 255
   ≪ cap). The scaffold kernels iterate ≤ cap walks per thread now; real
   coop bodies (tasks 8/9) get at most 8192 walks per block-task.
-- Cooperative kernel bodies are still per-node sequential scaffolds (one
-  thread iterates all walks in its node's range via advance_one_walk).
-  Real cooperative preload + stride loop lands in tasks 8–11.
+- Block-smem cooperative body is live (task 8). One block per block-task,
+  256 threads per block; thread 0 broadcasts the task header into smem,
+  all threads cooperatively preload s_group_offsets[G] and s_first_ts[G]
+  (G-sized slice of the node's per-timestamp-group metadata), then stride
+  over walks. Stage-1 binary search runs against the smem-preloaded
+  first_ts, killing the double-indirect load chain. Stage-2 edge fetch
+  stays global. Weighted pickers still read cum_weights from global
+  (preloading it into smem would require CDF offset rework; deferred).
+  Node2Vec tasks short-circuit to scaffold-style per-walk processing
+  because per-walk prev_node makes the CDF unshareable.
+- warp_smem, warp_global, block_global bodies are still scaffolds
+  (per-thread-per-task loops calling advance_one_walk). Real cooperative
+  bodies in tasks 9 (block_global), 10 (warp_smem), 11 (warp_global).
 
 ## 7. Architecture guardrails
 
@@ -460,13 +470,57 @@ expanded sub-tasks.
 
 ### Phase III — Kernel bodies (first real speedup)
 
-**Task 8 — Block-smem body.** Replace solo-copy with the cooperative design:
-read the block-task record, cooperative preload of `s_group_offsets[G]` and
-`s_first_ts[G]` (index pickers) plus `s_cum_weights[G]` (weighted),
-`__syncthreads()` after header broadcast and after panel load, stride loop
-of 256 threads over `walk_count` walks. Binary search and picker run
-against smem; final edge load goes to global. compute-sanitizer +
-memcheck/racecheck clean. ncu report for baseline→cooperative delta.
+**Task 8 — Block-smem body.** ✓ Done. `node_grouped_block_smem_kernel` now
+runs the real cooperative body:
+
+- One block per block-task, `TRW_NODE_GROUPED_COOP_BLOCK_THREADS` (256)
+  threads. Block grid = num_block_smem_tasks (dispatcher changed from
+  thread-per-task to block-per-task).
+- Dynamic smem sized per picker class in the dispatch wrapper via
+  `block_smem_dynamic_smem_bytes<EdgePickerType>()`:
+    index pickers    -> 64 B header + 2800 × (size_t + int64_t) = 44864 B
+    weighted pickers -> 64 B header + 1800 × (size_t + int64_t) = 28864 B
+  Both fit inside the static 48 KB per-block smem envelope (no
+  `cudaFuncSetAttribute` opt-in needed).
+- Thread-0 broadcast: reads node_id / walk_start / walk_count from the
+  task list plus node_group_begin/end and node_edge_offsets[node+1],
+  writes to s_header[4] + s_node_edge_end. One `__syncthreads()`.
+- Cooperative preload: threads stride by blockDim.x over `[0, G)`,
+  each populating `s_group_offsets[p]` (global edge offset) and
+  `s_first_ts[p]` (= `view.timestamps[node_ts_sorted_indices[offset]]`).
+  One `__syncthreads()`.
+- Stride loop: thread `t` handles walks at positions `t, t+256, t+512, …`
+  up to `walk_count`. For each walk:
+    * Read `last_ts` and `prev_node` from walk_set.
+    * Philox init keyed on `(base_seed, walk_idx, step_philox_offset)`.
+    * `find_group_pos_slice` with `first_ts = s_first_ts` — fast-path
+      single-load comparator in the binary search.
+    * Edge-range resolution uses `s_group_offsets[local_pos]` /
+      `s_group_offsets[local_pos + 1]` (smem); last group falls back to
+      `s_node_edge_end` (preloaded).
+    * Final edge fetch (`node_ts_sorted_indices[...]` + `view.sources/
+      targets/timestamps/edge_ids`) goes to global. One uncoalesced read
+      per walk — unavoidable, not worth preloading.
+- Node2Vec short-circuit: `if constexpr (PickerType == TemporalNode2Vec)`
+  at kernel entry takes the scaffold path (per-walk `advance_one_walk`
+  distributed across the block's threads). Per-walk `prev_node` bias
+  breaks CDF sharing, so the cooperative panel can't help.
+- Weighted pickers still read `weights` (cumulative-weight array) from
+  global. Preloading `s_cum_weights[G]` into smem would need the picker
+  to accept a slice with an external "prior prefix" argument; deferred
+  as a follow-up optimization since the first_ts smem preload already
+  kills the dominant dependent-load chain.
+
+All four coop kernel signatures now take `node_walk_nodes` as a parameter
+so tasks 9–11 can consume it without further plumbing churn. The three
+scaffolds (warp_smem, warp_global, block_global) accept the parameter
+and ignore it with `(void)node_walk_nodes;`.
+
+Regression: 289/289 full suite passes, parity harness green — the new
+coop body produces the same walk distribution as the scaffold (and as
+FULL_WALK) because each walk's Philox seed depends only on
+`(walk_idx, step, base_seed)` and the sampling logic is mathematically
+equivalent.
 
 **Task 9 — Block-global body.** Same task-consumption shape and stride loop
 as task 8, without the smem panel. Binary search goes against global arrays
