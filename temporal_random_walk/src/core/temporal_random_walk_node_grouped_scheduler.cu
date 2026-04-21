@@ -166,6 +166,57 @@ __global__ void partition_by_g_kernel(
     }
 }
 
+// Block-task expansion: splits mega-hub nodes (W > BLOCK_WALK_CAP) into
+// multiple disjoint sub-tasks so no single block monopolizes an SM.
+// Each sub-task keeps the same node_id and covers a slice of <= cap walks
+// (first ⌊W/cap⌋ sub-tasks hold exactly `cap` walks, last one holds the
+// remainder if W is not a multiple of cap).
+//
+// Called twice per step — once for block_smem and once for block_global.
+// Warp tier is never expanded because warp tasks have W <= T_BLOCK (255),
+// which is always well below cap.
+//
+// Each thread processes one input task: it computes num_sub_tasks,
+// reserves a contiguous output range with ONE atomicAdd, then writes
+// every sub-task. Per-sub-task atomics avoided.
+__global__ void expand_block_tasks_kernel(
+    const int* __restrict__ in_nodes,
+    const int* __restrict__ in_walk_starts,
+    const int* __restrict__ in_walk_counts,
+    const int* __restrict__ in_num_tasks_ptr,
+    const int block_walk_cap,
+    int* __restrict__ out_nodes,
+    int* __restrict__ out_walk_starts,
+    int* __restrict__ out_walk_counts,
+    int* __restrict__ out_num_tasks) {   // single int counter
+
+    const int t = blockIdx.x * blockDim.x + threadIdx.x;
+    if (t >= *in_num_tasks_ptr) return;
+
+    const int node  = in_nodes[t];
+    const int start = in_walk_starts[t];
+    const int count = in_walk_counts[t];
+
+    // ceil(count / block_walk_cap)
+    const int num_sub_tasks =
+        (count + block_walk_cap - 1) / block_walk_cap;
+
+    // Reserve contiguous output slots in one shot.
+    const int base_idx = atomicAdd(out_num_tasks, num_sub_tasks);
+
+    for (int k = 0; k < num_sub_tasks; ++k) {
+        const int sub_start = start + k * block_walk_cap;
+        const int remaining = count - k * block_walk_cap;
+        const int sub_count = (remaining < block_walk_cap)
+            ? remaining
+            : block_walk_cap;
+
+        out_nodes[base_idx + k]        = node;
+        out_walk_starts[base_idx + k]  = sub_start;
+        out_walk_counts[base_idx + k]  = sub_count;
+    }
+}
+
 }  // namespace
 
 // ==========================================================================
@@ -237,7 +288,19 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
     int*     warp_global_starts = arena_.acquire<int>(num_walks_);
     int*     warp_global_counts = arena_.acquire<int>(num_walks_);
 
-    // G-partition outputs for the block tier.
+    // G-partition outputs for the block tier — intermediate. Mega-hub
+    // expansion below splits these into the final block_{smem,global}
+    // arrays that feed the StepOutputs.
+    int*     block_smem_pre_nodes    = arena_.acquire<int>(num_walks_);
+    int*     block_smem_pre_starts   = arena_.acquire<int>(num_walks_);
+    int*     block_smem_pre_counts   = arena_.acquire<int>(num_walks_);
+    int*     block_global_pre_nodes  = arena_.acquire<int>(num_walks_);
+    int*     block_global_pre_starts = arena_.acquire<int>(num_walks_);
+    int*     block_global_pre_counts = arena_.acquire<int>(num_walks_);
+
+    // Post-expansion outputs for the block tier. Sum of sub-task walk
+    // counts equals the sum across the pre-expansion tier, which is
+    // <= num_active <= num_walks — so this upper-bound fits.
     int*     block_smem_nodes    = arena_.acquire<int>(num_walks_);
     int*     block_smem_starts   = arena_.acquire<int>(num_walks_);
     int*     block_smem_counts   = arena_.acquire<int>(num_walks_);
@@ -245,15 +308,17 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
     int*     block_global_starts = arena_.acquire<int>(num_walks_);
     int*     block_global_counts = arena_.acquire<int>(num_walks_);
 
-    // Counter layout (int[7]) — single contiguous block for one D2H:
-    //   [0] num_solo        (from W-partition)
-    //   [1] num_warp_w      (W-partition intermediate, consumed by G-partition)
-    //   [2] num_block_w     (W-partition intermediate)
-    //   [3] num_warp_smem   (warp G-partition output)
-    //   [4] num_warp_global (warp G-partition output)
-    //   [5] num_block_smem  (block G-partition output)
-    //   [6] num_block_global (block G-partition output)
-    constexpr int kCounterSlots = 7;
+    // Counter layout (int[9]) — single contiguous block for one D2H:
+    //   [0] num_solo                 (W-partition)
+    //   [1] num_warp_w               (W-partition intermediate)
+    //   [2] num_block_w              (W-partition intermediate)
+    //   [3] num_warp_smem            (warp G-partition — final)
+    //   [4] num_warp_global          (warp G-partition — final)
+    //   [5] num_block_smem_pre_exp   (block G-partition intermediate)
+    //   [6] num_block_global_pre_exp (block G-partition intermediate)
+    //   [7] num_block_smem           (expansion — final)
+    //   [8] num_block_global         (expansion — final)
+    constexpr int kCounterSlots = 9;
     int* tier_counters = arena_.acquire<int>(kCounterSlots);
 
     // Pick G caps by picker class (runtime — switch lifts to compile time
@@ -323,8 +388,8 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
             /*num_solo_walks_host=*/0,
             /*warp_smem=*/  empty_tier(3),
             /*warp_global=*/empty_tier(4),
-            /*block_smem=*/ empty_tier(5),
-            /*block_global=*/empty_tier(6)};
+            /*block_smem=*/ empty_tier(7),
+            /*block_global=*/empty_tier(8)};
     }
 
     const std::size_t active_items =
@@ -397,7 +462,8 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
             &tier_counters[3]);  // int[2] slots [3..4]
     }
 
-    // (i) G-partition: block tier -> (block_smem, block_global).
+    // (i) G-partition: block tier -> (block_smem_pre, block_global_pre).
+    // Outputs are INTERMEDIATE — step (j) expands mega-hubs into sub-tasks.
     {
         NVTX_RANGE_COLORED("NG G-partition (block)", nvtx_colors::weight_orange);
         partition_by_g_kernel<<<active_grid, block_dim_, 0, stream_>>>(
@@ -405,12 +471,38 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
             &tier_counters[2],   // num_block_w
             count_ts_group_per_node,
             g_cap_block,
-            block_smem_nodes,  block_smem_starts,  block_smem_counts,
-            block_global_nodes, block_global_starts, block_global_counts,
+            block_smem_pre_nodes,  block_smem_pre_starts,  block_smem_pre_counts,
+            block_global_pre_nodes, block_global_pre_starts, block_global_pre_counts,
             &tier_counters[5]);  // int[2] slots [5..6]
     }
 
-    // Final per-step D2H: read all seven counters in one copy.
+    // (j) Block-task expansion: split any block task with walk_count
+    // exceeding BLOCK_WALK_CAP into ⌈count/cap⌉ disjoint sub-tasks.
+    // Run once for block_smem and once for block_global. Grid upper-bound
+    // is active_grid; threads past *num_*_pre early-exit. Warp tier is
+    // skipped entirely — warp tasks have W <= T_BLOCK (255) << cap.
+    {
+        NVTX_RANGE_COLORED("NG block-task expansion (smem)",
+                           nvtx_colors::weight_orange);
+        expand_block_tasks_kernel<<<active_grid, block_dim_, 0, stream_>>>(
+            block_smem_pre_nodes, block_smem_pre_starts, block_smem_pre_counts,
+            &tier_counters[5],                       // num_block_smem_pre_exp
+            TRW_NODE_GROUPED_BLOCK_WALK_CAP,
+            block_smem_nodes, block_smem_starts, block_smem_counts,
+            &tier_counters[7]);                      // num_block_smem (final)
+    }
+    {
+        NVTX_RANGE_COLORED("NG block-task expansion (global)",
+                           nvtx_colors::weight_orange);
+        expand_block_tasks_kernel<<<active_grid, block_dim_, 0, stream_>>>(
+            block_global_pre_nodes, block_global_pre_starts, block_global_pre_counts,
+            &tier_counters[6],                       // num_block_global_pre_exp
+            TRW_NODE_GROUPED_BLOCK_WALK_CAP,
+            block_global_nodes, block_global_starts, block_global_counts,
+            &tier_counters[8]);                      // num_block_global (final)
+    }
+
+    // Final per-step D2H: read all nine counters in one copy.
     int counts_host[kCounterSlots] = {};
     {
         NVTX_RANGE_COLORED("NG tier-count readback", nvtx_colors::io_grey);
@@ -434,10 +526,10 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
             &tier_counters[4], counts_host[4]},
         /*block_smem=*/TierTaskList{
             block_smem_nodes, block_smem_starts, block_smem_counts,
-            &tier_counters[5], counts_host[5]},
+            &tier_counters[7], counts_host[7]},
         /*block_global=*/TierTaskList{
             block_global_nodes, block_global_starts, block_global_counts,
-            &tier_counters[6], counts_host[6]}};
+            &tier_counters[8], counts_host[8]}};
 }
 
 }  // namespace temporal_random_walk

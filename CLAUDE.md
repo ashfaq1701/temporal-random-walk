@@ -272,9 +272,15 @@ the progress log; §5's kernel matrix is the target state.
   caller resolves the directional variant of that array (forward →
   outbound; backward directed → inbound; backward undirected → outbound)
   before passing it to `run_step`.
-- Block-task expansion (task 7) splits mega-hub nodes
-  (`W > TRW_NODE_GROUPED_BLOCK_WALK_CAP`) into multiple block-tasks of
-  disjoint walk slices. Not implemented yet.
+- Block-task expansion is live (task 7): every `block_smem` /
+  `block_global` entry from the G-partition is run through
+  `expand_block_tasks_kernel`, which splits mega-hub nodes
+  (`W > TRW_NODE_GROUPED_BLOCK_WALK_CAP` = 8192) into ⌈W/cap⌉ disjoint
+  sub-tasks each carrying the same `node_id`. Each thread reserves its
+  output range with a single `atomicAdd(counter, num_sub_tasks)` so no
+  per-sub-task atomic is needed. Warp tier is skipped (W ≤ T_BLOCK = 255
+  ≪ cap). The scaffold kernels iterate ≤ cap walks per thread now; real
+  coop bodies (tasks 8/9) get at most 8192 walks per block-task.
 - Cooperative kernel bodies are still per-node sequential scaffolds (one
   thread iterates all walks in its node's range via advance_one_walk).
   Real cooperative preload + stride loop lands in tasks 8–11.
@@ -426,12 +432,31 @@ and the W-partition test file still passes (it uses a trivial
 all-zero `count_ts_group_per_node` that forces every coop task into
 the smem variant; the G-partition tests live in a sibling file).
 
-**Task 7 — Block-task expansion.** Nodes with
-`W > TRW_NODE_GROUPED_BLOCK_WALK_CAP` (8192) split into ⌈W/cap⌉ block-tasks
-of disjoint walk slices. `block_smem_nodes` → `block_smem_tasks`; same for
-global. Block-smem and block-global kernels consume
-`(node_id, walk_start, walk_count)` tasks, not raw nodes. Parity harness
-passes.
+**Task 7 — Block-task expansion.** ✓ Done. `run_step` now runs
+`expand_block_tasks_kernel` twice after the block G-partition — once for
+`block_smem` and once for `block_global`. Each thread handles one source
+task, computes `num_sub_tasks = ⌈count/BLOCK_WALK_CAP⌉`, reserves a
+contiguous output range with a single `atomicAdd(out_counter, num_sub_tasks)`,
+and writes every sub-task (same `node_id`, `walk_start + k*cap`,
+`min(cap, remaining)`). No per-sub-task atomic.
+
+Counter layout grew from int[7] to int[9]: `[5], [6]` hold the
+G-partition intermediate counts (pre-expansion); `[7], [8]` hold the
+final post-expansion counts that `StepOutputs.block_smem` and
+`block_global` expose. Still one D2H readback at end of step.
+
+Sub-task upper bound: sum of sub-tasks across a tier ≤ sum of source
+walks ≤ num_active ≤ num_walks, so post-expansion arrays fit without
+arena growth.
+
+Scaffold kernels unchanged — their per-thread loop over `walk_count` is
+now bounded by cap. Real coop bodies (tasks 8, 9) will rely on that
+bound when sizing their block-wide stride loops. Warp tier is not
+expanded (W ≤ T_BLOCK = 255 ≪ cap).
+
+`StepOutputs` surface and dispatcher are unchanged — `block_smem` and
+`block_global` still expose `TierTaskList`; their contents are the
+expanded sub-tasks.
 
 ### Phase III — Kernel bodies (first real speedup)
 

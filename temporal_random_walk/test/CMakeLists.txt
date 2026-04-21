@@ -19,6 +19,7 @@ set(TEST_FILES
         test_node_grouped_parity.cpp
         test_node_grouped_w_partition.cpp
         test_node_grouped_g_partition.cpp
+        test_node_grouped_block_task_expansion.cpp
 )
 
 set(MODULE_SRC_FILES ${SRC_FILES} ${TEST_FILES})
