@@ -207,15 +207,29 @@ the progress log; §5's kernel matrix is the target state.
   previously vestigial `walk_to_group_size` group-size guards have been
   removed from both kernels; re-introduced as pre-partitioned task lists
   in task 5.
-- Per-step pipeline inline inside `dispatch_node_grouped_kernel`: filter
-  (`walk_alive_flags_kernel`) → compact (`cub_partition_flagged`) → gather
+- Per-step pipeline extracted into
+  `temporal_random_walk_node_grouped_scheduler.{cuh,cu}` as
+  `NodeGroupedScheduler`. Stages: filter (`walk_alive_flags_kernel`) →
+  compact (`cub_partition_flagged`) → `num_active` D2H readback → gather
   (`gather_last_nodes_kernel`) → sort (`cub_sort_pairs`) → RLE
   (`cub_run_length_encode`) → exclusive-scan → scatter
-  (`scatter_walk_group_sizes_kernel`) → solo+coop launch.
+  (`scatter_walk_group_sizes_kernel`). Scheduler-internal helper kernels
+  (iota, alive-flags, gather, scatter, zero) live in the scheduler's
+  anonymous namespace — not exported from the per-walk kernel header.
+  Dispatcher now just calls `scheduler.run_step(...)` per step and feeds
+  the returned sorted-walk-idx list + device num_active pointer into the
+  solo pick kernel.
+- `DeviceArena` backs per-step scratch: `scheduler.run_step()` resets the
+  arena at the top and acquires 11 slots (sort buffers, RLE buffers, device
+  counters). Reset is a host-side offset reset; stream ordering keeps
+  prior-step kernels safe on the same memory. Batch-persistent state
+  (`iota_src_`, `walk_to_group_size_`) stays as `Buffer<int>` members.
+  Growth happens at most once, during the first step, before any queued
+  kernel reads arena memory.
 - Pipeline extents driven by `num_active`: sort / RLE / scan / gather /
   scatter / pick all run on `host_num_active` read once per step via a D2H
   copy + stream sync on `trw->stream()` (CUB's `num_items` is host-side, no
-  device-pointer overload exists). Filter and the `walk_to_group_size`
+  device-pointer overload exists). Filter and the `step_group_size`
   zero-init deliberately retain `num_walks` extent — the former reads every
   walk by design; the latter is indexed by original `walk_idx` and must clear
   slots from walks that terminated in prior steps.
@@ -249,17 +263,10 @@ the progress log; §5's kernel matrix is the target state.
   helper. Dispatcher still launches only solo. Task 5 wires the scaffolds
   into their task lists; tasks 8–11 replace each body with its tier-specific
   implementation.
-- No `temporal_random_walk_node_grouped_scheduler.cu`. Pipeline is inline in
-  the dispatcher. Extraction (with `DeviceArena`-backed scratch, reset once
-  per step) lands in task 4.
-- Tier routing is still guard-and-exit: solo kernel gates on
-  `walk_to_group_size[walk_idx] > TRW_NODE_GROUPED_T_WARP`, coop stubs are
-  no-ops. Spec requires pre-partitioned task lists (solo_walks,
-  warp_smem_nodes, warp_global_nodes, block_smem_tasks, block_global_tasks)
-  — lands across tasks 5–7.
-- `DeviceArena` exists (`src/data/device_arena.cuh`) but the dispatcher
-  still allocates per-invocation `Buffer<T>` scratch. Arena switch lands
-  with the scheduler extraction in task 4.
+- No pre-partitioned task lists yet. Scheduler emits one sorted walk-idx
+  list and every active walk goes through the solo kernel. Spec requires
+  five disjoint lists (solo_walks, warp_smem_nodes, warp_global_nodes,
+  block_smem_tasks, block_global_tasks) — lands across tasks 5–7.
 - No W-partition, no G-partition, no block-task expansion for mega-hubs.
 
 ## 7. Architecture guardrails
@@ -334,11 +341,21 @@ until then any walk routed through any cooperative kernel produces the same
 output as solo. Parity harness is the invariant gate for Phase II (tasks 5–7)
 as launch topology rewires.
 
-**Task 4 — Scheduler extraction.** Move filter / gather / argsort / RLE /
-exclusive-scan / scatter / `num_active` readback / NVTX markers out of
-`dispatch_node_grouped_kernel` into `temporal_random_walk_node_grouped_scheduler.cu`.
-Per-invocation `Buffer<T>` scratch → `DeviceArena`-allocated, reset once per
-step. Behavior-preserving refactor. Parity harness passes.
+**Task 4 — Scheduler extraction.** ✓ Done. Moved the filter / compact /
+gather / sort / RLE / exclusive-scan / scatter / `num_active` readback
+stages (plus NVTX ranges and the per-stage helper kernels) out of
+`dispatch_node_grouped_kernel` into `NodeGroupedScheduler`
+(`temporal_random_walk_node_grouped_scheduler.{cuh,cu}`). Per-step scratch
+is `DeviceArena`-allocated and reset at the top of every `run_step` call;
+batch-persistent state (`iota_src_`, `walk_to_group_size_`) stays as
+`Buffer<int>` members. The scheduler-internal helper kernels (iota,
+alive-flags, gather, scatter, zero) live in the `.cu`'s anonymous
+namespace — the per-walk kernel header is now focused on the kernels
+that consume the scheduler's outputs. `setup_step0_constrained` is a
+separate entrypoint for the per-batch start-node sort/RLE/scatter.
+Dispatcher shrinks to ~60 lines: create scheduler, run step 0, loop over
+`run_step`s and feed outputs to the solo pick kernel, reverse if backward.
+Behavior-preserving — parity harness remains the acceptance gate.
 
 ### Phase II — Partition (behavior change, distribution unchanged)
 

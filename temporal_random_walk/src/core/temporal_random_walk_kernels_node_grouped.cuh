@@ -8,8 +8,6 @@
 #include "../utils/random.cuh"
 #include "../utils/utils.cuh"
 #include "../common/picker_dispatch.cuh"
-#include "../common/cuda_config.cuh"
-#include "../common/warp_coop_config.cuh"
 #include "helpers.cuh"
 
 namespace temporal_random_walk {
@@ -33,107 +31,12 @@ DEVICE __forceinline__ uint64_t step_kernel_philox_offset(const int step_number)
 }
 
 // ==========================================================================
-// Sort-and-group infrastructure kernels
+// Per-walk kernels (step 0 start edges, solo, cooperative scaffolds, reverse).
 //
-// These are shared by both the step-0 grouping (by start_node_id) and the
-// intermediate-step grouping (by last_node at step S). They stay here rather
-// than in src/common because they are intimately tied to walk-set semantics.
+// Scheduler-internal helpers (iota, alive-flags, gather, scatter, zero) live
+// in temporal_random_walk_node_grouped_scheduler.cu's anonymous namespace —
+// they are not part of the per-walk kernel interface.
 // ==========================================================================
-
-// 0, 1, ..., n-1 — seeds the values buffer that rides a sort-by-key pass so
-// the sorted permutation is recoverable.
-__global__ static void iota_int_kernel(int* __restrict__ out, const int n) {
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n) return;
-    out[i] = i;
-}
-
-// For each walk, flag whether the slot at step_number holds a live last-node
-// (anything other than the configured walk_padding_value). Terminated walks
-// fail this test and get compacted out by cub::DevicePartition::Flagged
-// before sort-and-group runs for the step.
-__global__ static void walk_alive_flags_kernel(
-    WalkSetView walk_set,
-    const int step_number,
-    const int max_walk_len,
-    const size_t num_walks,
-    uint8_t* __restrict__ alive_flags) {
-
-    const size_t walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (walk_idx >= num_walks) return;
-
-    const size_t offset = walk_idx * static_cast<size_t>(max_walk_len)
-                          + static_cast<size_t>(step_number);
-    alive_flags[walk_idx] =
-        (walk_set.nodes[offset] != walk_set.walk_padding_value) ? uint8_t{1} : uint8_t{0};
-}
-
-// Gather last-node keys for the already-compacted active walks; the
-// subsequent sort keys on last_node. active_walk_idx[i] is an *original*
-// walk index preserved end-to-end so every downstream kernel addresses the
-// correct per-walk slot.
-__global__ static void gather_last_nodes_kernel(
-    WalkSetView walk_set,
-    const int* __restrict__ active_walk_idx,
-    const int* __restrict__ num_active_ptr,
-    const int step_number,
-    const int max_walk_len,
-    int* __restrict__ last_nodes_out) {
-
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    const int num_active = *num_active_ptr;
-    if (i >= num_active) return;
-
-    const int walk_idx = active_walk_idx[i];
-    const size_t offset = static_cast<size_t>(walk_idx) * static_cast<size_t>(max_walk_len)
-                          + static_cast<size_t>(step_number);
-    last_nodes_out[i] = walk_set.nodes[offset];
-}
-
-// Binary-search-based scatter: for each sorted slot, find its run via
-// run_starts and write run_length back into walk_to_group_size at the
-// original walk's index. The num_items_ptr parameter is the count of sorted
-// slots, which for step 0 equals num_walks and for intermediate steps
-// equals *num_active_ptr — pass the right device-side count so the scatter
-// stops at the compacted length.
-__global__ static void scatter_walk_group_sizes_kernel(
-    const int* __restrict__ sorted_walk_idx,
-    const int* __restrict__ run_starts,
-    const int* __restrict__ run_lengths,
-    const int* __restrict__ num_runs_ptr,
-    const int* __restrict__ num_items_ptr,
-    int* walk_to_group_size,
-    const int num_walks) {
-
-    const int slot = blockIdx.x * blockDim.x + threadIdx.x;
-    const int num_items = *num_items_ptr;
-    if (slot >= num_items) return;
-
-    const int num_runs = *num_runs_ptr;
-    if (num_runs <= 0) return;
-
-    // Largest r with run_starts[r] <= slot.
-    int lo = 0, hi = num_runs - 1;
-    while (lo < hi) {
-        const int mid = (lo + hi + 1) >> 1;
-        if (run_starts[mid] <= slot) lo = mid;
-        else                         hi = mid - 1;
-    }
-
-    const int walk_idx = sorted_walk_idx[slot];
-    if (walk_idx < 0 || walk_idx >= num_walks) return;
-    walk_to_group_size[walk_idx] = run_lengths[lo];
-}
-
-// Zero-fill an int buffer. Used on walk_to_group_size before every step so
-// walks that don't appear in the scatter (terminated walks dropped by the
-// compaction pass) read 0 — solo kernel's group-size guard treats 0 and 1
-// the same way.
-__global__ static void zero_int_buffer_kernel(int* __restrict__ buf, const int n) {
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n) return;
-    buf[i] = 0;
-}
 
 // ==========================================================================
 // Step 0 — start edges
