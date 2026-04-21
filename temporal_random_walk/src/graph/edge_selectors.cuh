@@ -74,7 +74,7 @@ namespace temporal_graph {
     // back to global addressing by adding node_group_begin.
     //
     // Node2Vec's stage-1b picker is prev-node-dependent and NOT handled by
-    // find_group_pos_slice; Node2Vec callers use narrow_valid_groups_by_timestamp_slice
+    // find_group_pos_slice; Node2Vec callers use filter_valid_groups_by_timestamp_slice
     // for the temporal cutoff and then invoke pick_random_temporal_node2vec_*.
     // ==========================================================================
 
@@ -83,7 +83,7 @@ namespace temporal_graph {
     // groups with ts < timestamp. Sets out_valid_begin / out_valid_end in
     // LOCAL slice indexing (so both are in [0, G]).
     template <bool Forward>
-    HOST DEVICE inline void narrow_valid_groups_by_timestamp_slice(
+    HOST DEVICE inline void filter_valid_groups_by_timestamp_slice(
         const size_t*  group_offsets,
         const int64_t* first_ts,
         const size_t*  node_ts_sorted_indices,
@@ -149,7 +149,7 @@ namespace temporal_graph {
 
         int valid_begin = 0;
         int valid_end   = G;
-        narrow_valid_groups_by_timestamp_slice<Forward>(
+        filter_valid_groups_by_timestamp_slice<Forward>(
             group_offsets, first_ts,
             node_ts_sorted_indices, view_timestamps,
             G, timestamp,
@@ -365,7 +365,7 @@ namespace temporal_graph {
         if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
             int local_begin = 0;
             int local_end   = G;
-            narrow_valid_groups_by_timestamp_slice<Forward>(
+            filter_valid_groups_by_timestamp_slice<Forward>(
                 node_ts_groups_offsets + node_group_begin,
                 /*first_ts=*/nullptr,
                 node_ts_sorted_indices,
@@ -685,7 +685,7 @@ namespace temporal_graph {
         if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
             int local_begin = 0;
             int local_end   = G;
-            narrow_valid_groups_by_timestamp_slice<Forward>(
+            filter_valid_groups_by_timestamp_slice<Forward>(
                 node_ts_groups_offsets + node_group_begin,
                 /*first_ts=*/nullptr,
                 node_ts_sorted_indices,
