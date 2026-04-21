@@ -243,10 +243,12 @@ the progress log; §5's kernel matrix is the target state.
   hardcoded `-1`.
 
 **Open**
-- No cooperative tier in the tree — the two TODO stubs were deleted in
-  task 2. Four scaffolds (`node_grouped_warp_smem_kernel`,
-  `_warp_global_kernel`, `_block_smem_kernel`, `_block_global_kernel`) land
-  in task 3.
+- Cooperative kernel scaffolds (`node_grouped_warp_smem_kernel`,
+  `_warp_global_kernel`, `_block_smem_kernel`, `_block_global_kernel`)
+  exist, each a thin wrapper around the shared `node_grouped_solo_step_body`
+  helper. Dispatcher still launches only solo. Task 5 wires the scaffolds
+  into their task lists; tasks 8–11 replace each body with its tier-specific
+  implementation.
 - No `temporal_random_walk_node_grouped_scheduler.cu`. Pipeline is inline in
   the dispatcher. Extraction (with `DeviceArena`-backed scratch, reset once
   per step) lands in task 4.
@@ -317,13 +319,20 @@ the four scaffolds in task 3 supersede them. Removed the now-vestigial
 (the guard existed only to defer to coop; with coop gone, solo services
 every active walk). Dispatcher updates follow the same surgery.
 
-**Task 3 — Five-kernel scaffold.** Introduce
-`node_grouped_warp_smem_kernel`, `_warp_global_kernel`, `_block_smem_kernel`,
-`_block_global_kernel` — each a verbatim copy of the solo body so
-distribution is mathematically unchanged. Dispatcher still launches only
-the solo kernel (scaffold kernels are declared but unused). Template
-specialization on `<IsDirected, Forward, EdgePickerType>` matches spec.
-Parity harness passes.
+**Task 3 — Five-kernel scaffold.** ✓ Done. Extracted the solo step body
+into a shared `DEVICE __forceinline__` helper `node_grouped_solo_step_body`
+and added four cooperative-tier kernels
+(`node_grouped_warp_smem_kernel`, `_warp_global_kernel`,
+`_block_smem_kernel`, `_block_global_kernel`), each a thin wrapper that
+calls the helper verbatim — distribution is mathematically identical to
+solo. Template specialization `<IsDirected, Forward, EdgePickerType>`
+matches §5 spec. Each scaffold kernel gets its own
+`dispatch_node_grouped_*_kernel` wrapper mirroring the solo dispatcher.
+Dispatcher still launches only solo — scaffolds are declared but unused.
+Tasks 8–11 replace each scaffold body with its tier-specific implementation;
+until then any walk routed through any cooperative kernel produces the same
+output as solo. Parity harness is the invariant gate for Phase II (tasks 5–7)
+as launch topology rewires.
 
 **Task 4 — Scheduler extraction.** Move filter / gather / argsort / RLE /
 exclusive-scan / scatter / `num_active` readback / NVTX markers out of
