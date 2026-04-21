@@ -255,12 +255,39 @@ inline void dispatch_node_grouped_kernel(
                         num_walks, stream);
                 }
 
+                // Readback num_active so sort/RLE/scan operate on the tight
+                // compacted extent rather than the full num_walks. CUB's
+                // DeviceRadixSort::SortPairs, DeviceRunLengthEncode::Encode,
+                // and DeviceScan::ExclusiveSum all require a host-side
+                // num_items — there is no device-pointer overload, so a
+                // single D2H + stream sync per step is the only way to
+                // drive them by num_active. Cost is max_walk_len syncs per
+                // batch, negligible next to the sort/RLE work they save.
+                int host_num_active = 0;
+                {
+                    NVTX_RANGE_COLORED("NG num_active readback", nvtx_colors::io_grey);
+                    CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
+                        &host_num_active, step_num_active.data(), sizeof(int),
+                        cudaMemcpyDeviceToHost, stream));
+                    CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(stream));
+                }
+
+                // Every walk terminated before this step — nothing to sort,
+                // group, or sample. Skip the rest of the step's pipeline.
+                if (host_num_active <= 0) {
+                    continue;
+                }
+
+                const size_t active_items  = static_cast<size_t>(host_num_active);
+                const size_t active_blocks =
+                    (active_items + block_dim.x - 1) / block_dim.x;
+                const dim3   active_grid(static_cast<unsigned>(active_blocks));
+
                 // (c) gather last_nodes for the compacted active walks.
                 {
                     NVTX_RANGE_COLORED("NG gather", nvtx_colors::io_grey);
                     gather_last_nodes_kernel
-                        <<<dim3(static_cast<unsigned>(flag_blocks)),
-                           block_dim, 0, stream>>>(
+                        <<<active_grid, block_dim, 0, stream>>>(
                             walk_set_view,
                             active_walk_idx.data(),
                             step_num_active.data(),
@@ -269,41 +296,31 @@ inline void dispatch_node_grouped_kernel(
                 }
 
                 // (d) sort by last_node; values carry original walk indices.
-                // NOTE: cub_sort_pairs reads num_items as a host-side size
-                // today. Sorting the full num_walks is safe: the suffix
-                // [num_active, num_walks) holds stale values but never gets
-                // read downstream (RLE/scatter gate on *step_num_active).
-                // TODO(perf): thread a device-side item count through the
-                // sort pass so we don't move dead tail entries.
                 {
                     NVTX_RANGE_COLORED("NG sort", nvtx_colors::index_blue);
                     cub_sort_pairs(
                         last_nodes_active.data(), sorted_last_nodes.data(),
                         active_walk_idx.data(),  sorted_active_idx.data(),
-                        num_walks, stream);
+                        active_items, stream);
                 }
 
                 // (e) RLE sorted keys → unique_last_nodes, run_lengths.
                 // (f) exclusive-scan run lengths → run_starts.
-                // Same "full-extent" caveat as (d): RLE runs over num_walks
-                // but the scatter step (g) uses *step_num_active as its
-                // slot count, so phantom runs in the tail never leak into
-                // walk_to_group_size.
                 {
                     NVTX_RANGE_COLORED("NG RLE+scan", nvtx_colors::index_blue);
                     CUDA_CHECK_AND_CLEAR(cudaMemsetAsync(
-                        step_run_lengths.data(), 0, num_walks * sizeof(int),
+                        step_run_lengths.data(), 0, active_items * sizeof(int),
                         stream));
                     cub_run_length_encode(
                         sorted_last_nodes.data(),
                         unique_last_nodes.data(),
                         step_run_lengths.data(),
                         step_num_runs.data(),
-                        num_walks, stream);
+                        active_items, stream);
 
                     cub_exclusive_sum(
                         step_run_lengths.data(), step_run_starts.data(),
-                        num_walks, stream);
+                        active_items, stream);
                 }
 
                 // (g) zero group sizes, then scatter. Terminated walks
@@ -311,6 +328,9 @@ inline void dispatch_node_grouped_kernel(
                 // solo kernel's group-size gate harmlessly.
                 {
                     NVTX_RANGE_COLORED("NG scatter", nvtx_colors::weight_orange);
+                    // walk_to_group_size is indexed by original walk_idx, so
+                    // it must be zeroed over the full num_walks extent even
+                    // though only active_items slots receive scatter writes.
                     const size_t zero_blocks =
                         (num_walks + block_dim.x - 1) / block_dim.x;
                     zero_int_buffer_kernel
@@ -319,8 +339,7 @@ inline void dispatch_node_grouped_kernel(
                             step_group_size.data(), num_walks_int);
 
                     scatter_walk_group_sizes_kernel
-                        <<<dim3(static_cast<unsigned>(zero_blocks)),
-                           block_dim, 0, stream>>>(
+                        <<<active_grid, block_dim, 0, stream>>>(
                             sorted_active_idx.data(),
                             step_run_starts.data(),
                             step_run_lengths.data(),
@@ -340,7 +359,7 @@ inline void dispatch_node_grouped_kernel(
                         step_group_size.data(),
                         step_number, max_walk_len, num_walks,
                         edge_picker_type, base_seed,
-                        grid, block_dim, stream);
+                        active_grid, block_dim, stream);
 
                     dispatch_intermediate_edges_cooperative_kernel<kDir, kFwd>(
                         view, walk_set_view,
