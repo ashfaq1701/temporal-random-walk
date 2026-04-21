@@ -263,8 +263,18 @@ public:
         const size_t remaining = size_ - n;
 #ifdef HAS_CUDA
         if (use_gpu_) {
+            // D2D cudaMemcpy is a parallel copy kernel with no overlap
+            // guarantee — a direct shift-down would race reads against
+            // writes in the overlap region (dst < src). Bounce through a
+            // scratch buffer to keep the semantics aligned with the
+            // CPU memmove below.
+            Buffer<T> scratch(true);
+            scratch.resize(remaining);
             CUDA_CHECK_AND_CLEAR(cudaMemcpy(
-                data_, data_ + n, remaining * sizeof(T),
+                scratch.data(), data_ + n, remaining * sizeof(T),
+                cudaMemcpyDeviceToDevice));
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+                data_, scratch.data(), remaining * sizeof(T),
                 cudaMemcpyDeviceToDevice));
         } else
 #endif
