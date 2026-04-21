@@ -160,8 +160,19 @@ void assert_slot0_agreement(
 }
 
 // Structural validity: every hop in [0, walk_len) must be a real node,
-// and consecutive (ts, ts') pairs must respect the walk direction.
-// Forward: non-decreasing (INT64_MIN sentinel at slot 0 is tolerated).
+// and consecutive timestamps must be monotone non-decreasing.
+//
+// Direction note — both FULL_WALK and NODE_GROUPED reverse backward walks
+// in place (FULL_WALK at kernels_full_walk.cuh:137, NODE_GROUPED via
+// reverse_walks_kernel). So the caller-visible output is always
+// chronologically ordered: hop 0 carries the earliest real timestamp,
+// the last real hop carries the latest, and the direction sentinel ends
+// up at the opposite end relative to sampling:
+//   Forward:  slot 0 = INT64_MIN sentinel (never reversed).
+//   Backward: slot (wl-1) = INT64_MAX sentinel (post-reversal).
+// In both cases MIN <= any real ts <= MAX, so `cur >= prev` holds for
+// every adjacent pair. The Forward template parameter is kept for the
+// error message only — the assertion is the same either way.
 template <bool Forward>
 void assert_walks_are_valid(
     const WalksWithEdgeFeaturesHost& walks,
@@ -180,22 +191,15 @@ void assert_walks_are_valid(
             ASSERT_NE(nodes[base + i], EMPTY_NODE_VALUE)
                 << "Walk " << w << " hop " << i << " is -1 sentinel";
         }
-        // Skip slot 0 in the ts check — start kernel parks a direction
-        // sentinel there (INT64_MIN for forward, INT64_MAX for backward).
-        for (size_t i = 2; i < wl; ++i) {
+        for (size_t i = 1; i < wl; ++i) {
             const int64_t prev = ts[base + i - 1];
             const int64_t cur  = ts[base + i];
-            if constexpr (Forward) {
-                ASSERT_GE(cur, prev)
-                    << "Walk " << w << " forward ts non-monotone between "
-                    << "hop " << (i - 1) << " (ts=" << prev
-                    << ") and hop " << i << " (ts=" << cur << ")";
-            } else {
-                ASSERT_LE(cur, prev)
-                    << "Walk " << w << " backward ts non-monotone between "
-                    << "hop " << (i - 1) << " (ts=" << prev
-                    << ") and hop " << i << " (ts=" << cur << ")";
-            }
+            ASSERT_GE(cur, prev)
+                << "Walk " << w
+                << (Forward ? " forward" : " backward")
+                << " ts non-monotone between hop " << (i - 1)
+                << " (ts=" << prev << ") and hop " << i
+                << " (ts=" << cur << ")";
         }
     }
 }

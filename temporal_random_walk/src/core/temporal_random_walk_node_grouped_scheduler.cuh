@@ -26,9 +26,11 @@ namespace temporal_random_walk {
 // Scratch lifetime:
 //   - iota_src_ is batch-persistent (Buffer<int>) — reused as the input
 //     to cub_partition_flagged every step.
-//   - All per-step scratch lives in a DeviceArena, reset at the top of
-//     every run_step call. Pointers returned in StepOutputs are valid
-//     only until the next run_step call.
+//   - All per-step scratch lives in a DeviceArena (chunked, pointer-
+//     stable). run_step resets the arena at the top, acquires scratch,
+//     launches kernels. Pointers returned in StepOutputs are valid only
+//     until the next run_step call — after reset the arena may hand out
+//     the same addresses to new slots.
 class NodeGroupedScheduler {
 public:
     // Node-level task list shared by the four cooperative tiers. Every
