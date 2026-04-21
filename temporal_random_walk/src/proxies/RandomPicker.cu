@@ -254,7 +254,7 @@ __global__ void pick_weighted_random_number_cuda_kernel(
 
     // Only the first thread computes the result
     if (idx == 0) {
-        *result = random_pickers::pick_random_exponential_weights_device(
+        *result = random_pickers::pick_random_exponential_weights(
             weights,
             weights_size,
             group_start,
@@ -298,7 +298,7 @@ int WeightBasedRandomPicker::pick_random(const double* weights, const size_t wei
     else
     #endif
     {
-        result = random_pickers::pick_random_exponential_weights_host(
+        result = random_pickers::pick_random_exponential_weights(
             const_cast<double*>(weights),
             weights_size,
             group_start,
@@ -339,7 +339,7 @@ int WeightBasedRandomPicker::pick_random_with_provided_number(const double* weig
     else
     #endif
     {
-        result = random_pickers::pick_random_exponential_weights_host(
+        result = random_pickers::pick_random_exponential_weights(
             const_cast<double*>(weights),
             weights_size,
             group_start,

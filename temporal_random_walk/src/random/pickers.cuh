@@ -5,7 +5,6 @@
 #include <cmath>
 #ifdef HAS_CUDA
 #include <curand_kernel.h>
-#include <cuda/std/__algorithm/lower_bound.h>
 #endif
 
 #include "../common/macros.cuh"
@@ -104,7 +103,11 @@ namespace random_pickers {
         return start + static_cast<int>(rand_number * (end - start));
     }
 
-    HOST inline int pick_random_exponential_weights_host(
+    // Host+device unified. The previous code had split _host / _device
+    // variants that differed only in std::lower_bound vs cuda::std::lower_bound;
+    // this version does a manual binary search so the same body works on
+    // both.
+    HOST DEVICE inline int pick_random_exponential_weights(
         const double* weights,
         const size_t weights_size,
         const size_t group_start,
@@ -114,7 +117,7 @@ namespace random_pickers {
             return -1;
         }
 
-        // Get start and end sums
+        // Start and end cumulative sums.
         double start_sum = 0.0;
         if (group_start > 0) {
             start_sum = weights[group_start - 1];
@@ -127,44 +130,20 @@ namespace random_pickers {
 
         const double random_val = start_sum + random_number * (end_sum - start_sum);
 
-        return static_cast<int>(std::lower_bound(
-                weights + group_start,
-                weights + group_end,
-                random_val) - weights);
+        // Manual lower_bound over weights[group_start..group_end). Returns
+        // the iterator offset within weights.
+        size_t lo = group_start;
+        size_t hi = group_end;
+        while (lo < hi) {
+            const size_t mid = lo + ((hi - lo) >> 1);
+            if (weights[mid] < random_val) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        return static_cast<int>(lo);
     }
-
-    #ifdef HAS_CUDA
-
-    DEVICE inline int pick_random_exponential_weights_device(
-        const double* weights,
-        const size_t weights_size,
-        const size_t group_start,
-        const size_t group_end,
-        const double random_number) {
-        if (group_start >= group_end || group_end > weights_size) {
-            return -1;
-        }
-
-        // Get start and end sums
-        double start_sum = 0.0;
-        if (group_start > 0) {
-            start_sum = weights[group_start - 1];
-        }
-        const double end_sum = weights[group_end - 1];
-
-        if (end_sum < start_sum) {
-            return -1;
-        }
-
-        const double random_val = start_sum + random_number * (end_sum - start_sum);
-
-        return static_cast<int>(cuda::std::lower_bound(
-                weights + group_start,
-                weights + group_end,
-                random_val) - weights);
-    }
-
-    #endif
 
     HOST DEVICE inline bool is_index_based_picker(const RandomPickerType picker_type) {
         switch (picker_type) {
@@ -205,7 +184,7 @@ namespace random_pickers {
         }
     }
 
-    HOST inline int pick_using_weight_based_picker_host(
+    HOST DEVICE inline int pick_using_weight_based_picker(
         const RandomPickerType random_picker,
         const double* weights,
         const size_t weights_size,
@@ -216,28 +195,9 @@ namespace random_pickers {
             random_picker != RandomPickerType::TemporalNode2Vec) {
             return -1;
         }
-
-        return pick_random_exponential_weights_host(weights, weights_size, group_start, group_end, random_number);
+        return pick_random_exponential_weights(
+            weights, weights_size, group_start, group_end, random_number);
     }
-
-    #ifdef HAS_CUDA
-
-    DEVICE inline int pick_using_weight_based_picker_device(
-        const RandomPickerType random_picker,
-        const double* weights,
-        const size_t weights_size,
-        const size_t group_start,
-        const size_t group_end,
-        const double random_number) {
-        if (random_picker != RandomPickerType::ExponentialWeight &&
-            random_picker != RandomPickerType::TemporalNode2Vec) {
-            return -1;
-        }
-
-        return pick_random_exponential_weights_device(weights, weights_size, group_start, group_end, random_number);
-    }
-
-    #endif
 }
 
 #endif // PICKERS_H
