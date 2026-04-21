@@ -28,6 +28,8 @@ namespace temporal_random_walk {
 
         if (max_walk_len == 0) return;
 
+        const int walk_padding_value = walk_set.walk_padding_value;
+
         // Philox is counter-based: one init per thread, then step the
         // counter via successive draw_u01_philox calls for each of the
         // ~2*max_walk_len draws this walk needs.
@@ -96,7 +98,7 @@ namespace temporal_random_walk {
 
         // Main walk loop
         int walk_len = 1; // Start at 1 since we already added first hop
-        while (walk_len < max_walk_len && current_node != -1) {
+        while (walk_len < max_walk_len && current_node != walk_padding_value) {
             const double r_step0 = draw_u01_philox(rng);
             const double r_step1 = draw_u01_philox(rng);
 
@@ -112,7 +114,7 @@ namespace temporal_random_walk {
                 r_step1);
 
             if (next_edge.ts == -1) {
-                current_node = -1;
+                current_node = walk_padding_value;
                 continue;
             }
 
