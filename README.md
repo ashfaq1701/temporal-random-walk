@@ -122,9 +122,41 @@ to populate features for specific nodes, then `get_node_features()` to retrieve 
 
 ## 📦 Installation
 
+### GPU (default) — Linux with NVIDIA driver
+
 ```sh
 pip install temporal-random-walk
 ```
+
+This pulls the manylinux wheel plus the two NVIDIA CUDA runtime
+libraries that the wheel links against:
+
+- `nvidia-cuda-runtime-cu12` — provides `libcudart.so.12`
+- `nvidia-curand-cu12` — provides `libcurand.so.10`
+
+The wheel itself is kept slim (~25 MB) by excluding these libs and
+the NVIDIA user-mode driver (`libcuda.so.1`) during the build. pip
+installs the runtime libraries as separate dependencies; the driver
+comes from the host system.
+
+**What you need on the host:**
+
+- An NVIDIA GPU with a driver new enough for CUDA 12.6 runtime
+  (Linux driver **R560.28.03** or newer — check `nvidia-smi`).
+- That's it. No CUDA toolkit, no `nvcc`, no `LD_LIBRARY_PATH` setup.
+
+### CPU-only — source build
+
+Machines without a GPU (or without a driver) should build from
+source; the CMake config detects the absence of `nvcc` and compiles
+a CPU-only extension:
+
+```sh
+pip install --no-binary temporal-random-walk temporal-random-walk
+```
+
+You'll need a C++17 compiler, CMake, and OpenMP/TBB installed
+(via `vcpkg` — see the Dependencies section above).
 
 ## 📖 Documentation
 

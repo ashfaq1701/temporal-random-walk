@@ -110,17 +110,26 @@ for PYVER in "${PYTHON_VERSIONS[@]}"; do
             # Repair the wheel with the same Python version.
             # Rocky Linux 9 is based on RHEL 9, which corresponds to manylinux_2_34_x86_64.
             #
-            # Exclude libcuda.so* — it's the NVIDIA user-mode driver library
-            # (libcuda-<hash>.so.<driver-version>) and must come from the
-            # user's GPU driver install, not from the wheel. Shipping it
-            # pins the wheel to the build-machine's driver version, inflates
-            # the wheel by ~12 MB compressed / ~71 MB uncompressed, and
-            # can push the wheel past PyPI's 100 MB per-file upload limit.
-            # auditwheel 4.x+ excludes it by default; older versions don't,
-            # hence the explicit flag.
+            # Exclude the CUDA shared libraries from the wheel so we stay
+            # well under PyPI's 100 MB per-file limit. Users get them via
+            # hard pip deps in setup.py:
+            #
+            #   libcuda.so*     — NVIDIA user-mode driver library. MUST come
+            #                     from the user's GPU driver install, not
+            #                     from the wheel (version-pinned drivers
+            #                     break portability).
+            #   libcudart.so*   — CUDA runtime. Shipped by nvidia-cuda-runtime-cu12.
+            #   libcurand.so*   — cuRAND. Shipped by nvidia-curand-cu12.
+            #
+            # --strip: strip debug symbols from every .so in the wheel
+            #   after repair. Typically trims 10–20 MB off nvcc-built
+            #   extensions that ship with default debug sections.
             echo "Repairing wheel..."
             $PYVER -m auditwheel repair "$WHEEL" --plat manylinux_2_34_x86_64 \
                 --exclude 'libcuda.so*' \
+                --exclude 'libcudart.so*' \
+                --exclude 'libcurand.so*' \
+                --strip \
                 -w /project/wheelhouse/
 
             echo "Wheel repair complete"

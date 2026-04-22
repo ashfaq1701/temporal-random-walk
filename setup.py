@@ -148,5 +148,22 @@ setup(
     cmdclass={"build_ext": CMakeBuild},
     zip_safe=False,
     python_requires=">=3.8",
-    install_requires=["pybind11>=2.6.0", "numpy", "networkx"],
+    install_requires=[
+        "pybind11>=2.6.0",
+        "numpy",
+        "networkx",
+        # CUDA runtime libs the PyPI wheel needs at runtime.
+        # We exclude them from the wheel (see build_scripts/build_wheels.sh)
+        # to stay under PyPI's 100 MB per-file limit and avoid shipping
+        # NVIDIA binaries directly. pip pulls these automatically.
+        #
+        # NOTE: these are unused on CPU-only source builds (CMake detects
+        # absence of nvcc and compiles without CUDA). They still install
+        # but are never loaded — harmless ~60 MB of unused disk. CPU-only
+        # users who want to avoid even that should install with
+        #     pip install --no-binary temporal_random_walk temporal_random_walk --no-deps
+        # and then install pybind11/numpy/networkx manually.
+        "nvidia-cuda-runtime-cu12>=12.6",
+        "nvidia-curand-cu12>=10.3",
+    ],
 )
