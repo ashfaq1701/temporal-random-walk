@@ -153,22 +153,6 @@ setup(
         "numpy",
         "networkx",
         # CUDA runtime libs the Linux PyPI wheel needs at runtime.
-        # We exclude them from the wheel (see build_scripts/build_wheels.sh)
-        # to stay under PyPI's 100 MB per-file limit and avoid shipping
-        # NVIDIA binaries directly. pip pulls these automatically.
-        #
-        # Gated on platform_system == 'Linux' because NVIDIA only
-        # publishes nvidia-*-cu12 wheels for Linux (x86_64 and aarch64).
-        # macOS and Windows users building from source (or installing
-        # a macOS wheel) don't need — and can't even resolve — these.
-        #
-        # CPU-only Linux source builds (CMake detects no nvcc, compiles
-        # without CUDA) still pull these in; they're installed but never
-        # loaded — harmless ~60 MB of unused disk. Users who want to
-        # avoid even that can:
-        #     pip install --no-binary temporal_random_walk \
-        #                 temporal_random_walk --no-deps
-        # and install pybind11/numpy/networkx manually.
         "nvidia-cuda-runtime-cu12>=12.6; platform_system == 'Linux'",
         "nvidia-curand-cu12>=10.3;        platform_system == 'Linux'",
     ],

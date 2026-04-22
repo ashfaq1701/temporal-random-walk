@@ -134,17 +134,6 @@ libraries that the wheel links against:
 - `nvidia-cuda-runtime-cu12` — provides `libcudart.so.12`
 - `nvidia-curand-cu12` — provides `libcurand.so.10`
 
-The wheel itself is kept slim (~25 MB) by excluding these libs and
-the NVIDIA user-mode driver (`libcuda.so.1`) during the build. pip
-installs the runtime libraries as separate dependencies; the driver
-comes from the host system.
-
-**What you need on the host:**
-
-- An NVIDIA GPU with a driver new enough for CUDA 12.6 runtime
-  (Linux driver **R560.28.03** or newer — check `nvidia-smi`).
-- That's it. No CUDA toolkit, no `nvcc`, no `LD_LIBRARY_PATH` setup.
-
 ### CPU-only — source build
 
 Machines without a GPU (or without a driver) should build from

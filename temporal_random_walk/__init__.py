@@ -1,24 +1,6 @@
 """
 temporal_random_walk — high-performance temporal random walk sampling
 with optional GPU acceleration.
-
-The PyPI wheel links against NVIDIA CUDA runtime libraries (libcudart,
-libcurand). Those libraries are NOT bundled in the wheel — they're
-declared as pip dependencies (nvidia-cuda-runtime-cu12 and
-nvidia-curand-cu12) so pip pulls them automatically and they live in
-their own site-packages/nvidia/<component>/lib/ subdirectories.
-
-The extension module's DT_NEEDED entries are plain sonames
-("libcudart.so.12", "libcurand.so.10") — the dynamic linker doesn't
-know to look inside the nvidia-*/lib/ directories by default. We
-pre-load those libs with RTLD_GLOBAL before the extension imports so
-the linker can satisfy the sonames.
-
-Pattern mirrors what torch/__init__.py does for its own CUDA deps.
-
-CPU-only source builds (pip install --no-binary) won't link CUDA at
-all and don't need the preload; the OSError path below silently
-tolerates missing libs on those systems.
 """
 from __future__ import annotations
 
