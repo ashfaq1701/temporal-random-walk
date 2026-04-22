@@ -1,5 +1,5 @@
-#ifndef TEMPORAL_RANDOM_WALK_NODE_GROUPED_SCHEDULER_CUH
-#define TEMPORAL_RANDOM_WALK_NODE_GROUPED_SCHEDULER_CUH
+#ifndef NODE_GROUPED_SCHEDULER_CUH
+#define NODE_GROUPED_SCHEDULER_CUH
 
 #include <cstddef>
 
@@ -7,10 +7,10 @@
 #include <cuda_runtime.h>
 #endif
 
-#include "../data/buffer.cuh"
-#include "../data/device_arena.cuh"
-#include "../data/walk_set/walk_set_view.cuh"
-#include "../data/enums.cuh"
+#include "../../data/buffer.cuh"
+#include "../../data/device_arena.cuh"
+#include "../../data/walk_set/walk_set_view.cuh"
+#include "../../data/enums.cuh"
 
 namespace temporal_random_walk {
 
@@ -108,4 +108,4 @@ private:
 
 }  // namespace temporal_random_walk
 
-#endif  // TEMPORAL_RANDOM_WALK_NODE_GROUPED_SCHEDULER_CUH
+#endif  // NODE_GROUPED_SCHEDULER_CUH

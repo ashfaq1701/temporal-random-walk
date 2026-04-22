@@ -50,7 +50,7 @@
 #include "../src/common/const.cuh"
 #include "../src/common/cuda_config.cuh"
 #include "../src/common/warp_coop_config.cuh"
-#include "../src/core/temporal_random_walk_node_grouped_scheduler.cuh"
+#include "../src/core/node_grouped/scheduler.cuh"
 #include "../src/data/enums.cuh"
 #include "../src/data/walk_set/walk_set_view.cuh"
 

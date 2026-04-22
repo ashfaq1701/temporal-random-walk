@@ -1,10 +1,11 @@
-#ifndef TEMPORAL_RANDOM_WALK_NODE_GROUPED_DISPATCH_CUH
-#define TEMPORAL_RANDOM_WALK_NODE_GROUPED_DISPATCH_CUH
+#ifndef NODE_GROUPED_DISPATCH_CUH
+#define NODE_GROUPED_DISPATCH_CUH
 
-#include "temporal_random_walk_kernels_node_grouped.cuh"
-#include "temporal_random_walk_node_grouped_scheduler.cuh"
-#include "../common/picker_dispatch.cuh"
-#include "../common/nvtx.cuh"
+#include "kernels.cuh"
+#include "scheduler.cuh"
+#include "../../common/picker_dispatch.cuh"
+#include "../../common/nvtx.cuh"
+#include "../../common/warp_coop_config.cuh"
 
 namespace temporal_random_walk {
 
@@ -202,4 +203,4 @@ inline void dispatch_node_grouped_kernel(
 
 } // namespace temporal_random_walk
 
-#endif // TEMPORAL_RANDOM_WALK_NODE_GROUPED_DISPATCH_CUH
+#endif // NODE_GROUPED_DISPATCH_CUH

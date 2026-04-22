@@ -88,7 +88,7 @@ set(SRC_FILES
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/graph/node_features.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/graph/temporal_graph.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/core/temporal_random_walk.cu
-        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/core/temporal_random_walk_node_grouped_scheduler.cu
+        ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/core/node_grouped/scheduler.cu
 
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/RandomPicker.cu
         ${CMAKE_SOURCE_DIR}/temporal_random_walk/src/proxies/TemporalRandomWalk.cu

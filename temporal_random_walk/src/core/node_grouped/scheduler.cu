@@ -1,16 +1,16 @@
-#include "temporal_random_walk_node_grouped_scheduler.cuh"
+#include "scheduler.cuh"
 
 #ifdef HAS_CUDA
 
 #include <cstddef>
 #include <cstdint>
 
-#include "../common/cuda_sort.cuh"
-#include "../common/cuda_scan.cuh"
-#include "../common/error_handlers.cuh"
-#include "../common/nvtx.cuh"
-#include "../common/warp_coop_config.cuh"
-#include "../random/pickers.cuh"
+#include "../../common/cuda_sort.cuh"
+#include "../../common/cuda_scan.cuh"
+#include "../../common/error_handlers.cuh"
+#include "../../common/nvtx.cuh"
+#include "../../common/warp_coop_config.cuh"
+#include "../../random/pickers.cuh"
 
 namespace temporal_random_walk {
 
@@ -20,8 +20,8 @@ namespace {
 // Scheduler helper kernels. Non-templated, anonymous-namespace scoped so
 // only this TU instantiates them. Kernels that service per-walk work
 // (pick_start_edges_kernel, node_grouped_solo_kernel, the four cooperative
-// scaffolds, reverse_walks_kernel) live in
-// temporal_random_walk_kernels_node_grouped.cuh.
+// coop kernels, reverse_walks_kernel) live in kernels/*.cuh under this
+// directory.
 // ==========================================================================
 
 // 0, 1, ..., n-1 — seed the sort/compact payload buffer.

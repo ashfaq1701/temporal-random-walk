@@ -27,7 +27,7 @@
 #include <thrust/unique.h>
 
 #include "temporal_random_walk_kernels_full_walk.cuh"
-#include "temporal_random_walk_node_grouped_dispatch.cuh"
+#include "node_grouped/dispatch.cuh"
 #include "../data/walk_set/walk_set_device.cuh"
 #endif
 
