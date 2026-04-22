@@ -292,9 +292,22 @@ the progress log; §5's kernel matrix is the target state.
   threads of a block (L1/L2 residency shared across co-located walks).
   Both use a small static-smem header to broadcast node-level scalars,
   and both short-circuit Node2Vec to scaffold-style per-walk processing.
-- warp_smem and warp_global bodies are still scaffolds (per-thread-per-task
-  loops calling advance_one_walk). Real cooperative bodies in tasks 10
-  (warp_smem) and 11 (warp_global).
+- Directional-pointer resolution factored into
+  core/node_grouped/kernels/common.cuh as `NodeDirPtrs` +
+  `resolve_node_dir_ptrs<IsDirected, Forward>(view)`. Both block
+  kernels call the helper once at task entry; tasks 10/11 reuse it.
+- Warp-smem cooperative body is live (task 10). 8 warps per block, 256
+  threads; each warp services one task against its own per-warp smem
+  slice tiled into one flat dynamic-smem allocation. Lane 0 broadcasts
+  the task header; lanes 0..31 cooperatively preload the G-sized panel
+  (stride 32); lanes 0..31 stride through the task's walks. Only
+  __syncwarp() is used — warps in a block run independent tasks and
+  may diverge at the task-id guard in partial last blocks, so a
+  block-wide barrier would deadlock. Binary search is per-lane against
+  the warp's s_first_ts (fast-path comparator). Node2Vec short-circuits
+  to per-walk processing distributed across the warp.
+- warp_global body is still a scaffold (per-thread-per-task loop calling
+  advance_one_walk). Real cooperative body in task 11.
 
 ## 7. Architecture guardrails
 
@@ -554,12 +567,41 @@ produces the same walk each walk_idx would have gotten in the solo
 path since Philox keying is per-walk and the sampling math is
 equivalent).
 
-**Task 10 — Warp-smem body.** Warp equivalent of task 8: 8 warps per block
-(`TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK`), per-warp 5.5 KB panel slice
-(`SMEM_PANEL_BYTES_PER_WARP`), lane-strided preload, `__syncwarp()` in
-place of `__syncthreads()`. Intra-warp stride loop: lane `l` processes
-walks at `l, l+32, l+64, …` up to `walk_count`. At `W=255` this is 8
-iterations. compute-sanitizer + ncu report.
+**Task 10 — Warp-smem body.** ✓ Done. `node_grouped_warp_smem_kernel`
+runs the real cooperative body, warp equivalent of task 8:
+
+- 8 warps per block (`TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK`), 256
+  threads per block. Grid = `⌈num_warp_smem_tasks / 8⌉`. Each warp
+  services one task; `task_id = blockIdx.x * 8 + warp_id`. Partial
+  last block handled by the warp-uniform task_id guard — all 32
+  lanes of an out-of-range warp return together.
+- Sync discipline: `__syncwarp()` only, never `__syncthreads()`.
+  Warps in a block run independent tasks; a block-wide barrier would
+  deadlock against the idle warps in the partial last block.
+- Per-warp smem slice tiled into one flat dynamic-smem allocation:
+  `s_pool + warp_id * kPerWarpBytes`. Per-warp layout matches block-
+  smem's shape (header[4], node_edge_end, padding, group_offsets[G],
+  first_ts[G]) sized from the picker-class warp G cap (340 index /
+  220 weighted). Byte budget: worst case 64 + 340*16 = 5504 B/warp
+  × 8 = 44 032 B/block — fits the static 48 KB envelope.
+- Lane 0 of each warp broadcasts the task header into its own slice,
+  then all 32 lanes cooperatively preload s_group_offsets[G] and
+  s_first_ts[G] via a stride-32 loop. At G=340 that's ⌈340/32⌉ = 11
+  rounds per lane.
+- Intra-warp stride over walks: lane l handles walks at l, l+32, … up
+  to walk_count. At W=T_BLOCK (255) that's ⌈255/32⌉ = 8 rounds per
+  lane.
+- Binary search is per-lane against `s_first_ts` (non-null → fast-path
+  comparator, single-load). Each of the 32 lanes runs its own
+  independent search with its own walk's `last_ts`; no cross-lane
+  cooperation in the search itself.
+- Node2Vec short-circuits to per-walk processing distributed across
+  the warp's 32 lanes (same shape as block-smem's short-circuit).
+- Dispatcher's warp_smem launch flipped from thread-per-task grid to
+  block-per-8-tasks (`grid = ⌈n/8⌉`, `block = 256`), dynamic smem
+  sized by `warp_smem_dynamic_smem_bytes<PickerType>()`.
+
+compute-sanitizer + ncu report due at phase IV.
 
 **Task 11 — Warp-global body.** Warp equivalent of task 9.
 compute-sanitizer + ncu report.

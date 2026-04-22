@@ -111,12 +111,20 @@ inline void dispatch_node_grouped_kernel(
                 }
 
                 // Warp-smem tier: W in [2, T_BLOCK] and G <= warp cap.
-                // Scaffold body (per-thread-per-task) until task 10 lands.
+                // Real cooperative body (task 10): 8 warps per block
+                // (TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK), each warp
+                // services one task against its own per-warp smem panel.
+                // Dynamic smem is sized inside the dispatch wrapper based
+                // on picker class × 8 warps.
                 if (step_outs.warp_smem.num_tasks_host > 0) {
-                    const size_t blocks =
+                    const size_t warp_smem_blocks =
                         (static_cast<size_t>(step_outs.warp_smem.num_tasks_host)
-                         + block_dim.x - 1) / block_dim.x;
-                    const dim3 warp_smem_grid(static_cast<unsigned>(blocks));
+                         + TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK - 1)
+                        / TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK;
+                    const dim3 warp_smem_grid(
+                        static_cast<unsigned>(warp_smem_blocks));
+                    const dim3 warp_smem_block(
+                        static_cast<unsigned>(TRW_NODE_GROUPED_COOP_BLOCK_THREADS));
                     dispatch_node_grouped_warp_smem_kernel<kDir, kFwd>(
                         view, walk_set_view,
                         step_outs.sorted_walk_idx,
@@ -126,7 +134,7 @@ inline void dispatch_node_grouped_kernel(
                         step_outs.warp_smem.num_tasks_device,
                         step_number, max_walk_len,
                         edge_picker_type, base_seed,
-                        warp_smem_grid, block_dim, stream);
+                        warp_smem_grid, warp_smem_block, stream);
                 }
 
                 // Warp-global tier: W in [2, T_BLOCK] and G > warp cap.

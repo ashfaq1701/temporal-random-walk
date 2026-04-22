@@ -2,10 +2,10 @@
 #define NODE_GROUPED_KERNELS_COOP_BLOCK_CUH
 
 // Block-tier cooperative kernels: smem (G <= block cap, cooperative preload)
-// and global fallback (still scaffold as of task 8).
+// and global fallback.
 //
 //   task 8 done -> node_grouped_block_smem_kernel   (real cooperative body)
-//   task 9 TODO -> node_grouped_block_global_kernel (currently scaffold)
+//   task 9 done -> node_grouped_block_global_kernel (real cooperative body)
 
 #include "common.cuh"    // NodeDirPtrs, resolve_node_dir_ptrs
 #include "per_walk.cuh"  // advance_one_walk, philox offset helper
