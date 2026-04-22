@@ -1,6 +1,6 @@
 FROM nvidia/cuda:12.6.3-devel-rockylinux9
 
-ARG PYTHON_VERSIONS="3.9.18 3.10.13 3.11.7 3.12.7"
+ARG PYTHON_VERSIONS="3.9.18 3.10.13 3.11.7"
 
 # Install EPEL and update system
 RUN dnf -y install epel-release && \
@@ -19,7 +19,7 @@ RUN dnf -y install epel-release && \
         tbb tbb-devel && \
     dnf clean all
 
-# Install Python 3.9–3.12 from source
+# Install Python 3.9–3.11 from source
 RUN for VERSION in ${PYTHON_VERSIONS}; do \
         cd /usr/src && \
         MAJOR=$(echo $VERSION | cut -d. -f1,2) && \
@@ -39,7 +39,7 @@ RUN for VERSION in ${PYTHON_VERSIONS}; do \
 
 # Install pip and common tools for all Python versions
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
-    for py in 3.9 3.10 3.11 3.12; do \
+    for py in 3.9 3.10 3.11; do \
         python${py} /tmp/get-pip.py && \
         python${py} -m pip install --upgrade pip setuptools wheel; \
     done && rm -f /tmp/get-pip.py
