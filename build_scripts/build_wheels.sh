@@ -107,10 +107,21 @@ for PYVER in "${PYTHON_VERSIONS[@]}"; do
             WHEEL="${WHEEL_FILES[0]}"
             echo "Built wheel: $WHEEL"
 
-            # Repair the wheel with the same Python version
-            # Rocky Linux 9 is based on RHEL 9, which corresponds to manylinux_2_34_x86_64
+            # Repair the wheel with the same Python version.
+            # Rocky Linux 9 is based on RHEL 9, which corresponds to manylinux_2_34_x86_64.
+            #
+            # Exclude libcuda.so* — it's the NVIDIA user-mode driver library
+            # (libcuda-<hash>.so.<driver-version>) and must come from the
+            # user's GPU driver install, not from the wheel. Shipping it
+            # pins the wheel to the build-machine's driver version, inflates
+            # the wheel by ~12 MB compressed / ~71 MB uncompressed, and
+            # can push the wheel past PyPI's 100 MB per-file upload limit.
+            # auditwheel 4.x+ excludes it by default; older versions don't,
+            # hence the explicit flag.
             echo "Repairing wheel..."
-            $PYVER -m auditwheel repair "$WHEEL" --plat manylinux_2_34_x86_64 -w /project/wheelhouse/
+            $PYVER -m auditwheel repair "$WHEEL" --plat manylinux_2_34_x86_64 \
+                --exclude 'libcuda.so*' \
+                -w /project/wheelhouse/
 
             echo "Wheel repair complete"
         else
