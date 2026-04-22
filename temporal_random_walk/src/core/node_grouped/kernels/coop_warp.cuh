@@ -1,18 +1,17 @@
 #ifndef NODE_GROUPED_KERNELS_COOP_WARP_CUH
 #define NODE_GROUPED_KERNELS_COOP_WARP_CUH
 
-// Warp-tier cooperative kernels: smem (G <= warp cap, per-warp panel
-// preload) and global fallback.
+// Warp-tier cooperative kernels:
+//   node_grouped_warp_smem_kernel    - G <= warp cap, per-warp panel preload
+//   node_grouped_warp_global_kernel  - G >  warp cap, global fallback
 //
-//   task 10 done -> node_grouped_warp_smem_kernel   (real cooperative body)
-//   task 11 done -> node_grouped_warp_global_kernel (real cooperative body)
-//
-// Both kernels service non-Node2Vec pickers only. The dispatcher gates
-// Node2Vec out of the cooperative pipeline entirely (prev_node-dependent
-// sampling can't share a panel).
+// Both service non-Node2Vec pickers only; the dispatcher gates Node2Vec
+// out of the cooperative pipeline entirely (prev_node-dependent sampling
+// can't share a panel).
 
-#include "common.cuh"    // NodeDirPtrs, resolve_node_dir_ptrs
-#include "per_walk.cuh"  // advance_one_walk, philox offset helper
+#include "common.cuh"    // NodeDirPtrs, resolve_node_dir_ptrs,
+                         // sample_edge_and_add_hop, coop_warp_smem_g_cap
+#include "per_walk.cuh"  // step_kernel_philox_offset (+ transitive philox/utils)
 #include "../../../common/picker_dispatch.cuh"
 #include "../../../common/warp_coop_config.cuh"
 
@@ -21,42 +20,29 @@ namespace temporal_random_walk {
 #ifdef HAS_CUDA
 
 // ==========================================================================
-// Warp-smem cooperative kernel (task 10 — real body).
+// Warp-smem cooperative kernel.
 //
-// TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK (8) warps per block,
-// TRW_NODE_GROUPED_COOP_BLOCK_THREADS  (256) threads total. Each warp
-// services one warp-task (one unique node's walks for this step);
-// task_id = blockIdx.x * 8 + warp_id. Warps inside a block run
-// independent tasks with no cross-warp coordination — their panels
-// are tiled side-by-side in one flat dynamic-smem allocation.
+// TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK (8) warps per block, 256 threads
+// total. Each warp services one warp-task (one unique node's walks for
+// this step): task_id = blockIdx.x * 8 + warp_id. Warps in a block run
+// independent tasks with no cross-warp coordination — their panels are
+// tiled side-by-side in one flat dynamic-smem allocation.
 //
-// Smem layout (dynamic `extern __shared__`, size = 8 × per_warp_bytes):
-//   warp w's slice lives at  s_pool + w * kPerWarpBytes
-//   inside each slice (same shape as block-smem, just smaller G cap):
-//     [ 0 ..  16)  s_header[4]: node_id, walk_start, walk_count, G
-//     [16 ..  24)  s_node_edge_end (= node_edge_offsets[node+1])
-//     [24 ..  64)  alignment padding
-//     [64 .. 64 + G*8)   s_group_offsets (size_t)
-//     [.. + G*8)         s_first_ts     (int64_t)
+// Per-warp panel (size-adjusted by picker-class G cap, 8 × per warp):
+//   [0   .. 64)           alignment pad
+//   [64  .. 64 + G*8)     s_group_offsets (size_t)
+//   [.. + G*8)            s_first_ts      (int64_t)
 //
-// G cap for this tier:
-//   TRW_NODE_GROUPED_G_CAP_WARP_INDEX    (340) for index pickers
-//   TRW_NODE_GROUPED_G_CAP_WARP_WEIGHTED (220) for weighted pickers
-//   Scheduler's G-partition guarantees G <= cap.
-//
-// Per-warp byte budget at worst (index): 64 + 340*(8+8) = 5504 B/warp.
-// 8 warps: 44 032 B/block — fits the static 48 KB envelope, no
-// cudaFuncSetAttribute opt-in required.
-//
-// Weighted pickers still read cum_weights from global (see block-smem).
+// Task-level scalars are NOT broadcast via smem — task_id is warp-
+// uniform, so lane-level broadcast loads cover it in a single transaction.
 //
 // Sync discipline: only __syncwarp() — never __syncthreads(). Warps in
 // the same block run different tasks and may diverge at the task-id
-// guard (partial last block when num_tasks % 8 != 0). A __syncthreads()
+// guard (partial last block when num_tasks % 8 != 0). __syncthreads()
 // would deadlock against the idle warps. Each __syncwarp() sees only
-// the 32 lanes of one warp; those lanes are always in lockstep at the
-// sync points because all 32 either return at the guard or all 32
-// continue.
+// this warp's 32 lanes; all lanes are in lockstep at the sync points.
+//
+// Weighted pickers still read cum_weights from global (see block-smem).
 // ==========================================================================
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_warp_smem_kernel(
@@ -80,18 +66,22 @@ __global__ void node_grouped_warp_smem_kernel(
         + warp_id;
 
     // All 32 lanes of an out-of-range warp return together — task_id is
-    // warp-uniform, so divergence is 32-lane wide and safe.
+    // warp-uniform, so the guard is a 32-lane-wide return.
     if (task_id >= *num_tasks_ptr) return;
 
-    // Resolve direction-dependent per-graph pointers once per task.
     const auto ptrs = resolve_node_dir_ptrs<IsDirected, Forward>(view);
 
-    // Per-warp panel layout, sized from the picker-class G cap.
-    constexpr bool kIsIndexPicker =
-        random_pickers::is_index_based_picker_v<EdgePickerType>;
-    constexpr int kGCap = kIsIndexPicker
-        ? TRW_NODE_GROUPED_G_CAP_WARP_INDEX
-        : TRW_NODE_GROUPED_G_CAP_WARP_WEIGHTED;
+    // Task-level scalars. Broadcast loads — task_id is warp-uniform.
+    const int    node_id          = node_walk_nodes[task_id];
+    const int    walk_start       = node_walk_starts[task_id];
+    const int    walk_count       = node_walk_counts[task_id];
+    const size_t node_group_begin = ptrs.count_ts_group_per_node[node_id];
+    const size_t node_group_end   = ptrs.count_ts_group_per_node[node_id + 1];
+    const int    G                = static_cast<int>(node_group_end - node_group_begin);
+    const size_t node_edge_end    = ptrs.node_edge_offsets[node_id + 1];
+
+    // Per-warp panel layout.
+    constexpr int kGCap = coop_warp_smem_g_cap<EdgePickerType>();
     constexpr size_t kHeaderBytes        = 64;
     constexpr size_t kGroupOffsetsOffset = kHeaderBytes;
     constexpr size_t kFirstTsOffset      =
@@ -102,57 +92,27 @@ __global__ void node_grouped_warp_smem_kernel(
     extern __shared__ unsigned char s_pool[];
     unsigned char* const s_my =
         s_pool + static_cast<size_t>(warp_id) * kPerWarpBytes;
-    int* const      s_header        = reinterpret_cast<int*>(s_my);
-    size_t* const   s_node_edge_end = reinterpret_cast<size_t*>(s_my + 16);
-    size_t* const   s_group_offsets =
+    size_t* const  s_group_offsets =
         reinterpret_cast<size_t*>(s_my + kGroupOffsetsOffset);
-    int64_t* const  s_first_ts      =
+    int64_t* const s_first_ts      =
         reinterpret_cast<int64_t*>(s_my + kFirstTsOffset);
 
-    // Stage 0: lane 0 of THIS warp broadcasts the task header into the
-    // warp's private smem slice.
-    if (lane_id == 0) {
-        const int node_id    = node_walk_nodes[task_id];
-        const int walk_start = node_walk_starts[task_id];
-        const int walk_count = node_walk_counts[task_id];
-        const size_t node_group_begin = ptrs.count_ts_group_per_node[node_id];
-        const size_t node_group_end   = ptrs.count_ts_group_per_node[node_id + 1];
-        s_header[0] = node_id;
-        s_header[1] = walk_start;
-        s_header[2] = walk_count;
-        s_header[3] = static_cast<int>(node_group_end - node_group_begin);
-        *s_node_edge_end = ptrs.node_edge_offsets[node_id + 1];
-    }
-    __syncwarp();
-
-    const int    node_id    = s_header[0];
-    const int    walk_start = s_header[1];
-    const int    walk_count = s_header[2];
-    const int    G          = s_header[3];
-    const size_t node_edge_end_global = *s_node_edge_end;
-    const size_t node_group_begin = ptrs.count_ts_group_per_node[node_id];
-
-    // Stage 1: warp-cooperative preload of this task's G-sized panel.
-    // Lane l handles indices l, l+32, l+64, ... At G=340 that's
-    // ⌈340/32⌉ = 11 rounds per lane in the worst case.
+    // Stage 1: warp-cooperative preload of the G-sized panel. Lane l
+    // handles indices l, l+32, l+64, ... At G=340 that's 11 rounds/lane.
     for (int p = lane_id; p < G; p += 32) {
         const size_t ts_group_offset =
             ptrs.node_ts_groups_offsets[node_group_begin + p];
         s_group_offsets[p] = ts_group_offset;
-        // Kill the double-indirect load chain on every binary-search
-        // probe in stage 2's find_group_pos_slice.
         s_first_ts[p] =
             view.timestamps[ptrs.node_ts_sorted_indices[ts_group_offset]];
     }
     __syncwarp();
 
-    // Stage 2: intra-warp stride over the walks in this task's slice.
-    // Up to ⌈255/32⌉ = 8 rounds per lane at W=T_BLOCK.
+    // Stage 2: intra-warp stride over this task's walks. At W=T_BLOCK
+    // (255), ⌈255/32⌉ = 8 rounds/lane.
     for (int k = lane_id; k < walk_count; k += 32) {
-        const int walk_idx_int = sorted_walk_idx[walk_start + k];
-        if (walk_idx_int < 0) continue;
-
-        const size_t walk_idx = static_cast<size_t>(walk_idx_int);
+        const size_t walk_idx =
+            static_cast<size_t>(sorted_walk_idx[walk_start + k]);
         const size_t offset   =
             walk_idx * static_cast<size_t>(max_walk_len)
             + static_cast<size_t>(step_number);
@@ -164,62 +124,33 @@ __global__ void node_grouped_warp_smem_kernel(
         const double r_group = draw_u01_philox(rng);
         const double r_edge  = draw_u01_philox(rng);
 
-        // Stage 2a: fast-path binary search against this warp's smem
-        // panel (first_ts non-null -> single-load comparator).
+        // Stage 2a: fast-path binary search against the warp's smem panel.
         const long local_pos = temporal_graph::find_group_pos_slice<Forward, EdgePickerType>(
-            s_group_offsets,
-            s_first_ts,
+            s_group_offsets, s_first_ts,
             /*node_ts_sorted_indices=*/nullptr,
             /*view_timestamps=*/nullptr,
             ptrs.weights, ptrs.weights_size,
-            node_group_begin,
-            G, last_ts, r_group);
+            node_group_begin, G, last_ts, r_group);
         if (local_pos == -1) continue;
 
-        // Stage 2b: group -> edge range via the warp's smem offsets.
-        const size_t valid_edge_start = s_group_offsets[local_pos];
-        const size_t valid_edge_end =
-            (local_pos + 1 < G)
-                ? s_group_offsets[local_pos + 1]
-                : node_edge_end_global;
-        if (valid_edge_start >= valid_edge_end) continue;
-
-        // Stage 2c: uniform random edge in the group; fetch endpoint +
-        // timestamp from the global view.
-        const long edge_idx = static_cast<long>(ptrs.node_ts_sorted_indices[
-            valid_edge_start +
-            generate_random_number_bounded_by(
-                static_cast<int>(valid_edge_end - valid_edge_start),
-                r_edge)]);
-
-        if constexpr (IsDirected) {
-            walk_set.add_hop(walk_idx,
-                             Forward ? view.targets[edge_idx]
-                                     : view.sources[edge_idx],
-                             view.timestamps[edge_idx],
-                             edge_idx);
-        } else {
-            const int next_node = pick_other_number(
-                view.sources[edge_idx], view.targets[edge_idx], node_id);
-            walk_set.add_hop(walk_idx, next_node,
-                             view.timestamps[edge_idx], edge_idx);
-        }
+        // Stage 2b+c: edge range via smem offsets + pick + hop.
+        sample_edge_and_add_hop<IsDirected, Forward>(
+            view, walk_set, ptrs,
+            s_group_offsets, local_pos, G, node_edge_end, node_id,
+            walk_idx, r_edge);
     }
 }
 
-// Dynamic smem size for warp-smem: per-warp (64-byte header + G_CAP
+// Dynamic smem size for warp-smem: per-warp (64-byte alignment pad + G_CAP
 // entries of (size_t + int64_t)) × TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK.
-// Chosen at compile time from the picker class so the launch matches
-// the kernel's layout.
+// Chosen at compile time from the picker class so the launch matches the
+// kernel's panel layout.
 template <RandomPickerType PickerType>
 HOST constexpr inline size_t warp_smem_dynamic_smem_bytes() {
-    constexpr bool kIsIndexPicker =
-        random_pickers::is_index_based_picker_v<PickerType>;
-    constexpr size_t kGCap = kIsIndexPicker
-        ? static_cast<size_t>(TRW_NODE_GROUPED_G_CAP_WARP_INDEX)
-        : static_cast<size_t>(TRW_NODE_GROUPED_G_CAP_WARP_WEIGHTED);
+    constexpr size_t kGCap = static_cast<size_t>(
+        coop_warp_smem_g_cap<PickerType>());
     constexpr size_t kPerWarp =
-        size_t{64} + sizeof(size_t) * kGCap + sizeof(int64_t) * kGCap;
+        size_t{64} + (sizeof(size_t) + sizeof(int64_t)) * kGCap;
     return kPerWarp
         * static_cast<size_t>(TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK);
 }
@@ -255,25 +186,18 @@ inline void dispatch_node_grouped_warp_smem_kernel(
 }
 
 // ==========================================================================
-// Warp-global cooperative kernel (task 11 — real body).
+// Warp-global cooperative kernel.
 //
-// Warp equivalent of block-global (task 9): same launch topology as
-// warp-smem (8 warps/block, one task per warp), no panel preload. Each
-// warp services a node whose G exceeds TRW_NODE_GROUPED_G_CAP_WARP_*,
-// so the panel wouldn't fit in the per-warp 5.5 KB slice. Binary search
-// runs against the GLOBAL node_ts_groups_offsets slice via
-// find_group_pos_slice's double-indirect comparator (first_ts=nullptr),
-// but we still get the cooperative win — 32 lanes per task share L1/L2
-// residency of the per-node arrays instead of each walk paying its own
-// scatter read across different nodes.
+// Same launch topology as warp-smem (8 warps/block, one task per warp),
+// but no panel preload. Services nodes with G > TRW_NODE_GROUPED_G_CAP_WARP_*
+// whose metadata wouldn't fit in the per-warp slice. Binary search runs
+// against the GLOBAL node_ts_groups_offsets slice via find_group_pos_slice's
+// double-indirect comparator. Cooperative win: 32 lanes share L1/L2 cache
+// residency of the per-node arrays.
 //
-// Smem: only a tiny static header per warp (one int[4] + 2 size_t per
-// warp × 8 warps ≈ 256 B/block) so the 32 lanes don't each refetch
-// task-level scalars from global on every walk. No dynamic smem.
-//
-// Sync discipline mirrors warp-smem: __syncwarp() only, never
-// __syncthreads(). Partial-last-block warps return all 32 lanes
-// together at the task-id guard before hitting any sync.
+// No smem, no sync: task_id is warp-uniform so every lane reading
+// node_walk_nodes[task_id] etc. coalesces into broadcast loads. There's
+// no preload stage, so there's nothing to sync on either.
 // ==========================================================================
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_warp_global_kernel(
@@ -298,49 +222,25 @@ __global__ void node_grouped_warp_global_kernel(
 
     if (task_id >= *num_tasks_ptr) return;
 
-    // Resolve direction-dependent per-graph pointers once per task.
     const auto ptrs = resolve_node_dir_ptrs<IsDirected, Forward>(view);
 
-    // Static smem header, per warp. 8 warps × (16 + 8 + 8) = 256 B/block.
-    __shared__ int    s_header[TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK][4];
-    __shared__ size_t s_node_edge_end[TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK];
-    __shared__ size_t s_node_group_begin[TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK];
+    // Task-level scalars. Broadcast loads — task_id is warp-uniform.
+    const int    node_id          = node_walk_nodes[task_id];
+    const int    walk_start       = node_walk_starts[task_id];
+    const int    walk_count       = node_walk_counts[task_id];
+    const size_t node_group_begin = ptrs.count_ts_group_per_node[node_id];
+    const size_t node_group_end   = ptrs.count_ts_group_per_node[node_id + 1];
+    const int    G                = static_cast<int>(node_group_end - node_group_begin);
+    const size_t node_edge_end    = ptrs.node_edge_offsets[node_id + 1];
 
-    // Stage 0: lane 0 of THIS warp broadcasts the task header via smem.
-    if (lane_id == 0) {
-        const int node_id    = node_walk_nodes[task_id];
-        const int walk_start = node_walk_starts[task_id];
-        const int walk_count = node_walk_counts[task_id];
-        const size_t node_group_begin = ptrs.count_ts_group_per_node[node_id];
-        const size_t node_group_end   = ptrs.count_ts_group_per_node[node_id + 1];
-        s_header[warp_id][0] = node_id;
-        s_header[warp_id][1] = walk_start;
-        s_header[warp_id][2] = walk_count;
-        s_header[warp_id][3] = static_cast<int>(node_group_end - node_group_begin);
-        s_node_edge_end[warp_id]    = ptrs.node_edge_offsets[node_id + 1];
-        s_node_group_begin[warp_id] = node_group_begin;
-    }
-    __syncwarp();
-
-    const int    node_id          = s_header[warp_id][0];
-    const int    walk_start       = s_header[warp_id][1];
-    const int    walk_count       = s_header[warp_id][2];
-    const int    G                = s_header[warp_id][3];
-    const size_t node_edge_end_g  = s_node_edge_end[warp_id];
-    const size_t node_group_begin = s_node_group_begin[warp_id];
-
-    // Slice pointer into the GLOBAL ts-group-offsets array. No preload —
-    // each binary-search probe reads this via the double-indirect
-    // comparator (view_timestamps[node_ts_sorted_indices[offsets[p]]]).
+    // Slice pointer into the GLOBAL ts-group-offsets array.
     const size_t* group_offsets_slice =
         ptrs.node_ts_groups_offsets + node_group_begin;
 
     // Intra-warp stride over this task's walks.
     for (int k = lane_id; k < walk_count; k += 32) {
-        const int walk_idx_int = sorted_walk_idx[walk_start + k];
-        if (walk_idx_int < 0) continue;
-
-        const size_t walk_idx = static_cast<size_t>(walk_idx_int);
+        const size_t walk_idx =
+            static_cast<size_t>(sorted_walk_idx[walk_start + k]);
         const size_t offset   =
             walk_idx * static_cast<size_t>(max_walk_len)
             + static_cast<size_t>(step_number);
@@ -352,45 +252,20 @@ __global__ void node_grouped_warp_global_kernel(
         const double r_group = draw_u01_philox(rng);
         const double r_edge  = draw_u01_philox(rng);
 
-        // Stage 1: group pick via the global double-indirect comparator
-        // (first_ts == nullptr signals the fallback path inside
-        // find_group_pos_slice).
+        // Stage 1: group pick via the global double-indirect comparator.
         const long local_pos = temporal_graph::find_group_pos_slice<Forward, EdgePickerType>(
             group_offsets_slice,
             /*first_ts=*/nullptr,
-            ptrs.node_ts_sorted_indices,
-            view.timestamps,
+            ptrs.node_ts_sorted_indices, view.timestamps,
             ptrs.weights, ptrs.weights_size,
-            node_group_begin,
-            G, last_ts, r_group);
+            node_group_begin, G, last_ts, r_group);
         if (local_pos == -1) continue;
 
-        // Stage 2: edge range via the same global slice pointer.
-        const size_t valid_edge_start = group_offsets_slice[local_pos];
-        const size_t valid_edge_end =
-            (local_pos + 1 < G)
-                ? group_offsets_slice[local_pos + 1]
-                : node_edge_end_g;
-        if (valid_edge_start >= valid_edge_end) continue;
-
-        const long edge_idx = static_cast<long>(ptrs.node_ts_sorted_indices[
-            valid_edge_start +
-            generate_random_number_bounded_by(
-                static_cast<int>(valid_edge_end - valid_edge_start),
-                r_edge)]);
-
-        if constexpr (IsDirected) {
-            walk_set.add_hop(walk_idx,
-                             Forward ? view.targets[edge_idx]
-                                     : view.sources[edge_idx],
-                             view.timestamps[edge_idx],
-                             edge_idx);
-        } else {
-            const int next_node = pick_other_number(
-                view.sources[edge_idx], view.targets[edge_idx], node_id);
-            walk_set.add_hop(walk_idx, next_node,
-                             view.timestamps[edge_idx], edge_idx);
-        }
+        // Stage 2b+c: edge range (from the same global slice) + pick + hop.
+        sample_edge_and_add_hop<IsDirected, Forward>(
+            view, walk_set, ptrs,
+            group_offsets_slice, local_pos, G, node_edge_end, node_id,
+            walk_idx, r_edge);
     }
 }
 

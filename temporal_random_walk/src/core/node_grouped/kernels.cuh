@@ -6,11 +6,12 @@
 // a narrower subset (e.g. a future test that exercises only the block
 // tier) can include the specific kernels/*.cuh directly.
 
-#include "kernels/per_walk.cuh"   // step_philox, pick_start_edges, advance_one_walk,
-                                   // node_grouped_solo_kernel, reverse_walks_kernel.
-#include "kernels/coop_warp.cuh"   // warp_smem (real body, task 10) + warp_global
-                                   // (real body, task 11).
-#include "kernels/coop_block.cuh"  // block_smem (real body, task 8) + block_global
-                                   // (real body, task 9).
+#include "kernels/per_walk.cuh"   // step philox helper, pick_start_edges_kernel,
+                                   // advance_one_walk, node_grouped_solo_kernel,
+                                   // per_walk_step_kernel, reverse_walks_kernel.
+#include "kernels/coop_warp.cuh"   // node_grouped_warp_smem_kernel,
+                                   //   node_grouped_warp_global_kernel.
+#include "kernels/coop_block.cuh"  // node_grouped_block_smem_kernel,
+                                   //   node_grouped_block_global_kernel.
 
 #endif // NODE_GROUPED_KERNELS_CUH

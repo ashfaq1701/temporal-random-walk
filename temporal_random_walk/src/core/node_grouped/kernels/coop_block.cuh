@@ -1,18 +1,17 @@
 #ifndef NODE_GROUPED_KERNELS_COOP_BLOCK_CUH
 #define NODE_GROUPED_KERNELS_COOP_BLOCK_CUH
 
-// Block-tier cooperative kernels: smem (G <= block cap, cooperative preload)
-// and global fallback.
+// Block-tier cooperative kernels:
+//   node_grouped_block_smem_kernel    - G <= block cap, smem panel preload
+//   node_grouped_block_global_kernel  - G >  block cap, global fallback
 //
-//   task 8 done -> node_grouped_block_smem_kernel   (real cooperative body)
-//   task 9 done -> node_grouped_block_global_kernel (real cooperative body)
-//
-// Both kernels service non-Node2Vec pickers only. The dispatcher gates
-// Node2Vec out of the cooperative pipeline entirely (prev_node-dependent
-// sampling can't share a panel).
+// Both service non-Node2Vec pickers only; the dispatcher gates Node2Vec
+// out of the cooperative pipeline entirely (prev_node-dependent sampling
+// can't share a panel).
 
-#include "common.cuh"    // NodeDirPtrs, resolve_node_dir_ptrs
-#include "per_walk.cuh"  // advance_one_walk, philox offset helper
+#include "common.cuh"    // NodeDirPtrs, resolve_node_dir_ptrs,
+                         // sample_edge_and_add_hop
+#include "per_walk.cuh"  // step_kernel_philox_offset (+ transitive philox/utils)
 #include "../../../common/picker_dispatch.cuh"
 #include "../../../common/warp_coop_config.cuh"
 
@@ -21,28 +20,29 @@ namespace temporal_random_walk {
 #ifdef HAS_CUDA
 
 // ==========================================================================
-// Block-smem cooperative kernel (task 8 — real body).
+// Block-smem cooperative kernel.
 //
 // One block per block-task, TRW_NODE_GROUPED_COOP_BLOCK_THREADS (256) threads
 // per block. The block cooperatively preloads the per-node G-sized panel
 // (s_group_offsets[G] and s_first_ts[G]) into shared memory once, then all
-// 256 threads stride through the task's walk_count walks sampling edges
-// against the smem panel.
+// 256 threads stride through the task's walks sampling edges against it.
 //
-// Smem layout (dynamic `extern __shared__`, size chosen at launch):
-//   [ 0 ..  16)                    s_header[4]: node_id, walk_start,
-//                                                walk_count, G
-//   [16 ..  24)                    s_node_edge_end (= node_edge_offsets[node+1])
-//   [24 ..  64)                    alignment padding
-//   [64 .. 64 + G*8)               s_group_offsets (size_t)
-//   [.. + G*8)                     s_first_ts     (int64_t)
-// Sizing uses TRW_NODE_GROUPED_G_CAP_BLOCK_{INDEX,WEIGHTED} depending on
-// picker class; the scheduler's G-partition guarantees G <= cap.
+// Smem layout (dynamic `extern __shared__`, size = 64B pad + G*(size_t + int64_t)):
+//   [ 0 ..  64)              alignment pad (keeps smem panel 16B-aligned)
+//   [64 ..  64 + G*8)        s_group_offsets (size_t)
+//   [.. + G*8)               s_first_ts      (int64_t)
+// Sizing uses TRW_NODE_GROUPED_G_CAP_BLOCK_{INDEX,WEIGHTED} by picker class;
+// the scheduler's G-partition guarantees G <= cap.
 //
-// Weighted pickers still read the cumulative-weight array from global —
-// preloading it into smem would require reworking the CDF offset math;
-// left as a follow-up optimization. The main smem win is the binary-search
-// dependent-load chain, which is driven by first_ts.
+// Task-level scalars (node_id, walk_start, walk_count, G, node_edge_end,
+// node_group_begin) are NOT broadcast through smem — task_id is block-
+// uniform so every thread reading them from global coalesces into a single
+// broadcast load. Saves one __syncthreads and one smem header.
+//
+// Weighted pickers still read the cumulative-weight array from global;
+// preloading cum_weights would require reworking the CDF offset math and
+// is deferred. The main smem win is killing the double-indirect load
+// chain on every binary-search probe — driven by first_ts.
 // ==========================================================================
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_block_smem_kernel(
@@ -61,69 +61,48 @@ __global__ void node_grouped_block_smem_kernel(
     const int task_id = blockIdx.x;
     if (task_id >= *num_tasks_ptr) return;
 
-    // Resolve direction-dependent per-graph pointers once per task.
     const auto ptrs = resolve_node_dir_ptrs<IsDirected, Forward>(view);
 
-    // Smem layout.
-    constexpr bool kIsIndexPicker =
-        random_pickers::is_index_based_picker_v<EdgePickerType>;
-    constexpr int kGCap = kIsIndexPicker
-        ? TRW_NODE_GROUPED_G_CAP_BLOCK_INDEX
-        : TRW_NODE_GROUPED_G_CAP_BLOCK_WEIGHTED;
+    // Task-level scalars: task_id is block-uniform -> each global load
+    // broadcasts to all 256 threads via one memory transaction.
+    const int    node_id          = node_walk_nodes[task_id];
+    const int    walk_start       = node_walk_starts[task_id];
+    const int    walk_count       = node_walk_counts[task_id];
+    const size_t node_group_begin = ptrs.count_ts_group_per_node[node_id];
+    const size_t node_group_end   = ptrs.count_ts_group_per_node[node_id + 1];
+    const int    G                = static_cast<int>(node_group_end - node_group_begin);
+    const size_t node_edge_end    = ptrs.node_edge_offsets[node_id + 1];
+
+    // Smem panel layout.
+    constexpr int kGCap = coop_block_smem_g_cap<EdgePickerType>();
     constexpr size_t kHeaderBytes        = 64;
     constexpr size_t kGroupOffsetsOffset = kHeaderBytes;
     constexpr size_t kFirstTsOffset      =
         kGroupOffsetsOffset + sizeof(size_t) * kGCap;
 
     extern __shared__ unsigned char s_panel[];
-    int* const      s_header        = reinterpret_cast<int*>(s_panel);
-    size_t* const   s_node_edge_end = reinterpret_cast<size_t*>(s_panel + 16);
-    size_t* const   s_group_offsets =
+    size_t* const  s_group_offsets =
         reinterpret_cast<size_t*>(s_panel + kGroupOffsetsOffset);
-    int64_t* const  s_first_ts      =
+    int64_t* const s_first_ts      =
         reinterpret_cast<int64_t*>(s_panel + kFirstTsOffset);
 
-    // Stage 0: thread-0 broadcast of task header.
-    if (threadIdx.x == 0) {
-        const int node_id    = node_walk_nodes[task_id];
-        const int walk_start = node_walk_starts[task_id];
-        const int walk_count = node_walk_counts[task_id];
-        const size_t node_group_begin = ptrs.count_ts_group_per_node[node_id];
-        const size_t node_group_end   = ptrs.count_ts_group_per_node[node_id + 1];
-        s_header[0] = node_id;
-        s_header[1] = walk_start;
-        s_header[2] = walk_count;
-        s_header[3] = static_cast<int>(node_group_end - node_group_begin);
-        *s_node_edge_end = ptrs.node_edge_offsets[node_id + 1];
-    }
-    __syncthreads();
-
-    const int node_id    = s_header[0];
-    const int walk_start = s_header[1];
-    const int walk_count = s_header[2];
-    const int G          = s_header[3];
-    const size_t node_edge_end_global = *s_node_edge_end;
-    const size_t node_group_begin = ptrs.count_ts_group_per_node[node_id];
-
     // Stage 1: cooperative preload of the G-sized panel. Stride by
-    // blockDim.x. Each thread handles ⌈G/blockDim.x⌉ entries.
+    // blockDim.x — each thread handles ⌈G/blockDim.x⌉ entries.
     for (int p = threadIdx.x; p < G; p += blockDim.x) {
         const size_t ts_group_offset =
             ptrs.node_ts_groups_offsets[node_group_begin + p];
         s_group_offsets[p] = ts_group_offset;
-        // Preload first_ts to kill the double-indirect load on every
-        // binary-search probe in stage 2's find_group_pos_slice.
+        // Preload first_ts to kill the double-indirect load chain on
+        // every binary-search probe in stage 2a.
         s_first_ts[p] =
             view.timestamps[ptrs.node_ts_sorted_indices[ts_group_offset]];
     }
     __syncthreads();
 
-    // Stage 2: stride loop over walks in this task's slice.
+    // Stage 2: stride loop over this task's walks.
     for (int k = threadIdx.x; k < walk_count; k += blockDim.x) {
-        const int walk_idx_int = sorted_walk_idx[walk_start + k];
-        if (walk_idx_int < 0) continue;
-
-        const size_t walk_idx = static_cast<size_t>(walk_idx_int);
+        const size_t walk_idx =
+            static_cast<size_t>(sorted_walk_idx[walk_start + k]);
         const size_t offset   =
             walk_idx * static_cast<size_t>(max_walk_len)
             + static_cast<size_t>(step_number);
@@ -135,61 +114,33 @@ __global__ void node_grouped_block_smem_kernel(
         const double r_group = draw_u01_philox(rng);
         const double r_edge  = draw_u01_philox(rng);
 
-        // Stage 2a: find group position using the smem panel. first_ts
-        // is non-null -> single-load comparator (vs the global path's
-        // double indirect).
+        // Stage 2a: group pick against the smem panel (first_ts non-null
+        // -> fast-path single-load comparator).
         const long local_pos = temporal_graph::find_group_pos_slice<Forward, EdgePickerType>(
-            s_group_offsets,
-            s_first_ts,
+            s_group_offsets, s_first_ts,
             /*node_ts_sorted_indices=*/nullptr,
             /*view_timestamps=*/nullptr,
             ptrs.weights, ptrs.weights_size,
-            node_group_begin,
-            G, last_ts, r_group);
+            node_group_begin, G, last_ts, r_group);
         if (local_pos == -1) continue;
 
-        // Stage 2b: group -> edge range via smem offsets.
-        const size_t valid_edge_start = s_group_offsets[local_pos];
-        const size_t valid_edge_end =
-            (local_pos + 1 < G)
-                ? s_group_offsets[local_pos + 1]
-                : node_edge_end_global;
-        if (valid_edge_start >= valid_edge_end) continue;
-
-        // Stage 2c: uniform random edge in the group; fetch endpoint +
-        // timestamp from the global view.
-        const long edge_idx = static_cast<long>(ptrs.node_ts_sorted_indices[
-            valid_edge_start +
-            generate_random_number_bounded_by(
-                static_cast<int>(valid_edge_end - valid_edge_start),
-                r_edge)]);
-
-        if constexpr (IsDirected) {
-            walk_set.add_hop(walk_idx,
-                             Forward ? view.targets[edge_idx]
-                                     : view.sources[edge_idx],
-                             view.timestamps[edge_idx],
-                             edge_idx);
-        } else {
-            const int next_node = pick_other_number(
-                view.sources[edge_idx], view.targets[edge_idx], node_id);
-            walk_set.add_hop(walk_idx, next_node,
-                             view.timestamps[edge_idx], edge_idx);
-        }
+        // Stage 2b+c: resolve edge range via smem offsets, pick edge,
+        // write the hop. Shared helper in common.cuh.
+        sample_edge_and_add_hop<IsDirected, Forward>(
+            view, walk_set, ptrs,
+            s_group_offsets, local_pos, G, node_edge_end, node_id,
+            walk_idx, r_edge);
     }
 }
 
-// Dynamic smem size for block-smem: 64-byte header + G_CAP entries each of
-// (size_t + int64_t) = 16 bytes. Chosen at compile time from the picker
-// class so the launch matches the kernel's layout.
+// Dynamic smem size for block-smem: 64-byte alignment pad + G_CAP entries
+// each of (size_t + int64_t) = 16 bytes. Chosen at compile time from the
+// picker class so the launch matches the kernel's panel layout.
 template <RandomPickerType PickerType>
 HOST constexpr inline size_t block_smem_dynamic_smem_bytes() {
-    constexpr bool kIsIndexPicker =
-        random_pickers::is_index_based_picker_v<PickerType>;
-    constexpr size_t kGCap = kIsIndexPicker
-        ? static_cast<size_t>(TRW_NODE_GROUPED_G_CAP_BLOCK_INDEX)
-        : static_cast<size_t>(TRW_NODE_GROUPED_G_CAP_BLOCK_WEIGHTED);
-    return size_t{64} + sizeof(size_t) * kGCap + sizeof(int64_t) * kGCap;
+    constexpr size_t kGCap = static_cast<size_t>(
+        coop_block_smem_g_cap<PickerType>());
+    return size_t{64} + (sizeof(size_t) + sizeof(int64_t)) * kGCap;
 }
 
 template <bool IsDirected, bool Forward>
@@ -223,22 +174,19 @@ inline void dispatch_node_grouped_block_smem_kernel(
 }
 
 // ==========================================================================
-// Block-global cooperative kernel (task 9 — real body).
+// Block-global cooperative kernel.
 //
-// Same task-consumption shape and launch topology as block-smem: one block
-// per block-task, TRW_NODE_GROUPED_COOP_BLOCK_THREADS (256) threads per
-// block. The difference from block-smem is the lack of a per-node panel
-// preload — this kernel services nodes with G > TRW_NODE_GROUPED_G_CAP_BLOCK_*
-// whose panel wouldn't fit in smem. Each thread's binary search in
-// find_group_pos_slice runs against the GLOBAL
-// node_ts_groups_offsets[node_group_begin ..] slice with the double-indirect
-// comparator (same as the solo kernel), but we still get the cooperative
-// win: 256 threads per task share L1/L2 residency of the per-node arrays,
-// instead of each walk paying its own scatter read on a different node.
+// Same launch topology as block-smem (one block per block-task, 256 threads
+// per block); services nodes with G > TRW_NODE_GROUPED_G_CAP_BLOCK_* whose
+// panel wouldn't fit in smem. Binary search runs against the GLOBAL
+// node_ts_groups_offsets slice via find_group_pos_slice's double-indirect
+// comparator. The cooperative win is L1/L2 cache residency of the per-node
+// arrays shared across the 256 threads — each walk does NOT pay its own
+// scatter read on a different node, as it would in solo.
 //
-// A small static-smem header (s_header + 2 size_t scalars) avoids having
-// every thread refetch task-level scalars from global for every walk.
-// The cum-weights array for weighted pickers stays global.
+// No broadcast stage: task_id is block-uniform, so every thread's read of
+// node_walk_nodes[task_id] etc. coalesces into a broadcast load. No smem,
+// no __syncthreads. The per-walk work is entirely independent.
 // ==========================================================================
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_block_global_kernel(
@@ -257,46 +205,26 @@ __global__ void node_grouped_block_global_kernel(
     const int task_id = blockIdx.x;
     if (task_id >= *num_tasks_ptr) return;
 
-    // Resolve direction-dependent per-graph pointers once per task.
     const auto ptrs = resolve_node_dir_ptrs<IsDirected, Forward>(view);
 
-    // Static smem header — one cache line's worth, broadcast once.
-    __shared__ int    s_header[4];            // node_id, walk_start, walk_count, G
-    __shared__ size_t s_node_edge_end;
-    __shared__ size_t s_node_group_begin;
+    // Task-level scalars. Broadcast loads — task_id is block-uniform.
+    const int    node_id          = node_walk_nodes[task_id];
+    const int    walk_start       = node_walk_starts[task_id];
+    const int    walk_count       = node_walk_counts[task_id];
+    const size_t node_group_begin = ptrs.count_ts_group_per_node[node_id];
+    const size_t node_group_end   = ptrs.count_ts_group_per_node[node_id + 1];
+    const int    G                = static_cast<int>(node_group_end - node_group_begin);
+    const size_t node_edge_end    = ptrs.node_edge_offsets[node_id + 1];
 
-    if (threadIdx.x == 0) {
-        const int node_id    = node_walk_nodes[task_id];
-        const int walk_start = node_walk_starts[task_id];
-        const int walk_count = node_walk_counts[task_id];
-        const size_t node_group_begin = ptrs.count_ts_group_per_node[node_id];
-        const size_t node_group_end   = ptrs.count_ts_group_per_node[node_id + 1];
-        s_header[0] = node_id;
-        s_header[1] = walk_start;
-        s_header[2] = walk_count;
-        s_header[3] = static_cast<int>(node_group_end - node_group_begin);
-        s_node_edge_end    = ptrs.node_edge_offsets[node_id + 1];
-        s_node_group_begin = node_group_begin;
-    }
-    __syncthreads();
-
-    const int    node_id         = s_header[0];
-    const int    walk_start      = s_header[1];
-    const int    walk_count      = s_header[2];
-    const int    G               = s_header[3];
-    const size_t node_edge_end_g = s_node_edge_end;
-    const size_t node_group_begin = s_node_group_begin;
-
-    // Slice pointer into the GLOBAL ts-group-offsets array. No preload —
-    // each binary-search probe reads this via the double-indirect
-    // comparator (view_timestamps[node_ts_sorted_indices[offsets[p]]]).
-    const size_t* group_offsets_slice = ptrs.node_ts_groups_offsets + node_group_begin;
+    // Slice pointer into the GLOBAL ts-group-offsets array. Each binary-
+    // search probe reads via the double-indirect comparator inside
+    // find_group_pos_slice (first_ts == nullptr triggers the fallback).
+    const size_t* group_offsets_slice =
+        ptrs.node_ts_groups_offsets + node_group_begin;
 
     for (int k = threadIdx.x; k < walk_count; k += blockDim.x) {
-        const int walk_idx_int = sorted_walk_idx[walk_start + k];
-        if (walk_idx_int < 0) continue;
-
-        const size_t walk_idx = static_cast<size_t>(walk_idx_int);
+        const size_t walk_idx =
+            static_cast<size_t>(sorted_walk_idx[walk_start + k]);
         const size_t offset   =
             walk_idx * static_cast<size_t>(max_walk_len)
             + static_cast<size_t>(step_number);
@@ -308,46 +236,20 @@ __global__ void node_grouped_block_global_kernel(
         const double r_group = draw_u01_philox(rng);
         const double r_edge  = draw_u01_philox(rng);
 
-        // Stage 1: group pick via the global double-indirect comparator
-        // (first_ts == nullptr signals the fallback path inside
-        // find_group_pos_slice). Slice pointer addresses the global
-        // ts-group-offsets window for this node.
+        // Stage 1: group pick via the global double-indirect comparator.
         const long local_pos = temporal_graph::find_group_pos_slice<Forward, EdgePickerType>(
             group_offsets_slice,
             /*first_ts=*/nullptr,
-            ptrs.node_ts_sorted_indices,
-            view.timestamps,
+            ptrs.node_ts_sorted_indices, view.timestamps,
             ptrs.weights, ptrs.weights_size,
-            node_group_begin,
-            G, last_ts, r_group);
+            node_group_begin, G, last_ts, r_group);
         if (local_pos == -1) continue;
 
-        // Stage 2: edge range via the same global slice pointer.
-        const size_t valid_edge_start = group_offsets_slice[local_pos];
-        const size_t valid_edge_end =
-            (local_pos + 1 < G)
-                ? group_offsets_slice[local_pos + 1]
-                : node_edge_end_g;
-        if (valid_edge_start >= valid_edge_end) continue;
-
-        const long edge_idx = static_cast<long>(ptrs.node_ts_sorted_indices[
-            valid_edge_start +
-            generate_random_number_bounded_by(
-                static_cast<int>(valid_edge_end - valid_edge_start),
-                r_edge)]);
-
-        if constexpr (IsDirected) {
-            walk_set.add_hop(walk_idx,
-                             Forward ? view.targets[edge_idx]
-                                     : view.sources[edge_idx],
-                             view.timestamps[edge_idx],
-                             edge_idx);
-        } else {
-            const int next_node = pick_other_number(
-                view.sources[edge_idx], view.targets[edge_idx], node_id);
-            walk_set.add_hop(walk_idx, next_node,
-                             view.timestamps[edge_idx], edge_idx);
-        }
+        // Stage 2b+c: edge range (from the same global slice) + pick + hop.
+        sample_edge_and_add_hop<IsDirected, Forward>(
+            view, walk_set, ptrs,
+            group_offsets_slice, local_pos, G, node_edge_end, node_id,
+            walk_idx, r_edge);
     }
 }
 
