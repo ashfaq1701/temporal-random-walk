@@ -46,26 +46,29 @@ public:
         const float* edge_features = nullptr,
         size_t feature_dim = 0) const;
 
+    // kernel_launch_type defaults to DEFAULT_KERNEL_LAUNCH_TYPE; see
+    // enums.cuh. Same for get_random_walks_and_times_for_last_batch and
+    // get_random_walks_and_times below.
     WalksWithEdgeFeaturesHost get_random_walks_and_times_for_all_nodes(
         int max_walk_len, const RandomPickerType* walk_bias,
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK) const;
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE) const;
 
     WalksWithEdgeFeaturesHost get_random_walks_and_times_for_last_batch(
         int max_walk_len, const RandomPickerType* walk_bias,
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK) const;
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE) const;
 
     WalksWithEdgeFeaturesHost get_random_walks_and_times(
         int max_walk_len, const RandomPickerType* walk_bias,
         int num_walks_total,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK) const;
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE) const;
 
     void set_node_features(
         const int* node_ids, size_t num_nodes,

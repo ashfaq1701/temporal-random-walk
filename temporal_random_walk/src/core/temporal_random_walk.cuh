@@ -99,13 +99,16 @@ public:
         const std::vector<std::tuple<int, int, int64_t>>& edges,
         const float* edge_features = nullptr, size_t feature_dim = 0);
 
+    // kernel_launch_type defaults to DEFAULT_KERNEL_LAUNCH_TYPE; see
+    // enums.cuh. Same for the other two walk entrypoints below and for
+    // the namespace-free _cuda overloads further down.
     WalksWithEdgeFeaturesHost get_random_walks_and_times_for_all_nodes(
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK);
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE);
 
     WalksWithEdgeFeaturesHost get_random_walks_and_times_for_last_batch(
         int max_walk_len,
@@ -113,7 +116,7 @@ public:
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK);
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE);
 
     WalksWithEdgeFeaturesHost get_random_walks_and_times(
         int max_walk_len,
@@ -121,7 +124,7 @@ public:
         int num_walks_total,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK);
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE);
 
     void set_node_features(
         const int* node_ids, size_t num_nodes,
@@ -203,7 +206,7 @@ namespace temporal_random_walk {
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK);
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE);
 
     HOST WalksWithEdgeFeaturesHost get_random_walks_and_times_for_last_batch_cuda(
         core::TemporalRandomWalk* trw,
@@ -212,7 +215,7 @@ namespace temporal_random_walk {
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK);
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE);
 
     HOST WalksWithEdgeFeaturesHost get_random_walks_and_times_cuda(
         core::TemporalRandomWalk* trw,
@@ -221,7 +224,7 @@ namespace temporal_random_walk {
         int num_walks_total,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = KernelLaunchType::FULL_WALK);
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE);
 #endif
 
     HOST size_t get_memory_used(const core::TemporalRandomWalk* trw);
