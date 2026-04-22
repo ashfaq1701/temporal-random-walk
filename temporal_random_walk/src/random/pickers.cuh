@@ -107,19 +107,30 @@ namespace random_pickers {
     // variants that differed only in std::lower_bound vs cuda::std::lower_bound;
     // this version does a manual binary search so the same body works on
     // both.
+    //
+    // slice_start marks the start of the piecewise-CDF segment that
+    // [group_start, group_end) lives in. Global / single-CDF callers pass 0
+    // (default) — the prefix before group_start is weights[group_start - 1],
+    // which is meaningful because the whole array is one monotonic CDF.
+    // Per-node (piecewise) CDF callers pass node_group_begin — when
+    // group_start == slice_start, the prefix is 0 (not weights[group_start-1],
+    // which would be the previous segment's total, garbage for this segment).
+    // Without this, any weighted pick starting exactly at a node boundary
+    // degenerates to "always pick the last group of the node."
     HOST DEVICE inline int pick_random_exponential_weights(
         const double* weights,
         const size_t weights_size,
         const size_t group_start,
         const size_t group_end,
-        const double random_number) {
+        const double random_number,
+        const size_t slice_start = 0) {
         if (group_start >= group_end || group_end > weights_size) {
             return -1;
         }
 
         // Start and end cumulative sums.
         double start_sum = 0.0;
-        if (group_start > 0) {
+        if (group_start > slice_start) {
             start_sum = weights[group_start - 1];
         }
         const double end_sum = weights[group_end - 1];
@@ -184,19 +195,24 @@ namespace random_pickers {
         }
     }
 
+    // slice_start: see pick_random_exponential_weights. Default 0 covers
+    // global / single-CDF callers; per-node (piecewise) callers must pass
+    // node_group_begin.
     HOST DEVICE inline int pick_using_weight_based_picker(
         const RandomPickerType random_picker,
         const double* weights,
         const size_t weights_size,
         const size_t group_start,
         const size_t group_end,
-        const double random_number) {
+        const double random_number,
+        const size_t slice_start = 0) {
         if (random_picker != RandomPickerType::ExponentialWeight &&
             random_picker != RandomPickerType::TemporalNode2Vec) {
             return -1;
         }
         return pick_random_exponential_weights(
-            weights, weights_size, group_start, group_end, random_number);
+            weights, weights_size, group_start, group_end, random_number,
+            slice_start);
     }
 }
 

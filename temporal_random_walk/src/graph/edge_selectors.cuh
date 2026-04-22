@@ -169,9 +169,14 @@ namespace temporal_graph {
                 slice_global_begin + static_cast<size_t>(valid_begin);
             const size_t g_end   =
                 slice_global_begin + static_cast<size_t>(valid_end);
+            // Per-node (piecewise) CDF — the cum array resets at each node
+            // boundary and ends at 1.0 normalized. Pass slice_global_begin
+            // so the picker knows to treat g_begin == slice_global_begin as
+            // "prefix is 0" instead of reading the previous node's total.
             const int global_pos = random_pickers::pick_using_weight_based_picker(
                 PickerType, cum_weights, cum_weights_size,
-                g_begin, g_end, r_group);
+                g_begin, g_end, r_group,
+                /*slice_start=*/slice_global_begin);
             if (global_pos == -1) return -1;
             return static_cast<long>(global_pos) -
                    static_cast<long>(slice_global_begin);
@@ -379,11 +384,15 @@ namespace temporal_graph {
             const size_t valid_end   = node_group_begin + static_cast<size_t>(local_end);
 
             if (prev_node == -1) {
+                // Per-node piecewise CDF; pass node_group_begin so the
+                // picker treats valid_begin == node_group_begin as
+                // "prefix is 0" instead of reading the previous node's total.
                 group_pos = random_pickers::pick_using_weight_based_picker(
                     RandomPickerType::ExponentialWeight,
                     weights, weights_size,
                     valid_begin, valid_end,
-                    group_selector_rand_num);
+                    group_selector_rand_num,
+                    /*slice_start=*/node_group_begin);
             } else {
                 group_pos = pick_random_temporal_node2vec_host<Forward, IsDirected>(
                     view, node_id, prev_node,
@@ -699,11 +708,15 @@ namespace temporal_graph {
             const size_t valid_end   = node_group_begin + static_cast<size_t>(local_end);
 
             if (prev_node == -1) {
+                // Per-node piecewise CDF; pass node_group_begin so the
+                // picker treats valid_begin == node_group_begin as
+                // "prefix is 0" instead of reading the previous node's total.
                 group_pos = random_pickers::pick_using_weight_based_picker(
                     RandomPickerType::ExponentialWeight,
                     weights, weights_size,
                     valid_begin, valid_end,
-                    group_selector_rand_num);
+                    group_selector_rand_num,
+                    /*slice_start=*/node_group_begin);
             } else {
                 group_pos = pick_random_temporal_node2vec_device<Forward, IsDirected>(
                     view, node_id, prev_node,
