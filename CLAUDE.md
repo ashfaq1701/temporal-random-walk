@@ -281,19 +281,20 @@ the progress log; §5's kernel matrix is the target state.
   per-sub-task atomic is needed. Warp tier is skipped (W ≤ T_BLOCK = 255
   ≪ cap). The scaffold kernels iterate ≤ cap walks per thread now; real
   coop bodies (tasks 8/9) get at most 8192 walks per block-task.
-- Block-smem cooperative body is live (task 8). One block per block-task,
-  256 threads per block; thread 0 broadcasts the task header into smem,
-  all threads cooperatively preload s_group_offsets[G] and s_first_ts[G]
-  (G-sized slice of the node's per-timestamp-group metadata), then stride
-  over walks. Stage-1 binary search runs against the smem-preloaded
-  first_ts, killing the double-indirect load chain. Stage-2 edge fetch
-  stays global. Weighted pickers still read cum_weights from global
-  (preloading it into smem would require CDF offset rework; deferred).
-  Node2Vec tasks short-circuit to scaffold-style per-walk processing
-  because per-walk prev_node makes the CDF unshareable.
-- warp_smem, warp_global, block_global bodies are still scaffolds
-  (per-thread-per-task loops calling advance_one_walk). Real cooperative
-  bodies in tasks 9 (block_global), 10 (warp_smem), 11 (warp_global).
+- Block-smem and block-global cooperative bodies are live (tasks 8, 9).
+  Both run one block per block-task, 256 threads per block. Block-smem
+  cooperatively preloads s_group_offsets[G] and s_first_ts[G] into smem
+  before the stride loop (kills the double-indirect load chain in the
+  stage-1 binary search). Block-global — used when the tier's G exceeds
+  TRW_NODE_GROUPED_G_CAP_BLOCK_* — skips the preload and binary-searches
+  against global arrays via find_group_pos_slice's double-indirect
+  fallback, but still cooperatively parallelizes walks across the 256
+  threads of a block (L1/L2 residency shared across co-located walks).
+  Both use a small static-smem header to broadcast node-level scalars,
+  and both short-circuit Node2Vec to scaffold-style per-walk processing.
+- warp_smem and warp_global bodies are still scaffolds (per-thread-per-task
+  loops calling advance_one_walk). Real cooperative bodies in tasks 10
+  (warp_smem) and 11 (warp_global).
 
 ## 7. Architecture guardrails
 
@@ -522,10 +523,36 @@ FULL_WALK) because each walk's Philox seed depends only on
 `(walk_idx, step, base_seed)` and the sampling logic is mathematically
 equivalent.
 
-**Task 9 — Block-global body.** Same task-consumption shape and stride loop
-as task 8, without the smem panel. Binary search goes against global arrays
-— same access pattern as solo, inside a cooperative stride loop.
-compute-sanitizer + ncu report.
+**Task 9 — Block-global body.** ✓ Done. Same launch topology as block-smem
+(one block per block-task, 256 threads per block) and the same stride
+loop over the task's walks. Differences from block-smem:
+
+- No cooperative panel preload. The tier services nodes with
+  G > TRW_NODE_GROUPED_G_CAP_BLOCK_{INDEX,WEIGHTED} whose metadata
+  wouldn't fit in the block's smem budget anyway.
+- `find_group_pos_slice` is called with `first_ts = nullptr`, which
+  selects the double-indirect comparator (same access pattern as solo).
+  The group-offsets slice pointer addresses global memory directly.
+- Stage 2's edge-range resolution reads the same global slice; no smem
+  offsets array to consult.
+
+A small static-smem header (s_header[4] + 2 size_t scalars) broadcasts
+`node_id`, `walk_start`, `walk_count`, `G`, `node_edge_end`, and
+`node_group_begin` once per task so the 256 threads don't each refetch
+task-level scalars from global on every walk.
+
+Node2Vec short-circuit is the same shape as block-smem's (per-walk
+`advance_one_walk` distributed across the block's threads).
+
+Dispatcher's block_global launch switches from the scaffold's
+thread-per-task grid to block-per-task:
+`grid = num_block_global_tasks`, `block = COOP_BLOCK_THREADS (256)`.
+
+Still no dynamic smem at launch — all smem is statically declared inside
+the kernel. Tests: 289/289 pass (distribution unchanged — the kernel
+produces the same walk each walk_idx would have gotten in the solo
+path since Philox keying is per-walk and the sampling math is
+equivalent).
 
 **Task 10 — Warp-smem body.** Warp equivalent of task 8: 8 warps per block
 (`TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK`), per-warp 5.5 KB panel slice

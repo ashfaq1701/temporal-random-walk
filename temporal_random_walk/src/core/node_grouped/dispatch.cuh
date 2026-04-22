@@ -170,12 +170,15 @@ inline void dispatch_node_grouped_kernel(
                 }
 
                 // Block-global tier: W > T_BLOCK and G > block cap.
-                // Scaffold body (per-thread-per-task) until task 9 lands.
+                // Real cooperative body (task 9): one block per task, 256
+                // threads per block. No smem panel (G doesn't fit); the
+                // in-kernel binary search runs against global arrays via
+                // find_group_pos_slice's double-indirect fallback.
                 if (step_outs.block_global.num_tasks_host > 0) {
-                    const size_t blocks =
-                        (static_cast<size_t>(step_outs.block_global.num_tasks_host)
-                         + block_dim.x - 1) / block_dim.x;
-                    const dim3 block_global_grid(static_cast<unsigned>(blocks));
+                    const dim3 block_global_grid(
+                        static_cast<unsigned>(step_outs.block_global.num_tasks_host));
+                    const dim3 block_global_block(
+                        static_cast<unsigned>(TRW_NODE_GROUPED_COOP_BLOCK_THREADS));
                     dispatch_node_grouped_block_global_kernel<kDir, kFwd>(
                         view, walk_set_view,
                         step_outs.sorted_walk_idx,
@@ -185,7 +188,7 @@ inline void dispatch_node_grouped_kernel(
                         step_outs.block_global.num_tasks_device,
                         step_number, max_walk_len,
                         edge_picker_type, base_seed,
-                        block_global_grid, block_dim, stream);
+                        block_global_grid, block_global_block, stream);
                 }
             }
 
