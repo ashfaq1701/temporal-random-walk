@@ -5,7 +5,7 @@
 // preload) and global fallback.
 //
 //   task 10 done -> node_grouped_warp_smem_kernel   (real cooperative body)
-//   task 11 TODO -> node_grouped_warp_global_kernel (currently scaffold)
+//   task 11 done -> node_grouped_warp_global_kernel (real cooperative body)
 
 #include "common.cuh"    // NodeDirPtrs, resolve_node_dir_ptrs
 #include "per_walk.cuh"  // advance_one_walk, philox offset helper
@@ -270,14 +270,25 @@ inline void dispatch_node_grouped_warp_smem_kernel(
 }
 
 // ==========================================================================
-// Warp-global cooperative kernel (task 11 — scaffold).
+// Warp-global cooperative kernel (task 11 — real body).
 //
-// Services warp tasks whose G exceeds TRW_NODE_GROUPED_G_CAP_WARP_*. The
-// scaffold runs one thread per task looping advance_one_walk. Real
-// cooperative body lands with task 11 — warp equivalent of block-global:
-// 8 warps/block, one task per warp, no panel preload, double-indirect
-// binary search against global arrays via find_group_pos_slice's
-// fallback path.
+// Warp equivalent of block-global (task 9): same launch topology as
+// warp-smem (8 warps/block, one task per warp), no panel preload. Each
+// warp services a node whose G exceeds TRW_NODE_GROUPED_G_CAP_WARP_*,
+// so the panel wouldn't fit in the per-warp 5.5 KB slice. Binary search
+// runs against the GLOBAL node_ts_groups_offsets slice via
+// find_group_pos_slice's double-indirect comparator (first_ts=nullptr),
+// but we still get the cooperative win — 32 lanes per task share L1/L2
+// residency of the per-node arrays instead of each walk paying its own
+// scatter read across different nodes.
+//
+// Smem: only a tiny static header per warp (one int[4] + 2 size_t per
+// warp × 8 warps ≈ 256 B/block) so the 32 lanes don't each refetch
+// task-level scalars from global on every walk. No dynamic smem.
+//
+// Sync discipline mirrors warp-smem: __syncwarp() only, never
+// __syncthreads(). Partial-last-block warps return all 32 lanes
+// together at the task-id guard before hitting any sync.
 // ==========================================================================
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_warp_global_kernel(
@@ -291,17 +302,128 @@ __global__ void node_grouped_warp_global_kernel(
     const int step_number,
     const int max_walk_len,
     const uint64_t base_seed) {
-    // SCAFFOLD (task 3): per-node sequential loop. Real warp-global body in task 11.
-    (void)node_walk_nodes;  // unused in the scaffold; task 11 consumes it.
-    const int t = blockIdx.x * blockDim.x + threadIdx.x;
-    if (t >= *num_tasks_ptr) return;
 
-    const int walk_start = node_walk_starts[t];
-    const int walk_count = node_walk_counts[t];
-    for (int k = 0; k < walk_count; ++k) {
-        advance_one_walk<IsDirected, Forward, EdgePickerType>(
-            view, walk_set, sorted_walk_idx[walk_start + k],
-            step_number, max_walk_len, base_seed);
+    if (step_number >= max_walk_len - 1) return;
+
+    const int warp_id = static_cast<int>(threadIdx.x >> 5);
+    const int lane_id = static_cast<int>(threadIdx.x & 31u);
+    const int task_id =
+        static_cast<int>(blockIdx.x) * TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK
+        + warp_id;
+
+    if (task_id >= *num_tasks_ptr) return;
+
+    // Node2Vec: per-walk prev_node bias precludes cooperative state;
+    // distribute walks across this warp's 32 lanes and fall through
+    // advance_one_walk.
+    if constexpr (EdgePickerType == RandomPickerType::TemporalNode2Vec) {
+        const int walk_start = node_walk_starts[task_id];
+        const int walk_count = node_walk_counts[task_id];
+        for (int k = lane_id; k < walk_count; k += 32) {
+            advance_one_walk<IsDirected, Forward, EdgePickerType>(
+                view, walk_set, sorted_walk_idx[walk_start + k],
+                step_number, max_walk_len, base_seed);
+        }
+        return;
+    }
+
+    // Resolve direction-dependent per-graph pointers once per task.
+    const auto ptrs = resolve_node_dir_ptrs<IsDirected, Forward>(view);
+
+    // Static smem header, per warp. 8 warps × (16 + 8 + 8) = 256 B/block.
+    __shared__ int    s_header[TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK][4];
+    __shared__ size_t s_node_edge_end[TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK];
+    __shared__ size_t s_node_group_begin[TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK];
+
+    // Stage 0: lane 0 of THIS warp broadcasts the task header via smem.
+    if (lane_id == 0) {
+        const int node_id    = node_walk_nodes[task_id];
+        const int walk_start = node_walk_starts[task_id];
+        const int walk_count = node_walk_counts[task_id];
+        const size_t node_group_begin = ptrs.count_ts_group_per_node[node_id];
+        const size_t node_group_end   = ptrs.count_ts_group_per_node[node_id + 1];
+        s_header[warp_id][0] = node_id;
+        s_header[warp_id][1] = walk_start;
+        s_header[warp_id][2] = walk_count;
+        s_header[warp_id][3] = static_cast<int>(node_group_end - node_group_begin);
+        s_node_edge_end[warp_id]    = ptrs.node_edge_offsets[node_id + 1];
+        s_node_group_begin[warp_id] = node_group_begin;
+    }
+    __syncwarp();
+
+    const int    node_id          = s_header[warp_id][0];
+    const int    walk_start       = s_header[warp_id][1];
+    const int    walk_count       = s_header[warp_id][2];
+    const int    G                = s_header[warp_id][3];
+    const size_t node_edge_end_g  = s_node_edge_end[warp_id];
+    const size_t node_group_begin = s_node_group_begin[warp_id];
+
+    // Slice pointer into the GLOBAL ts-group-offsets array. No preload —
+    // each binary-search probe reads this via the double-indirect
+    // comparator (view_timestamps[node_ts_sorted_indices[offsets[p]]]).
+    const size_t* group_offsets_slice =
+        ptrs.node_ts_groups_offsets + node_group_begin;
+
+    // Intra-warp stride over this task's walks.
+    for (int k = lane_id; k < walk_count; k += 32) {
+        const int walk_idx_int = sorted_walk_idx[walk_start + k];
+        if (walk_idx_int < 0) continue;
+
+        const size_t walk_idx = static_cast<size_t>(walk_idx_int);
+        const size_t offset   =
+            walk_idx * static_cast<size_t>(max_walk_len)
+            + static_cast<size_t>(step_number);
+        const int64_t last_ts = walk_set.timestamps[offset];
+        const int prev_node   =
+            step_number > 0 ? walk_set.nodes[offset - 1] : -1;
+
+        PhiloxState rng;
+        init_philox_state(rng, base_seed, walk_idx,
+                          step_kernel_philox_offset(step_number));
+        const double r_group = draw_u01_philox(rng);
+        const double r_edge  = draw_u01_philox(rng);
+
+        // Stage 1: group pick via the global double-indirect comparator
+        // (first_ts == nullptr signals the fallback path inside
+        // find_group_pos_slice).
+        const long local_pos = temporal_graph::find_group_pos_slice<Forward, EdgePickerType>(
+            group_offsets_slice,
+            /*first_ts=*/nullptr,
+            ptrs.node_ts_sorted_indices,
+            view.timestamps,
+            ptrs.weights, ptrs.weights_size,
+            node_group_begin,
+            G, last_ts, r_group);
+        (void)prev_node;  // Node2Vec short-circuited above; non-Node2Vec
+                          // pickers don't use prev_node.
+        if (local_pos == -1) continue;
+
+        // Stage 2: edge range via the same global slice pointer.
+        const size_t valid_edge_start = group_offsets_slice[local_pos];
+        const size_t valid_edge_end =
+            (local_pos + 1 < G)
+                ? group_offsets_slice[local_pos + 1]
+                : node_edge_end_g;
+        if (valid_edge_start >= valid_edge_end) continue;
+
+        const long edge_idx = static_cast<long>(ptrs.node_ts_sorted_indices[
+            valid_edge_start +
+            generate_random_number_bounded_by(
+                static_cast<int>(valid_edge_end - valid_edge_start),
+                r_edge)]);
+
+        if constexpr (IsDirected) {
+            walk_set.add_hop(walk_idx,
+                             Forward ? view.targets[edge_idx]
+                                     : view.sources[edge_idx],
+                             view.timestamps[edge_idx],
+                             edge_idx);
+        } else {
+            const int next_node = pick_other_number(
+                view.sources[edge_idx], view.targets[edge_idx], node_id);
+            walk_set.add_hop(walk_idx, next_node,
+                             view.timestamps[edge_idx], edge_idx);
+        }
     }
 }
 

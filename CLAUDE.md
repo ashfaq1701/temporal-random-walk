@@ -306,8 +306,17 @@ the progress log; §5's kernel matrix is the target state.
   block-wide barrier would deadlock. Binary search is per-lane against
   the warp's s_first_ts (fast-path comparator). Node2Vec short-circuits
   to per-walk processing distributed across the warp.
-- warp_global body is still a scaffold (per-thread-per-task loop calling
-  advance_one_walk). Real cooperative body in task 11.
+- Warp-global cooperative body is live (task 11). Same launch topology
+  as warp-smem (8 warps/block, one task per warp), no panel preload —
+  the tier services nodes whose G exceeds TRW_NODE_GROUPED_G_CAP_WARP_*
+  and wouldn't fit in the per-warp slice. Binary search runs against
+  the GLOBAL node_ts_groups_offsets slice via find_group_pos_slice's
+  double-indirect fallback. A tiny per-warp static smem header
+  (8 × (int[4] + 2 size_t) ≈ 256 B/block) lets lane 0 broadcast
+  node-level scalars once so the other 31 lanes don't refetch from
+  global on every walk. __syncwarp() only. Node2Vec short-circuits
+  to per-walk processing distributed across the warp. Phase III
+  (real cooperative bodies for all four tiers) is complete.
 
 ## 7. Architecture guardrails
 
@@ -603,8 +612,32 @@ runs the real cooperative body, warp equivalent of task 8:
 
 compute-sanitizer + ncu report due at phase IV.
 
-**Task 11 — Warp-global body.** Warp equivalent of task 9.
-compute-sanitizer + ncu report.
+**Task 11 — Warp-global body.** ✓ Done. `node_grouped_warp_global_kernel`
+runs the real cooperative body — warp equivalent of task 9. Same
+launch topology as warp-smem (8 warps/block, 256 threads, one task
+per warp; grid = ⌈num_warp_global_tasks / 8⌉), no panel preload. The
+tier services nodes with G > TRW_NODE_GROUPED_G_CAP_WARP_* whose
+metadata wouldn't fit in the per-warp 5.5 KB slice.
+
+- `find_group_pos_slice` is called with `first_ts = nullptr`, selecting
+  the double-indirect comparator. The group-offsets slice pointer
+  addresses global memory directly.
+- A small static per-warp smem header (int[4] + 2 size_t per warp ×
+  8 warps = 256 B/block) broadcasts node-level scalars once per task
+  so the 32 lanes don't each refetch from global on every walk.
+- Sync discipline: `__syncwarp()` only — mirrors warp-smem. Partial-
+  last-block warps return all 32 lanes together at the warp-uniform
+  task-id guard before hitting any sync.
+- Node2Vec short-circuits to per-walk processing distributed across
+  the warp's 32 lanes.
+- No dynamic smem at launch — all smem is static.
+
+Dispatcher's warp_global launch flipped from thread-per-task grid to
+block-per-8-tasks (grid = ⌈n/8⌉, block = 256).
+
+Phase III (real cooperative bodies in all four tiers: block-smem,
+block-global, warp-smem, warp-global) is complete. compute-sanitizer
++ ncu report due at Phase IV.
 
 ### Phase IV — Validation & polish
 

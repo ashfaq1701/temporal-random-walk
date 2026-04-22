@@ -9,7 +9,7 @@
 #include "kernels/per_walk.cuh"   // step_philox, pick_start_edges, advance_one_walk,
                                    // node_grouped_solo_kernel, reverse_walks_kernel.
 #include "kernels/coop_warp.cuh"   // warp_smem (real body, task 10) + warp_global
-                                   // (scaffold until task 11).
+                                   // (real body, task 11).
 #include "kernels/coop_block.cuh"  // block_smem (real body, task 8) + block_global
                                    // (real body, task 9).
 

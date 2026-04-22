@@ -138,12 +138,18 @@ inline void dispatch_node_grouped_kernel(
                 }
 
                 // Warp-global tier: W in [2, T_BLOCK] and G > warp cap.
-                // Scaffold body (per-thread-per-task) until task 11 lands.
+                // Real cooperative body (task 11): 8 warps per block, each
+                // warp services one task against global arrays (no panel
+                // preload — G wouldn't fit in the per-warp slice anyway).
                 if (step_outs.warp_global.num_tasks_host > 0) {
-                    const size_t blocks =
+                    const size_t warp_global_blocks =
                         (static_cast<size_t>(step_outs.warp_global.num_tasks_host)
-                         + block_dim.x - 1) / block_dim.x;
-                    const dim3 warp_global_grid(static_cast<unsigned>(blocks));
+                         + TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK - 1)
+                        / TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK;
+                    const dim3 warp_global_grid(
+                        static_cast<unsigned>(warp_global_blocks));
+                    const dim3 warp_global_block(
+                        static_cast<unsigned>(TRW_NODE_GROUPED_COOP_BLOCK_THREADS));
                     dispatch_node_grouped_warp_global_kernel<kDir, kFwd>(
                         view, walk_set_view,
                         step_outs.sorted_walk_idx,
@@ -153,7 +159,7 @@ inline void dispatch_node_grouped_kernel(
                         step_outs.warp_global.num_tasks_device,
                         step_number, max_walk_len,
                         edge_picker_type, base_seed,
-                        warp_global_grid, block_dim, stream);
+                        warp_global_grid, warp_global_block, stream);
                 }
 
                 // Block-smem tier: W > T_BLOCK and G <= block cap.
