@@ -61,4 +61,22 @@ inline WalkDirection walk_direction_from_string(const std::string& walk_directio
     }
 }
 
+inline KernelLaunchType kernel_launch_type_from_string(const std::string& kernel_launch_type_str)
+{
+    if (kernel_launch_type_str == "NODE_GROUPED")
+    {
+        return KernelLaunchType::NODE_GROUPED;
+    }
+    else if (kernel_launch_type_str == "FULL_WALK")
+    {
+        return KernelLaunchType::FULL_WALK;
+    }
+    else
+    {
+        throw std::invalid_argument(
+            "Invalid kernel_launch_type: " + kernel_launch_type_str
+            + ". Expected \"NODE_GROUPED\" or \"FULL_WALK\".");
+    }
+}
+
 #endif //TEMPORAL_RANDOM_WALK_HELPERS_CUH

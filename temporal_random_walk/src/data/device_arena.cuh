@@ -4,76 +4,76 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <stdexcept>
-#include <string>
 #include <new>
+#include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include "../common/macros.cuh"
 #include "../common/error_handlers.cuh"
 
 /**
- * DeviceArena — bump allocator over a single large device buffer.
+ * DeviceArena — chunked bump allocator with pointer-stable growth.
  *
- * Rationale: the rebuild pipeline in graph/temporal_graph.cu,
- * graph/edge_data.cu, graph/node_edge_index.cu allocates ~10–15 scratch
- * arrays per batch via thrust::device_vector or raw cudaMalloc. Each of
- * those allocations is a driver call. Replacing them with arena handles
- * eliminates the allocator from the per-batch path; only the occasional
- * arena growth triggers a cudaMalloc.
+ * Semantics mirror LLVM's BumpPtrAllocator, std::pmr::monotonic_buffer_resource,
+ * and protobuf's Arena: pointers returned by acquire() remain valid until
+ * reset() or destruction. Growth never invalidates prior handles — when the
+ * current chunk runs out, acquire() allocates a new chunk and keeps the old
+ * one live.
  *
- * Semantics:
- *   - acquire<T>(n) returns a pointer into the arena, 256-byte aligned
- *     (safe for all T we care about).
- *   - Allocations are NOT individually freed. reset() returns every
- *     outstanding handle's memory at once.
- *   - If a request would exceed the arena's current capacity, the arena
- *     grows to at least max(2*capacity, needed_bytes) and re-allocates.
- *     Growth invalidates any outstanding handles — caller must reset
- *     before growing in practice.
- *   - Move-only. Destructor frees the backing buffer.
+ *   acquire<T>(n)  -> pointer into some chunk, 256-byte aligned.
+ *   reset()        -> rewind cur_chunk_/offset_in_cur_ to 0. All chunks stay
+ *                     allocated and are reused on subsequent acquires.
+ *   ~DeviceArena() -> frees every chunk in one pass.
  *
- * Not yet stream-aware. Stream-ordered allocation is a later task.
+ * Memory footprint stabilizes at the peak acquire extent across all calls.
+ * First-batch acquires pay per-chunk cudaMalloc; subsequent batches are
+ * pure offset arithmetic.
+ *
+ * Not stream-aware. Plain cudaFree at destruction time waits globally for
+ * in-flight kernels; per-step reset() doesn't free anything, so no sync is
+ * required between steps on the same stream.
+ *
+ * Move-only.
  */
 class DeviceArena {
 public:
-    DeviceArena() noexcept
-        : base_(nullptr), capacity_(0), offset_(0), use_gpu_(false) {}
+    DeviceArena() noexcept : use_gpu_(false) {}
 
-    explicit DeviceArena(const bool use_gpu) noexcept
-        : base_(nullptr), capacity_(0), offset_(0), use_gpu_(use_gpu) {}
+    explicit DeviceArena(const bool use_gpu) noexcept : use_gpu_(use_gpu) {}
 
     DeviceArena(const bool use_gpu, const size_t initial_capacity_bytes)
-        : base_(nullptr), capacity_(0), offset_(0), use_gpu_(use_gpu) {
+        : use_gpu_(use_gpu) {
         if (initial_capacity_bytes > 0) {
-            grow_to(initial_capacity_bytes);
+            allocate_chunk(initial_capacity_bytes);
         }
     }
 
     ~DeviceArena() {
-        destroy();
+        destroy_all();
     }
 
-    DeviceArena(const DeviceArena&) = delete;
+    DeviceArena(const DeviceArena&)            = delete;
     DeviceArena& operator=(const DeviceArena&) = delete;
 
     DeviceArena(DeviceArena&& other) noexcept
-        : base_(other.base_), capacity_(other.capacity_),
-          offset_(other.offset_), use_gpu_(other.use_gpu_) {
-        other.base_ = nullptr;
-        other.capacity_ = 0;
-        other.offset_ = 0;
+        : chunks_(std::move(other.chunks_)),
+          cur_chunk_(other.cur_chunk_),
+          offset_in_cur_(other.offset_in_cur_),
+          use_gpu_(other.use_gpu_) {
+        other.cur_chunk_     = 0;
+        other.offset_in_cur_ = 0;
     }
 
     DeviceArena& operator=(DeviceArena&& other) noexcept {
         if (this != &other) {
-            destroy();
-            base_ = other.base_;
-            capacity_ = other.capacity_;
-            offset_ = other.offset_;
-            use_gpu_ = other.use_gpu_;
-            other.base_ = nullptr;
-            other.capacity_ = 0;
-            other.offset_ = 0;
+            destroy_all();
+            chunks_        = std::move(other.chunks_);
+            cur_chunk_     = other.cur_chunk_;
+            offset_in_cur_ = other.offset_in_cur_;
+            use_gpu_       = other.use_gpu_;
+            other.cur_chunk_     = 0;
+            other.offset_in_cur_ = 0;
         }
         return *this;
     }
@@ -83,74 +83,112 @@ public:
         if (n == 0) return nullptr;
 
         constexpr size_t kAlign = 256;
-        const size_t aligned_offset =
-            (offset_ + kAlign - 1) & ~(kAlign - 1);
         const size_t bytes_needed = n * sizeof(T);
-        const size_t new_offset = aligned_offset + bytes_needed;
 
-        if (new_offset > capacity_) {
-            const size_t min_new_cap = new_offset;
-            const size_t doubled = capacity_ == 0 ? 0 : capacity_ * 2;
-            const size_t target_cap =
-                (doubled > min_new_cap) ? doubled : min_new_cap;
-            grow_to(target_cap);
-            const size_t aligned_offset_new =
-                (offset_ + kAlign - 1) & ~(kAlign - 1);
-            offset_ = aligned_offset_new + bytes_needed;
-            return reinterpret_cast<T*>(base_ + aligned_offset_new);
+        // Fast path: fit in the current chunk.
+        if (cur_chunk_ < chunks_.size()) {
+            const size_t aligned =
+                (offset_in_cur_ + kAlign - 1) & ~(kAlign - 1);
+            const Chunk& cur = chunks_[cur_chunk_];
+            if (aligned + bytes_needed <= cur.capacity) {
+                offset_in_cur_ = aligned + bytes_needed;
+                return reinterpret_cast<T*>(cur.base + aligned);
+            }
         }
 
-        offset_ = new_offset;
-        return reinterpret_cast<T*>(base_ + aligned_offset);
+        // Current chunk is exhausted (or doesn't exist). Walk forward to
+        // the next already-allocated chunk that can hold the request at
+        // offset 0 — this reuses chunks left behind on earlier peak steps.
+        const size_t start = chunks_.empty() ? 0 : cur_chunk_ + 1;
+        for (size_t c = start; c < chunks_.size(); ++c) {
+            if (chunks_[c].capacity >= bytes_needed) {
+                cur_chunk_     = c;
+                offset_in_cur_ = bytes_needed;
+                return reinterpret_cast<T*>(chunks_[c].base);
+            }
+        }
+
+        // No existing chunk fits — allocate a new one. Double the last
+        // chunk's capacity (or use bytes_needed if larger) so the arena
+        // converges quickly on repeat calls.
+        const size_t prev_cap =
+            chunks_.empty() ? size_t{0} : chunks_.back().capacity;
+        size_t new_cap = prev_cap * 2;
+        if (new_cap < bytes_needed) new_cap = bytes_needed;
+
+        allocate_chunk(new_cap);
+        cur_chunk_     = chunks_.size() - 1;
+        offset_in_cur_ = bytes_needed;
+        return reinterpret_cast<T*>(chunks_.back().base);
     }
 
-    void reset() noexcept { offset_ = 0; }
+    void reset() noexcept {
+        cur_chunk_     = 0;
+        offset_in_cur_ = 0;
+    }
 
-    size_t capacity_bytes() const noexcept { return capacity_; }
-    size_t used_bytes()     const noexcept { return offset_; }
-    bool   is_gpu()         const noexcept { return use_gpu_; }
+    size_t capacity_bytes() const noexcept {
+        size_t total = 0;
+        for (const auto& c : chunks_) total += c.capacity;
+        return total;
+    }
+
+    size_t used_bytes() const noexcept {
+        // Capacity of every fully-crossed chunk + offset in the current.
+        // A loose metric; earlier chunks may not have been 100% consumed
+        // at the moment we moved past them.
+        size_t total = 0;
+        for (size_t i = 0; i < cur_chunk_ && i < chunks_.size(); ++i) {
+            total += chunks_[i].capacity;
+        }
+        total += offset_in_cur_;
+        return total;
+    }
+
+    bool is_gpu() const noexcept { return use_gpu_; }
 
 private:
-    void grow_to(size_t new_capacity) {
-        if (new_capacity <= capacity_) return;
+    struct Chunk {
+        char*  base;
+        size_t capacity;
+    };
 
-        char* new_base = nullptr;
+    void allocate_chunk(size_t capacity) {
+        char* base = nullptr;
 #ifdef HAS_CUDA
         if (use_gpu_) {
-            CUDA_CHECK_AND_CLEAR(cudaMalloc(&new_base, new_capacity));
+            CUDA_CHECK_AND_CLEAR(cudaMalloc(&base, capacity));
         } else
 #endif
         {
-            new_base = static_cast<char*>(std::malloc(new_capacity));
-            if (!new_base) throw std::bad_alloc();
+            base = static_cast<char*>(std::malloc(capacity));
+            if (!base) throw std::bad_alloc();
         }
-
-        destroy();
-        base_ = new_base;
-        capacity_ = new_capacity;
-        offset_ = 0;
+        chunks_.push_back(Chunk{base, capacity});
     }
 
-    void destroy() noexcept {
-        if (!base_) return;
+    void destroy_all() noexcept {
+        for (auto& c : chunks_) {
+            if (!c.base) continue;
 #ifdef HAS_CUDA
-        if (use_gpu_) {
-            cudaFree(base_);
-            cudaGetLastError();
-        } else
+            if (use_gpu_) {
+                cudaFree(c.base);
+                cudaGetLastError();
+            } else
 #endif
-        {
-            std::free(base_);
+            {
+                std::free(c.base);
+            }
         }
-        base_ = nullptr;
-        capacity_ = 0;
-        offset_ = 0;
+        chunks_.clear();
+        cur_chunk_     = 0;
+        offset_in_cur_ = 0;
     }
 
-    char*  base_;
-    size_t capacity_;
-    size_t offset_;
-    bool   use_gpu_;
+    std::vector<Chunk> chunks_;
+    size_t cur_chunk_     = 0;
+    size_t offset_in_cur_ = 0;
+    bool   use_gpu_       = false;
 };
 
 #endif // DATA_DEVICE_ARENA_CUH

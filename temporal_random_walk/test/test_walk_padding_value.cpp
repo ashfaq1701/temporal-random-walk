@@ -150,12 +150,12 @@ TYPED_TEST(WalkPaddingValueTest, FullWalkRespectsConfiguredPaddingValue) {
     expect_enough_long_walks(stats);
 }
 
-TYPED_TEST(WalkPaddingValueTest, StepBasedRespectsConfiguredPaddingValue) {
+TYPED_TEST(WalkPaddingValueTest, NodeGroupedRespectsConfiguredPaddingValue) {
     const auto walks = this->trw->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &LINEAR_PICKER, NUM_WALKS_PER_NODE,
         /*initial_edge_bias=*/nullptr,
         WalkDirection::Forward_In_Time,
-        KernelLaunchType::STEP_BASED);
+        KernelLaunchType::NODE_GROUPED);
 
     WalkStats stats{};
     ASSERT_NO_FATAL_FAILURE(assert_walks_respect_padding(

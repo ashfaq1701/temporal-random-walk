@@ -18,6 +18,7 @@ int main(int argc, char* argv[]) {
     char delimiter = ',';
     int num_rows = 1000000;
     bool use_gpu = USE_GPU;
+    KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE;
 
     if (argc > 1) {
         file_path = argv[1];
@@ -48,6 +49,25 @@ int main(int argc, char* argv[]) {
     if (argc > 4) {
         num_rows = std::stoi(argv[4]);
     }
+
+    if (argc > 5) {
+        std::string k_arg = argv[5];
+        std::transform(k_arg.begin(), k_arg.end(), k_arg.begin(),
+                       [](const unsigned char c){ return std::toupper(c); });
+        if (k_arg == "FULL_WALK") {
+            kernel_launch_type = KernelLaunchType::FULL_WALK;
+        } else if (k_arg == "NODE_GROUPED") {
+            kernel_launch_type = KernelLaunchType::NODE_GROUPED;
+        } else {
+            std::cerr << "Error: Invalid kernel_launch_type '" << argv[5]
+                      << "'. Expected FULL_WALK or NODE_GROUPED." << std::endl;
+            exit(EXIT_FAILURE);
+        }
+    }
+    std::cout << "Kernel launch type: "
+              << (kernel_launch_type == KernelLaunchType::FULL_WALK
+                      ? "FULL_WALK" : "NODE_GROUPED")
+              << std::endl;
 
     const auto edge_infos = read_edges_from_csv(file_path, num_rows, delimiter);
     std::cout << "Total edges loaded: " << edge_infos.size() << std::endl;
@@ -98,14 +118,16 @@ int main(int argc, char* argv[]) {
         &effective_step_picker,
         NUM_WALKS_TOTAL,
         &uniform_picker_type,
-        WalkDirection::Backward_In_Time);
+        WalkDirection::Backward_In_Time,
+        kernel_launch_type);
 
     const auto walks_forward_with_edge_feats_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
         80,
         &effective_step_picker,
         NUM_WALKS_TOTAL,
         &uniform_picker_type,
-        WalkDirection::Forward_In_Time);
+        WalkDirection::Forward_In_Time,
+        kernel_launch_type);
 
     auto first_half_walks_end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> first_half_walks_duration = first_half_walks_end - first_half_walks_start;
@@ -136,14 +158,16 @@ int main(int argc, char* argv[]) {
         &effective_step_picker,
         NUM_WALKS_TOTAL,
         &uniform_picker_type,
-        WalkDirection::Backward_In_Time);
+        WalkDirection::Backward_In_Time,
+        kernel_launch_type);
 
     const auto walks_forward_for_with_edge_feats_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(
         80,
         &effective_step_picker,
         NUM_WALKS_TOTAL,
         &uniform_picker_type,
-        WalkDirection::Forward_In_Time);
+        WalkDirection::Forward_In_Time,
+        kernel_launch_type);
 
     auto second_half_walks_end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> second_half_walks_duration = second_half_walks_end - second_half_walks_start;

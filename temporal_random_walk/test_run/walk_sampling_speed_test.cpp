@@ -26,7 +26,9 @@ constexpr int DEFAULT_NUM_TOTAL_WALKS = 10'000'000;
 constexpr int DEFAULT_NUM_WALKS_PER_NODE = -1;
 constexpr auto DEFAULT_EDGE_PICKER = "ExponentialIndex";
 constexpr auto DEFAULT_START_PICKER = "Uniform";
-constexpr auto DEFAULT_KERNEL_LAUNCH_TYPE = "FULL_WALK";
+// Match the library default (DEFAULT_KERNEL_LAUNCH_TYPE in enums.cuh)
+// as a string so CLI `--help` shows a realistic default.
+constexpr auto DEFAULT_KERNEL_LAUNCH_TYPE_STR = "NODE_GROUPED";
 
 // ============================
 // Performance Stats
@@ -119,7 +121,7 @@ int main(int argc, char* argv[])
         (argc > 8) ? argv[8] : DEFAULT_START_PICKER;
 
     const std::string kernel_launch_type_str =
-        (argc > 9) ? argv[9] : DEFAULT_KERNEL_LAUNCH_TYPE;
+        (argc > 9) ? argv[9] : DEFAULT_KERNEL_LAUNCH_TYPE_STR;
 
     std::cout << "Running on: " << (USE_GPU ? "GPU" : "CPU") << "\n";
     std::cout << "Graph type: "
@@ -155,7 +157,7 @@ int main(int argc, char* argv[])
     bool enable_temporal_node2vec = edge_picker_enum == RandomPickerType::TemporalNode2Vec;
     bool enable_weight_computation = edge_picker_enum == RandomPickerType::ExponentialWeight || start_picker_enum == RandomPickerType::ExponentialWeight;
 
-    KernelLaunchType kernel_launch_type = kernel_launch_type_str == "FULL_WALK" ? KernelLaunchType::FULL_WALK : KernelLaunchType::STEP_BASED;
+    KernelLaunchType kernel_launch_type = kernel_launch_type_str == "FULL_WALK" ? KernelLaunchType::FULL_WALK : KernelLaunchType::NODE_GROUPED;
 
     TemporalRandomWalk walker(
         is_directed,

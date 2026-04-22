@@ -4,56 +4,88 @@
 #ifdef HAS_CUDA
 
 #include <cub/device/device_radix_sort.cuh>
+#include <cuda_runtime.h>
 
+#include "error_handlers.cuh"
+#include "../data/buffer.cuh"
+
+/**
+ * Legacy sort-by-keys that returns values re-ordered in place. No streams,
+ * no pluggable scratch — retained for callers that haven't been moved to the
+ * Buffer/stream-aware helpers yet. Prefer cub_sort_pairs below for new work.
+ */
 template <typename KeyType, typename ValueType>
 void cub_radix_sort_values_by_keys(
-    const KeyType* d_keys,  // Input keys
-    ValueType* d_values,    // Input/output values
-    size_t num_items        // Number of items to sort
-)
+    const KeyType* d_keys,
+    ValueType* d_values,
+    size_t num_items)
 {
-    // Allocate output buffers
     KeyType* d_keys_out = nullptr;
     ValueType* d_values_out = nullptr;
     cudaMalloc(&d_keys_out, sizeof(KeyType) * num_items);
     cudaMalloc(&d_values_out, sizeof(ValueType) * num_items);
 
-    // Allocate temporary device storage for radix sort
     void* d_temp_storage = nullptr;
     size_t temp_storage_bytes = 0;
 
-    // Get required storage size - note the & before temp_storage_bytes
     cub::DeviceRadixSort::SortPairs(
-        d_temp_storage,
-        temp_storage_bytes,
-        d_keys,             // Input keys
-        d_keys_out,         // Output keys
-        d_values,           // Input values
-        d_values_out,       // Output values
-        num_items);
+        d_temp_storage, temp_storage_bytes,
+        d_keys, d_keys_out, d_values, d_values_out, num_items);
 
-    // Allocate temporary storage
     cudaMalloc(&d_temp_storage, temp_storage_bytes);
 
-    // Run sorting operation
     cub::DeviceRadixSort::SortPairs(
-        d_temp_storage,
-        temp_storage_bytes,
-        d_keys,             // Input keys
-        d_keys_out,         // Output keys
-        d_values,           // Input values
-        d_values_out,       // Output values
-        num_items);
+        d_temp_storage, temp_storage_bytes,
+        d_keys, d_keys_out, d_values, d_values_out, num_items);
 
-    // Copy results back to input arrays - only for values
-    cudaMemcpy(d_values, d_values_out, sizeof(ValueType) * num_items, cudaMemcpyDeviceToDevice);
+    cudaMemcpy(d_values, d_values_out, sizeof(ValueType) * num_items,
+               cudaMemcpyDeviceToDevice);
 
-    // Free temporary allocations
     cudaFree(d_temp_storage);
     cudaFree(d_keys_out);
     cudaFree(d_values_out);
 }
 
-#endif
+/**
+ * CUB-backed sort-by-key producing separate out buffers for keys and values.
+ * Stream-aware; scratch held in a scope-local Buffer<uint8_t>. Two-call
+ * convention: query temp bytes, then sort. `d_keys_in` is treated as const
+ * by CUB — the in-buffer is not mutated.
+ *
+ * Same signature pattern as cub_exclusive_sum etc. in cuda_scan.cuh.
+ */
+template <typename KeyType, typename ValueType>
+inline void cub_sort_pairs(
+    const KeyType* d_keys_in,
+    KeyType* d_keys_out,
+    const ValueType* d_values_in,
+    ValueType* d_values_out,
+    const size_t num_items,
+    const cudaStream_t stream = 0) {
 
-#endif //CUDA_SORT_CUH
+    if (num_items == 0) return;
+
+    size_t temp_bytes = 0;
+    CUB_CHECK(cub::DeviceRadixSort::SortPairs(
+        nullptr, temp_bytes,
+        d_keys_in, d_keys_out,
+        d_values_in, d_values_out,
+        static_cast<int>(num_items),
+        /*begin_bit=*/0, /*end_bit=*/static_cast<int>(sizeof(KeyType) * 8),
+        stream));
+
+    Buffer<uint8_t> temp(/*use_gpu=*/true);
+    temp.resize(temp_bytes);
+
+    CUB_CHECK(cub::DeviceRadixSort::SortPairs(
+        temp.data(), temp_bytes,
+        d_keys_in, d_keys_out,
+        d_values_in, d_values_out,
+        static_cast<int>(num_items),
+        /*begin_bit=*/0, /*end_bit=*/static_cast<int>(sizeof(KeyType) * 8),
+        stream));
+}
+
+#endif  // HAS_CUDA
+
+#endif  // CUDA_SORT_CUH
