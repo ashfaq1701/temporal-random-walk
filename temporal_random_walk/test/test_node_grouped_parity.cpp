@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
 #include <tuple>
 #include <unordered_set>
@@ -39,7 +40,34 @@ namespace {
 constexpr int      MAX_WALK_LEN       = 20;
 constexpr int      NUM_WALKS_PER_NODE = 5;
 constexpr uint64_t PARITY_SEED        = 0x5EED1234ULL;
-constexpr RandomPickerType LINEAR_PICKER = RandomPickerType::Linear;
+
+// Pickers that NODE_GROUPED routes through the cooperative pipeline.
+// Node2Vec is gated out at the dispatcher and runs on per_walk_step_kernel;
+// its smoke-test lives in test_node_grouped_walk_tier_routing.cpp.
+inline const std::initializer_list<RandomPickerType> kParityPickers = {
+    RandomPickerType::Linear,
+    RandomPickerType::Uniform,
+    RandomPickerType::ExponentialIndex,
+    RandomPickerType::ExponentialWeight,
+};
+
+inline const char* picker_name(const RandomPickerType p) {
+    switch (p) {
+        case RandomPickerType::Linear:            return "Linear";
+        case RandomPickerType::Uniform:           return "Uniform";
+        case RandomPickerType::ExponentialIndex:  return "ExponentialIndex";
+        case RandomPickerType::ExponentialWeight: return "ExponentialWeight";
+        case RandomPickerType::TemporalNode2Vec:  return "TemporalNode2Vec";
+        default:                                  return "?";
+    }
+}
+
+// ExponentialWeight and TemporalNode2Vec need per-node cum_weights built
+// at graph construction; other pickers don't.
+inline bool picker_needs_weights(const RandomPickerType p) {
+    return p == RandomPickerType::ExponentialWeight ||
+           p == RandomPickerType::TemporalNode2Vec;
+}
 
 // Mean-length ratio band. Picked wide because the two paths consume the
 // Philox stream differently, but tight enough to catch a gross bug
@@ -72,12 +100,12 @@ protected:
     // Fresh trw per kernel launch — identical config, identical seed.
     // shuffle_walk_order=false so slot 0 of walk w equals the same
     // start_node_id in both FULL_WALK and NODE_GROUPED output.
-    std::unique_ptr<TemporalRandomWalk> make_trw() const {
+    std::unique_ptr<TemporalRandomWalk> make_trw(const bool enable_weights) const {
         auto trw = std::make_unique<TemporalRandomWalk>(
             /*is_directed=*/true,
             /*use_gpu=*/T::value,
             /*max_time_capacity=*/-1,
-            /*enable_weight_computation=*/false,
+            /*enable_weight_computation=*/enable_weights,
             /*enable_temporal_node2vec=*/false,
             DEFAULT_TIMESCALE_BOUND,
             DEFAULT_NODE2VEC_P,
@@ -208,104 +236,115 @@ void assert_walks_are_valid(
 
 // ==========================================================================
 // Core structural parity: all-nodes path (constrained start).
+// Runs across every non-Node2Vec picker via SCOPED_TRACE so a failure
+// names the offending picker. Same for the two sibling tests below.
 // ==========================================================================
-TYPED_TEST(NodeGroupedParityTest, AllNodesConstrained_StructuralParity) {
-    auto trw_full = this->make_trw();
-    auto trw_grp  = this->make_trw();
+TYPED_TEST(NodeGroupedParityTest, AllNodesConstrained_Forward_StructuralParity) {
+    for (const auto picker : kParityPickers) {
+        SCOPED_TRACE(testing::Message() << "picker=" << picker_name(picker));
+        const bool enable_weights = picker_needs_weights(picker);
+        auto trw_full = this->make_trw(enable_weights);
+        auto trw_grp  = this->make_trw(enable_weights);
 
-    const auto walks_full = trw_full->get_random_walks_and_times_for_all_nodes(
-        MAX_WALK_LEN, &LINEAR_PICKER, NUM_WALKS_PER_NODE,
-        /*initial_edge_bias=*/nullptr,
-        WalkDirection::Forward_In_Time,
-        KernelLaunchType::FULL_WALK);
-    const auto walks_grp = trw_grp->get_random_walks_and_times_for_all_nodes(
-        MAX_WALK_LEN, &LINEAR_PICKER, NUM_WALKS_PER_NODE,
-        /*initial_edge_bias=*/nullptr,
-        WalkDirection::Forward_In_Time,
-        KernelLaunchType::NODE_GROUPED);
+        const auto walks_full = trw_full->get_random_walks_and_times_for_all_nodes(
+            MAX_WALK_LEN, &picker, NUM_WALKS_PER_NODE,
+            /*initial_edge_bias=*/nullptr,
+            WalkDirection::Forward_In_Time,
+            KernelLaunchType::FULL_WALK);
+        const auto walks_grp = trw_grp->get_random_walks_and_times_for_all_nodes(
+            MAX_WALK_LEN, &picker, NUM_WALKS_PER_NODE,
+            /*initial_edge_bias=*/nullptr,
+            WalkDirection::Forward_In_Time,
+            KernelLaunchType::NODE_GROUPED);
 
-    ASSERT_EQ(walks_full.walk_set.num_walks(), walks_grp.walk_set.num_walks());
+        ASSERT_EQ(walks_full.walk_set.num_walks(), walks_grp.walk_set.num_walks());
 
-    size_t compared = 0;
-    ASSERT_NO_FATAL_FAILURE(
-        assert_slot0_agreement(walks_full, walks_grp,
-                               static_cast<size_t>(MAX_WALK_LEN),
-                               &compared));
-    ASSERT_GT(compared, 0u)
-        << "No walks were compared — both paths dead-ended on every seed, "
-        << "which almost certainly indicates a broken walk kernel rather "
-        << "than a legitimate graph property.";
+        size_t compared = 0;
+        ASSERT_NO_FATAL_FAILURE(
+            assert_slot0_agreement(walks_full, walks_grp,
+                                   static_cast<size_t>(MAX_WALK_LEN),
+                                   &compared));
+        ASSERT_GT(compared, 0u)
+            << "No walks were compared — both paths dead-ended on every seed, "
+            << "which almost certainly indicates a broken walk kernel rather "
+            << "than a legitimate graph property.";
 
-    ASSERT_NO_FATAL_FAILURE(
-        assert_walks_are_valid<true>(walks_full,
-                                     static_cast<size_t>(MAX_WALK_LEN)));
-    ASSERT_NO_FATAL_FAILURE(
-        assert_walks_are_valid<true>(walks_grp,
-                                     static_cast<size_t>(MAX_WALK_LEN)));
+        ASSERT_NO_FATAL_FAILURE(
+            assert_walks_are_valid<true>(walks_full,
+                                         static_cast<size_t>(MAX_WALK_LEN)));
+        ASSERT_NO_FATAL_FAILURE(
+            assert_walks_are_valid<true>(walks_grp,
+                                         static_cast<size_t>(MAX_WALK_LEN)));
 
-    const auto d_full = digest_walks(walks_full);
-    const auto d_grp  = digest_walks(walks_grp);
-    ASSERT_GT(d_full.produced_walks, 0u);
-    ASSERT_GT(d_grp.produced_walks,  0u);
-    ASSERT_GT(d_full.mean_len_all, 1.0)
-        << "FULL_WALK mean length " << d_full.mean_len_all
-        << " is degenerate — every walk stopped at the start edge.";
-    ASSERT_GT(d_grp.mean_len_all, 1.0)
-        << "NODE_GROUPED mean length " << d_grp.mean_len_all
-        << " is degenerate — step-loop or filter is broken.";
+        const auto d_full = digest_walks(walks_full);
+        const auto d_grp  = digest_walks(walks_grp);
+        ASSERT_GT(d_full.produced_walks, 0u);
+        ASSERT_GT(d_grp.produced_walks,  0u);
+        ASSERT_GT(d_full.mean_len_all, 1.0)
+            << "FULL_WALK mean length " << d_full.mean_len_all
+            << " is degenerate — every walk stopped at the start edge.";
+        ASSERT_GT(d_grp.mean_len_all, 1.0)
+            << "NODE_GROUPED mean length " << d_grp.mean_len_all
+            << " is degenerate — step-loop or filter is broken.";
 
-    const double ratio = d_grp.mean_len_all / d_full.mean_len_all;
-    EXPECT_GT(ratio, MEAN_LEN_RATIO_LOW)
-        << "NODE_GROUPED mean length " << d_grp.mean_len_all
-        << " is far below FULL_WALK's " << d_full.mean_len_all
-        << " — likely a termination-check or walk_idx scatter regression.";
-    EXPECT_LT(ratio, MEAN_LEN_RATIO_HIGH)
-        << "NODE_GROUPED mean length " << d_grp.mean_len_all
-        << " is far above FULL_WALK's " << d_full.mean_len_all
-        << " — unexpected and worth investigating.";
+        const double ratio = d_grp.mean_len_all / d_full.mean_len_all;
+        EXPECT_GT(ratio, MEAN_LEN_RATIO_LOW)
+            << "NODE_GROUPED mean length " << d_grp.mean_len_all
+            << " is far below FULL_WALK's " << d_full.mean_len_all
+            << " — likely a termination-check or walk_idx scatter regression.";
+        EXPECT_LT(ratio, MEAN_LEN_RATIO_HIGH)
+            << "NODE_GROUPED mean length " << d_grp.mean_len_all
+            << " is far above FULL_WALK's " << d_full.mean_len_all
+            << " — unexpected and worth investigating.";
+    }
 }
 
 // ==========================================================================
 // Unconstrained path: every walk starts with start_node_id == -1, so
-// NODE_GROUPED short-circuits sort/RLE and runs solo for everyone. slot 0
-// can legitimately differ between paths because the picker-draw sequence
-// differs; we still assert validity and length-distribution parity.
+// NODE_GROUPED short-circuits sort/RLE at step 0 and runs the per-walk
+// start-edge kernel for everyone. slot 0 can legitimately differ between
+// paths because the picker-draw sequence differs; we still assert
+// validity and length-distribution parity.
 // ==========================================================================
-TYPED_TEST(NodeGroupedParityTest, Unconstrained_StructuralParity) {
-    auto trw_full = this->make_trw();
-    auto trw_grp  = this->make_trw();
+TYPED_TEST(NodeGroupedParityTest, Unconstrained_Forward_StructuralParity) {
+    for (const auto picker : kParityPickers) {
+        SCOPED_TRACE(testing::Message() << "picker=" << picker_name(picker));
+        const bool enable_weights = picker_needs_weights(picker);
+        auto trw_full = this->make_trw(enable_weights);
+        auto trw_grp  = this->make_trw(enable_weights);
 
-    // _get_random_walks_and_times (no _for_all_nodes / _for_last_batch)
-    // is the unconstrained entrypoint — fills start_node_ids with -1.
-    constexpr int NUM_WALKS_TOTAL = 400;
-    const auto walks_full = trw_full->get_random_walks_and_times(
-        MAX_WALK_LEN, &LINEAR_PICKER, NUM_WALKS_TOTAL,
-        /*initial_edge_bias=*/nullptr,
-        WalkDirection::Forward_In_Time,
-        KernelLaunchType::FULL_WALK);
-    const auto walks_grp = trw_grp->get_random_walks_and_times(
-        MAX_WALK_LEN, &LINEAR_PICKER, NUM_WALKS_TOTAL,
-        /*initial_edge_bias=*/nullptr,
-        WalkDirection::Forward_In_Time,
-        KernelLaunchType::NODE_GROUPED);
+        // _get_random_walks_and_times (no _for_all_nodes / _for_last_batch)
+        // is the unconstrained entrypoint — fills start_node_ids with -1.
+        constexpr int NUM_WALKS_TOTAL = 400;
+        const auto walks_full = trw_full->get_random_walks_and_times(
+            MAX_WALK_LEN, &picker, NUM_WALKS_TOTAL,
+            /*initial_edge_bias=*/nullptr,
+            WalkDirection::Forward_In_Time,
+            KernelLaunchType::FULL_WALK);
+        const auto walks_grp = trw_grp->get_random_walks_and_times(
+            MAX_WALK_LEN, &picker, NUM_WALKS_TOTAL,
+            /*initial_edge_bias=*/nullptr,
+            WalkDirection::Forward_In_Time,
+            KernelLaunchType::NODE_GROUPED);
 
-    ASSERT_EQ(walks_full.walk_set.num_walks(), walks_grp.walk_set.num_walks());
+        ASSERT_EQ(walks_full.walk_set.num_walks(), walks_grp.walk_set.num_walks());
 
-    ASSERT_NO_FATAL_FAILURE(
-        assert_walks_are_valid<true>(walks_full,
-                                     static_cast<size_t>(MAX_WALK_LEN)));
-    ASSERT_NO_FATAL_FAILURE(
-        assert_walks_are_valid<true>(walks_grp,
-                                     static_cast<size_t>(MAX_WALK_LEN)));
+        ASSERT_NO_FATAL_FAILURE(
+            assert_walks_are_valid<true>(walks_full,
+                                         static_cast<size_t>(MAX_WALK_LEN)));
+        ASSERT_NO_FATAL_FAILURE(
+            assert_walks_are_valid<true>(walks_grp,
+                                         static_cast<size_t>(MAX_WALK_LEN)));
 
-    const auto d_full = digest_walks(walks_full);
-    const auto d_grp  = digest_walks(walks_grp);
-    ASSERT_GT(d_full.produced_walks, 0u);
-    ASSERT_GT(d_grp.produced_walks,  0u);
+        const auto d_full = digest_walks(walks_full);
+        const auto d_grp  = digest_walks(walks_grp);
+        ASSERT_GT(d_full.produced_walks, 0u);
+        ASSERT_GT(d_grp.produced_walks,  0u);
 
-    const double ratio = d_grp.mean_len_all / d_full.mean_len_all;
-    EXPECT_GT(ratio, MEAN_LEN_RATIO_LOW);
-    EXPECT_LT(ratio, MEAN_LEN_RATIO_HIGH);
+        const double ratio = d_grp.mean_len_all / d_full.mean_len_all;
+        EXPECT_GT(ratio, MEAN_LEN_RATIO_LOW);
+        EXPECT_LT(ratio, MEAN_LEN_RATIO_HIGH);
+    }
 }
 
 // ==========================================================================
@@ -314,34 +353,38 @@ TYPED_TEST(NodeGroupedParityTest, Unconstrained_StructuralParity) {
 // changes; structural parity claims are identical.
 // ==========================================================================
 TYPED_TEST(NodeGroupedParityTest, AllNodesConstrained_Backward_StructuralParity) {
-    auto trw_full = this->make_trw();
-    auto trw_grp  = this->make_trw();
+    for (const auto picker : kParityPickers) {
+        SCOPED_TRACE(testing::Message() << "picker=" << picker_name(picker));
+        const bool enable_weights = picker_needs_weights(picker);
+        auto trw_full = this->make_trw(enable_weights);
+        auto trw_grp  = this->make_trw(enable_weights);
 
-    const auto walks_full = trw_full->get_random_walks_and_times_for_all_nodes(
-        MAX_WALK_LEN, &LINEAR_PICKER, NUM_WALKS_PER_NODE,
-        /*initial_edge_bias=*/nullptr,
-        WalkDirection::Backward_In_Time,
-        KernelLaunchType::FULL_WALK);
-    const auto walks_grp = trw_grp->get_random_walks_and_times_for_all_nodes(
-        MAX_WALK_LEN, &LINEAR_PICKER, NUM_WALKS_PER_NODE,
-        /*initial_edge_bias=*/nullptr,
-        WalkDirection::Backward_In_Time,
-        KernelLaunchType::NODE_GROUPED);
+        const auto walks_full = trw_full->get_random_walks_and_times_for_all_nodes(
+            MAX_WALK_LEN, &picker, NUM_WALKS_PER_NODE,
+            /*initial_edge_bias=*/nullptr,
+            WalkDirection::Backward_In_Time,
+            KernelLaunchType::FULL_WALK);
+        const auto walks_grp = trw_grp->get_random_walks_and_times_for_all_nodes(
+            MAX_WALK_LEN, &picker, NUM_WALKS_PER_NODE,
+            /*initial_edge_bias=*/nullptr,
+            WalkDirection::Backward_In_Time,
+            KernelLaunchType::NODE_GROUPED);
 
-    ASSERT_EQ(walks_full.walk_set.num_walks(), walks_grp.walk_set.num_walks());
+        ASSERT_EQ(walks_full.walk_set.num_walks(), walks_grp.walk_set.num_walks());
 
-    ASSERT_NO_FATAL_FAILURE(
-        assert_walks_are_valid<false>(walks_full,
-                                      static_cast<size_t>(MAX_WALK_LEN)));
-    ASSERT_NO_FATAL_FAILURE(
-        assert_walks_are_valid<false>(walks_grp,
-                                      static_cast<size_t>(MAX_WALK_LEN)));
+        ASSERT_NO_FATAL_FAILURE(
+            assert_walks_are_valid<false>(walks_full,
+                                          static_cast<size_t>(MAX_WALK_LEN)));
+        ASSERT_NO_FATAL_FAILURE(
+            assert_walks_are_valid<false>(walks_grp,
+                                          static_cast<size_t>(MAX_WALK_LEN)));
 
-    const auto d_full = digest_walks(walks_full);
-    const auto d_grp  = digest_walks(walks_grp);
-    ASSERT_GT(d_full.produced_walks, 0u);
-    ASSERT_GT(d_grp.produced_walks,  0u);
-    const double ratio = d_grp.mean_len_all / d_full.mean_len_all;
-    EXPECT_GT(ratio, MEAN_LEN_RATIO_LOW);
-    EXPECT_LT(ratio, MEAN_LEN_RATIO_HIGH);
+        const auto d_full = digest_walks(walks_full);
+        const auto d_grp  = digest_walks(walks_grp);
+        ASSERT_GT(d_full.produced_walks, 0u);
+        ASSERT_GT(d_grp.produced_walks,  0u);
+        const double ratio = d_grp.mean_len_all / d_full.mean_len_all;
+        EXPECT_GT(ratio, MEAN_LEN_RATIO_LOW);
+        EXPECT_LT(ratio, MEAN_LEN_RATIO_HIGH);
+    }
 }
