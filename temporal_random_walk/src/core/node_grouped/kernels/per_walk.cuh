@@ -249,6 +249,58 @@ inline void dispatch_node_grouped_solo_kernel(
 }
 
 // ==========================================================================
+// Per-walk step kernel — one thread per walk, no node-grouping. Services
+// pickers whose sampling depends on the walker's own prev_node
+// (TemporalNode2Vec), where cooperative smem panels offer no benefit:
+// each walk's effective CDF is a function of prev_node, so walks sharing
+// a current node cannot share panel state. Dispatcher gates such pickers
+// out of the scheduler + five-kernel pipeline entirely and routes every
+// intermediate step through this kernel instead.
+//
+// Dead walks (last_node == walk_padding_value) naturally no-op inside
+// advance_one_walk -> get_node_edge_at_device's is_node_active check, so
+// we don't need the scheduler's filter/compact stages.
+// ==========================================================================
+template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
+__global__ void per_walk_step_kernel(
+    TemporalGraphView view,
+    WalkSetView walk_set,
+    const int step_number,
+    const int max_walk_len,
+    const size_t num_walks,
+    const uint64_t base_seed) {
+
+    const size_t walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (walk_idx >= num_walks) return;
+
+    advance_one_walk<IsDirected, Forward, EdgePickerType>(
+        view, walk_set, static_cast<int>(walk_idx),
+        step_number, max_walk_len, base_seed);
+}
+
+template <bool IsDirected, bool Forward>
+inline void dispatch_per_walk_step_kernel(
+    const TemporalGraphView& view,
+    WalkSetView walk_set_view,
+    const int step_number,
+    const int max_walk_len,
+    const size_t num_walks,
+    const RandomPickerType edge_picker_type,
+    const uint64_t base_seed,
+    const dim3& grid,
+    const dim3& block_dim,
+    const cudaStream_t stream) {
+
+    dispatch_picker_type(edge_picker_type, [&](auto edge_tag) {
+        constexpr auto kEdge = decltype(edge_tag)::value;
+        per_walk_step_kernel<IsDirected, Forward, kEdge>
+            <<<grid, block_dim, 0, stream>>>(
+                view, walk_set_view,
+                step_number, max_walk_len, num_walks, base_seed);
+    });
+}
+
+// ==========================================================================
 // Backward-walk reversal
 // ==========================================================================
 

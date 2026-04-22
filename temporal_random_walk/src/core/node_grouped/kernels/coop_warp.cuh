@@ -6,6 +6,10 @@
 //
 //   task 10 done -> node_grouped_warp_smem_kernel   (real cooperative body)
 //   task 11 done -> node_grouped_warp_global_kernel (real cooperative body)
+//
+// Both kernels service non-Node2Vec pickers only. The dispatcher gates
+// Node2Vec out of the cooperative pipeline entirely (prev_node-dependent
+// sampling can't share a panel).
 
 #include "common.cuh"    // NodeDirPtrs, resolve_node_dir_ptrs
 #include "per_walk.cuh"  // advance_one_walk, philox offset helper
@@ -45,8 +49,6 @@ namespace temporal_random_walk {
 // cudaFuncSetAttribute opt-in required.
 //
 // Weighted pickers still read cum_weights from global (see block-smem).
-// Node2Vec short-circuits to per-walk processing inside the warp (its
-// prev_node-dependent picker breaks panel sharing).
 //
 // Sync discipline: only __syncwarp() — never __syncthreads(). Warps in
 // the same block run different tasks and may diverge at the task-id
@@ -80,19 +82,6 @@ __global__ void node_grouped_warp_smem_kernel(
     // All 32 lanes of an out-of-range warp return together — task_id is
     // warp-uniform, so divergence is 32-lane wide and safe.
     if (task_id >= *num_tasks_ptr) return;
-
-    // Node2Vec: per-walk prev_node bias breaks panel sharing; distribute
-    // walks across this warp's 32 lanes and fall through advance_one_walk.
-    if constexpr (EdgePickerType == RandomPickerType::TemporalNode2Vec) {
-        const int walk_start = node_walk_starts[task_id];
-        const int walk_count = node_walk_counts[task_id];
-        for (int k = lane_id; k < walk_count; k += 32) {
-            advance_one_walk<IsDirected, Forward, EdgePickerType>(
-                view, walk_set, sorted_walk_idx[walk_start + k],
-                step_number, max_walk_len, base_seed);
-        }
-        return;
-    }
 
     // Resolve direction-dependent per-graph pointers once per task.
     const auto ptrs = resolve_node_dir_ptrs<IsDirected, Forward>(view);
@@ -168,8 +157,6 @@ __global__ void node_grouped_warp_smem_kernel(
             walk_idx * static_cast<size_t>(max_walk_len)
             + static_cast<size_t>(step_number);
         const int64_t last_ts = walk_set.timestamps[offset];
-        const int prev_node   =
-            step_number > 0 ? walk_set.nodes[offset - 1] : -1;
 
         PhiloxState rng;
         init_philox_state(rng, base_seed, walk_idx,
@@ -187,8 +174,6 @@ __global__ void node_grouped_warp_smem_kernel(
             ptrs.weights, ptrs.weights_size,
             node_group_begin,
             G, last_ts, r_group);
-        (void)prev_node;  // Node2Vec short-circuited above; non-Node2Vec
-                          // pickers don't use prev_node.
         if (local_pos == -1) continue;
 
         // Stage 2b: group -> edge range via the warp's smem offsets.
@@ -313,20 +298,6 @@ __global__ void node_grouped_warp_global_kernel(
 
     if (task_id >= *num_tasks_ptr) return;
 
-    // Node2Vec: per-walk prev_node bias precludes cooperative state;
-    // distribute walks across this warp's 32 lanes and fall through
-    // advance_one_walk.
-    if constexpr (EdgePickerType == RandomPickerType::TemporalNode2Vec) {
-        const int walk_start = node_walk_starts[task_id];
-        const int walk_count = node_walk_counts[task_id];
-        for (int k = lane_id; k < walk_count; k += 32) {
-            advance_one_walk<IsDirected, Forward, EdgePickerType>(
-                view, walk_set, sorted_walk_idx[walk_start + k],
-                step_number, max_walk_len, base_seed);
-        }
-        return;
-    }
-
     // Resolve direction-dependent per-graph pointers once per task.
     const auto ptrs = resolve_node_dir_ptrs<IsDirected, Forward>(view);
 
@@ -374,8 +345,6 @@ __global__ void node_grouped_warp_global_kernel(
             walk_idx * static_cast<size_t>(max_walk_len)
             + static_cast<size_t>(step_number);
         const int64_t last_ts = walk_set.timestamps[offset];
-        const int prev_node   =
-            step_number > 0 ? walk_set.nodes[offset - 1] : -1;
 
         PhiloxState rng;
         init_philox_state(rng, base_seed, walk_idx,
@@ -394,8 +363,6 @@ __global__ void node_grouped_warp_global_kernel(
             ptrs.weights, ptrs.weights_size,
             node_group_begin,
             G, last_ts, r_group);
-        (void)prev_node;  // Node2Vec short-circuited above; non-Node2Vec
-                          // pickers don't use prev_node.
         if (local_pos == -1) continue;
 
         // Stage 2: edge range via the same global slice pointer.

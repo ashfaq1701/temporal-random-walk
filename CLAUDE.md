@@ -240,10 +240,15 @@ the progress log; §5's kernel matrix is the target state.
   every walk through `get_edge_at_device` (global edge stream). All three
   entry points (`_for_all_nodes_cuda`, `_for_last_batch_cuda`, `_cuda`)
   thread the flag correctly.
-- `TemporalNode2Vec` pinned to the solo tier: coop dispatcher early-exits on
-  that picker; solo's group-size guard is compile-time elided for the
-  Node2Vec specialization. Per-walk `prev_node` bias makes a shared
-  cooperative panel impossible by construction.
+- `TemporalNode2Vec` bypasses the node-grouped pipeline entirely: the
+  dispatcher gates on picker type at entry and routes Node2Vec through
+  `per_walk_step_kernel` (one thread per walk per step, no scheduler,
+  no coop tiers). Per-walk `prev_node` bias makes a shared cooperative
+  panel impossible by construction, so sort/RLE/W-partition/G-partition/
+  expansion are all skipped. Dead walks no-op inside `advance_one_walk`
+  via `is_node_active`, so the filter/compact stages aren't needed
+  either. The four coop kernels now assume non-Node2Vec and don't carry
+  any Node2Vec branches or `prev_node` reads.
 - NVTX ranges on every pipeline stage (`NG step0 setup`, `NG step`,
   `NG filter alive`, `NG compact`, `NG num_active readback`, `NG gather`,
   `NG sort`, `NG RLE+scan`, `NG scatter`, `NG pick`, `NG reverse`) for
@@ -290,8 +295,8 @@ the progress log; §5's kernel matrix is the target state.
   against global arrays via find_group_pos_slice's double-indirect
   fallback, but still cooperatively parallelizes walks across the 256
   threads of a block (L1/L2 residency shared across co-located walks).
-  Both use a small static-smem header to broadcast node-level scalars,
-  and both short-circuit Node2Vec to scaffold-style per-walk processing.
+  Both use a small static-smem header to broadcast node-level scalars.
+  Node2Vec never reaches these kernels — the dispatcher gates it out.
 - Directional-pointer resolution factored into
   core/node_grouped/kernels/common.cuh as `NodeDirPtrs` +
   `resolve_node_dir_ptrs<IsDirected, Forward>(view)`. Both block
@@ -304,8 +309,8 @@ the progress log; §5's kernel matrix is the target state.
   __syncwarp() is used — warps in a block run independent tasks and
   may diverge at the task-id guard in partial last blocks, so a
   block-wide barrier would deadlock. Binary search is per-lane against
-  the warp's s_first_ts (fast-path comparator). Node2Vec short-circuits
-  to per-walk processing distributed across the warp.
+  the warp's s_first_ts (fast-path comparator). Node2Vec never reaches
+  this kernel — the dispatcher gates it out.
 - Warp-global cooperative body is live (task 11). Same launch topology
   as warp-smem (8 warps/block, one task per warp), no panel preload —
   the tier services nodes whose G exceeds TRW_NODE_GROUPED_G_CAP_WARP_*
@@ -314,9 +319,9 @@ the progress log; §5's kernel matrix is the target state.
   double-indirect fallback. A tiny per-warp static smem header
   (8 × (int[4] + 2 size_t) ≈ 256 B/block) lets lane 0 broadcast
   node-level scalars once so the other 31 lanes don't refetch from
-  global on every walk. __syncwarp() only. Node2Vec short-circuits
-  to per-walk processing distributed across the warp. Phase III
-  (real cooperative bodies for all four tiers) is complete.
+  global on every walk. __syncwarp() only. Node2Vec never reaches this
+  kernel — the dispatcher gates it out. Phase III (real cooperative
+  bodies for all four tiers) is complete.
 
 ## 7. Architecture guardrails
 
@@ -524,10 +529,11 @@ runs the real cooperative body:
     * Final edge fetch (`node_ts_sorted_indices[...]` + `view.sources/
       targets/timestamps/edge_ids`) goes to global. One uncoalesced read
       per walk — unavoidable, not worth preloading.
-- Node2Vec short-circuit: `if constexpr (PickerType == TemporalNode2Vec)`
-  at kernel entry takes the scaffold path (per-walk `advance_one_walk`
-  distributed across the block's threads). Per-walk `prev_node` bias
-  breaks CDF sharing, so the cooperative panel can't help.
+- Node2Vec gating: originally handled with an `if constexpr (PickerType
+  == TemporalNode2Vec)` short-circuit at kernel entry. That branch was
+  later removed (see the §6 "Node2Vec bypasses the node-grouped pipeline
+  entirely" entry) — the dispatcher now gates Node2Vec out before the
+  scheduler + coop kernels ever run, so this kernel assumes non-Node2Vec.
 - Weighted pickers still read `weights` (cumulative-weight array) from
   global. Preloading `s_cum_weights[G]` into smem would need the picker
   to accept a slice with an external "prior prefix" argument; deferred
@@ -563,8 +569,9 @@ A small static-smem header (s_header[4] + 2 size_t scalars) broadcasts
 `node_group_begin` once per task so the 256 threads don't each refetch
 task-level scalars from global on every walk.
 
-Node2Vec short-circuit is the same shape as block-smem's (per-walk
-`advance_one_walk` distributed across the block's threads).
+Node2Vec: originally short-circuited inside this kernel; the branch was
+later removed when the dispatcher began gating Node2Vec out of the
+cooperative pipeline entirely. This kernel now assumes non-Node2Vec.
 
 Dispatcher's block_global launch switches from the scaffold's
 thread-per-task grid to block-per-task:
@@ -604,8 +611,8 @@ runs the real cooperative body, warp equivalent of task 8:
   comparator, single-load). Each of the 32 lanes runs its own
   independent search with its own walk's `last_ts`; no cross-lane
   cooperation in the search itself.
-- Node2Vec short-circuits to per-walk processing distributed across
-  the warp's 32 lanes (same shape as block-smem's short-circuit).
+- Node2Vec: originally short-circuited inside this kernel; the branch
+  was later removed once the dispatcher began gating Node2Vec out.
 - Dispatcher's warp_smem launch flipped from thread-per-task grid to
   block-per-8-tasks (`grid = ⌈n/8⌉`, `block = 256`), dynamic smem
   sized by `warp_smem_dynamic_smem_bytes<PickerType>()`.
@@ -628,8 +635,8 @@ metadata wouldn't fit in the per-warp 5.5 KB slice.
 - Sync discipline: `__syncwarp()` only — mirrors warp-smem. Partial-
   last-block warps return all 32 lanes together at the warp-uniform
   task-id guard before hitting any sync.
-- Node2Vec short-circuits to per-walk processing distributed across
-  the warp's 32 lanes.
+- Node2Vec: originally short-circuited inside this kernel; the branch
+  was later removed once the dispatcher began gating Node2Vec out.
 - No dynamic smem at launch — all smem is static.
 
 Dispatcher's warp_global launch flipped from thread-per-task grid to

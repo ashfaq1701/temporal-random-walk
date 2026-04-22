@@ -6,6 +6,10 @@
 //
 //   task 8 done -> node_grouped_block_smem_kernel   (real cooperative body)
 //   task 9 done -> node_grouped_block_global_kernel (real cooperative body)
+//
+// Both kernels service non-Node2Vec pickers only. The dispatcher gates
+// Node2Vec out of the cooperative pipeline entirely (prev_node-dependent
+// sampling can't share a panel).
 
 #include "common.cuh"    // NodeDirPtrs, resolve_node_dir_ptrs
 #include "per_walk.cuh"  // advance_one_walk, philox offset helper
@@ -39,10 +43,6 @@ namespace temporal_random_walk {
 // preloading it into smem would require reworking the CDF offset math;
 // left as a follow-up optimization. The main smem win is the binary-search
 // dependent-load chain, which is driven by first_ts.
-//
-// Node2Vec is picker-type-ineligible for cooperative preload (per-walk
-// prev_node breaks CDF sharing), so Node2Vec tasks short-circuit to
-// scaffold-style per-walk processing distributed across the block.
 // ==========================================================================
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_block_smem_kernel(
@@ -60,18 +60,6 @@ __global__ void node_grouped_block_smem_kernel(
     if (step_number >= max_walk_len - 1) return;
     const int task_id = blockIdx.x;
     if (task_id >= *num_tasks_ptr) return;
-
-    // Node2Vec: fall back to scaffold-style per-walk processing.
-    if constexpr (EdgePickerType == RandomPickerType::TemporalNode2Vec) {
-        const int walk_start = node_walk_starts[task_id];
-        const int walk_count = node_walk_counts[task_id];
-        for (int k = threadIdx.x; k < walk_count; k += blockDim.x) {
-            advance_one_walk<IsDirected, Forward, EdgePickerType>(
-                view, walk_set, sorted_walk_idx[walk_start + k],
-                step_number, max_walk_len, base_seed);
-        }
-        return;
-    }
 
     // Resolve direction-dependent per-graph pointers once per task.
     const auto ptrs = resolve_node_dir_ptrs<IsDirected, Forward>(view);
@@ -140,8 +128,6 @@ __global__ void node_grouped_block_smem_kernel(
             walk_idx * static_cast<size_t>(max_walk_len)
             + static_cast<size_t>(step_number);
         const int64_t last_ts = walk_set.timestamps[offset];
-        const int prev_node   =
-            step_number > 0 ? walk_set.nodes[offset - 1] : -1;
 
         PhiloxState rng;
         init_philox_state(rng, base_seed, walk_idx,
@@ -160,8 +146,6 @@ __global__ void node_grouped_block_smem_kernel(
             ptrs.weights, ptrs.weights_size,
             node_group_begin,
             G, last_ts, r_group);
-        (void)prev_node;  // Node2Vec short-circuited above; non-Node2Vec
-                          // pickers don't use prev_node.
         if (local_pos == -1) continue;
 
         // Stage 2b: group -> edge range via smem offsets.
@@ -273,20 +257,6 @@ __global__ void node_grouped_block_global_kernel(
     const int task_id = blockIdx.x;
     if (task_id >= *num_tasks_ptr) return;
 
-    // Node2Vec: per-walk prev_node bias precludes shared sampling state.
-    // Fall back to scaffold-style per-walk processing distributed across
-    // the block's threads.
-    if constexpr (EdgePickerType == RandomPickerType::TemporalNode2Vec) {
-        const int walk_start = node_walk_starts[task_id];
-        const int walk_count = node_walk_counts[task_id];
-        for (int k = threadIdx.x; k < walk_count; k += blockDim.x) {
-            advance_one_walk<IsDirected, Forward, EdgePickerType>(
-                view, walk_set, sorted_walk_idx[walk_start + k],
-                step_number, max_walk_len, base_seed);
-        }
-        return;
-    }
-
     // Resolve direction-dependent per-graph pointers once per task.
     const auto ptrs = resolve_node_dir_ptrs<IsDirected, Forward>(view);
 
@@ -331,8 +301,6 @@ __global__ void node_grouped_block_global_kernel(
             walk_idx * static_cast<size_t>(max_walk_len)
             + static_cast<size_t>(step_number);
         const int64_t last_ts = walk_set.timestamps[offset];
-        const int prev_node   =
-            step_number > 0 ? walk_set.nodes[offset - 1] : -1;
 
         PhiloxState rng;
         init_philox_state(rng, base_seed, walk_idx,
@@ -352,7 +320,6 @@ __global__ void node_grouped_block_global_kernel(
             ptrs.weights, ptrs.weights_size,
             node_group_begin,
             G, last_ts, r_group);
-        (void)prev_node;
         if (local_pos == -1) continue;
 
         // Stage 2: edge range via the same global slice pointer.
