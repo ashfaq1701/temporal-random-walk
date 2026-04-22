@@ -289,20 +289,24 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                                                const std::string& walk_bias,
                                                const int num_walks_per_node,
                                                const std::optional<std::string>& initial_edge_bias = std::nullopt,
-                                               const std::string& walk_direction = "Forward_In_Time")
+                                               const std::string& walk_direction = "Forward_In_Time",
+                                               const std::string& kernel_launch_type = "NODE_GROUPED")
             {
                 const RandomPickerType walk_bias_enum = picker_type_from_string(walk_bias);
                 std::optional<RandomPickerType> edge_bias_enum_opt;
                 const RandomPickerType* initial_edge_bias_enum_ptr = get_picker_ptr_from_optional_string(
                     initial_edge_bias, edge_bias_enum_opt);
                 const WalkDirection walk_direction_enum = walk_direction_from_string(walk_direction);
+                const KernelLaunchType kernel_launch_type_enum =
+                    kernel_launch_type_from_string(kernel_launch_type);
 
                 auto walks = tw.get_random_walks_and_times_for_all_nodes(
                     max_walk_len,
                     &walk_bias_enum,
                     num_walks_per_node,
                     initial_edge_bias_enum_ptr,
-                    walk_direction_enum);
+                    walk_direction_enum,
+                    kernel_launch_type_enum);
 
                 const auto num_walks = static_cast<ssize_t>(walks.walk_set.num_walks());
                 const auto walk_len = static_cast<ssize_t>(max_walk_len);
@@ -367,6 +371,11 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     Uses walk_bias if not specified.
                 walk_direction (str, optional): Direction of temporal random walks.
                     Either "Forward_In_Time" (default) or "Backward_In_Time".
+                kernel_launch_type (str, optional): Which GPU walk kernel path to run.
+                    Either "NODE_GROUPED" (default — cooperative per-step pipeline,
+                    optimized for skewed temporal graphs) or "FULL_WALK" (one thread
+                    per walk for the walk's whole life, retained as a fallback /
+                    baseline).
 
             Returns:
                 Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
@@ -380,27 +389,32 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             py::arg("walk_bias"),
             py::arg("num_walks_per_node"),
             py::arg("initial_edge_bias") = py::none(),
-            py::arg("walk_direction") = "Forward_In_Time")
+            py::arg("walk_direction") = "Forward_In_Time",
+            py::arg("kernel_launch_type") = "NODE_GROUPED")
 
         .def("get_random_walks_and_times_for_last_batch", [](TemporalRandomWalk& tw,
                                                const int max_walk_len,
                                                const std::string& walk_bias,
                                                const int num_walks_per_node,
                                                const std::optional<std::string>& initial_edge_bias = std::nullopt,
-                                               const std::string& walk_direction = "Forward_In_Time")
+                                               const std::string& walk_direction = "Forward_In_Time",
+                                               const std::string& kernel_launch_type = "NODE_GROUPED")
             {
                 const RandomPickerType walk_bias_enum = picker_type_from_string(walk_bias);
                 std::optional<RandomPickerType> edge_bias_enum_opt;
                 const RandomPickerType* initial_edge_bias_enum_ptr = get_picker_ptr_from_optional_string(
                     initial_edge_bias, edge_bias_enum_opt);
                 const WalkDirection walk_direction_enum = walk_direction_from_string(walk_direction);
+                const KernelLaunchType kernel_launch_type_enum =
+                    kernel_launch_type_from_string(kernel_launch_type);
 
                 auto walks = tw.get_random_walks_and_times_for_last_batch(
                     max_walk_len,
                     &walk_bias_enum,
                     num_walks_per_node,
                     initial_edge_bias_enum_ptr,
-                    walk_direction_enum);
+                    walk_direction_enum,
+                    kernel_launch_type_enum);
 
                 const auto num_walks = static_cast<ssize_t>(walks.walk_set.num_walks());
                 const auto walk_len = static_cast<ssize_t>(max_walk_len);
@@ -469,6 +483,11 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     Uses walk_bias if not specified.
                 walk_direction (str, optional): Direction of temporal random walks.
                     Either "Forward_In_Time" (default) or "Backward_In_Time".
+                kernel_launch_type (str, optional): Which GPU walk kernel path to run.
+                    Either "NODE_GROUPED" (default — cooperative per-step pipeline,
+                    optimized for skewed temporal graphs) or "FULL_WALK" (one thread
+                    per walk for the walk's whole life, retained as a fallback /
+                    baseline).
 
             Returns:
                 Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
@@ -482,14 +501,16 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             py::arg("walk_bias"),
             py::arg("num_walks_per_node"),
             py::arg("initial_edge_bias") = py::none(),
-            py::arg("walk_direction") = "Forward_In_Time")
+            py::arg("walk_direction") = "Forward_In_Time",
+            py::arg("kernel_launch_type") = "NODE_GROUPED")
 
         .def("get_random_walks_and_times", [](TemporalRandomWalk& tw,
                                                const int max_walk_len,
                                                const std::string& walk_bias,
                                                const int num_walks_total,
                                                const std::optional<std::string>& initial_edge_bias = std::nullopt,
-                                               const std::string& walk_direction = "Forward_In_Time")
+                                               const std::string& walk_direction = "Forward_In_Time",
+                                               const std::string& kernel_launch_type = "NODE_GROUPED")
             {
                 const RandomPickerType walk_bias_enum = picker_type_from_string(walk_bias);
                 std::optional<RandomPickerType> edge_bias_enum_opt;
@@ -497,13 +518,16 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     initial_edge_bias, edge_bias_enum_opt);
 
                 const WalkDirection walk_direction_enum = walk_direction_from_string(walk_direction);
+                const KernelLaunchType kernel_launch_type_enum =
+                    kernel_launch_type_from_string(kernel_launch_type);
 
                 auto walks = tw.get_random_walks_and_times(
                     max_walk_len,
                     &walk_bias_enum,
                     num_walks_total,
                     initial_edge_bias_enum_ptr,
-                    walk_direction_enum);
+                    walk_direction_enum,
+                    kernel_launch_type_enum);
 
                 const auto num_walks = static_cast<ssize_t>(walks.walk_set.num_walks());
                 const auto walk_len = static_cast<ssize_t>(max_walk_len);
@@ -568,6 +592,11 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     Uses walk_bias if not specified.
                 walk_direction (str, optional): Direction of temporal random walks.
                     Either "Forward_In_Time" (default) or "Backward_In_Time".
+                kernel_launch_type (str, optional): Which GPU walk kernel path to run.
+                    Either "NODE_GROUPED" (default — cooperative per-step pipeline,
+                    optimized for skewed temporal graphs) or "FULL_WALK" (one thread
+                    per walk for the walk's whole life, retained as a fallback /
+                    baseline).
 
             Returns:
                 Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
@@ -581,7 +610,8 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             py::arg("walk_bias"),
             py::arg("num_walks_total"),
             py::arg("initial_edge_bias") = py::none(),
-            py::arg("walk_direction") = "Forward_In_Time")
+            py::arg("walk_direction") = "Forward_In_Time",
+            py::arg("kernel_launch_type") = "NODE_GROUPED")
 
         .def("get_node_count", &TemporalRandomWalk::get_node_count,
             R"(
