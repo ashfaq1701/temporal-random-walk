@@ -7,6 +7,7 @@
 //   task 8 done -> node_grouped_block_smem_kernel   (real cooperative body)
 //   task 9 TODO -> node_grouped_block_global_kernel (currently scaffold)
 
+#include "common.cuh"    // NodeDirPtrs, resolve_node_dir_ptrs
 #include "per_walk.cuh"  // advance_one_walk, philox offset helper
 #include "../../../common/picker_dispatch.cuh"
 #include "../../../common/warp_coop_config.cuh"
@@ -72,31 +73,8 @@ __global__ void node_grouped_block_smem_kernel(
         return;
     }
 
-    // Resolve direction-dependent per-graph pointers.
-    const size_t* count_ts_group_per_node =
-        Forward ? view.count_ts_group_per_node_outbound
-                : (IsDirected ? view.count_ts_group_per_node_inbound
-                              : view.count_ts_group_per_node_outbound);
-    const size_t* node_ts_groups_offsets_g =
-        Forward ? view.node_ts_group_outbound_offsets
-                : (IsDirected ? view.node_ts_group_inbound_offsets
-                              : view.node_ts_group_outbound_offsets);
-    const size_t* node_ts_sorted_indices =
-        Forward ? view.node_ts_sorted_outbound_indices
-                : (IsDirected ? view.node_ts_sorted_inbound_indices
-                              : view.node_ts_sorted_outbound_indices);
-    const size_t* node_edge_offsets =
-        Forward ? view.node_group_outbound_offsets
-                : (IsDirected ? view.node_group_inbound_offsets
-                              : view.node_group_outbound_offsets);
-    const double* weights =
-        Forward ? view.outbound_forward_cumulative_weights_exponential
-                : (IsDirected ? view.inbound_backward_cumulative_weights_exponential
-                              : view.outbound_backward_cumulative_weights_exponential);
-    const size_t weights_size =
-        Forward ? view.outbound_forward_cumulative_weights_exponential_size
-                : (IsDirected ? view.inbound_backward_cumulative_weights_exponential_size
-                              : view.outbound_backward_cumulative_weights_exponential_size);
+    // Resolve direction-dependent per-graph pointers once per task.
+    const auto ptrs = resolve_node_dir_ptrs<IsDirected, Forward>(view);
 
     // Smem layout.
     constexpr bool kIsIndexPicker =
@@ -122,13 +100,13 @@ __global__ void node_grouped_block_smem_kernel(
         const int node_id    = node_walk_nodes[task_id];
         const int walk_start = node_walk_starts[task_id];
         const int walk_count = node_walk_counts[task_id];
-        const size_t node_group_begin = count_ts_group_per_node[node_id];
-        const size_t node_group_end   = count_ts_group_per_node[node_id + 1];
+        const size_t node_group_begin = ptrs.count_ts_group_per_node[node_id];
+        const size_t node_group_end   = ptrs.count_ts_group_per_node[node_id + 1];
         s_header[0] = node_id;
         s_header[1] = walk_start;
         s_header[2] = walk_count;
         s_header[3] = static_cast<int>(node_group_end - node_group_begin);
-        *s_node_edge_end = node_edge_offsets[node_id + 1];
+        *s_node_edge_end = ptrs.node_edge_offsets[node_id + 1];
     }
     __syncthreads();
 
@@ -137,18 +115,18 @@ __global__ void node_grouped_block_smem_kernel(
     const int walk_count = s_header[2];
     const int G          = s_header[3];
     const size_t node_edge_end_global = *s_node_edge_end;
-    const size_t node_group_begin = count_ts_group_per_node[node_id];
+    const size_t node_group_begin = ptrs.count_ts_group_per_node[node_id];
 
     // Stage 1: cooperative preload of the G-sized panel. Stride by
     // blockDim.x. Each thread handles ⌈G/blockDim.x⌉ entries.
     for (int p = threadIdx.x; p < G; p += blockDim.x) {
         const size_t ts_group_offset =
-            node_ts_groups_offsets_g[node_group_begin + p];
+            ptrs.node_ts_groups_offsets[node_group_begin + p];
         s_group_offsets[p] = ts_group_offset;
         // Preload first_ts to kill the double-indirect load on every
         // binary-search probe in stage 2's find_group_pos_slice.
         s_first_ts[p] =
-            view.timestamps[node_ts_sorted_indices[ts_group_offset]];
+            view.timestamps[ptrs.node_ts_sorted_indices[ts_group_offset]];
     }
     __syncthreads();
 
@@ -179,7 +157,7 @@ __global__ void node_grouped_block_smem_kernel(
             s_first_ts,
             /*node_ts_sorted_indices=*/nullptr,
             /*view_timestamps=*/nullptr,
-            weights, weights_size,
+            ptrs.weights, ptrs.weights_size,
             node_group_begin,
             G, last_ts, r_group);
         (void)prev_node;  // Node2Vec short-circuited above; non-Node2Vec
@@ -196,7 +174,7 @@ __global__ void node_grouped_block_smem_kernel(
 
         // Stage 2c: uniform random edge in the group; fetch endpoint +
         // timestamp from the global view.
-        const long edge_idx = static_cast<long>(node_ts_sorted_indices[
+        const long edge_idx = static_cast<long>(ptrs.node_ts_sorted_indices[
             valid_edge_start +
             generate_random_number_bounded_by(
                 static_cast<int>(valid_edge_end - valid_edge_start),
@@ -309,31 +287,8 @@ __global__ void node_grouped_block_global_kernel(
         return;
     }
 
-    // Direction-dependent per-graph pointer resolution.
-    const size_t* count_ts_group_per_node =
-        Forward ? view.count_ts_group_per_node_outbound
-                : (IsDirected ? view.count_ts_group_per_node_inbound
-                              : view.count_ts_group_per_node_outbound);
-    const size_t* node_ts_groups_offsets_g =
-        Forward ? view.node_ts_group_outbound_offsets
-                : (IsDirected ? view.node_ts_group_inbound_offsets
-                              : view.node_ts_group_outbound_offsets);
-    const size_t* node_ts_sorted_indices =
-        Forward ? view.node_ts_sorted_outbound_indices
-                : (IsDirected ? view.node_ts_sorted_inbound_indices
-                              : view.node_ts_sorted_outbound_indices);
-    const size_t* node_edge_offsets =
-        Forward ? view.node_group_outbound_offsets
-                : (IsDirected ? view.node_group_inbound_offsets
-                              : view.node_group_outbound_offsets);
-    const double* weights =
-        Forward ? view.outbound_forward_cumulative_weights_exponential
-                : (IsDirected ? view.inbound_backward_cumulative_weights_exponential
-                              : view.outbound_backward_cumulative_weights_exponential);
-    const size_t weights_size =
-        Forward ? view.outbound_forward_cumulative_weights_exponential_size
-                : (IsDirected ? view.inbound_backward_cumulative_weights_exponential_size
-                              : view.outbound_backward_cumulative_weights_exponential_size);
+    // Resolve direction-dependent per-graph pointers once per task.
+    const auto ptrs = resolve_node_dir_ptrs<IsDirected, Forward>(view);
 
     // Static smem header — one cache line's worth, broadcast once.
     __shared__ int    s_header[4];            // node_id, walk_start, walk_count, G
@@ -344,13 +299,13 @@ __global__ void node_grouped_block_global_kernel(
         const int node_id    = node_walk_nodes[task_id];
         const int walk_start = node_walk_starts[task_id];
         const int walk_count = node_walk_counts[task_id];
-        const size_t node_group_begin = count_ts_group_per_node[node_id];
-        const size_t node_group_end   = count_ts_group_per_node[node_id + 1];
+        const size_t node_group_begin = ptrs.count_ts_group_per_node[node_id];
+        const size_t node_group_end   = ptrs.count_ts_group_per_node[node_id + 1];
         s_header[0] = node_id;
         s_header[1] = walk_start;
         s_header[2] = walk_count;
         s_header[3] = static_cast<int>(node_group_end - node_group_begin);
-        s_node_edge_end    = node_edge_offsets[node_id + 1];
+        s_node_edge_end    = ptrs.node_edge_offsets[node_id + 1];
         s_node_group_begin = node_group_begin;
     }
     __syncthreads();
@@ -365,7 +320,7 @@ __global__ void node_grouped_block_global_kernel(
     // Slice pointer into the GLOBAL ts-group-offsets array. No preload —
     // each binary-search probe reads this via the double-indirect
     // comparator (view_timestamps[node_ts_sorted_indices[offsets[p]]]).
-    const size_t* group_offsets_slice = node_ts_groups_offsets_g + node_group_begin;
+    const size_t* group_offsets_slice = ptrs.node_ts_groups_offsets + node_group_begin;
 
     for (int k = threadIdx.x; k < walk_count; k += blockDim.x) {
         const int walk_idx_int = sorted_walk_idx[walk_start + k];
@@ -392,9 +347,9 @@ __global__ void node_grouped_block_global_kernel(
         const long local_pos = temporal_graph::find_group_pos_slice<Forward, EdgePickerType>(
             group_offsets_slice,
             /*first_ts=*/nullptr,
-            node_ts_sorted_indices,
+            ptrs.node_ts_sorted_indices,
             view.timestamps,
-            weights, weights_size,
+            ptrs.weights, ptrs.weights_size,
             node_group_begin,
             G, last_ts, r_group);
         (void)prev_node;
@@ -408,7 +363,7 @@ __global__ void node_grouped_block_global_kernel(
                 : node_edge_end_g;
         if (valid_edge_start >= valid_edge_end) continue;
 
-        const long edge_idx = static_cast<long>(node_ts_sorted_indices[
+        const long edge_idx = static_cast<long>(ptrs.node_ts_sorted_indices[
             valid_edge_start +
             generate_random_number_bounded_by(
                 static_cast<int>(valid_edge_end - valid_edge_start),
