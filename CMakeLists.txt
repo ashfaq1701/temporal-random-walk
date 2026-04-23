@@ -42,6 +42,18 @@ find_package(pybind11 REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(TBB REQUIRED)
 
+# Ubuntu 24.04's TBBTargets.cmake puts /usr/include in INTERFACE_INCLUDE_
+# DIRECTORIES, which CMake passes to nvcc as `-isystem /usr/include`.
+# That breaks gcc-13's `#include_next <math.h>` in <cmath> and aborts the
+# CUDA build. Strip the offending entry (build-enabler, zero perf effect).
+if(TARGET TBB::tbb)
+    get_target_property(_tbb_inc TBB::tbb INTERFACE_INCLUDE_DIRECTORIES)
+    if(_tbb_inc)
+        list(REMOVE_ITEM _tbb_inc "/usr/include")
+        set_target_properties(TBB::tbb PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${_tbb_inc}")
+    endif()
+endif()
+
 option(HAS_CUDA "Enable CUDA support" ON)
 
 if(HAS_CUDA)
@@ -52,7 +64,9 @@ if(HAS_CUDA)
         find_package(CUDAToolkit)
         set(CMAKE_CUDA_STANDARD 17)
         set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-        set(CMAKE_CUDA_ARCHITECTURES 75;80;86;89;90)
+        if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+            set(CMAKE_CUDA_ARCHITECTURES 75;80;86;89;90)
+        endif()
         add_definitions(-DHAS_CUDA)
 
         # NVTX3 is header-only; ships with the CUDA Toolkit. When found,
