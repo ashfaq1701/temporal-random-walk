@@ -686,64 +686,107 @@ namespace temporal_graph {
         }
 
         // Stage 1: pick a timestamp-group position for this node.
-        // Non-Node2Vec pickers delegate to the slice helper; Node2Vec
-        // stays inline because its picker is prev-node-dependent.
-        const int G = static_cast<int>(node_group_end - node_group_begin);
-        long group_pos = -1;
+        //
+        // Inline upper_bound / lower_bound comparator on the per-node slice.
+        // This is the FULL_WALK / solo-path hot path; routing it through the
+        // slice helpers (find_group_pos_slice / filter_valid_groups_by_
+        // timestamp_slice) added a 3-deep dependent-load chain inside the
+        // binary-search comparator — `view_timestamps[node_ts_sorted_
+        // indices[group_offsets[p]]]` — vs master's 2-deep version, because
+        // cuda::std::upper_bound passes the DEREFERENCED iterator (i.e. the
+        // group-offset `size_t` value itself) as `pos`. It also added a
+        // per-probe runtime branch on `first_ts != nullptr` that the
+        // compiler doesn't always constant-propagate through the inlined
+        // lambda chain. Measured ~1–2 ms/run regression on FULL_WALK.
+        //
+        // The slice helpers are kept alive as-is for the cooperative
+        // kernels (which preload first_ts into smem and genuinely need the
+        // variable-cap panel interface). They are simply not on this hot
+        // per-walk path.
+        size_t valid_begin = node_group_begin;
+        size_t valid_end = node_group_end;
 
-        if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-            int local_begin = 0;
-            int local_end   = G;
-            filter_valid_groups_by_timestamp_slice<Forward>(
-                node_ts_groups_offsets + node_group_begin,
-                /*first_ts=*/nullptr,
-                node_ts_sorted_indices,
-                view.timestamps,
-                G, timestamp,
-                local_begin, local_end);
-            if (local_begin >= local_end) {
+        if (timestamp != -1) {
+            const int64_t* view_timestamps = view.timestamps;
+            if constexpr (Forward) {
+                const auto it = cuda::std::upper_bound(
+                    node_ts_groups_offsets + static_cast<long>(node_group_begin),
+                    node_ts_groups_offsets + static_cast<long>(node_group_end),
+                    timestamp,
+                    [view_timestamps, node_ts_sorted_indices](const int64_t ts, const size_t pos) {
+                        return ts < view_timestamps[node_ts_sorted_indices[pos]];
+                    });
+
+                valid_begin = static_cast<size_t>(it - node_ts_groups_offsets);
+                valid_end = node_group_end;
+            } else {
+                const auto it = cuda::std::lower_bound(
+                    node_ts_groups_offsets + static_cast<long>(node_group_begin),
+                    node_ts_groups_offsets + static_cast<long>(node_group_end),
+                    timestamp,
+                    [view_timestamps, node_ts_sorted_indices](const size_t pos, const int64_t ts) {
+                        return view_timestamps[node_ts_sorted_indices[pos]] < ts;
+                    });
+
+                valid_begin = node_group_begin;
+                valid_end = static_cast<size_t>(it - node_ts_groups_offsets);
+            }
+
+            if (valid_begin >= valid_end) {
                 return InternalEdge{-1, -1, -1, -1};
             }
-            const size_t valid_begin = node_group_begin + static_cast<size_t>(local_begin);
-            const size_t valid_end   = node_group_begin + static_cast<size_t>(local_end);
+        }
 
-            if (prev_node == -1) {
-                // Per-node piecewise CDF; pass node_group_begin so the
-                // picker treats valid_begin == node_group_begin as
-                // "prefix is 0" instead of reading the previous node's total.
+        long group_pos = -1;
+
+        if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
+            const size_t available = valid_end - valid_begin;
+
+            const auto index = random_pickers::pick_using_index_based_picker(
+                PickerType,
+                0,
+                static_cast<int>(available),
+                !Forward,
+                group_selector_rand_num);
+
+            if (index == -1 || index >= available) {
+                return InternalEdge{-1, -1, -1, -1};
+            }
+
+            group_pos = Forward
+                            ? static_cast<long>(valid_begin + index)
+                            : static_cast<long>(valid_end - 1 - (available - index - 1));
+        } else {
+            if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
+                if (prev_node == -1) {
+                    group_pos = random_pickers::pick_using_weight_based_picker(
+                        RandomPickerType::ExponentialWeight,
+                        weights, weights_size,
+                        valid_begin, valid_end,
+                        group_selector_rand_num,
+                        /*slice_start=*/node_group_begin);
+                } else {
+                    group_pos = pick_random_temporal_node2vec_device<Forward, IsDirected>(
+                        view, node_id, prev_node,
+                        valid_begin, valid_end,
+                        node_group_begin, node_group_end,
+                        node_ts_groups_offsets,
+                        node_ts_sorted_indices,
+                        weights,
+                        group_selector_rand_num);
+                }
+            } else {
                 group_pos = random_pickers::pick_using_weight_based_picker(
-                    RandomPickerType::ExponentialWeight,
+                    PickerType,
                     weights, weights_size,
                     valid_begin, valid_end,
                     group_selector_rand_num,
                     /*slice_start=*/node_group_begin);
-            } else {
-                group_pos = pick_random_temporal_node2vec_device<Forward, IsDirected>(
-                    view, node_id, prev_node,
-                    valid_begin, valid_end,
-                    node_group_begin, node_group_end,
-                    node_ts_groups_offsets,
-                    node_ts_sorted_indices,
-                    weights,
-                    group_selector_rand_num);
             }
+
             if (group_pos == -1) {
                 return InternalEdge{-1, -1, -1, -1};
             }
-        } else {
-            const long local_pos = find_group_pos_slice<Forward, PickerType>(
-                node_ts_groups_offsets + node_group_begin,
-                /*first_ts=*/nullptr,
-                node_ts_sorted_indices,
-                view.timestamps,
-                weights, weights_size,
-                node_group_begin,
-                G, timestamp,
-                group_selector_rand_num);
-            if (local_pos == -1) {
-                return InternalEdge{-1, -1, -1, -1};
-            }
-            group_pos = local_pos + static_cast<long>(node_group_begin);
         }
 
         const size_t valid_edge_start = node_ts_groups_offsets[group_pos];
