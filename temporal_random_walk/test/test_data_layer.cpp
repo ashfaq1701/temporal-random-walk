@@ -229,12 +229,5 @@ TYPED_TEST(WalkSetReleaseTest, ReleaseTransfersOwnership) {
     for (size_t i = 0; i < num_walks * max_len; ++i) EXPECT_EQ(n_raw[i], padding);
     EXPECT_EQ(h.nodes_ptr(), nullptr);
 
-#ifdef HAS_CUDA
-    if (rn.pinned) {
-        cudaFreeHost(n_raw);
-    } else
-#endif
-    {
-        std::free(n_raw);
-    }
+    std::free(n_raw);
 }

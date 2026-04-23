@@ -9,13 +9,8 @@
 
 WalkSetHost::WalkSetHost(const size_t num_walks,
                          const size_t max_len,
-                         const int walk_padding_value,
-                         const bool pinned_host)
-    : nodes_(false, pinned_host),
-      timestamps_(false, pinned_host),
-      walk_lens_(false, pinned_host),
-      edge_ids_(false, pinned_host),
-      num_walks_(num_walks), max_len_(max_len),
+                         const int walk_padding_value)
+    : num_walks_(num_walks), max_len_(max_len),
       walk_padding_value_(walk_padding_value) {
 
     const size_t total      = num_walks * max_len;
@@ -43,10 +38,15 @@ size_t WalkSetHost::non_empty_count() const noexcept {
 }
 
 void WalkSetHost::overwrite_from_device_buffers(
+    const size_t num_walks, const size_t max_len, const int walk_padding_value,
     const Buffer<int>&     d_nodes,
     const Buffer<int64_t>& d_timestamps,
     const Buffer<size_t>&  d_walk_lens,
     const Buffer<int64_t>& d_edge_ids) {
+
+    num_walks_          = num_walks;
+    max_len_            = max_len;
+    walk_padding_value_ = walk_padding_value;
 
     nodes_.resize(d_nodes.size());
     timestamps_.resize(d_timestamps.size());

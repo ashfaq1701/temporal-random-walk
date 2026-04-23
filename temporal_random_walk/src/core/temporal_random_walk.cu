@@ -62,13 +62,6 @@ core::TemporalRandomWalk::TemporalRandomWalk(
     last_batch_unique_sources_ = Buffer<int>(use_gpu);
     last_batch_unique_targets_ = Buffer<int>(use_gpu);
 
-    // Pinned host staging for add_multiple_edges. Only useful on the GPU
-    // path — on CPU, the raw NumPy pointer is consumed directly.
-    if (use_gpu) {
-        h_stage_sources_ = Buffer<int>(/*use_gpu=*/false, /*pinned_host=*/true);
-        h_stage_targets_ = Buffer<int>(/*use_gpu=*/false, /*pinned_host=*/true);
-    }
-
     data_.is_directed              = is_directed;
     data_.max_time_capacity        = max_time_capacity;
     data_.timescale_bound          = timescale_bound;
@@ -112,9 +105,7 @@ core::TemporalRandomWalk::TemporalRandomWalk(TemporalRandomWalk&& other) noexcep
       global_seed_(other.global_seed_),
       shuffle_walk_order_(other.shuffle_walk_order_),
       last_batch_unique_sources_(std::move(other.last_batch_unique_sources_)),
-      last_batch_unique_targets_(std::move(other.last_batch_unique_targets_)),
-      h_stage_sources_(std::move(other.h_stage_sources_)),
-      h_stage_targets_(std::move(other.h_stage_targets_))
+      last_batch_unique_targets_(std::move(other.last_batch_unique_targets_))
 #ifdef HAS_CUDA
     , cuda_device_prop_(other.cuda_device_prop_),
       stream_(other.stream_)
@@ -140,8 +131,6 @@ core::TemporalRandomWalk& core::TemporalRandomWalk::operator=(
     shuffle_walk_order_         = other.shuffle_walk_order_;
     last_batch_unique_sources_  = std::move(other.last_batch_unique_sources_);
     last_batch_unique_targets_  = std::move(other.last_batch_unique_targets_);
-    h_stage_sources_            = std::move(other.h_stage_sources_);
-    h_stage_targets_            = std::move(other.h_stage_targets_);
 #ifdef HAS_CUDA
     cuda_device_prop_ = other.cuda_device_prop_;
     stream_           = other.stream_;
@@ -321,30 +310,15 @@ HOST void temporal_random_walk::add_multiple_edges(
         NVTX_RANGE_COLORED("Unique sources/targets", nvtx_colors::edge_purple);
 #ifdef HAS_CUDA
         if (trw->data().use_gpu) {
-            // Copy NumPy (pageable) -> pinned host staging -> device scratch.
-            // cudaMemcpyAsync only issues a true async DMA when the host
-            // side is page-locked; from a pageable pointer it degenerates
-            // to a synchronous copy and blocks this thread. Staging via
-            // pinned Buffer<int> members lets the two H->D DMAs pipeline
-            // back-to-back on the default stream before the first
-            // sort+unique, and keeps this work naturally ordered with
-            // temporal_graph::add_multiple_edges_cuda above.
-            Buffer<int>& h_src = trw->h_stage_sources();
-            Buffer<int>& h_tgt = trw->h_stage_targets();
-            h_src.resize(num_edges);
-            h_tgt.resize(num_edges);
-            std::memcpy(h_src.data(), sources, num_edges * sizeof(int));
-            std::memcpy(h_tgt.data(), targets, num_edges * sizeof(int));
-
             Buffer<int> src_scratch(/*use_gpu=*/true);
             Buffer<int> tgt_scratch(/*use_gpu=*/true);
             src_scratch.resize(num_edges);
             tgt_scratch.resize(num_edges);
-            CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
-                src_scratch.data(), h_src.data(), num_edges * sizeof(int),
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+                src_scratch.data(), sources, num_edges * sizeof(int),
                 cudaMemcpyHostToDevice));
-            CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
-                tgt_scratch.data(), h_tgt.data(), num_edges * sizeof(int),
+            CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+                tgt_scratch.data(), targets, num_edges * sizeof(int),
                 cudaMemcpyHostToDevice));
 
             set_last_batch_unique_cuda_device_input(

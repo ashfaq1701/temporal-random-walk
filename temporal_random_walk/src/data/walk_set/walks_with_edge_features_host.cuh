@@ -12,11 +12,6 @@
 
 /**
  * RAII host-resident bundle of walks + their per-edge feature rows.
- *
- * `walk_set` owns the four walk arrays (nodes, timestamps, walk_lens,
- * edge_ids). `walk_edge_features` is a Buffer<float> whose pinning
- * state is inherited from walk_set so the device-origin path preserves
- * pinned host memory all the way out to the Python capsule.
  */
 struct WalksWithEdgeFeaturesHost {
     WalkSetHost   walk_set;
@@ -27,12 +22,6 @@ struct WalksWithEdgeFeaturesHost {
 
     WalksWithEdgeFeaturesHost(WalkSetHost ws, const int fdim)
         : walk_set(std::move(ws)), feature_dim(fdim) {
-        // Inherit pinned-host state from the incoming walk set: if the
-        // walk data came out of a device download, the edge-feature gather
-        // buffer should also live in pinned host memory so the caller's
-        // upstream D->H copy gets full bandwidth.
-        walk_edge_features = Buffer<float>(
-            /*use_gpu=*/false, /*pinned_host=*/walk_set.is_pinned_host());
         const size_t n = walk_set.edge_ids_size();
         if (feature_dim > 0 && n > 0) {
             walk_edge_features.resize(n * static_cast<size_t>(feature_dim));
