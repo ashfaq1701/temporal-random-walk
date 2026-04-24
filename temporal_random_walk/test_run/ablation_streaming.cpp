@@ -81,9 +81,6 @@ int main(int argc, char **argv) {
               << "Max walk length: " << max_walk_len << "\n"
               << "Timescale bound: " << timescale_bound << "\n";
 
-    // ------------------------------
-    // Load edges
-    // ------------------------------
     std::vector<int> sources, targets;
     std::vector<int64_t> timestamps;
     {
@@ -94,9 +91,6 @@ int main(int argc, char **argv) {
         std::cout << "Edges loaded: " << edge_infos.size() << "\n";
     }
 
-    // ------------------------------
-    // Compute durations
-    // ------------------------------
     auto [min_it, max_it] =
         std::minmax_element(timestamps.begin(), timestamps.end());
     const int64_t min_ts = *min_it;
@@ -110,9 +104,6 @@ int main(int argc, char **argv) {
     std::cout << "Batch duration Δ_batch = " << batch_duration << "\n"
               << "Window duration Δ_window = " << window_duration << "\n";
 
-    // ------------------------------
-    // Construct TRW
-    // ------------------------------
     const bool use_weight = hop_picker == RandomPickerType::ExponentialWeight;
 
     TemporalRandomWalk trw(
@@ -124,9 +115,6 @@ int main(int argc, char **argv) {
         timescale_bound
     );
 
-    // ------------------------------
-    // Sort edges by timestamp
-    // ------------------------------
     std::vector<size_t> order(timestamps.size());
     std::iota(order.begin(), order.end(), 0);
     std::sort(order.begin(), order.end(),
@@ -142,12 +130,7 @@ int main(int argc, char **argv) {
     size_t cursor = 0;
     const size_t N = timestamps.size();
 
-    // ------------------------------
-    // Warmup: run batch 0 once, untimed and discarded, to absorb one-shot
-    // first-call costs (CUDA context init, first-kernel launch latency,
-    // first CUB scratch allocation). Uses a local cursor so the main loop
-    // below still processes batch 0 from the start.
-    // ------------------------------
+    // Warmup: batch 0 runs untimed via a local cursor so the main loop still processes it.
     if (num_batches > 0) {
         size_t warm_cursor = 0;
         const int64_t warm_end_ts =
@@ -176,9 +159,6 @@ int main(int argc, char **argv) {
                   << " walks (discarded).\n";
     }
 
-    // ------------------------------
-    // Streaming loop
-    // ------------------------------
     for (int b = 0; b < num_batches; ++b) {
         const int64_t batch_end_ts =
             (b == num_batches - 1)
@@ -198,7 +178,6 @@ int main(int argc, char **argv) {
         std::cout << "\n[Batch " << b + 1 << "] Edges: "
                   << batch_src.size() << "\n";
 
-        // Ingestion
         double ingest_time = 0.0;
         {
             NvtxRange r("ingestion_batch");
@@ -219,7 +198,6 @@ int main(int argc, char **argv) {
         }
         ingestion_times.push_back(ingest_time);
 
-        // Walk sampling
         double walk_time = 0.0;
         size_t walks_this_batch = 0;
         double avg_len_batch = 0.0;

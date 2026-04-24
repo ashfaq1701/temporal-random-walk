@@ -116,21 +116,17 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                              const py::object& edge_features_obj,
                              const size_t block_dim)
         {
-            // Request buffer access to numpy arrays
             const auto sources_info = sources.request();
             const auto targets_info = targets.request();
             const auto timestamps_info = timestamps.request();
 
-            // Check dimensions and sizes
             if (sources_info.ndim != 1 || targets_info.ndim != 1 || timestamps_info.ndim != 1)
                 throw std::runtime_error("Arrays must be 1-dimensional");
 
-            // Check that all arrays have the same length
             const size_t num_edges = sources_info.shape[0];
             if (targets_info.shape[0] != num_edges || timestamps_info.shape[0] != num_edges)
                 throw std::runtime_error("All arrays must have the same length");
 
-            // Get pointers to the data
             const auto sources_ptr = static_cast<int*>(sources_info.ptr);
             const auto targets_ptr = static_cast<int*>(targets_info.ptr);
             const auto* timestamps_ptr = static_cast<int64_t*>(timestamps_info.ptr);
@@ -160,7 +156,6 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 edge_features_ptr = static_cast<float*>(edge_features_info.ptr);
             }
 
-            // Call the C++ function with raw pointers and size
             tw.add_multiple_edges(
                 sources_ptr,
                 targets_ptr,
@@ -171,11 +166,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 block_dim);
         },
         R"(
-        Add multiple directed edges to the temporal graph.
-
-        This function efficiently handles both Python lists and NumPy arrays without
-        unnecessary data copying. The implementation automatically converts the input
-        data to the appropriate C++ types.
+        Add multiple edges to the temporal graph.
 
         Args:
             sources: List or NumPy array of source node IDs (or first node in undirected graphs).
@@ -376,14 +367,9 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     Uses walk_bias if not specified.
                 walk_direction (str, optional): Direction of temporal random walks.
                     Either "Forward_In_Time" (default) or "Backward_In_Time".
-                kernel_launch_type (str, optional): Which GPU walk kernel path to run.
-                    "NODE_GROUPED" (default — cooperative per-step pipeline with
-                    per-node smem panel preload, optimized for skewed temporal
-                    graphs), "NODE_GROUPED_GLOBAL_ONLY" (same cooperative pipeline
-                    but the smem panel preload is disabled — every coop task runs
-                    on the `*_global` kernel tier; ablation variant), or "FULL_WALK"
-                    (one thread per walk for the walk's whole life, retained as a
-                    fallback / baseline).
+                kernel_launch_type (str, optional): "NODE_GROUPED" (default),
+                    "NODE_GROUPED_GLOBAL_ONLY" (ablation: coop without smem preload),
+                    or "FULL_WALK" (one thread per walk, baseline).
 
             Returns:
                 Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
@@ -494,14 +480,9 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     Uses walk_bias if not specified.
                 walk_direction (str, optional): Direction of temporal random walks.
                     Either "Forward_In_Time" (default) or "Backward_In_Time".
-                kernel_launch_type (str, optional): Which GPU walk kernel path to run.
-                    "NODE_GROUPED" (default — cooperative per-step pipeline with
-                    per-node smem panel preload, optimized for skewed temporal
-                    graphs), "NODE_GROUPED_GLOBAL_ONLY" (same cooperative pipeline
-                    but the smem panel preload is disabled — every coop task runs
-                    on the `*_global` kernel tier; ablation variant), or "FULL_WALK"
-                    (one thread per walk for the walk's whole life, retained as a
-                    fallback / baseline).
+                kernel_launch_type (str, optional): "NODE_GROUPED" (default),
+                    "NODE_GROUPED_GLOBAL_ONLY" (ablation: coop without smem preload),
+                    or "FULL_WALK" (one thread per walk, baseline).
 
             Returns:
                 Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
@@ -609,14 +590,9 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     Uses walk_bias if not specified.
                 walk_direction (str, optional): Direction of temporal random walks.
                     Either "Forward_In_Time" (default) or "Backward_In_Time".
-                kernel_launch_type (str, optional): Which GPU walk kernel path to run.
-                    "NODE_GROUPED" (default — cooperative per-step pipeline with
-                    per-node smem panel preload, optimized for skewed temporal
-                    graphs), "NODE_GROUPED_GLOBAL_ONLY" (same cooperative pipeline
-                    but the smem panel preload is disabled — every coop task runs
-                    on the `*_global` kernel tier; ablation variant), or "FULL_WALK"
-                    (one thread per walk for the walk's whole life, retained as a
-                    fallback / baseline).
+                kernel_launch_type (str, optional): "NODE_GROUPED" (default),
+                    "NODE_GROUPED_GLOBAL_ONLY" (ablation: coop without smem preload),
+                    or "FULL_WALK" (one thread per walk, baseline).
 
             Returns:
                 Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:

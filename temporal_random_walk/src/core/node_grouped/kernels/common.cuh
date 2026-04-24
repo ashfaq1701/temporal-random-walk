@@ -1,9 +1,7 @@
 #ifndef NODE_GROUPED_KERNELS_COMMON_CUH
 #define NODE_GROUPED_KERNELS_COMMON_CUH
 
-// Shared helpers for the node-grouped cooperative kernels. Anything that
-// the block and warp tiers both need (but that isn't per-walk sampling
-// logic) lives here.
+// Shared helpers for the node-grouped coop kernels.
 
 #include "../../../common/macros.cuh"
 #include "../../../common/cuda_config.cuh"
@@ -17,13 +15,7 @@ namespace temporal_random_walk {
 
 #ifdef HAS_CUDA
 
-// Direction-dependent per-node pointers the cooperative kernels need to
-// sample one hop out of the current node. Resolved once at task entry
-// (using compile-time tags) so the stride loop doesn't re-do the
-// Forward ? outbound : (IsDirected ? inbound : outbound) ternary chain
-// on every walk.
-//
-// Matches the pointer set get_node_edge_at_device pulls off the view.
+// Direction-resolved per-node pointers. Same set get_node_edge_at_device uses.
 struct NodeDirPtrs {
     const size_t* count_ts_group_per_node;
     const size_t* node_ts_groups_offsets;
@@ -71,10 +63,7 @@ resolve_node_dir_ptrs(const TemporalGraphView& view) {
     return p;
 }
 
-// ==========================================================================
-// Picker-class -> G cap for the smem panel tiers. The scheduler's
-// G-partition guarantees each cooperative-smem task's G is <= its tier cap.
-// ==========================================================================
+// Picker-class G caps for the smem tiers; scheduler's G-partition enforces <=.
 template <RandomPickerType PickerType>
 HOST DEVICE constexpr inline int coop_block_smem_g_cap() {
     return random_pickers::is_index_based_picker_v<PickerType>
@@ -89,23 +78,9 @@ HOST DEVICE constexpr inline int coop_warp_smem_g_cap() {
                : G_THRESHOLD_WARP_WEIGHT;
 }
 
-// ==========================================================================
-// Stage 2b+2c — shared per-walk tail across all four cooperative kernels.
-//
-// Given a local group position (in [0, G)) and an offset pointer addressing
-// the per-node ts-group-offsets slice (either the smem panel preloaded in
-// smem kernels, or the (global + node_group_begin) slice pointer in global
-// kernels), resolves the selected group's edge range, picks a uniform
-// random edge within it, and appends the hop to walk_set.
-//
-// `offsets_slice` is indexed in [0, G] — offsets_slice[local_pos] is the
-// first edge of the selected group, offsets_slice[local_pos + 1] is the
-// first edge of the next group (or node_edge_end if local_pos is the last
-// group). Both smem and (global + begin) pointers satisfy this contract.
-//
-// Returns silently on degenerate / empty edge range — the walk simply
-// doesn't advance this step and its walk_lens isn't incremented.
-// ==========================================================================
+// Shared per-walk tail for all four coop kernels. Given a picked group
+// position and the ts-group-offsets slice (smem or global), resolves the
+// edge range, picks a uniform edge, and appends the hop. No-ops on empty range.
 template <bool IsDirected, bool Forward>
 DEVICE __forceinline__ void sample_edge_and_add_hop(
     const TemporalGraphView& view,

@@ -1,20 +1,5 @@
-// Streaming walk-sampling benchmark over the Alibaba microservices dataset,
-// implemented entirely in C++ to avoid the Python-side cost that noises the
-// tempest-benchmarks/alibaba_benchmark/test_alibaba_dataset.py runner.
-//
-// Expects the dataset as `data_{0..total_minutes-1}.csv` under <dataset_dir>,
-// each file holding one minute of edges with columns `u,i,ts` (header row).
-// Use whatever quick parquet→CSV pre-pass fits your workflow.
-//
-// Mirrors the Python script:
-//   * Reads files in groups of `minutes_per_step` minutes, for
-//     `total_minutes` minutes total.
-//   * Each step: ingest edges into a TemporalRandomWalk (timed), then
-//     sample walks from the unique source nodes of the most recently
-//     added batch via `get_random_walks_and_times_for_last_batch` (timed).
-//   * Warmup pass runs the first step untimed before the main loop to
-//     absorb one-shot CUDA/CUB init costs (same pattern as
-//     ablation_streaming.cpp).
+// C++ port of alibaba_benchmark/test_alibaba_dataset.py. Expects
+// data_{0..total_minutes-1}.csv under <dataset_dir>, header + u,i,ts per line.
 
 #include <iostream>
 #include <vector>
@@ -67,9 +52,6 @@ struct EdgeBatch {
     std::vector<int64_t> ts;
 };
 
-// Load data_{minute_begin..minute_begin + minutes_per_step - 1}.csv from
-// the dataset directory, clipping at total_minutes. Edges are concatenated
-// into a single batch in file order (file i appears before file i+1).
 EdgeBatch load_step(const std::string& dataset_dir,
                     int minute_begin,
                     int minutes_per_step,
@@ -137,9 +119,6 @@ int main(int argc, char** argv) {
               << "Total minutes:     " << total_minutes << "\n"
               << "Timescale bound:   " << timescale_bound << "\n";
 
-    // -----------------------------------------------------------------
-    // Construct TRW (directed, windowed by window_ms).
-    // -----------------------------------------------------------------
     const bool use_weight = (hop_picker == RandomPickerType::ExponentialWeight);
 
     TemporalRandomWalk trw(
@@ -150,11 +129,7 @@ int main(int argc, char** argv) {
         /*enable_temporal_node2vec=*/false,
         /*timescale_bound=*/timescale_bound);
 
-    // -----------------------------------------------------------------
-    // Warmup: load + ingest + walk-sample the first step, untimed and
-    // discarded. The main loop below re-ingests the same files for
-    // iteration 0 (same "repeat batch 0" pattern as ablation_streaming).
-    // -----------------------------------------------------------------
+    // Warmup: step 0 runs untimed; main loop re-ingests the same files.
     {
         NvtxRange r("warmup");
         EdgeBatch warm = load_step(dataset_dir, 0, minutes_per_step, total_minutes);
@@ -171,9 +146,6 @@ int main(int argc, char** argv) {
                   << " walks (discarded).\n";
     }
 
-    // -----------------------------------------------------------------
-    // Streaming loop: i = 0, step, 2*step, ... < total_minutes.
-    // -----------------------------------------------------------------
     std::vector<double> ingestion_times;
     std::vector<double> walk_times;
     std::vector<size_t> walks_per_step;
@@ -188,7 +160,6 @@ int main(int argc, char** argv) {
         std::cout << "\n[Step t=" << i << "..+" << minutes_per_step
                   << "min] Edges: " << batch.src.size() << "\n";
 
-        // Ingest (timed).
         double ingest_time = 0.0;
         {
             NvtxRange r("ingestion_batch");
@@ -204,8 +175,6 @@ int main(int argc, char** argv) {
         }
         ingestion_times.push_back(ingest_time);
 
-        // Walk sample (timed). Walks start from the unique source nodes
-        // of the edges just added.
         double walk_time = 0.0;
         size_t walks_this_step = 0;
         double avg_len_this_step = 0.0;
@@ -239,9 +208,6 @@ int main(int argc, char** argv) {
                   << "  Total edges added:   " << total_edges_added << "\n";
     }
 
-    // -----------------------------------------------------------------
-    // Summary.
-    // -----------------------------------------------------------------
     const size_t num_steps = walk_times.size();
     const double total_ingestion =
         std::accumulate(ingestion_times.begin(), ingestion_times.end(), 0.0);

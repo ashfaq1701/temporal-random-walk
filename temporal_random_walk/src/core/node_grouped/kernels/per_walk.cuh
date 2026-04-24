@@ -1,10 +1,8 @@
 #ifndef NODE_GROUPED_KERNELS_PER_WALK_CUH
 #define NODE_GROUPED_KERNELS_PER_WALK_CUH
 
-// Per-walk kernels: Philox offset helper, start-edge pick, the per-thread
-// advance_one_walk primitive, the solo kernel that wraps it, and the
-// backward-walk reversal kernel. Anything that services a single walk per
-// thread lives here.
+// Single-walk-per-thread kernels: start edges, advance_one_walk,
+// solo wrapper, Node2Vec per-walk step, backward-walk reversal.
 
 #include "../../../data/walk_set/walk_set_view.cuh"
 #include "../../../data/temporal_graph_view.cuh"
@@ -19,35 +17,12 @@ namespace temporal_random_walk {
 
 #ifdef HAS_CUDA
 
-// ==========================================================================
-// Philox offset scheme
-//
-// Each walk has its own Philox substream keyed on walk_idx. Within that
-// substream the start kernel draws from the head; every intermediate step
-// kernel jumps past the start kernel's budget (3 positions — 2 directed /
-// 3 undirected, always rounded up) and then consumes exactly 2 positions
-// per step. Bit-exactness is a function of (base_seed, walk_idx, step) so
-// it is independent of which tier (solo/warp/block) actually ran a walk.
-// ==========================================================================
-
+// Start kernel burns 3 Philox draws (2 directed / 3 undirected, rounded up)
+// so intermediate steps hit the same substream offset regardless of tier.
 DEVICE __forceinline__ uint64_t step_kernel_philox_offset(const int step_number) {
     constexpr uint64_t START_KERNEL_BUDGET = 3ULL;
     return START_KERNEL_BUDGET + static_cast<uint64_t>(step_number) * 2ULL;
 }
-
-// ==========================================================================
-// Step 0 — start edges
-//
-// Constrained: all walks start from a real node id. Walks sharing a start
-// node amortize per-node work in the cooperative tier (TODO). Solo services
-// group_size == 1 only; the template tag lifts the "constrained" invariant
-// to compile time so there is no per-walk -1 branching.
-//
-// Unconstrained: all walks start from -1 (pick any edge). No grouping; solo
-// handles every walk.
-//
-// Uniformity is the caller's responsibility — see dispatch_node_grouped_kernel.
-// ==========================================================================
 
 template <bool IsDirected, bool Forward, RandomPickerType StartPickerType, bool Constrained>
 __global__ void pick_start_edges_kernel(
@@ -61,11 +36,6 @@ __global__ void pick_start_edges_kernel(
     const size_t walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (walk_idx >= num_walks) return;
     if (max_walk_len == 0) return;
-
-    // Temporary: this kernel handles both unconstrained step 0 (§5 short-circuit)
-    // and constrained step 0 while the scheduler's W-partition is not yet in
-    // place. Task 5 will move the constrained case into solo_walks and this
-    // kernel will shrink to the unconstrained path only.
 
     PhiloxState rng;
     init_philox_state(rng, base_seed, static_cast<uint64_t>(walk_idx));
@@ -82,9 +52,7 @@ __global__ void pick_start_edges_kernel(
             view, /*timestamp=*/-1, r_start_a, r_start_b);
     }
 
-    // Dead-end: no edge satisfies the constraint. add_hop was never called,
-    // so walk_lens stays 0 and slot 0 keeps walk_padding_value. The
-    // intermediate-step filter (walk_alive_flags_kernel) drops the walk.
+    // No edge satisfies the constraint → walk stays at len 0, filter drops it.
     if (start_edge.i == -1) return;
 
     const int64_t sentinel_timestamp = Forward ? INT64_MIN : INT64_MAX;
@@ -101,10 +69,7 @@ __global__ void pick_start_edges_kernel(
             walk_set.add_hop(walk_idx, start_src, start_ts, start_edge.edge_id);
         }
     } else {
-        // Unconstrained undirected draws a 3rd Philox value so
-        // START_KERNEL_BUDGET == 3 always lands past the start kernel's
-        // draws. Constrained consumes 2 in both solo and coop paths, so
-        // all tiers stay bit-exact.
+        // 3rd Philox draw here matches START_KERNEL_BUDGET=3 so all tiers stay bit-exact.
         int picked_node;
         if constexpr (Constrained) {
             picked_node = start_node_ids[walk_idx];
@@ -143,23 +108,8 @@ inline void dispatch_start_edges_kernel(
     });
 }
 
-// ==========================================================================
-// Single-walk advance helper — the sole primitive that computes one walk's
-// hop at step_number. Doesn't index any list; caller supplies walk_idx.
-//
-// Shared by solo and the four cooperative kernels. Each walk's outcome is
-// a function of (walk_idx, step_number, base_seed) alone — Philox is keyed
-// on walk_idx, last_node/last_ts/prev_node are read from walk_set at fixed
-// offsets. So any thread can call advance_one_walk for any walk_idx and get
-// the same result as solo would.
-//
-// Cooperative kernels (coop_warp.cuh, coop_block.cuh) exploit this: they
-// consume node-level task lists (start/count into sorted_walk_idx) and
-// loop advance_one_walk sequentially for the walks in their node's range
-// (in scaffold form) or drive the sampling via a shared smem panel (in
-// task-8+ real bodies).
-// ==========================================================================
-
+// Advance one walk by one step. Outcome depends only on
+// (walk_idx, step_number, base_seed) so any tier produces the same walk.
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 DEVICE __forceinline__ void advance_one_walk(
     TemporalGraphView view,
@@ -202,10 +152,7 @@ DEVICE __forceinline__ void advance_one_walk(
     }
 }
 
-// ==========================================================================
-// Solo kernel — one thread per walk. Services the solo_walks list (W=1
-// groups after the scheduler's W-partition).
-// ==========================================================================
+// Solo tier: one thread per walk in solo_walks.
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_solo_kernel(
     TemporalGraphView view,
@@ -248,19 +195,8 @@ inline void dispatch_node_grouped_solo_kernel(
     });
 }
 
-// ==========================================================================
-// Per-walk step kernel — one thread per walk, no node-grouping. Services
-// pickers whose sampling depends on the walker's own prev_node
-// (TemporalNode2Vec), where cooperative smem panels offer no benefit:
-// each walk's effective CDF is a function of prev_node, so walks sharing
-// a current node cannot share panel state. Dispatcher gates such pickers
-// out of the scheduler + five-kernel pipeline entirely and routes every
-// intermediate step through this kernel instead.
-//
-// Dead walks (last_node == walk_padding_value) naturally no-op inside
-// advance_one_walk -> get_node_edge_at_device's is_node_active check, so
-// we don't need the scheduler's filter/compact stages.
-// ==========================================================================
+// Node2Vec path: one thread per walk, no scheduler. prev_node-dependent
+// CDF makes coop panels useless. Dead walks no-op inside is_node_active.
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void per_walk_step_kernel(
     TemporalGraphView view,
@@ -299,10 +235,6 @@ inline void dispatch_per_walk_step_kernel(
                 step_number, max_walk_len, num_walks, base_seed);
     });
 }
-
-// ==========================================================================
-// Backward-walk reversal
-// ==========================================================================
 
 __global__ static void reverse_walks_kernel(
     WalkSetView walk_set, const size_t num_walks) {

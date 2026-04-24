@@ -11,42 +11,9 @@ namespace temporal_random_walk {
 
 #ifdef HAS_CUDA
 
-// ==========================================================================
-// Top-level router for the node-grouped walk path.
-//
-// Step 0 — start edges. `pick_start_edges_kernel` handles both
-// unconstrained and constrained start for all pickers.
-//
-// Steps 1..max_walk_len-1 take one of two paths, chosen by picker class:
-//
-//   (A) Per-walk path — pickers whose sampling depends on the walker's
-//       own prev_node (TemporalNode2Vec). Their effective CDF is
-//       per-walk, so walks sharing a current node cannot share panel
-//       state; the cooperative tiers offer no benefit. These pickers
-//       bypass the scheduler (no filter/sort/RLE/partition/expansion)
-//       and run `per_walk_step_kernel` — one thread per walk per step.
-//       Dead walks no-op inside advance_one_walk.
-//
-//   (B) Cooperative path — all other pickers (Uniform, Linear,
-//       ExponentialIndex, ExponentialWeight). `NodeGroupedScheduler`
-//       runs the per-step pipeline (filter -> compact -> num_active
-//       D2H -> gather -> sort -> RLE -> exclusive-scan -> W-partition
-//       -> G-partition -> block-task expansion), and the dispatcher
-//       launches up to five disjoint kernels per step: solo, warp-smem,
-//       warp-global, block-smem, block-global. Each launch is skipped
-//       if its tier count is 0.
-//
-// Reverse — backward-in-time walks get `reverse_walks_kernel` flipped in
-// place after the step loop, in either path.
-//
-// is_directed and should_walk_forward are lifted to compile-time tags via
-// `dispatch_bool` so both paths specialize once per (kDir, kFwd).
-// ==========================================================================
-
-// force_global_only: ablation mode. When true, the scheduler's G-partition
-// sends every cooperative task to the `*_global` tier regardless of G, so
-// the `*_smem` kernels never launch. Used by the NODE_GROUPED_GLOBAL_ONLY
-// KernelLaunchType. Walk distribution is identical to the default path.
+// Routes NODE_GROUPED to the scheduler+coop path or to per_walk_step_kernel
+// for Node2Vec (whose prev_node-dependent CDF can't share a coop panel).
+// force_global_only: ablation — route every coop task to *_global (no smem).
 inline void dispatch_node_grouped_kernel(
     const TemporalGraphView& view,
     const bool is_directed,
@@ -73,9 +40,7 @@ inline void dispatch_node_grouped_kernel(
 
     const bool should_walk_forward = get_should_walk_forward(walk_direction);
 
-    // Pickers whose per-walk sampling depends on the walker's own
-    // prev_node cannot share a cooperative panel — each walk's CDF
-    // differs. Gate them out of the scheduler + coop pipeline entirely.
+    // Node2Vec's per-walk CDF breaks coop panel sharing.
     const bool use_per_walk_path =
         (edge_picker_type == RandomPickerType::TemporalNode2Vec);
 
@@ -84,7 +49,6 @@ inline void dispatch_node_grouped_kernel(
         dispatch_bool(should_walk_forward, [&](auto fwd_tag) {
             constexpr bool kFwd = decltype(fwd_tag)::value;
 
-            // ---- 1. Step 0 — start edges (same for both paths) --------
             {
                 NVTX_RANGE_COLORED("NG step0 pick", nvtx_colors::walk_green);
                 dispatch_start_edges_kernel<kDir, kFwd>(
@@ -94,11 +58,7 @@ inline void dispatch_node_grouped_kernel(
                     base_seed, grid, block_dim, stream);
             }
 
-            // ---- 2. Intermediate steps --------------------------------
             if (use_per_walk_path) {
-                // Node2Vec: bypass scheduler; one kernel per step over
-                // the raw walk range. Dead walks no-op inside
-                // advance_one_walk via is_node_active.
                 for (int step_number = 1; step_number < max_walk_len; ++step_number) {
                     NVTX_RANGE_COLORED("NG per-walk step", nvtx_colors::walk_green);
                     dispatch_per_walk_step_kernel<kDir, kFwd>(
@@ -108,13 +68,9 @@ inline void dispatch_node_grouped_kernel(
                         grid, block_dim, stream);
                 }
             } else {
-                // Cooperative path.
                 NodeGroupedScheduler scheduler(num_walks, block_dim, stream);
 
-                // Per-direction, per-directedness pick of the timestamp-
-                // group offsets array. Forward -> outbound; Backward
-                // directed -> inbound; Backward undirected -> outbound.
-                // Matches get_node_edge_at_device.
+                // Direction-dependent ts-group offsets; matches get_node_edge_at_device.
                 const std::size_t* count_ts_group_per_node =
                     kFwd
                         ? view.count_ts_group_per_node_outbound
@@ -131,7 +87,6 @@ inline void dispatch_node_grouped_kernel(
 
                     NVTX_RANGE_COLORED("NG pick", nvtx_colors::walk_green);
 
-                    // Solo tier: one thread per walk in solo_walks.
                     if (step_outs.num_solo_walks_host > 0) {
                         const size_t solo_blocks =
                             (static_cast<size_t>(step_outs.num_solo_walks_host)
@@ -146,10 +101,8 @@ inline void dispatch_node_grouped_kernel(
                             solo_grid, block_dim, stream);
                     }
 
-                    // Warps per block derived from the caller-supplied block_dim.
                     const unsigned warps_per_block = block_dim.x / 32u;
 
-                    // Warp-smem tier: W in (W_THRESHOLD_WARP, BLOCK_DIM] and G <= warp cap.
                     if (step_outs.warp_smem.num_tasks_host > 0) {
                         const size_t warp_smem_blocks =
                             (static_cast<size_t>(step_outs.warp_smem.num_tasks_host)
@@ -167,7 +120,6 @@ inline void dispatch_node_grouped_kernel(
                             warp_smem_grid, block_dim, stream);
                     }
 
-                    // Warp-global tier: W in (W_THRESHOLD_WARP, BLOCK_DIM] and G > warp cap.
                     if (step_outs.warp_global.num_tasks_host > 0) {
                         const size_t warp_global_blocks =
                             (static_cast<size_t>(step_outs.warp_global.num_tasks_host)
@@ -185,7 +137,6 @@ inline void dispatch_node_grouped_kernel(
                             warp_global_grid, block_dim, stream);
                     }
 
-                    // Block-smem tier: W > BLOCK_DIM and G <= block cap.
                     if (step_outs.block_smem.num_tasks_host > 0) {
                         const dim3 block_smem_grid(
                             static_cast<unsigned>(step_outs.block_smem.num_tasks_host));
@@ -201,7 +152,6 @@ inline void dispatch_node_grouped_kernel(
                             block_smem_grid, block_dim, stream);
                     }
 
-                    // Block-global tier: W > BLOCK_DIM and G > block cap.
                     if (step_outs.block_global.num_tasks_host > 0) {
                         const dim3 block_global_grid(
                             static_cast<unsigned>(step_outs.block_global.num_tasks_host));
@@ -219,7 +169,6 @@ inline void dispatch_node_grouped_kernel(
                 }
             }
 
-            // ---- 3. Reverse if walking backward -----------------------
             if constexpr (!kFwd) {
                 NVTX_RANGE_COLORED("NG reverse", nvtx_colors::edge_purple);
                 reverse_walks_kernel<<<grid, block_dim, 0, stream>>>(
