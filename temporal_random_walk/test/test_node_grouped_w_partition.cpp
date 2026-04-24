@@ -3,15 +3,15 @@
 // The W-partition (task 5) classifies each unique node at a step into one
 // of three tiers based on its walk count W:
 //   W <= W_THRESHOLD_WARP   (==1)   -> solo_walks
-//   T_WARP <  W <= T_BLOCK         (<=255) -> warp_nodes + walk_starts/counts
-//   W  >  T_BLOCK                  (>=256) -> block_nodes + walk_starts/counts
+//   W_THRESHOLD_WARP <  W <= BLOCK_DIM         (<=255) -> warp_nodes + walk_starts/counts
+//   W  >  BLOCK_DIM                  (>=256) -> block_nodes + walk_starts/counts
 //
 // Scope covered here:
 //   - disjoint coverage: the three tier lists partition exactly the active
 //     walks, no duplicates, no terminated leaks,
 //   - count identity: num_solo + sum(warp_counts) + sum(block_counts)
 //     == num_active,
-//   - tier boundaries: W={1,2} (solo/warp) and W={T_BLOCK, T_BLOCK+1}
+//   - tier boundaries: W={1,2} (solo/warp) and W={BLOCK_DIM, BLOCK_DIM+1}
 //     (warp/block),
 //   - termination filtering: walks with walk_padding_value at the current
 //     step never reach the partition,
@@ -20,7 +20,7 @@
 // Scope deferred to sibling files:
 //   - G-partition of warp/block into (smem, global) variants by per-node
 //     timestamp-group count ->  test_node_grouped_g_partition.cpp
-//   - Block-task expansion of W>BLOCK_WALK_CAP nodes into multiple tasks
+//   - Block-task expansion of W>W_THRESHOLD_MULTI_BLOCK nodes into multiple tasks
 //     ->                         test_node_grouped_block_task_expansion.cpp
 //
 // This file is guarded by HAS_CUDA. It is NOT paired with a CPU variant
@@ -376,7 +376,7 @@ TEST_F(GpuSchedulingTest, AllSameNodeWarpSize_SingleWarpTask) {
 }
 
 TEST_F(GpuSchedulingTest, AllSameNodeBlockSize_SingleBlockTask) {
-    // W>T_BLOCK -> single block task.
+    // W>BLOCK_DIM -> single block task.
     const int W = static_cast<int>(BLOCK_DIM) + 1;  // 256, just over the boundary
     std::vector<int> last_nodes(W, 7);
     auto r = run_and_materialize(last_nodes, STEP_NUMBER, MAX_WALK_LEN, PAD,
@@ -417,9 +417,9 @@ TEST_F(GpuSchedulingTest, BoundaryW1IsSolo_W2IsWarp) {
     EXPECT_EQ(r.warp_walk_counts[0], 2);
 }
 
-TEST_F(GpuSchedulingTest, BoundaryW_T_BLOCK_IsWarp_AndW_T_BLOCKPlus1_IsBlock) {
-    // The warp tier's upper bound (T_BLOCK = 255) is inclusive: W=T_BLOCK
-    // stays in warp; W=T_BLOCK+1 goes to block.
+TEST_F(GpuSchedulingTest, BoundaryW_BLOCK_DIM_IsWarp_AndW_BLOCK_DIMPlus1_IsBlock) {
+    // The warp tier's upper bound (BLOCK_DIM) is inclusive: W=BLOCK_DIM
+    // stays in warp; W=BLOCK_DIM+1 goes to block.
     const int W_warp  = static_cast<int>(BLOCK_DIM);
     const int W_block = static_cast<int>(BLOCK_DIM) + 1;
 

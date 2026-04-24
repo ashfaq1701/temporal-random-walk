@@ -19,7 +19,7 @@
 //   - multiple mega-hub nodes in one step each expand independently.
 //   - block_global is expanded the same way as block_smem.
 //   - warp tier is NEVER expanded, even at W = cap (warp upper bound is
-//     T_BLOCK = 255 << cap, so this is a degenerate check).
+//     BLOCK_DIM << cap, so this is a degenerate check).
 //   - count identity in mixed scenarios including expansion.
 //
 // Scope deferred to sibling files:
@@ -288,7 +288,7 @@ protected:
 // ==========================================================================
 
 TEST_F(GpuBlockTaskExpansionTest, BlockBelowCap_NoExpansion) {
-    // W=300 (>T_BLOCK=255 so block tier) but W<CAP: one sub-task.
+    // W=300 (>BLOCK_DIM so block tier) but W<CAP: one sub-task.
     const int NODE = 7;
     std::vector<int> last_nodes(300, NODE);
     std::vector<int> g; set_g(g, NODE, 10);
@@ -539,7 +539,7 @@ TEST_F(GpuBlockTaskExpansionTest, BlockGlobal_IsAlsoExpanded) {
 }
 
 // ==========================================================================
-// Warp tier is never expanded. Its upper bound (T_BLOCK=255) is << CAP.
+// Warp tier is never expanded. Its upper bound (BLOCK_DIM) is << CAP.
 // ==========================================================================
 
 TEST_F(GpuBlockTaskExpansionTest, WarpTier_NotExpanded_EvenAtWarpUpperBound) {

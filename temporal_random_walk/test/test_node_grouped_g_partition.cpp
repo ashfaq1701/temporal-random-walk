@@ -6,7 +6,7 @@
 // splits the task into:
 //   G <= G_THRESHOLD_WARP_{INDEX,WEIGHT}   -> warp_smem
 //   G >  cap                                             -> warp_global
-// Same split for block tasks, using G_CAP_BLOCK_*.
+// Same split for block tasks, using G_THRESHOLD_BLOCK_*.
 //
 // The picker class selects the cap:
 //   Index    picker (Uniform/Linear/ExponentialIndex)    -> _INDEX cap
@@ -280,7 +280,7 @@ protected:
 
 TEST_F(GpuGPartitionTest, WarpTier_SmallG_RoutesToWarpSmem) {
     // W=10 at node 5; G=100 for node 5, zero elsewhere.
-    // 100 < G_CAP_WARP_INDEX (340) → warp_smem.
+    // 100 < G_THRESHOLD_WARP_INDEX (340) → warp_smem.
     const int NODE = 5;
     std::vector<int> last_nodes(10, NODE);
     std::vector<int> g; set_g(g, NODE, 100);
@@ -299,7 +299,7 @@ TEST_F(GpuGPartitionTest, WarpTier_SmallG_RoutesToWarpSmem) {
 }
 
 TEST_F(GpuGPartitionTest, WarpTier_LargeG_RoutesToWarpGlobal) {
-    // W=10 at node 5; G=400 > G_CAP_WARP_INDEX (340) → warp_global.
+    // W=10 at node 5; G=400 > G_THRESHOLD_WARP_INDEX (340) → warp_global.
     const int NODE = 5;
     std::vector<int> last_nodes(10, NODE);
     std::vector<int> g; set_g(g, NODE, 400);
@@ -322,7 +322,7 @@ TEST_F(GpuGPartitionTest, WarpTier_LargeG_RoutesToWarpGlobal) {
 // ==========================================================================
 
 TEST_F(GpuGPartitionTest, BlockTier_SmallG_RoutesToBlockSmem) {
-    // W=300 (>T_BLOCK=255) at node 7; G=1000 < G_THRESHOLD_BLOCK_INDEX (2800).
+    // W=300 (>BLOCK_DIM) at node 7; G=1000 < G_THRESHOLD_BLOCK_INDEX (2800).
     const int NODE = 7;
     std::vector<int> last_nodes(300, NODE);
     std::vector<int> g; set_g(g, NODE, 1000);
@@ -529,7 +529,7 @@ TEST_F(GpuGPartitionTest, SoloTier_UnaffectedByG) {
 // ==========================================================================
 
 TEST_F(GpuGPartitionTest, MixedScenario_AllFiveTiersPopulated_CountIdentity) {
-    // Use the index picker caps (G_CAP_WARP_INDEX=340, G_THRESHOLD_BLOCK_INDEX=2800).
+    // Use the index picker caps (G_THRESHOLD_WARP_INDEX=340, G_THRESHOLD_BLOCK_INDEX=2800).
     const int NODE_SOLO_A = 101;
     const int NODE_SOLO_B = 102;
     const int NODE_WARP_SMEM   = 11;   // W=10, G=100

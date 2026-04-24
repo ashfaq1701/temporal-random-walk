@@ -19,10 +19,10 @@
 // at H at step 1. Together they create a (node=H, step=1) group with
 // W = N. The W and G values determine which tier services that task:
 //
-//   Warp-smem   : W ∈ [2, T_BLOCK=255] AND G ≤ 340   (index-picker cap)
-//   Warp-global : W ∈ [2, T_BLOCK]     AND G >  340
-//   Block-smem  : W >  T_BLOCK          AND G ≤ 2800
-//   Block-global: W >  T_BLOCK          AND G >  2800
+//   Warp-smem   : W ∈ [2, BLOCK_DIM] AND G ≤ 340   (index-picker cap)
+//   Warp-global : W ∈ [2, BLOCK_DIM]     AND G >  340
+//   Block-smem  : W >  BLOCK_DIM          AND G ≤ 2800
+//   Block-global: W >  BLOCK_DIM          AND G >  2800
 //
 // This file also contains a Node2Vec smoke test — the dispatcher gates
 // Node2Vec out of the cooperative pipeline entirely and runs it on
@@ -186,7 +186,7 @@ TYPED_TEST(NodeGroupedTierRoutingTest, WarpGlobal_WalksAreValid) {
 // Block-smem tier: W > 255 AND G ≤ 2800.
 //
 // 300 sources -> HUB with 100 distinct-timestamp outbound groups.
-// W = 300 > T_BLOCK (255); G = 100 ≤ 2800 -> block_smem.
+// W = 300 > BLOCK_DIM (255); G = 100 ≤ 2800 -> block_smem.
 // ==========================================================================
 TYPED_TEST(NodeGroupedTierRoutingTest, BlockSmem_WalksAreValid) {
     auto trw = this->make_trw(/*enable_weights=*/false);
@@ -207,7 +207,7 @@ TYPED_TEST(NodeGroupedTierRoutingTest, BlockSmem_WalksAreValid) {
 // Block-global tier: W > 255 AND G > 2800.
 //
 // 300 sources -> HUB with 3000 distinct-timestamp outbound groups.
-// W = 300 > T_BLOCK; G = 3000 > G_THRESHOLD_BLOCK_INDEX (2800)
+// W = 300 > BLOCK_DIM; G = 3000 > G_THRESHOLD_BLOCK_INDEX (2800)
 // -> block_global. This tier had zero end-to-end coverage before.
 // ==========================================================================
 TYPED_TEST(NodeGroupedTierRoutingTest, BlockGlobal_WalksAreValid) {

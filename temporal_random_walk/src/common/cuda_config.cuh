@@ -1,14 +1,18 @@
 #ifndef CUDA_CONST_H
 #define CUDA_CONST_H
 
+#include <cstddef>
+
+// Library-wide default CUDA block dim. Overridable per public-API call via
+// block_dim. Defined outside HAS_CUDA because public headers use it as a
+// default-parameter value — it must be visible on CPU-only builds too.
+constexpr size_t BLOCK_DIM = 256;
+
 #ifdef HAS_CUDA
 
 #include <thrust/execution_policy.h>
 
 constexpr auto DEVICE_EXECUTION_POLICY = thrust::device;
-
-// Default CUDA block dim. Overridable per public-API call via block_dim.
-constexpr size_t BLOCK_DIM = 256;
 
 // =========================================================================
 // NODE_GROUPED warp-coop configuration. Rationale in CLAUDE.md §3, §4.
