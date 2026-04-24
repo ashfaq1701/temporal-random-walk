@@ -31,7 +31,10 @@ RandomPickerType parse_picker(const std::string &s) {
 KernelLaunchType parse_kernel_launch_type(const std::string &s) {
     if (s == "full_walk") return KernelLaunchType::FULL_WALK;
     if (s == "node_grouped") return KernelLaunchType::NODE_GROUPED;
-    throw std::runtime_error("Invalid kernel launch type");
+    if (s == "node_grouped_global_only") return KernelLaunchType::NODE_GROUPED_GLOBAL_ONLY;
+    throw std::runtime_error(
+        "Invalid kernel launch type — expected one of: "
+        "full_walk, node_grouped, node_grouped_global_only");
 }
 
 int main(int argc, char **argv) {
@@ -40,7 +43,7 @@ int main(int argc, char **argv) {
                   << " <file_path>"
                   << " [use_gpu=1]"
                   << " [picker=exponential_index]"
-                  << " [kernel_launch_type=full_walk]"
+                  << " [kernel_launch_type=full_walk|node_grouped|node_grouped_global_only]"
                   << " [is_directed=0]"
                   << " [num_walks_per_node=1]"
                   << " [num_batches=5]"
@@ -138,6 +141,40 @@ int main(int argc, char **argv) {
 
     size_t cursor = 0;
     const size_t N = timestamps.size();
+
+    // ------------------------------
+    // Warmup: run batch 0 once, untimed and discarded, to absorb one-shot
+    // first-call costs (CUDA context init, first-kernel launch latency,
+    // first CUB scratch allocation). Uses a local cursor so the main loop
+    // below still processes batch 0 from the start.
+    // ------------------------------
+    if (num_batches > 0) {
+        size_t warm_cursor = 0;
+        const int64_t warm_end_ts =
+            (num_batches == 1) ? max_ts + 1 : min_ts + batch_duration;
+
+        std::vector<int> warm_src, warm_dst;
+        std::vector<int64_t> warm_ts;
+        while (warm_cursor < N && timestamps[order[warm_cursor]] < warm_end_ts) {
+            const size_t idx = order[warm_cursor++];
+            warm_src.push_back(sources[idx]);
+            warm_dst.push_back(targets[idx]);
+            warm_ts.push_back(timestamps[idx]);
+        }
+
+        NvtxRange r("warmup");
+        trw.add_multiple_edges(
+            warm_src.data(), warm_dst.data(), warm_ts.data(), warm_ts.size());
+        auto warm_walks = trw.get_random_walks_and_times_for_all_nodes(
+            max_walk_len, &hop_picker, num_walks_per_node, &start_picker,
+            WalkDirection::Forward_In_Time, kernel_launch_type);
+#ifdef HAS_CUDA
+        if (use_gpu) cudaDeviceSynchronize();
+#endif
+        std::cout << "\n[Warmup] Ingested " << warm_src.size()
+                  << " edges, sampled " << warm_walks.walk_set.size()
+                  << " walks (discarded).\n";
+    }
 
     // ------------------------------
     // Streaming loop
