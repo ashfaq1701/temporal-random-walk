@@ -83,7 +83,8 @@ inline void dispatch_node_grouped_kernel(
                         count_ts_group_per_node, edge_picker_type,
                         force_global_only);
 
-                    if (step_outs.num_active_host <= 0) continue;
+                    // Walk padding is absorbing — once all walks are dead, none revive.
+                    if (step_outs.num_active_host <= 0) break;
 
                     NVTX_RANGE_COLORED("NG pick", nvtx_colors::walk_green);
 
