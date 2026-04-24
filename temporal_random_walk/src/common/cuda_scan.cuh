@@ -11,7 +11,6 @@
 
 #include "error_handlers.cuh"
 #include "../data/buffer.cuh"
-#include "../data/device_arena.cuh"
 
 /**
  * CUB-backed inclusive-sum scan. Drop-in replacement for
@@ -71,32 +70,6 @@ inline void cub_exclusive_sum(
 
     CUB_CHECK(cub::DeviceScan::ExclusiveSum(
         temp.data(), temp_bytes, d_in, d_out, num_items, stream));
-}
-
-// Arena-backed overload. Same semantics as above, but scratch is bump-
-// allocated from a caller-owned DeviceArena instead of a fresh
-// Buffer<uint8_t> (which does a synchronous cudaMalloc + cudaFree on
-// every call, each of which fences the default stream). The hot path —
-// NodeGroupedScheduler::run_step — calls this once per intermediate
-// step, so dropping the per-call driver fence is worth ms-scale wall
-// time across 79+ steps.
-template <typename InputIteratorT, typename OutputIteratorT>
-inline void cub_exclusive_sum(
-    InputIteratorT d_in,
-    OutputIteratorT d_out,
-    const size_t num_items,
-    DeviceArena& arena,
-    const cudaStream_t stream) {
-
-    if (num_items == 0) return;
-
-    size_t temp_bytes = 0;
-    CUB_CHECK(cub::DeviceScan::ExclusiveSum(
-        nullptr, temp_bytes, d_in, d_out, num_items, stream));
-
-    uint8_t* temp = arena.acquire<uint8_t>(temp_bytes);
-    CUB_CHECK(cub::DeviceScan::ExclusiveSum(
-        temp, temp_bytes, d_in, d_out, num_items, stream));
 }
 
 /**
@@ -177,32 +150,6 @@ inline void cub_run_length_encode(
         num_items, stream));
 }
 
-// Arena-backed overload. See cub_exclusive_sum for the rationale.
-template <typename KeyType, typename LengthType, typename NumRunsType>
-inline void cub_run_length_encode(
-    const KeyType* d_keys_in,
-    KeyType* d_unique_out,
-    LengthType* d_counts_out,
-    NumRunsType* d_num_runs_out,
-    const size_t num_items,
-    DeviceArena& arena,
-    const cudaStream_t stream) {
-
-    if (num_items == 0) return;
-
-    size_t temp_bytes = 0;
-    CUB_CHECK(cub::DeviceRunLengthEncode::Encode(
-        nullptr, temp_bytes,
-        d_keys_in, d_unique_out, d_counts_out, d_num_runs_out,
-        num_items, stream));
-
-    uint8_t* temp = arena.acquire<uint8_t>(temp_bytes);
-    CUB_CHECK(cub::DeviceRunLengthEncode::Encode(
-        temp, temp_bytes,
-        d_keys_in, d_unique_out, d_counts_out, d_num_runs_out,
-        num_items, stream));
-}
-
 /**
  * CUB-backed flagged stream compaction. For each i in [0, num_items), copies
  * d_in[i] to the output iff d_flags[i] is truthy. *d_num_selected_out
@@ -233,32 +180,6 @@ inline void cub_partition_flagged(
 
     CUB_CHECK(cub::DevicePartition::Flagged(
         temp.data(), temp_bytes,
-        d_in, d_flags, d_out, d_num_selected_out,
-        num_items, stream));
-}
-
-// Arena-backed overload. See cub_exclusive_sum for the rationale.
-template <typename InputT, typename FlagT, typename NumSelectedT>
-inline void cub_partition_flagged(
-    const InputT* d_in,
-    const FlagT* d_flags,
-    InputT* d_out,
-    NumSelectedT* d_num_selected_out,
-    const size_t num_items,
-    DeviceArena& arena,
-    const cudaStream_t stream) {
-
-    if (num_items == 0) return;
-
-    size_t temp_bytes = 0;
-    CUB_CHECK(cub::DevicePartition::Flagged(
-        nullptr, temp_bytes,
-        d_in, d_flags, d_out, d_num_selected_out,
-        num_items, stream));
-
-    uint8_t* temp = arena.acquire<uint8_t>(temp_bytes);
-    CUB_CHECK(cub::DevicePartition::Flagged(
-        temp, temp_bytes,
         d_in, d_flags, d_out, d_num_selected_out,
         num_items, stream));
 }

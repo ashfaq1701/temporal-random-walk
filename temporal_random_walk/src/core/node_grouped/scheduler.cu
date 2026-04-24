@@ -345,15 +345,13 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
                 alive_flags);
     }
 
-    // (b) compact. Arena-backed scratch — the Buffer<uint8_t> overload
-    // cudaMalloc/cudaFree's every call, both of which fence the default
-    // stream and dominated per-step wall time before this change.
+    // (b) compact
     {
         NVTX_RANGE_COLORED("NG compact", nvtx_colors::io_grey);
         cub_partition_flagged(
             iota_src_.data(), alive_flags,
             active_walk_idx, step_num_active,
-            num_walks_, arena_, stream_);
+            num_walks_, stream_);
     }
 
     // D2H readback of num_active (drives CUB sort/RLE/scan extents).
@@ -411,16 +409,16 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
                 last_nodes_active);
     }
 
-    // (d) sort — arena-backed scratch (see (b)).
+    // (d) sort
     {
         NVTX_RANGE_COLORED("NG sort", nvtx_colors::index_blue);
         cub_sort_pairs(
             last_nodes_active, sorted_last_nodes,
             active_walk_idx, sorted_active_idx,
-            active_items, arena_, stream_);
+            active_items, stream_);
     }
 
-    // (e) RLE + (f) exclusive-scan — arena-backed scratch.
+    // (e) RLE + (f) exclusive-scan
     {
         NVTX_RANGE_COLORED("NG RLE+scan", nvtx_colors::index_blue);
         CUDA_CHECK_AND_CLEAR(cudaMemsetAsync(
@@ -428,10 +426,10 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
         cub_run_length_encode(
             sorted_last_nodes, unique_last_nodes,
             step_run_lengths, step_num_runs,
-            active_items, arena_, stream_);
+            active_items, stream_);
         cub_exclusive_sum(
             step_run_lengths, step_run_starts,
-            active_items, arena_, stream_);
+            active_items, stream_);
     }
 
     // (g) W-partition: classify each run into solo / warp / block.
