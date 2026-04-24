@@ -35,9 +35,21 @@ if(HAS_CUDA AND CMAKE_CUDA_COMPILER)
     # bogus property/value pairs, so the .so gets built for sm_75 only. On
     # newer GPUs the PTX-JIT fallback then produces CUB kernels that fail
     # with cudaErrorInvalidValue on the dispatch call.
+    #
+    # CUDA_SEPARABLE_COMPILATION is deliberately OFF. Turning it on enables
+    # `-rdc=true`, and in combination with a multi-arch fatbin (the
+    # 75;80;86;89;90 list above) plus CUDA 12.x thrust/CUB, the runtime
+    # dispatch of CUB primitives (e.g. `thrust::copy_if` via
+    # `cub::DeviceSelect::Flagged`) launches the wrong policy kernel on
+    # non-highest-arch devices and fails with
+    # `cudaLaunchKernel: cudaErrorInvalidValue` ("copy_if failed on 2nd
+    # step: invalid argument"). Nothing in this codebase needs RDC (no
+    # cross-TU __device__ function calls, no dynamic parallelism — all
+    # device helpers are `__forceinline__` in .cuh headers), so RDC is
+    # pure cost. CUDA_RESOLVE_DEVICE_SYMBOLS is only meaningful with RDC
+    # on; dropped alongside.
     set_target_properties(_temporal_random_walk PROPERTIES
-            CUDA_SEPARABLE_COMPILATION ON
-            CUDA_RESOLVE_DEVICE_SYMBOLS ON
+            CUDA_SEPARABLE_COMPILATION OFF
             CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}"
             CUDA_VISIBILITY_PRESET "hidden"
             CXX_VISIBILITY_PRESET "hidden"
