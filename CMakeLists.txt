@@ -65,7 +65,7 @@ if(HAS_CUDA)
         set(CMAKE_CUDA_STANDARD 17)
         set(CMAKE_CUDA_STANDARD_REQUIRED ON)
         if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-            set(CMAKE_CUDA_ARCHITECTURES 75;80;86;89;90)
+            set(CMAKE_CUDA_ARCHITECTURES "75;80;86;89;90")
         endif()
         add_definitions(-DHAS_CUDA)
 
