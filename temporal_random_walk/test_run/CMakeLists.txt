@@ -54,7 +54,6 @@ function(add_test_executable target_name source_file)
 endfunction()
 
 add_test_executable(test_run_temporal_random_walk test_run_temporal_random_walk.cpp)
-add_test_executable(test_run_temporal_random_walk_2 test_run_temporal_random_walk_2.cpp)
 add_test_executable(walk_sampling_speed_test walk_sampling_speed_test.cpp)
 add_test_executable(ablation_streaming ablation_streaming.cpp)
 add_test_executable(test_run_exponential_random_picker test_run_exponential_picker.cpp)
