@@ -1,6 +1,8 @@
 // C++ port of alibaba_benchmark/test_alibaba_dataset.py. Expects
-// data_{0..total_minutes-1}.csv under <dataset_dir>, header + u,i,ts per line.
+// data_{0..total_minutes-1}.{csv,parquet} under <dataset_dir>; parquet
+// is preferred when both exist. CSV: header + u,i,ts; parquet: same columns.
 
+#include <filesystem>
 #include <iostream>
 #include <vector>
 #include <chrono>
@@ -52,15 +54,28 @@ struct EdgeBatch {
     std::vector<int64_t> ts;
 };
 
+// Returns (path, is_parquet) for data_{minute}.{parquet,csv}; parquet wins if both exist.
+static std::pair<std::string, bool>
+resolve_shard_path(const std::string& dataset_dir, int minute) {
+    const std::string stem = dataset_dir + "/data_" + std::to_string(minute);
+    const std::string pq = stem + ".parquet";
+    const std::string csv = stem + ".csv";
+    if (std::filesystem::exists(pq)) return {pq, true};
+    if (std::filesystem::exists(csv)) return {csv, false};
+    throw std::runtime_error(
+        "no data_" + std::to_string(minute) + ".{parquet,csv} under " + dataset_dir);
+}
+
 EdgeBatch load_step(const std::string& dataset_dir,
                     int minute_begin,
                     int minutes_per_step,
                     int total_minutes) {
     EdgeBatch batch;
     for (int j = 0; j < minutes_per_step && (minute_begin + j) < total_minutes; ++j) {
-        const std::string path =
-            dataset_dir + "/data_" + std::to_string(minute_begin + j) + ".csv";
-        const auto edges = read_edges_from_csv(path);
+        auto [path, is_parquet] = resolve_shard_path(dataset_dir, minute_begin + j);
+        const auto edges = is_parquet
+            ? load_edges_from_parquet(path.c_str())
+            : read_edges_from_csv(path);
         batch.src.reserve(batch.src.size() + edges.size());
         batch.dst.reserve(batch.dst.size() + edges.size());
         batch.ts.reserve(batch.ts.size() + edges.size());

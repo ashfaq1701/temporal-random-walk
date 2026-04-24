@@ -87,6 +87,14 @@ inline double get_average_walk_length(const WalkSetHost& walk_set) {
         static_cast<double>(total_length) / static_cast<double>(total_walks) : 0.0;
 }
 
+// Arrow-backed parquet reader for the alibaba streaming benchmark. Same
+// (u, i, ts) tuple shape as read_edges_from_csv; u/i are int32 and ts is
+// int64 in both formats. Implemented in test_utils_parquet.cpp (CXX TU,
+// isolated from the CUDA headers that trip up nvcc under Arrow). Throws
+// at runtime if the build didn't link Arrow.
+std::vector<std::tuple<int, int, int64_t>>
+load_edges_from_parquet(const char* path);
+
 inline std::tuple<std::vector<int>, std::vector<int>, std::vector<int64_t>>
 convert_edge_tuples_to_components(const std::vector<std::tuple<int, int, int64_t>>& edges) {
     std::vector<int> sources;
