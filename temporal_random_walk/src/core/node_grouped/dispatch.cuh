@@ -43,6 +43,10 @@ namespace temporal_random_walk {
 // `dispatch_bool` so both paths specialize once per (kDir, kFwd).
 // ==========================================================================
 
+// force_global_only: ablation mode. When true, the scheduler's G-partition
+// sends every cooperative task to the `*_global` tier regardless of G, so
+// the `*_smem` kernels never launch. Used by the NODE_GROUPED_GLOBAL_ONLY
+// KernelLaunchType. Walk distribution is identical to the default path.
 inline void dispatch_node_grouped_kernel(
     const TemporalGraphView& view,
     const bool is_directed,
@@ -57,7 +61,8 @@ inline void dispatch_node_grouped_kernel(
     const uint64_t base_seed,
     const dim3& grid_dim,
     const dim3& block_dim,
-    const cudaStream_t stream = 0) {
+    const cudaStream_t stream = 0,
+    const bool force_global_only = false) {
 
     if (num_walks == 0) return;
 
@@ -119,7 +124,8 @@ inline void dispatch_node_grouped_kernel(
                 for (int step_number = 1; step_number < max_walk_len; ++step_number) {
                     auto step_outs = scheduler.run_step(
                         walk_set_view, step_number, max_walk_len,
-                        count_ts_group_per_node, edge_picker_type);
+                        count_ts_group_per_node, edge_picker_type,
+                        force_global_only);
 
                     if (step_outs.num_active_host <= 0) continue;
 

@@ -67,6 +67,10 @@ inline KernelLaunchType kernel_launch_type_from_string(const std::string& kernel
     {
         return KernelLaunchType::NODE_GROUPED;
     }
+    else if (kernel_launch_type_str == "NODE_GROUPED_GLOBAL_ONLY")
+    {
+        return KernelLaunchType::NODE_GROUPED_GLOBAL_ONLY;
+    }
     else if (kernel_launch_type_str == "FULL_WALK")
     {
         return KernelLaunchType::FULL_WALK;
@@ -75,7 +79,7 @@ inline KernelLaunchType kernel_launch_type_from_string(const std::string& kernel
     {
         throw std::invalid_argument(
             "Invalid kernel_launch_type: " + kernel_launch_type_str
-            + ". Expected \"NODE_GROUPED\" or \"FULL_WALK\".");
+            + ". Expected \"NODE_GROUPED\", \"NODE_GROUPED_GLOBAL_ONLY\", or \"FULL_WALK\".");
     }
 }
 

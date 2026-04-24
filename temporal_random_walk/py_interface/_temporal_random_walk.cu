@@ -372,10 +372,13 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 walk_direction (str, optional): Direction of temporal random walks.
                     Either "Forward_In_Time" (default) or "Backward_In_Time".
                 kernel_launch_type (str, optional): Which GPU walk kernel path to run.
-                    Either "NODE_GROUPED" (default — cooperative per-step pipeline,
-                    optimized for skewed temporal graphs) or "FULL_WALK" (one thread
-                    per walk for the walk's whole life, retained as a fallback /
-                    baseline).
+                    "NODE_GROUPED" (default — cooperative per-step pipeline with
+                    per-node smem panel preload, optimized for skewed temporal
+                    graphs), "NODE_GROUPED_GLOBAL_ONLY" (same cooperative pipeline
+                    but the smem panel preload is disabled — every coop task runs
+                    on the `*_global` kernel tier; ablation variant), or "FULL_WALK"
+                    (one thread per walk for the walk's whole life, retained as a
+                    fallback / baseline).
 
             Returns:
                 Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
@@ -484,10 +487,13 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 walk_direction (str, optional): Direction of temporal random walks.
                     Either "Forward_In_Time" (default) or "Backward_In_Time".
                 kernel_launch_type (str, optional): Which GPU walk kernel path to run.
-                    Either "NODE_GROUPED" (default — cooperative per-step pipeline,
-                    optimized for skewed temporal graphs) or "FULL_WALK" (one thread
-                    per walk for the walk's whole life, retained as a fallback /
-                    baseline).
+                    "NODE_GROUPED" (default — cooperative per-step pipeline with
+                    per-node smem panel preload, optimized for skewed temporal
+                    graphs), "NODE_GROUPED_GLOBAL_ONLY" (same cooperative pipeline
+                    but the smem panel preload is disabled — every coop task runs
+                    on the `*_global` kernel tier; ablation variant), or "FULL_WALK"
+                    (one thread per walk for the walk's whole life, retained as a
+                    fallback / baseline).
 
             Returns:
                 Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
@@ -593,10 +599,13 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 walk_direction (str, optional): Direction of temporal random walks.
                     Either "Forward_In_Time" (default) or "Backward_In_Time".
                 kernel_launch_type (str, optional): Which GPU walk kernel path to run.
-                    Either "NODE_GROUPED" (default — cooperative per-step pipeline,
-                    optimized for skewed temporal graphs) or "FULL_WALK" (one thread
-                    per walk for the walk's whole life, retained as a fallback /
-                    baseline).
+                    "NODE_GROUPED" (default — cooperative per-step pipeline with
+                    per-node smem panel preload, optimized for skewed temporal
+                    graphs), "NODE_GROUPED_GLOBAL_ONLY" (same cooperative pipeline
+                    but the smem panel preload is disabled — every coop task runs
+                    on the `*_global` kernel tier; ablation variant), or "FULL_WALK"
+                    (one thread per walk for the walk's whole life, retained as a
+                    fallback / baseline).
 
             Returns:
                 Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:

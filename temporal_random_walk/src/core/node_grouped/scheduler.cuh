@@ -88,11 +88,18 @@ public:
     // edge_picker_type: determines which G cap applies to each tier:
     //   TRW_NODE_GROUPED_G_CAP_{WARP,BLOCK}_INDEX for index-based pickers
     //   (Uniform / Linear / ExponentialIndex), _WEIGHTED for the rest.
+    // force_global_only: ablation knob. When true, both warp and block G
+    //   caps are set so that every coop task lands in the `*_global` tier
+    //   (the `*_smem` task lists come out empty). Lets the dispatcher run
+    //   the cooperative pipeline with the smem panel preload disabled —
+    //   isolates the cooperation contribution from the smem contribution
+    //   for paper-style ablations. Walk distribution is unchanged.
     StepOutputs run_step(WalkSetView walk_set_view,
                          int step_number,
                          int max_walk_len,
                          const std::size_t* count_ts_group_per_node,
-                         RandomPickerType edge_picker_type);
+                         RandomPickerType edge_picker_type,
+                         bool force_global_only = false);
 
 private:
     std::size_t  num_walks_;

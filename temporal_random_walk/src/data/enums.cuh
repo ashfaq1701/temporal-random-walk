@@ -20,7 +20,14 @@ enum WalkDirection {
 
 enum KernelLaunchType {
     FULL_WALK,
-    NODE_GROUPED
+    NODE_GROUPED,
+    // Ablation variant: same scheduler pipeline as NODE_GROUPED, but the
+    // G-partition routes every cooperative task to the `*_global` kernel
+    // tier — the per-node smem panel preload is bypassed. Isolates the
+    // cooperation contribution from the smem-preload contribution in
+    // paper-style ablations (FULL_WALK vs COOP_WITHOUT_SMEM vs
+    // COOP_WITH_SMEM). Produces the same walk distribution as NODE_GROUPED.
+    NODE_GROUPED_GLOBAL_ONLY
 };
 
 // Default kernel path for the public walk API. NODE_GROUPED is the

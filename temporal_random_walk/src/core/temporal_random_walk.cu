@@ -571,7 +571,19 @@ void launch_walk_kernel_dispatch(
                 view, is_directed, walk_set_view, max_walk_len,
                 start_node_ids, num_walks, all_starts_unconstrained,
                 walk_bias, initial_edge_bias, walk_direction,
-                base_seed, grid_dim, block_dim, stream);
+                base_seed, grid_dim, block_dim, stream,
+                /*force_global_only=*/false);
+            break;
+        }
+        case KernelLaunchType::NODE_GROUPED_GLOBAL_ONLY: {
+            NVTX_RANGE_COLORED("Launch walk kernel (node-grouped, global-only)",
+                               nvtx_colors::walk_green);
+            temporal_random_walk::dispatch_node_grouped_kernel(
+                view, is_directed, walk_set_view, max_walk_len,
+                start_node_ids, num_walks, all_starts_unconstrained,
+                walk_bias, initial_edge_bias, walk_direction,
+                base_seed, grid_dim, block_dim, stream,
+                /*force_global_only=*/true);
             break;
         }
         default:

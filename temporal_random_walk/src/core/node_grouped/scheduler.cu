@@ -250,7 +250,8 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
     const int step_number,
     const int max_walk_len,
     const std::size_t* count_ts_group_per_node,
-    const RandomPickerType edge_picker_type) {
+    const RandomPickerType edge_picker_type,
+    const bool force_global_only) {
 
     NVTX_RANGE_COLORED("NG step", nvtx_colors::walk_green);
 
@@ -323,14 +324,25 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
 
     // Pick G caps by picker class (runtime — switch lifts to compile time
     // via template specialization in the real coop bodies, tasks 8–11).
+    //
+    // force_global_only ablation: override both caps to -1 so `G <= cap`
+    // is false for every node (G >= 1 for any node that has at least one
+    // edge in the traversal direction, which is a precondition for a walk
+    // to have arrived at that node). Every coop task then lands in the
+    // `*_global` tier; `*_smem` lists come out empty and the dispatcher
+    // skips their kernel launches.
     const bool is_index_picker =
         random_pickers::is_index_based_picker(edge_picker_type);
-    const int g_cap_warp = is_index_picker
-        ? TRW_NODE_GROUPED_G_CAP_WARP_INDEX
-        : TRW_NODE_GROUPED_G_CAP_WARP_WEIGHTED;
-    const int g_cap_block = is_index_picker
-        ? TRW_NODE_GROUPED_G_CAP_BLOCK_INDEX
-        : TRW_NODE_GROUPED_G_CAP_BLOCK_WEIGHTED;
+    const int g_cap_warp = force_global_only
+        ? -1
+        : (is_index_picker
+            ? TRW_NODE_GROUPED_G_CAP_WARP_INDEX
+            : TRW_NODE_GROUPED_G_CAP_WARP_WEIGHTED);
+    const int g_cap_block = force_global_only
+        ? -1
+        : (is_index_picker
+            ? TRW_NODE_GROUPED_G_CAP_BLOCK_INDEX
+            : TRW_NODE_GROUPED_G_CAP_BLOCK_WEIGHTED);
 
     const std::size_t flag_blocks =
         (num_walks_ + block_dim_.x - 1) / block_dim_.x;
