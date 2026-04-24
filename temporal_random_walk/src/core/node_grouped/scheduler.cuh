@@ -86,7 +86,7 @@ public:
     //   walk direction (outbound for forward; inbound for backward-directed;
     //   outbound for backward-undirected).
     // edge_picker_type: determines which G cap applies to each tier:
-    //   TRW_NODE_GROUPED_G_CAP_{WARP,BLOCK}_INDEX for index-based pickers
+    //   G_THRESHOLD_{WARP,BLOCK}_INDEX for index-based pickers
     //   (Uniform / Linear / ExponentialIndex), _WEIGHTED for the rest.
     // force_global_only: ablation knob. When true, both warp and block G
     //   caps are set so that every coop task lands in the `*_global` tier

@@ -287,8 +287,12 @@ HOST void temporal_random_walk::add_multiple_edges(
     core::TemporalRandomWalk* trw,
     const int* sources, const int* targets, const int64_t* timestamps,
     const size_t num_edges,
-    const float* edge_features, const size_t feature_dim) {
+    const float* edge_features, const size_t feature_dim,
+    const size_t block_dim) {
 
+    (void)block_dim;  // plumbed for API symmetry; graph-ingestion kernels
+                      // still use the compile-time BLOCK_DIM. Tuning
+                      // block_dim for walk sampling is where it matters.
     if (num_edges == 0) return;
 
     NVTX_RANGE_COLORED("add_multiple_edges", nvtx_colors::edge_purple);
@@ -601,7 +605,8 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
     const int num_walks_per_node,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
-    const KernelLaunchType kernel_launch_type) {
+    const KernelLaunchType kernel_launch_type,
+    const size_t block_dim) {
     NVTX_RANGE_COLORED("Walk Sampling (all nodes)", nvtx_colors::walk_green);
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
@@ -620,10 +625,10 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
 
     const uint64_t base_seed = resolve_base_seed(trw);
 
-    auto [grid_dim, block_dim] = get_optimal_launch_params(
+    auto [grid_dim, launch_block_dim] = get_optimal_launch_params(
         repeated_node_ids.size,
         &trw->cuda_device_prop(),
-        BLOCK_DIM_GENERATING_RANDOM_WALKS);
+        block_dim);
 
     if (trw->shuffle_walk_order()) {
         shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
@@ -651,7 +656,7 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
         max_walk_len, repeated_node_ids.data, repeated_node_ids.size,
         /*all_starts_unconstrained=*/false,
         *walk_bias, *initial_edge_bias, walk_direction,
-        base_seed, grid_dim, block_dim, trw->stream());
+        base_seed, grid_dim, launch_block_dim, trw->stream());
 
     CUDA_KERNEL_CHECK(
         "After generate_random_walks_kernel in get_random_walks_and_times_for_all_nodes_cuda");
@@ -675,7 +680,8 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
     const int num_walks_per_node,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
-    const KernelLaunchType kernel_launch_type) {
+    const KernelLaunchType kernel_launch_type,
+    const size_t block_dim) {
     NVTX_RANGE_COLORED("Walk Sampling (last batch)", nvtx_colors::walk_green);
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
@@ -691,10 +697,10 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
 
     const uint64_t base_seed = resolve_base_seed(trw);
 
-    auto [grid_dim, block_dim] = get_optimal_launch_params(
+    auto [grid_dim, launch_block_dim] = get_optimal_launch_params(
         repeated_node_ids.size,
         &trw->cuda_device_prop(),
-        BLOCK_DIM_GENERATING_RANDOM_WALKS);
+        block_dim);
 
     if (trw->shuffle_walk_order()) {
         shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
@@ -719,7 +725,7 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
         max_walk_len, repeated_node_ids.data, repeated_node_ids.size,
         /*all_starts_unconstrained=*/false,
         *walk_bias, *initial_edge_bias, walk_direction,
-        base_seed, grid_dim, block_dim, trw->stream());
+        base_seed, grid_dim, launch_block_dim, trw->stream());
 
     CUDA_KERNEL_CHECK(
         "After generate_random_walks_kernel in get_random_walks_and_times_for_last_batch_cuda");
@@ -742,7 +748,8 @@ temporal_random_walk::get_random_walks_and_times_cuda(
     const int num_walks_total,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
-    const KernelLaunchType kernel_launch_type) {
+    const KernelLaunchType kernel_launch_type,
+    const size_t block_dim) {
     NVTX_RANGE_COLORED("Walk Sampling", nvtx_colors::walk_green);
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
@@ -755,10 +762,10 @@ temporal_random_walk::get_random_walks_and_times_cuda(
 
     const uint64_t base_seed = resolve_base_seed(trw);
 
-    auto [grid_dim, block_dim] = get_optimal_launch_params(
+    auto [grid_dim, launch_block_dim] = get_optimal_launch_params(
         num_walks_total,
         &trw->cuda_device_prop(),
-        BLOCK_DIM_GENERATING_RANDOM_WALKS);
+        block_dim);
 
     // Device-side start_node_ids filled with -1 (random start).
     Buffer<int> start_node_ids(true);
@@ -782,7 +789,7 @@ temporal_random_walk::get_random_walks_and_times_cuda(
         max_walk_len, start_node_ids.data(), static_cast<size_t>(num_walks_total),
         /*all_starts_unconstrained=*/true,
         *walk_bias, *initial_edge_bias, walk_direction,
-        base_seed, grid_dim, block_dim, trw->stream());
+        base_seed, grid_dim, launch_block_dim, trw->stream());
 
     CUDA_KERNEL_CHECK(
         "After generate_random_walks_kernel in get_random_walks_and_times_cuda");
@@ -805,14 +812,17 @@ temporal_random_walk::get_random_walks_and_times_cuda(
 
 void core::TemporalRandomWalk::add_multiple_edges(
     const int* sources, const int* targets, const int64_t* timestamps,
-    const size_t n, const float* edge_features, const size_t feature_dim) {
+    const size_t n, const float* edge_features, const size_t feature_dim,
+    const size_t block_dim) {
     temporal_random_walk::add_multiple_edges(
-        this, sources, targets, timestamps, n, edge_features, feature_dim);
+        this, sources, targets, timestamps, n, edge_features, feature_dim,
+        block_dim);
 }
 
 void core::TemporalRandomWalk::add_multiple_edges(
     const std::vector<std::tuple<int, int, int64_t>>& edges,
-    const float* edge_features, const size_t feature_dim) {
+    const float* edge_features, const size_t feature_dim,
+    const size_t block_dim) {
     std::vector<int> sources; sources.reserve(edges.size());
     std::vector<int> targets; targets.reserve(edges.size());
     std::vector<int64_t> timestamps; timestamps.reserve(edges.size());
@@ -822,7 +832,7 @@ void core::TemporalRandomWalk::add_multiple_edges(
         timestamps.push_back(std::get<2>(e));
     }
     add_multiple_edges(sources.data(), targets.data(), timestamps.data(),
-                       timestamps.size(), edge_features, feature_dim);
+                       timestamps.size(), edge_features, feature_dim, block_dim);
 }
 
 WalksWithEdgeFeaturesHost
@@ -831,15 +841,17 @@ core::TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
     const int num_walks_per_node,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
-    const KernelLaunchType kernel_launch_type) {
+    const KernelLaunchType kernel_launch_type,
+    const size_t block_dim) {
 #ifdef HAS_CUDA
     if (data_.use_gpu) {
         return temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
             this, max_walk_len, walk_bias, num_walks_per_node,
-            initial_edge_bias, walk_direction, kernel_launch_type);
+            initial_edge_bias, walk_direction, kernel_launch_type, block_dim);
     }
 #endif
     (void)kernel_launch_type;
+    (void)block_dim;
     return temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
         this, max_walk_len, walk_bias, num_walks_per_node,
         initial_edge_bias, walk_direction);
@@ -851,15 +863,17 @@ core::TemporalRandomWalk::get_random_walks_and_times_for_last_batch(
     const int num_walks_per_node,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
-    const KernelLaunchType kernel_launch_type) {
+    const KernelLaunchType kernel_launch_type,
+    const size_t block_dim) {
 #ifdef HAS_CUDA
     if (data_.use_gpu) {
         return temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
             this, max_walk_len, walk_bias, num_walks_per_node,
-            initial_edge_bias, walk_direction, kernel_launch_type);
+            initial_edge_bias, walk_direction, kernel_launch_type, block_dim);
     }
 #endif
     (void)kernel_launch_type;
+    (void)block_dim;
     return temporal_random_walk::get_random_walks_and_times_for_last_batch_std(
         this, max_walk_len, walk_bias, num_walks_per_node,
         initial_edge_bias, walk_direction);
@@ -871,15 +885,17 @@ core::TemporalRandomWalk::get_random_walks_and_times(
     const int num_walks_total,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
-    const KernelLaunchType kernel_launch_type) {
+    const KernelLaunchType kernel_launch_type,
+    const size_t block_dim) {
 #ifdef HAS_CUDA
     if (data_.use_gpu) {
         return temporal_random_walk::get_random_walks_and_times_cuda(
             this, max_walk_len, walk_bias, num_walks_total,
-            initial_edge_bias, walk_direction, kernel_launch_type);
+            initial_edge_bias, walk_direction, kernel_launch_type, block_dim);
     }
 #endif
     (void)kernel_launch_type;
+    (void)block_dim;
     return temporal_random_walk::get_random_walks_and_times_std(
         this, max_walk_len, walk_bias, num_walks_total,
         initial_edge_bias, walk_direction);

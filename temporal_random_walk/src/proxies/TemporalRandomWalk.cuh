@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "../common/const.cuh"
+#include "../common/cuda_config.cuh"   // BLOCK_DIM default for block_dim params
 #include "../core/temporal_random_walk.cuh"
 #include "../data/enums.cuh"
 #include "../data/structs.cuh"
@@ -39,36 +40,43 @@ public:
         const int* sources, const int* targets,
         const int64_t* timestamps, size_t edges_size,
         const float* edge_features = nullptr,
-        size_t feature_dim = 0) const;
+        size_t feature_dim = 0,
+        size_t block_dim = BLOCK_DIM) const;
 
     void add_multiple_edges(
         const std::vector<std::tuple<int, int, int64_t>>& edges,
         const float* edge_features = nullptr,
-        size_t feature_dim = 0) const;
+        size_t feature_dim = 0,
+        size_t block_dim = BLOCK_DIM) const;
 
     // kernel_launch_type defaults to DEFAULT_KERNEL_LAUNCH_TYPE; see
-    // enums.cuh. Same for get_random_walks_and_times_for_last_batch and
-    // get_random_walks_and_times below.
+    // enums.cuh. block_dim defaults to BLOCK_DIM (256) and overrides the
+    // kernel launch block size end-to-end — including the scheduler's
+    // W-tier boundary (W > block_dim -> block tier) and the warp-tier
+    // grid (warps_per_block = block_dim / 32).
     WalksWithEdgeFeaturesHost get_random_walks_and_times_for_all_nodes(
         int max_walk_len, const RandomPickerType* walk_bias,
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE) const;
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
+        size_t block_dim = BLOCK_DIM) const;
 
     WalksWithEdgeFeaturesHost get_random_walks_and_times_for_last_batch(
         int max_walk_len, const RandomPickerType* walk_bias,
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE) const;
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
+        size_t block_dim = BLOCK_DIM) const;
 
     WalksWithEdgeFeaturesHost get_random_walks_and_times(
         int max_walk_len, const RandomPickerType* walk_bias,
         int num_walks_total,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE) const;
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
+        size_t block_dim = BLOCK_DIM) const;
 
     void set_node_features(
         const int* node_ids, size_t num_nodes,

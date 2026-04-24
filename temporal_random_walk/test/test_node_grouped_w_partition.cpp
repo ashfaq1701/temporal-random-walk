@@ -2,7 +2,7 @@
 //
 // The W-partition (task 5) classifies each unique node at a step into one
 // of three tiers based on its walk count W:
-//   W <= TRW_NODE_GROUPED_T_WARP   (==1)   -> solo_walks
+//   W <= W_THRESHOLD_WARP   (==1)   -> solo_walks
 //   T_WARP <  W <= T_BLOCK         (<=255) -> warp_nodes + walk_starts/counts
 //   W  >  T_BLOCK                  (>=256) -> block_nodes + walk_starts/counts
 //
@@ -41,7 +41,7 @@
 
 #include "../src/common/const.cuh"
 #include "../src/common/cuda_config.cuh"
-#include "../src/common/warp_coop_config.cuh"
+#include "../src/common/cuda_config.cuh"
 #include "../src/core/node_grouped/scheduler.cuh"
 #include "../src/data/walk_set/walk_set_view.cuh"
 
@@ -377,7 +377,7 @@ TEST_F(GpuSchedulingTest, AllSameNodeWarpSize_SingleWarpTask) {
 
 TEST_F(GpuSchedulingTest, AllSameNodeBlockSize_SingleBlockTask) {
     // W>T_BLOCK -> single block task.
-    const int W = TRW_NODE_GROUPED_T_BLOCK + 1;  // 256, just over the boundary
+    const int W = static_cast<int>(BLOCK_DIM) + 1;  // 256, just over the boundary
     std::vector<int> last_nodes(W, 7);
     auto r = run_and_materialize(last_nodes, STEP_NUMBER, MAX_WALK_LEN, PAD,
                                  block_dim_, stream_);
@@ -420,8 +420,8 @@ TEST_F(GpuSchedulingTest, BoundaryW1IsSolo_W2IsWarp) {
 TEST_F(GpuSchedulingTest, BoundaryW_T_BLOCK_IsWarp_AndW_T_BLOCKPlus1_IsBlock) {
     // The warp tier's upper bound (T_BLOCK = 255) is inclusive: W=T_BLOCK
     // stays in warp; W=T_BLOCK+1 goes to block.
-    const int W_warp  = TRW_NODE_GROUPED_T_BLOCK;
-    const int W_block = TRW_NODE_GROUPED_T_BLOCK + 1;
+    const int W_warp  = static_cast<int>(BLOCK_DIM);
+    const int W_block = static_cast<int>(BLOCK_DIM) + 1;
 
     std::vector<int> last_nodes;
     for (int i = 0; i < W_warp;  ++i) last_nodes.push_back(10);

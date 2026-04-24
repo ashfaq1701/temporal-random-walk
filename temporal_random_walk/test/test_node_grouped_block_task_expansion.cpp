@@ -2,7 +2,7 @@
 //
 // The expansion (task 7) runs after the block G-partition, on both
 // block_smem and block_global task lists. For every source task with
-// walk_count > TRW_NODE_GROUPED_BLOCK_WALK_CAP (8192), it emits
+// walk_count > W_THRESHOLD_MULTI_BLOCK (8192), it emits
 // ⌈count/cap⌉ disjoint sub-tasks carrying the same node_id:
 //   sub k : walk_start = start + k*cap,
 //           walk_count = min(cap, count - k*cap).
@@ -49,7 +49,7 @@
 
 #include "../src/common/const.cuh"
 #include "../src/common/cuda_config.cuh"
-#include "../src/common/warp_coop_config.cuh"
+#include "../src/common/cuda_config.cuh"
 #include "../src/core/node_grouped/scheduler.cuh"
 #include "../src/data/enums.cuh"
 #include "../src/data/walk_set/walk_set_view.cuh"
@@ -59,7 +59,7 @@ namespace {
 using temporal_random_walk::NodeGroupedScheduler;
 
 constexpr int PAD = EMPTY_NODE_VALUE;
-constexpr int CAP = TRW_NODE_GROUPED_BLOCK_WALK_CAP;  // 8192
+constexpr int CAP = W_THRESHOLD_MULTI_BLOCK;  // 8192
 
 // --------------------------------------------------------------------------
 // Controllable WalkSetView (same shape as the other scheduler tests).
@@ -513,8 +513,8 @@ TEST_F(GpuBlockTaskExpansionTest, MultipleMegaHubs_EachExpandsIndependently) {
 TEST_F(GpuBlockTaskExpansionTest, BlockGlobal_IsAlsoExpanded) {
     const int NODE = 7;
     const int W = 2 * CAP + 10;
-    // G > G_CAP_BLOCK_INDEX (2800) -> block_global.
-    const int G_LARGE = TRW_NODE_GROUPED_G_CAP_BLOCK_INDEX + 1;
+    // G > G_THRESHOLD_BLOCK_INDEX (2800) -> block_global.
+    const int G_LARGE = G_THRESHOLD_BLOCK_INDEX + 1;
     std::vector<int> last_nodes(W, NODE);
     std::vector<int> g; set_g(g, NODE, G_LARGE);
 
@@ -544,7 +544,7 @@ TEST_F(GpuBlockTaskExpansionTest, BlockGlobal_IsAlsoExpanded) {
 
 TEST_F(GpuBlockTaskExpansionTest, WarpTier_NotExpanded_EvenAtWarpUpperBound) {
     const int NODE = 5;
-    const int W = TRW_NODE_GROUPED_T_BLOCK;   // 255, top of warp range
+    const int W = static_cast<int>(BLOCK_DIM);   // 255, top of warp range
     std::vector<int> last_nodes(W, NODE);
     std::vector<int> g; set_g(g, NODE, 10);
 

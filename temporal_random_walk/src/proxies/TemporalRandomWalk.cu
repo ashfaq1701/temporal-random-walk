@@ -21,16 +21,17 @@ TemporalRandomWalk::~TemporalRandomWalk() = default;
 void TemporalRandomWalk::add_multiple_edges(
     const int* sources, const int* targets, const int64_t* timestamps,
     const size_t edges_size, const float* edge_features,
-    const size_t feature_dim) const {
+    const size_t feature_dim, const size_t block_dim) const {
     impl_->add_multiple_edges(
         sources, targets, timestamps, edges_size,
-        edge_features, feature_dim);
+        edge_features, feature_dim, block_dim);
 }
 
 void TemporalRandomWalk::add_multiple_edges(
     const std::vector<std::tuple<int, int, int64_t>>& edges,
-    const float* edge_features, const size_t feature_dim) const {
-    impl_->add_multiple_edges(edges, edge_features, feature_dim);
+    const float* edge_features, const size_t feature_dim,
+    const size_t block_dim) const {
+    impl_->add_multiple_edges(edges, edge_features, feature_dim, block_dim);
 }
 
 WalksWithEdgeFeaturesHost
@@ -39,10 +40,11 @@ TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
     const int num_walks_per_node,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
-    const KernelLaunchType kernel_launch_type) const {
+    const KernelLaunchType kernel_launch_type,
+    const size_t block_dim) const {
     return impl_->get_random_walks_and_times_for_all_nodes(
         max_walk_len, walk_bias, num_walks_per_node,
-        initial_edge_bias, walk_direction, kernel_launch_type);
+        initial_edge_bias, walk_direction, kernel_launch_type, block_dim);
 }
 
 WalksWithEdgeFeaturesHost
@@ -51,10 +53,11 @@ TemporalRandomWalk::get_random_walks_and_times_for_last_batch(
     const int num_walks_per_node,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
-    const KernelLaunchType kernel_launch_type) const {
+    const KernelLaunchType kernel_launch_type,
+    const size_t block_dim) const {
     return impl_->get_random_walks_and_times_for_last_batch(
         max_walk_len, walk_bias, num_walks_per_node,
-        initial_edge_bias, walk_direction, kernel_launch_type);
+        initial_edge_bias, walk_direction, kernel_launch_type, block_dim);
 }
 
 WalksWithEdgeFeaturesHost
@@ -63,10 +66,11 @@ TemporalRandomWalk::get_random_walks_and_times(
     const int num_walks_total,
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
-    const KernelLaunchType kernel_launch_type) const {
+    const KernelLaunchType kernel_launch_type,
+    const size_t block_dim) const {
     return impl_->get_random_walks_and_times(
         max_walk_len, walk_bias, num_walks_total,
-        initial_edge_bias, walk_direction, kernel_launch_type);
+        initial_edge_bias, walk_direction, kernel_launch_type, block_dim);
 }
 
 void TemporalRandomWalk::set_node_features(

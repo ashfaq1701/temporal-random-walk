@@ -13,7 +13,7 @@
                          // sample_edge_and_add_hop, coop_warp_smem_g_cap
 #include "per_walk.cuh"  // step_kernel_philox_offset (+ transitive philox/utils)
 #include "../../../common/picker_dispatch.cuh"
-#include "../../../common/warp_coop_config.cuh"
+#include "../../../common/cuda_config.cuh"
 
 namespace temporal_random_walk {
 
@@ -22,11 +22,11 @@ namespace temporal_random_walk {
 // ==========================================================================
 // Warp-smem cooperative kernel.
 //
-// TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK (8) warps per block, 256 threads
-// total. Each warp services one warp-task (one unique node's walks for
-// this step): task_id = blockIdx.x * 8 + warp_id. Warps in a block run
-// independent tasks with no cross-warp coordination — their panels are
-// tiled side-by-side in one flat dynamic-smem allocation.
+// blockDim.x / 32 warps per block (derived at runtime from the caller's
+// block_dim). Each warp services one warp-task (one unique node's walks
+// for this step): task_id = blockIdx.x * (blockDim.x/32) + warp_id. Warps
+// in a block run independent tasks with no cross-warp coordination —
+// their panels are tiled side-by-side in one flat dynamic-smem allocation.
 //
 // Per-warp panel (size-adjusted by picker-class G cap, 8 × per warp):
 //   [0   .. 64)           alignment pad
@@ -62,8 +62,7 @@ __global__ void node_grouped_warp_smem_kernel(
     const int warp_id = static_cast<int>(threadIdx.x >> 5);
     const int lane_id = static_cast<int>(threadIdx.x & 31u);
     const int task_id =
-        static_cast<int>(blockIdx.x) * TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK
-        + warp_id;
+        static_cast<int>(blockIdx.x * (blockDim.x >> 5)) + warp_id;
 
     // All 32 lanes of an out-of-range warp return together — task_id is
     // warp-uniform, so the guard is a 32-lane-wide return.
@@ -141,18 +140,16 @@ __global__ void node_grouped_warp_smem_kernel(
     }
 }
 
-// Dynamic smem size for warp-smem: per-warp (64-byte alignment pad + G_CAP
-// entries of (size_t + int64_t)) × TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK.
-// Chosen at compile time from the picker class so the launch matches the
-// kernel's panel layout.
+// Dynamic smem size for warp-smem: per-warp panel × warps_per_block. The
+// per-warp footprint is compile-time (picker class); warps_per_block comes
+// from the launcher's block_dim so this scales with the caller's block size.
 template <RandomPickerType PickerType>
-HOST constexpr inline size_t warp_smem_dynamic_smem_bytes() {
+HOST inline size_t warp_smem_dynamic_smem_bytes(const dim3& block_dim) {
     constexpr size_t kGCap = static_cast<size_t>(
         coop_warp_smem_g_cap<PickerType>());
     constexpr size_t kPerWarp =
         size_t{64} + (sizeof(size_t) + sizeof(int64_t)) * kGCap;
-    return kPerWarp
-        * static_cast<size_t>(TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK);
+    return kPerWarp * static_cast<size_t>(block_dim.x >> 5);
 }
 
 template <bool IsDirected, bool Forward>
@@ -174,9 +171,9 @@ inline void dispatch_node_grouped_warp_smem_kernel(
 
     dispatch_picker_type(edge_picker_type, [&](auto edge_tag) {
         constexpr auto kEdge = decltype(edge_tag)::value;
-        constexpr size_t kSmemBytes = warp_smem_dynamic_smem_bytes<kEdge>();
+        const size_t smem_bytes = warp_smem_dynamic_smem_bytes<kEdge>(block_dim);
         node_grouped_warp_smem_kernel<IsDirected, Forward, kEdge>
-            <<<grid, block_dim, kSmemBytes, stream>>>(
+            <<<grid, block_dim, smem_bytes, stream>>>(
                 view, walk_set_view,
                 sorted_walk_idx,
                 node_walk_nodes, node_walk_starts, node_walk_counts,
@@ -189,7 +186,7 @@ inline void dispatch_node_grouped_warp_smem_kernel(
 // Warp-global cooperative kernel.
 //
 // Same launch topology as warp-smem (8 warps/block, one task per warp),
-// but no panel preload. Services nodes with G > TRW_NODE_GROUPED_G_CAP_WARP_*
+// but no panel preload. Services nodes with G > G_THRESHOLD_WARP_*
 // whose metadata wouldn't fit in the per-warp slice. Binary search runs
 // against the GLOBAL node_ts_groups_offsets slice via find_group_pos_slice's
 // double-indirect comparator. Cooperative win: 32 lanes share L1/L2 cache
@@ -217,8 +214,7 @@ __global__ void node_grouped_warp_global_kernel(
     const int warp_id = static_cast<int>(threadIdx.x >> 5);
     const int lane_id = static_cast<int>(threadIdx.x & 31u);
     const int task_id =
-        static_cast<int>(blockIdx.x) * TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK
-        + warp_id;
+        static_cast<int>(blockIdx.x * (blockDim.x >> 5)) + warp_id;
 
     if (task_id >= *num_tasks_ptr) return;
 

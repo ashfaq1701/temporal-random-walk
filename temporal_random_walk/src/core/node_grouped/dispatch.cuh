@@ -5,7 +5,7 @@
 #include "scheduler.cuh"
 #include "../../common/picker_dispatch.cuh"
 #include "../../common/nvtx.cuh"
-#include "../../common/warp_coop_config.cuh"
+#include "../../common/cuda_config.cuh"
 
 namespace temporal_random_walk {
 
@@ -146,18 +146,15 @@ inline void dispatch_node_grouped_kernel(
                             solo_grid, block_dim, stream);
                     }
 
-                    // Warp-smem tier: W in [2, T_BLOCK] and G <= warp cap.
-                    // 8 warps per block, each warp services one task against
-                    // its own per-warp smem panel.
+                    // Warps per block derived from the caller-supplied block_dim.
+                    const unsigned warps_per_block = block_dim.x / 32u;
+
+                    // Warp-smem tier: W in (W_THRESHOLD_WARP, BLOCK_DIM] and G <= warp cap.
                     if (step_outs.warp_smem.num_tasks_host > 0) {
                         const size_t warp_smem_blocks =
                             (static_cast<size_t>(step_outs.warp_smem.num_tasks_host)
-                             + TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK - 1)
-                            / TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK;
-                        const dim3 warp_smem_grid(
-                            static_cast<unsigned>(warp_smem_blocks));
-                        const dim3 warp_smem_block(
-                            static_cast<unsigned>(TRW_NODE_GROUPED_COOP_BLOCK_THREADS));
+                             + warps_per_block - 1) / warps_per_block;
+                        const dim3 warp_smem_grid(static_cast<unsigned>(warp_smem_blocks));
                         dispatch_node_grouped_warp_smem_kernel<kDir, kFwd>(
                             view, walk_set_view,
                             step_outs.sorted_walk_idx,
@@ -167,20 +164,15 @@ inline void dispatch_node_grouped_kernel(
                             step_outs.warp_smem.num_tasks_device,
                             step_number, max_walk_len,
                             edge_picker_type, base_seed,
-                            warp_smem_grid, warp_smem_block, stream);
+                            warp_smem_grid, block_dim, stream);
                     }
 
-                    // Warp-global tier: W in [2, T_BLOCK] and G > warp cap.
-                    // 8 warps per block, one task per warp, no panel preload.
+                    // Warp-global tier: W in (W_THRESHOLD_WARP, BLOCK_DIM] and G > warp cap.
                     if (step_outs.warp_global.num_tasks_host > 0) {
                         const size_t warp_global_blocks =
                             (static_cast<size_t>(step_outs.warp_global.num_tasks_host)
-                             + TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK - 1)
-                            / TRW_NODE_GROUPED_COOP_WARPS_PER_BLOCK;
-                        const dim3 warp_global_grid(
-                            static_cast<unsigned>(warp_global_blocks));
-                        const dim3 warp_global_block(
-                            static_cast<unsigned>(TRW_NODE_GROUPED_COOP_BLOCK_THREADS));
+                             + warps_per_block - 1) / warps_per_block;
+                        const dim3 warp_global_grid(static_cast<unsigned>(warp_global_blocks));
                         dispatch_node_grouped_warp_global_kernel<kDir, kFwd>(
                             view, walk_set_view,
                             step_outs.sorted_walk_idx,
@@ -190,16 +182,13 @@ inline void dispatch_node_grouped_kernel(
                             step_outs.warp_global.num_tasks_device,
                             step_number, max_walk_len,
                             edge_picker_type, base_seed,
-                            warp_global_grid, warp_global_block, stream);
+                            warp_global_grid, block_dim, stream);
                     }
 
-                    // Block-smem tier: W > T_BLOCK and G <= block cap.
-                    // One block per task, 256 threads, dynamic smem panel.
+                    // Block-smem tier: W > BLOCK_DIM and G <= block cap.
                     if (step_outs.block_smem.num_tasks_host > 0) {
                         const dim3 block_smem_grid(
                             static_cast<unsigned>(step_outs.block_smem.num_tasks_host));
-                        const dim3 block_smem_block(
-                            static_cast<unsigned>(TRW_NODE_GROUPED_COOP_BLOCK_THREADS));
                         dispatch_node_grouped_block_smem_kernel<kDir, kFwd>(
                             view, walk_set_view,
                             step_outs.sorted_walk_idx,
@@ -209,18 +198,13 @@ inline void dispatch_node_grouped_kernel(
                             step_outs.block_smem.num_tasks_device,
                             step_number, max_walk_len,
                             edge_picker_type, base_seed,
-                            block_smem_grid, block_smem_block, stream);
+                            block_smem_grid, block_dim, stream);
                     }
 
-                    // Block-global tier: W > T_BLOCK and G > block cap.
-                    // One block per task, 256 threads, no panel — binary
-                    // search runs against global arrays via
-                    // find_group_pos_slice's double-indirect fallback.
+                    // Block-global tier: W > BLOCK_DIM and G > block cap.
                     if (step_outs.block_global.num_tasks_host > 0) {
                         const dim3 block_global_grid(
                             static_cast<unsigned>(step_outs.block_global.num_tasks_host));
-                        const dim3 block_global_block(
-                            static_cast<unsigned>(TRW_NODE_GROUPED_COOP_BLOCK_THREADS));
                         dispatch_node_grouped_block_global_kernel<kDir, kFwd>(
                             view, walk_set_view,
                             step_outs.sorted_walk_idx,
@@ -230,7 +214,7 @@ inline void dispatch_node_grouped_kernel(
                             step_outs.block_global.num_tasks_device,
                             step_number, max_walk_len,
                             edge_picker_type, base_seed,
-                            block_global_grid, block_global_block, stream);
+                            block_global_grid, block_dim, stream);
                     }
                 }
             }

@@ -4,7 +4,7 @@
 // unique node into the warp or block tier. For every warp task it reads
 // G = count_ts_group_per_node[node+1] - count_ts_group_per_node[node] and
 // splits the task into:
-//   G <= TRW_NODE_GROUPED_G_CAP_WARP_{INDEX,WEIGHTED}   -> warp_smem
+//   G <= G_THRESHOLD_WARP_{INDEX,WEIGHT}   -> warp_smem
 //   G >  cap                                             -> warp_global
 // Same split for block tasks, using G_CAP_BLOCK_*.
 //
@@ -43,7 +43,7 @@
 
 #include "../src/common/const.cuh"
 #include "../src/common/cuda_config.cuh"
-#include "../src/common/warp_coop_config.cuh"
+#include "../src/common/cuda_config.cuh"
 #include "../src/core/node_grouped/scheduler.cuh"
 #include "../src/data/enums.cuh"
 #include "../src/data/walk_set/walk_set_view.cuh"
@@ -322,7 +322,7 @@ TEST_F(GpuGPartitionTest, WarpTier_LargeG_RoutesToWarpGlobal) {
 // ==========================================================================
 
 TEST_F(GpuGPartitionTest, BlockTier_SmallG_RoutesToBlockSmem) {
-    // W=300 (>T_BLOCK=255) at node 7; G=1000 < G_CAP_BLOCK_INDEX (2800).
+    // W=300 (>T_BLOCK=255) at node 7; G=1000 < G_THRESHOLD_BLOCK_INDEX (2800).
     const int NODE = 7;
     std::vector<int> last_nodes(300, NODE);
     std::vector<int> g; set_g(g, NODE, 1000);
@@ -340,7 +340,7 @@ TEST_F(GpuGPartitionTest, BlockTier_SmallG_RoutesToBlockSmem) {
 }
 
 TEST_F(GpuGPartitionTest, BlockTier_LargeG_RoutesToBlockGlobal) {
-    // W=300 at node 7; G=3000 > G_CAP_BLOCK_INDEX (2800) → block_global.
+    // W=300 at node 7; G=3000 > G_THRESHOLD_BLOCK_INDEX (2800) → block_global.
     const int NODE = 7;
     std::vector<int> last_nodes(300, NODE);
     std::vector<int> g; set_g(g, NODE, 3000);
@@ -363,7 +363,7 @@ TEST_F(GpuGPartitionTest, BlockTier_LargeG_RoutesToBlockGlobal) {
 // ==========================================================================
 
 TEST_F(GpuGPartitionTest, BoundaryWarpIndex_GEqCap_IsSmem_GCapPlus1_IsGlobal) {
-    const int cap    = TRW_NODE_GROUPED_G_CAP_WARP_INDEX;  // 340
+    const int cap    = G_THRESHOLD_WARP_INDEX;  // 340
     const int NODE_A = 5;
     const int NODE_B = 6;
     std::vector<int> last_nodes;
@@ -385,7 +385,7 @@ TEST_F(GpuGPartitionTest, BoundaryWarpIndex_GEqCap_IsSmem_GCapPlus1_IsGlobal) {
 }
 
 TEST_F(GpuGPartitionTest, BoundaryWarpWeighted_GEqCap_IsSmem_GCapPlus1_IsGlobal) {
-    const int cap    = TRW_NODE_GROUPED_G_CAP_WARP_WEIGHTED;  // 220
+    const int cap    = G_THRESHOLD_WARP_WEIGHT;  // 220
     const int NODE_A = 5;
     const int NODE_B = 6;
     std::vector<int> last_nodes;
@@ -407,7 +407,7 @@ TEST_F(GpuGPartitionTest, BoundaryWarpWeighted_GEqCap_IsSmem_GCapPlus1_IsGlobal)
 }
 
 TEST_F(GpuGPartitionTest, BoundaryBlockIndex_GEqCap_IsSmem_GCapPlus1_IsGlobal) {
-    const int cap    = TRW_NODE_GROUPED_G_CAP_BLOCK_INDEX;  // 2800
+    const int cap    = G_THRESHOLD_BLOCK_INDEX;  // 2800
     const int NODE_A = 5;
     const int NODE_B = 6;
     std::vector<int> last_nodes;
@@ -429,7 +429,7 @@ TEST_F(GpuGPartitionTest, BoundaryBlockIndex_GEqCap_IsSmem_GCapPlus1_IsGlobal) {
 }
 
 TEST_F(GpuGPartitionTest, BoundaryBlockWeighted_GEqCap_IsSmem_GCapPlus1_IsGlobal) {
-    const int cap    = TRW_NODE_GROUPED_G_CAP_BLOCK_WEIGHTED;  // 1800
+    const int cap    = G_THRESHOLD_BLOCK_WEIGHT;  // 1800
     const int NODE_A = 5;
     const int NODE_B = 6;
     std::vector<int> last_nodes;
@@ -529,7 +529,7 @@ TEST_F(GpuGPartitionTest, SoloTier_UnaffectedByG) {
 // ==========================================================================
 
 TEST_F(GpuGPartitionTest, MixedScenario_AllFiveTiersPopulated_CountIdentity) {
-    // Use the index picker caps (G_CAP_WARP_INDEX=340, G_CAP_BLOCK_INDEX=2800).
+    // Use the index picker caps (G_CAP_WARP_INDEX=340, G_THRESHOLD_BLOCK_INDEX=2800).
     const int NODE_SOLO_A = 101;
     const int NODE_SOLO_B = 102;
     const int NODE_WARP_SMEM   = 11;   // W=10, G=100

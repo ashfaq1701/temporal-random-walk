@@ -8,6 +8,7 @@
 
 #include "../common/macros.cuh"
 #include "../common/const.cuh"
+#include "../common/cuda_config.cuh"   // BLOCK_DIM default for block_dim params
 #include "../data/structs.cuh"
 #include "../data/enums.cuh"
 #include "../data/buffer.cuh"
@@ -86,22 +87,22 @@ public:
     void add_multiple_edges(
         const int* sources, const int* targets,
         const int64_t* timestamps, size_t num_edges,
-        const float* edge_features = nullptr, size_t feature_dim = 0);
+        const float* edge_features = nullptr, size_t feature_dim = 0,
+        size_t block_dim = BLOCK_DIM);
 
     void add_multiple_edges(
         const std::vector<std::tuple<int, int, int64_t>>& edges,
-        const float* edge_features = nullptr, size_t feature_dim = 0);
+        const float* edge_features = nullptr, size_t feature_dim = 0,
+        size_t block_dim = BLOCK_DIM);
 
-    // kernel_launch_type defaults to DEFAULT_KERNEL_LAUNCH_TYPE; see
-    // enums.cuh. Same for the other two walk entrypoints below and for
-    // the namespace-free _cuda overloads further down.
     WalksWithEdgeFeaturesHost get_random_walks_and_times_for_all_nodes(
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE);
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
+        size_t block_dim = BLOCK_DIM);
 
     WalksWithEdgeFeaturesHost get_random_walks_and_times_for_last_batch(
         int max_walk_len,
@@ -109,7 +110,8 @@ public:
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE);
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
+        size_t block_dim = BLOCK_DIM);
 
     WalksWithEdgeFeaturesHost get_random_walks_and_times(
         int max_walk_len,
@@ -117,7 +119,8 @@ public:
         int num_walks_total,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE);
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
+        size_t block_dim = BLOCK_DIM);
 
     void set_node_features(
         const int* node_ids, size_t num_nodes,
@@ -156,7 +159,8 @@ namespace temporal_random_walk {
         core::TemporalRandomWalk* trw,
         const int* sources, const int* targets,
         const int64_t* timestamps, size_t num_edges,
-        const float* edge_features = nullptr, size_t feature_dim = 0);
+        const float* edge_features = nullptr, size_t feature_dim = 0,
+        size_t block_dim = BLOCK_DIM);
 
     HOST size_t get_node_count(const core::TemporalRandomWalk* trw);
     HOST size_t get_edge_count(const core::TemporalRandomWalk* trw);
@@ -197,7 +201,8 @@ namespace temporal_random_walk {
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE);
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
+        size_t block_dim = BLOCK_DIM);
 
     HOST WalksWithEdgeFeaturesHost get_random_walks_and_times_for_last_batch_cuda(
         core::TemporalRandomWalk* trw,
@@ -206,7 +211,8 @@ namespace temporal_random_walk {
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE);
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
+        size_t block_dim = BLOCK_DIM);
 
     HOST WalksWithEdgeFeaturesHost get_random_walks_and_times_cuda(
         core::TemporalRandomWalk* trw,
@@ -215,7 +221,8 @@ namespace temporal_random_walk {
         int num_walks_total,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
-        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE);
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
+        size_t block_dim = BLOCK_DIM);
 #endif
 
     HOST size_t get_memory_used(const core::TemporalRandomWalk* trw);

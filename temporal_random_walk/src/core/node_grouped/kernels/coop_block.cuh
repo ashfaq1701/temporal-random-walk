@@ -13,7 +13,7 @@
                          // sample_edge_and_add_hop
 #include "per_walk.cuh"  // step_kernel_philox_offset (+ transitive philox/utils)
 #include "../../../common/picker_dispatch.cuh"
-#include "../../../common/warp_coop_config.cuh"
+#include "../../../common/cuda_config.cuh"
 
 namespace temporal_random_walk {
 
@@ -22,7 +22,7 @@ namespace temporal_random_walk {
 // ==========================================================================
 // Block-smem cooperative kernel.
 //
-// One block per block-task, TRW_NODE_GROUPED_COOP_BLOCK_THREADS (256) threads
+// One block per block-task, blockDim.x threads
 // per block. The block cooperatively preloads the per-node G-sized panel
 // (s_group_offsets[G] and s_first_ts[G]) into shared memory once, then all
 // 256 threads stride through the task's walks sampling edges against it.
@@ -31,7 +31,7 @@ namespace temporal_random_walk {
 //   [ 0 ..  64)              alignment pad (keeps smem panel 16B-aligned)
 //   [64 ..  64 + G*8)        s_group_offsets (size_t)
 //   [.. + G*8)               s_first_ts      (int64_t)
-// Sizing uses TRW_NODE_GROUPED_G_CAP_BLOCK_{INDEX,WEIGHTED} by picker class;
+// Sizing uses G_THRESHOLD_BLOCK_{INDEX,WEIGHT} by picker class;
 // the scheduler's G-partition guarantees G <= cap.
 //
 // Task-level scalars (node_id, walk_start, walk_count, G, node_edge_end,
@@ -177,7 +177,7 @@ inline void dispatch_node_grouped_block_smem_kernel(
 // Block-global cooperative kernel.
 //
 // Same launch topology as block-smem (one block per block-task, 256 threads
-// per block); services nodes with G > TRW_NODE_GROUPED_G_CAP_BLOCK_* whose
+// per block); services nodes with G > G_THRESHOLD_BLOCK_* whose
 // panel wouldn't fit in smem. Binary search runs against the GLOBAL
 // node_ts_groups_offsets slice via find_group_pos_slice's double-indirect
 // comparator. The cooperative win is L1/L2 cache residency of the per-node

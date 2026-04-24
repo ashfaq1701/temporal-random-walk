@@ -165,7 +165,7 @@ TYPED_TEST(NodeGroupedTierRoutingTest, WarpSmem_WalksAreValid) {
 // Warp-global tier: W ∈ [2, 255] AND G > 340.
 //
 // 10 sources -> HUB with 400 distinct-timestamp outbound groups.
-// G = 400 > TRW_NODE_GROUPED_G_CAP_WARP_INDEX (340) -> warp_global.
+// G = 400 > G_THRESHOLD_WARP_INDEX (340) -> warp_global.
 // ==========================================================================
 TYPED_TEST(NodeGroupedTierRoutingTest, WarpGlobal_WalksAreValid) {
     auto trw = this->make_trw(/*enable_weights=*/false);
@@ -207,7 +207,7 @@ TYPED_TEST(NodeGroupedTierRoutingTest, BlockSmem_WalksAreValid) {
 // Block-global tier: W > 255 AND G > 2800.
 //
 // 300 sources -> HUB with 3000 distinct-timestamp outbound groups.
-// W = 300 > T_BLOCK; G = 3000 > TRW_NODE_GROUPED_G_CAP_BLOCK_INDEX (2800)
+// W = 300 > T_BLOCK; G = 3000 > G_THRESHOLD_BLOCK_INDEX (2800)
 // -> block_global. This tier had zero end-to-end coverage before.
 // ==========================================================================
 TYPED_TEST(NodeGroupedTierRoutingTest, BlockGlobal_WalksAreValid) {

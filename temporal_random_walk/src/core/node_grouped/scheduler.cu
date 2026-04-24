@@ -9,7 +9,7 @@
 #include "../../common/cuda_scan.cuh"
 #include "../../common/error_handlers.cuh"
 #include "../../common/nvtx.cuh"
-#include "../../common/warp_coop_config.cuh"
+#include "../../common/cuda_config.cuh"
 #include "../../random/pickers.cuh"
 
 namespace temporal_random_walk {
@@ -322,27 +322,16 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
     constexpr int kCounterSlots = 9;
     int* tier_counters = arena_.acquire<int>(kCounterSlots);
 
-    // Pick G caps by picker class (runtime — switch lifts to compile time
-    // via template specialization in the real coop bodies, tasks 8–11).
-    //
-    // force_global_only ablation: override both caps to -1 so `G <= cap`
-    // is false for every node (G >= 1 for any node that has at least one
-    // edge in the traversal direction, which is a precondition for a walk
-    // to have arrived at that node). Every coop task then lands in the
-    // `*_global` tier; `*_smem` lists come out empty and the dispatcher
-    // skips their kernel launches.
+    // G thresholds per picker class. force_global_only ablation sets to -1
+    // so every coop task routes to *_global (G >= 1 on any live node).
     const bool is_index_picker =
         random_pickers::is_index_based_picker(edge_picker_type);
     const int g_cap_warp = force_global_only
         ? -1
-        : (is_index_picker
-            ? TRW_NODE_GROUPED_G_CAP_WARP_INDEX
-            : TRW_NODE_GROUPED_G_CAP_WARP_WEIGHTED);
+        : (is_index_picker ? G_THRESHOLD_WARP_INDEX : G_THRESHOLD_WARP_WEIGHT);
     const int g_cap_block = force_global_only
         ? -1
-        : (is_index_picker
-            ? TRW_NODE_GROUPED_G_CAP_BLOCK_INDEX
-            : TRW_NODE_GROUPED_G_CAP_BLOCK_WEIGHTED);
+        : (is_index_picker ? G_THRESHOLD_BLOCK_INDEX : G_THRESHOLD_BLOCK_WEIGHT);
 
     const std::size_t flag_blocks =
         (num_walks_ + block_dim_.x - 1) / block_dim_.x;
@@ -451,8 +440,8 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
         partition_by_w_kernel<<<active_grid, block_dim_, 0, stream_>>>(
             unique_last_nodes, step_run_starts, step_run_lengths,
             step_num_runs, sorted_active_idx,
-            TRW_NODE_GROUPED_T_WARP,
-            TRW_NODE_GROUPED_T_BLOCK,
+            W_THRESHOLD_WARP,
+            static_cast<int>(BLOCK_DIM),   // W_THRESHOLD_BLOCK
             solo_walks,
             warp_nodes_w,  warp_walk_starts_w,  warp_walk_counts_w,
             block_nodes_w, block_walk_starts_w, block_walk_counts_w,
@@ -499,7 +488,7 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
         expand_block_tasks_kernel<<<active_grid, block_dim_, 0, stream_>>>(
             block_smem_pre_nodes, block_smem_pre_starts, block_smem_pre_counts,
             &tier_counters[5],                       // num_block_smem_pre_exp
-            TRW_NODE_GROUPED_BLOCK_WALK_CAP,
+            W_THRESHOLD_MULTI_BLOCK,
             block_smem_nodes, block_smem_starts, block_smem_counts,
             &tier_counters[7]);                      // num_block_smem (final)
     }
@@ -509,7 +498,7 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
         expand_block_tasks_kernel<<<active_grid, block_dim_, 0, stream_>>>(
             block_global_pre_nodes, block_global_pre_starts, block_global_pre_counts,
             &tier_counters[6],                       // num_block_global_pre_exp
-            TRW_NODE_GROUPED_BLOCK_WALK_CAP,
+            W_THRESHOLD_MULTI_BLOCK,
             block_global_nodes, block_global_starts, block_global_counts,
             &tier_counters[8]);                      // num_block_global (final)
     }
