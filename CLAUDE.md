@@ -24,14 +24,13 @@ A third mode, **NODE_GROUPED_GLOBAL_ONLY**, exists as a paper ablation knob
 ```
 temporal_random_walk/src/
 ├── common/                     # cross-cutting utilities
-│   ├── warp_coop_config.cuh     ★ tier constants, G caps, smem budget
+│   ├── cuda_config.cuh          ★ tier constants (W_THRESHOLD_WARP, BLOCK_DIM, G caps)
 │   ├── cuda_scan.cuh            # CUB wrappers: exclusive sum, RLE, partition flagged
 │   ├── cuda_sort.cuh            # CUB wrappers: radix sort pairs
 │   ├── nvtx.cuh                 # RAII NVTX range markers
 │   ├── error_handlers.cuh       # CUDA_CHECK / CUB_CHECK macros
 │   ├── picker_dispatch.cuh      # tag-dispatch helpers for picker enum → template
-│   ├── random_gen.cuh           # Philox state + keying helpers
-│   └── warp_coop_config.cuh
+│   └── random_gen.cuh           # Philox state + keying helpers
 │
 ├── core/
 │   ├── temporal_random_walk.{cuh,cu}  # top-level walk entry points
@@ -282,29 +281,52 @@ each unique node it sees `W = run_lengths[r]` and routes the run into one
 of three tiers:
 
 ```
-W <= T_WARP (=1)                 → solo      (one walk_idx per entry)
-T_WARP < W <= T_BLOCK (=255)     → warp      (one task; services W walks cooperatively)
-W > T_BLOCK                       → block     (one task; services W walks cooperatively)
+W <= W_THRESHOLD_WARP (=1, default)   → solo      (one thread per walk)
+W_THRESHOLD_WARP < W <= BLOCK_DIM     → warp      (one task; services W walks cooperatively)
+W > BLOCK_DIM                          → block     (one task; services W walks cooperatively)
 ```
 
-Atomics into a shared `int[3]` counter, per tier. Output order within each
-tier is non-deterministic — the cooperative kernels iterate their task
-lists independently, so order doesn't matter.
+Atomics into a shared `int[3]` counter, per tier. The solo branch reserves
+W slots in one `atomicAdd(&counters[0], W)` and writes all W walks via a
+local for-loop — pre-fix it only stored the first walk per run, which was
+correct only at `W_THRESHOLD_WARP = 1`. Output order within each tier is
+non-deterministic — the cooperative kernels iterate their task lists
+independently, so order doesn't matter.
 
 Threshold rationale:
 
-- **`T_WARP = 1`.** Below this, there's only one walk for this node at
-  this step — nothing to cooperate over. Solo threads don't pay any
-  cooperation bookkeeping.
-- **`T_BLOCK = 255`.** Tuned to fit 8 intra-warp stride rounds
-  (`⌈255/32⌉ = 8`): a warp servicing up to 255 walks does at most 8
-  rounds of its stride loop. Above that, a full 256-thread block
-  amortizes the smem-panel preload better than 8 warps spread across
-  blocks would.
+- **`W_THRESHOLD_WARP = 1` (default).** Below this, there's only one walk
+  for this node at this step — nothing to cooperate over. Solo threads
+  don't pay any cooperation bookkeeping. The boundary is a tunable
+  per-call parameter (`w_threshold_warp`); see "W-threshold tuning" below.
+- **`BLOCK_DIM = 256` (block boundary).** Tuned to fit ~8 intra-warp
+  stride rounds (`⌈BLOCK_DIM/32⌉ = 8`): a warp servicing up to BLOCK_DIM
+  walks does at most 8 rounds of its stride loop. Above that, a full
+  256-thread block amortizes the smem-panel preload better than 8 warps
+  spread across blocks would.
 
-Both are tunable constants in `warp_coop_config.cuh`. Relative ordering
-(`T_WARP < T_BLOCK`) is what matters for correctness; absolute values are
-perf knobs.
+Constants live in `cuda_config.cuh`. Relative ordering
+(`W_THRESHOLD_WARP < BLOCK_DIM`) is what matters for correctness; absolute
+values are perf knobs.
+
+#### W-threshold tuning (public API)
+
+`w_threshold_warp` is exposed as a per-call parameter on the
+`TemporalRandomWalk` proxy and the `core::TemporalRandomWalk`
+class. It threads through `dispatch_node_grouped_kernel →
+NodeGroupedScheduler` and replaces the previous `constexpr` reference
+in `partition_by_w_kernel`. CLI exposure: 13th positional in both
+`ablation_streaming` and `test_alibaba_streaming`, and as
+`--w-threshold-warp` in `tempest-benchmarks/ablation_runner/run_ablation.py`.
+The Python pybind binding does **not** expose it (intentional — perf
+tuning lives at the C++ benchmark layer for now).
+
+Empirical finding on coin (laptop, exponential_weight): post-bug-fix
+sweep over W ∈ {1, 4, 8, 16, 32} is flat to within ±2 % of run-to-run
+noise. The pre-fix sweep that suggested "+45 % at W=32" was measuring
+walks dropped on the floor, not real speedup. **The threshold doesn't
+move throughput on the workloads we have measured — see "Current
+bottleneck" below for why.**
 
 ### G-partition — smem fit test
 
@@ -625,3 +647,107 @@ the smem tier barely fires, so disabling it costs nothing. Workloads where
 G distribution crosses the cap for a non-trivial fraction of hubs (narrower
 windows, denser synthetic graphs, TGBL-wiki) are where the three-way split
 tells a story.
+
+---
+
+## Current bottleneck (open problem)
+
+Across coin / flight / delicious on A40 (server) and coin on RTX 2000 Ada
+(laptop), the three-way ablation collapses to **NG ≈ NG_global_only ≈
+FW within 5–10 %**. Cooperative grouping wins a little; the smem panel
+adds nothing measurable on top of NG_global_only. Tuning sweeps confirm:
+
+- **G-cap knobs** (`G_THRESHOLD_*_INDEX/WEIGHT`): ±2 %, all noise.
+  Setting both caps to 0 (kill smem entirely) is statistically tied with
+  the default. Larger caps (raising via `cudaFuncSetAttribute` opt-in)
+  don't pay off either at these dataset scales.
+- **W-threshold knob** (`w_threshold_warp`, post-fix): ±2 %, all noise
+  across W ∈ {1, 4, 8, 16, 32} on coin. Earlier "+45 %" was an artifact
+  of a partition bug that dropped walks (`partition_by_w_kernel` solo
+  branch only stored the first walk per RLE run; symptom was caught by
+  `NodeGroupedParityTest` on directed graphs, where lower per-side W
+  routed more walks through the bug — fix lives in `scheduler.cu`).
+
+### Why smem doesn't help — diagnosis
+
+The smem panel preloads `s_group_offsets[G]` and `s_first_ts[G]` to
+collapse the binary-search comparator's 3-deep dependent-load chain to
+one smem load per probe. On these workloads:
+
+1. **Per-hub metadata fits in L1/L2 already.** First thread in a
+   cooperating warp/block misses; the next 31 (or 255) hit warm. The
+   smem replica duplicates work the hardware already did.
+2. **The binary search isn't the hot load.** coin's average G per active
+   node is ~10–20; even a hub at the warp cap (G=220, weighted picker)
+   does ~8 probes — small fraction of per-step time once L1 catches the
+   metadata.
+3. **The actual hot load is the post-pick edge fetch.** `view.timestamps[
+   picked_edge_id]` and `view.targets[picked_edge_id]` are uncoalesced
+   per walk: each thread picks a different edge ID, so warp lanes scatter
+   across DRAM. The smem panel does not touch this.
+
+The diagnostic metric: `smsp__average_warps_issue_stalled_long_scoreboard
+_per_active_cycle.ratio` — fraction of active SM cycles waiting on global
+loads. Smem on / smem off / FW all show similar long-scoreboard stall %
+on these workloads, which is why throughput parity collapses.
+
+### What was tried and reverted (don't redo)
+
+These directions have been measured and don't help on the laptop / A40
+class at the dataset scales we've run; reverted from master:
+
+- Arena-backed CUB scratch (vs scope-local `Buffer<uint8_t>`).
+- Fused filter+gather+iota with sentinel (skip num_active D2H readback).
+- Hybrid `*_smem` + `*_global` merge into one branchy kernel.
+- Dynamic-smem opt-in pushing `G_THRESHOLD_BLOCK_INDEX` from 2800 → 6100.
+- Hybrid panels (preload `first_ts` only beyond the smem-fit cap, fall
+  back to global for `group_offsets`).
+
+If you re-attempt any of these, measure on coin + flight + delicious
+post the partition-by-w fix, and account for the throughput formula
+(walks_per_sec uses `total_walks` from the WalkSet — make sure none of
+the walks are silently absorbed in padding).
+
+### Path forward
+
+The remaining throughput pickup on these workloads has to come from the
+**uncoalesced edge fetch**, not the binary search. Two avenues, neither
+yet attempted:
+
+1. **Per-edge smem panel for low-E hubs.** Extend the smem panel from
+   per-group (`first_ts[G]`) to per-edge (`timestamps[E]`,
+   `targets[E]`). For a hub with E ≤ panel-cap edges, the post-pick load
+   becomes a smem read instead of a scattered DRAM read. Sizing: at
+   coin's avg degree ~72, a 44 KB panel holds ~5500 edges (12 B/edge),
+   so most hubs fit. Mega-hubs would need a hybrid path that falls
+   through to global for picks past the panel.
+
+2. **Persistent grid-cooperative kernel** (item from the prior
+   "ideas not tried" list). All steps in one launch, walk state in
+   registers across the per-step coop barrier. Eliminates the per-step
+   global writes/reads that the current scheduler pipeline pays. Limits:
+   `cudaLaunchCooperativeKernel` caps grid at MAX_BLOCKS_PER_SM × num_SMs
+   (~2688 on A40), so walks process in waves.
+
+Avenue 1 is the smaller architectural change and addresses the measured
+bottleneck directly. Avenue 2 is the ambitious win but a much larger
+rewrite.
+
+### Suggestions when working on this further
+
+- **Measure with the right metric.** `walks_per_sec` is misleading
+  because `total_walks` counts the entire WalkSet (padded slots
+  included). After any change touching the partition or scheduler,
+  cross-check `Final avg walk length` against FW on the same config —
+  if NG's mean falls noticeably below FW's, walks are being dropped.
+  `NodeGroupedParityTest` on directed graphs is the precise gate.
+- **Profile, then change.** Use `smsp__average_warps_issue_stalled_
+  long_scoreboard_per_active_cycle.ratio` (primary), `lts__t_sector_hit
+  _rate.pct` (secondary), and `dram__throughput.avg.pct_of_peak_
+  sustained_elapsed` (sanity) on a single coin run. If long-scoreboard
+  stall doesn't drop after a change, the change isn't moving the
+  bottleneck.
+- **Don't tune G-caps or W-threshold without first changing what's hot.**
+  The current evidence is that neither knob moves throughput at this
+  scale. Spend optimization budget on the edge-fetch problem, not on
+  re-tuning settings that are already in noise.
