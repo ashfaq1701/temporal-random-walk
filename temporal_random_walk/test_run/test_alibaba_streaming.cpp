@@ -233,6 +233,8 @@ int main(int argc, char** argv) {
     const double inv_steps = num_steps > 0 ? 1.0 / static_cast<double>(num_steps) : 0.0;
     const double walks_per_sec =
         (total_walk > 0.0) ? (static_cast<double>(total_walks) / total_walk) : 0.0;
+    const double steps_per_sec =
+        (total_walk > 0.0) ? (total_walk_len_sum / total_walk) : 0.0;
 
     std::cout << "\n=== Summary ===\n"
               << "Steps measured:       " << num_steps << "\n"
@@ -242,7 +244,8 @@ int main(int argc, char** argv) {
               << "Mean walk time/step:  " << (total_walk * inv_steps) << " sec\n"
               << "Total walks:          " << total_walks << "\n"
               << "Final avg walk length:" << final_avg_len << "\n"
-              << "Throughput:           " << walks_per_sec << " walks/sec\n";
+              << "Throughput:           " << walks_per_sec << " walks/sec\n"
+              << "Steps/sec:            " << steps_per_sec << " steps/sec\n";
 
     return 0;
 }

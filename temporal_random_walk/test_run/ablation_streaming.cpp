@@ -258,7 +258,9 @@ int main(int argc, char **argv) {
               << "Total walks:          " << total_walks << "\n"
               << "Final avg walk length:" << final_avg_len << "\n"
               << "Throughput:           "
-              << (total_walks / total_walk) << " walks/sec\n";
+              << (total_walks / total_walk) << " walks/sec\n"
+              << "Steps/sec:            "
+              << (total_walk_len_sum / total_walk) << " steps/sec\n";
 
     return 0;
 }
