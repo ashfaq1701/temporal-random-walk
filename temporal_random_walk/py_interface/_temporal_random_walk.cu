@@ -113,8 +113,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                              const py::array_t<int>& sources,
                              const py::array_t<int>& targets,
                              const py::array_t<int64_t>& timestamps,
-                             const py::object& edge_features_obj,
-                             const size_t block_dim)
+                             const py::object& edge_features_obj)
         {
             const auto sources_info = sources.request();
             const auto targets_info = targets.request();
@@ -162,8 +161,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 timestamps_ptr,
                 num_edges,
                 edge_features_ptr,
-                feature_dim,
-                block_dim);
+                feature_dim);
         },
         R"(
         Add multiple edges to the temporal graph.
@@ -186,8 +184,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
         py::arg("sources"),
         py::arg("targets"),
         py::arg("timestamps"),
-        py::arg("edge_features") = py::none(),
-        py::arg("block_dim") = BLOCK_DIM
+        py::arg("edge_features") = py::none()
         )
 
         .def("set_node_features", [](TemporalRandomWalk& tw,
@@ -284,8 +281,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                                                const int num_walks_per_node,
                                                const std::optional<std::string>& initial_edge_bias = std::nullopt,
                                                const std::string& walk_direction = "Forward_In_Time",
-                                               const std::string& kernel_launch_type = "NODE_GROUPED",
-                                               const size_t block_dim = BLOCK_DIM)
+                                               const std::string& kernel_launch_type = "NODE_GROUPED")
             {
                 const RandomPickerType walk_bias_enum = picker_type_from_string(walk_bias);
                 std::optional<RandomPickerType> edge_bias_enum_opt;
@@ -301,8 +297,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     num_walks_per_node,
                     initial_edge_bias_enum_ptr,
                     walk_direction_enum,
-                    kernel_launch_type_enum,
-                    block_dim);
+                    kernel_launch_type_enum);
 
                 const auto num_walks = static_cast<ssize_t>(walks.walk_set.num_walks());
                 const auto walk_len = static_cast<ssize_t>(max_walk_len);
@@ -384,8 +379,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             py::arg("num_walks_per_node"),
             py::arg("initial_edge_bias") = py::none(),
             py::arg("walk_direction") = "Forward_In_Time",
-            py::arg("kernel_launch_type") = "NODE_GROUPED",
-            py::arg("block_dim") = BLOCK_DIM)
+            py::arg("kernel_launch_type") = "NODE_GROUPED")
 
         .def("get_random_walks_and_times_for_last_batch", [](TemporalRandomWalk& tw,
                                                const int max_walk_len,
@@ -393,8 +387,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                                                const int num_walks_per_node,
                                                const std::optional<std::string>& initial_edge_bias = std::nullopt,
                                                const std::string& walk_direction = "Forward_In_Time",
-                                               const std::string& kernel_launch_type = "NODE_GROUPED",
-                                               const size_t block_dim = BLOCK_DIM)
+                                               const std::string& kernel_launch_type = "NODE_GROUPED")
             {
                 const RandomPickerType walk_bias_enum = picker_type_from_string(walk_bias);
                 std::optional<RandomPickerType> edge_bias_enum_opt;
@@ -410,8 +403,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     num_walks_per_node,
                     initial_edge_bias_enum_ptr,
                     walk_direction_enum,
-                    kernel_launch_type_enum,
-                    block_dim);
+                    kernel_launch_type_enum);
 
                 const auto num_walks = static_cast<ssize_t>(walks.walk_set.num_walks());
                 const auto walk_len = static_cast<ssize_t>(max_walk_len);
@@ -497,8 +489,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             py::arg("num_walks_per_node"),
             py::arg("initial_edge_bias") = py::none(),
             py::arg("walk_direction") = "Forward_In_Time",
-            py::arg("kernel_launch_type") = "NODE_GROUPED",
-            py::arg("block_dim") = BLOCK_DIM)
+            py::arg("kernel_launch_type") = "NODE_GROUPED")
 
         .def("get_random_walks_and_times", [](TemporalRandomWalk& tw,
                                                const int max_walk_len,
@@ -506,8 +497,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                                                const int num_walks_total,
                                                const std::optional<std::string>& initial_edge_bias = std::nullopt,
                                                const std::string& walk_direction = "Forward_In_Time",
-                                               const std::string& kernel_launch_type = "NODE_GROUPED",
-                                               const size_t block_dim = BLOCK_DIM)
+                                               const std::string& kernel_launch_type = "NODE_GROUPED")
             {
                 const RandomPickerType walk_bias_enum = picker_type_from_string(walk_bias);
                 std::optional<RandomPickerType> edge_bias_enum_opt;
@@ -524,8 +514,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                     num_walks_total,
                     initial_edge_bias_enum_ptr,
                     walk_direction_enum,
-                    kernel_launch_type_enum,
-                    block_dim);
+                    kernel_launch_type_enum);
 
                 const auto num_walks = static_cast<ssize_t>(walks.walk_set.num_walks());
                 const auto walk_len = static_cast<ssize_t>(max_walk_len);
@@ -607,8 +596,7 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             py::arg("num_walks_total"),
             py::arg("initial_edge_bias") = py::none(),
             py::arg("walk_direction") = "Forward_In_Time",
-            py::arg("kernel_launch_type") = "NODE_GROUPED",
-            py::arg("block_dim") = BLOCK_DIM)
+            py::arg("kernel_launch_type") = "NODE_GROUPED")
 
         .def("get_node_count", &TemporalRandomWalk::get_node_count,
             R"(
