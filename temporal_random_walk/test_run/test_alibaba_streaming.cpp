@@ -100,7 +100,8 @@ int main(int argc, char** argv) {
             << " [window_ms=" << DEFAULT_WINDOW_MS << "]"
             << " [max_walk_len=" << DEFAULT_MAX_WALK_LEN << "]"
             << " [total_minutes=" << DEFAULT_TOTAL_MINUTES << "]"
-            << " [timescale_bound=-1]\n"
+            << " [timescale_bound=-1]"
+            << " [w_threshold_warp=" << W_THRESHOLD_WARP << "]\n"
             << "\n"
             << "<dataset_dir> must contain data_0.csv .. data_{total-1}.csv,\n"
             << "each a header-prefixed CSV with u,i,ts columns.\n";
@@ -117,6 +118,8 @@ int main(int argc, char** argv) {
     const int         max_walk_len        = (argc > 8) ? std::stoi(argv[8]) : DEFAULT_MAX_WALK_LEN;
     const int         total_minutes       = (argc > 9) ? std::stoi(argv[9]) : DEFAULT_TOTAL_MINUTES;
     const double      timescale_bound     = (argc > 10) ? std::stod(argv[10]) : -1.0;
+    const int         w_threshold_warp    = (argc > 11) ? std::stoi(argv[11])
+                                                        : static_cast<int>(W_THRESHOLD_WARP);
 
     const RandomPickerType hop_picker = parse_picker(picker_str);
     const KernelLaunchType kernel_launch_type = parse_kernel_launch_type(klt_str);
@@ -132,7 +135,8 @@ int main(int argc, char** argv) {
               << "Window (ms):       " << window_ms << "\n"
               << "Max walk len:      " << max_walk_len << "\n"
               << "Total minutes:     " << total_minutes << "\n"
-              << "Timescale bound:   " << timescale_bound << "\n";
+              << "Timescale bound:   " << timescale_bound << "\n"
+              << "W threshold (solo):" << w_threshold_warp << "\n";
 
     const bool use_weight = (hop_picker == RandomPickerType::ExponentialWeight);
 
@@ -152,7 +156,8 @@ int main(int argc, char** argv) {
             warm.src.data(), warm.dst.data(), warm.ts.data(), warm.ts.size());
         auto warm_walks = trw.get_random_walks_and_times_for_last_batch(
             max_walk_len, &hop_picker, num_walks_per_node, &start_picker,
-            WalkDirection::Forward_In_Time, kernel_launch_type);
+            WalkDirection::Forward_In_Time, kernel_launch_type,
+            BLOCK_DIM, w_threshold_warp);
 #ifdef HAS_CUDA
         if (use_gpu) cudaDeviceSynchronize();
 #endif
@@ -198,7 +203,8 @@ int main(int argc, char** argv) {
             const auto t0 = std::chrono::high_resolution_clock::now();
             const auto walks = trw.get_random_walks_and_times_for_last_batch(
                 max_walk_len, &hop_picker, num_walks_per_node, &start_picker,
-                WalkDirection::Forward_In_Time, kernel_launch_type);
+                WalkDirection::Forward_In_Time, kernel_launch_type,
+                BLOCK_DIM, w_threshold_warp);
 #ifdef HAS_CUDA
             if (use_gpu) cudaDeviceSynchronize();
 #endif

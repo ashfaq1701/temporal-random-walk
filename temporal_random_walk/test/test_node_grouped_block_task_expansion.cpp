@@ -204,7 +204,8 @@ ExpResult run_and_materialize(
     const WalkSetView view = make_view(*ws);
     auto g = make_count_ts_group_per_node(g_per_node);
 
-    NodeGroupedScheduler scheduler(ws->num_walks, block_dim, stream);
+    // Mixed-tier tests assert W=10 lands in warp — pin to original W=1 boundary.
+    NodeGroupedScheduler scheduler(ws->num_walks, block_dim, /*w_threshold_warp=*/1, stream);
     auto outs = scheduler.run_step(
         view, STEP_NUMBER, MAX_WALK_LEN, g->ptr, picker);
     cudaStreamSynchronize(stream);

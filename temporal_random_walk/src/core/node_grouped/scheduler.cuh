@@ -46,6 +46,7 @@ public:
 
     NodeGroupedScheduler(std::size_t num_walks,
                          dim3 block_dim,
+                         int w_threshold_warp,
                          cudaStream_t stream);
 
     // Two blocking D2Hs per call: num_active (drives CUB extents) and
@@ -62,6 +63,7 @@ private:
     std::size_t  num_walks_;
     int          num_walks_int_;
     dim3         block_dim_;
+    int          w_threshold_warp_;
     cudaStream_t stream_;
 
     DeviceArena arena_;

@@ -513,6 +513,7 @@ void launch_walk_kernel_dispatch(
     const uint64_t base_seed,
     const dim3& grid_dim,
     const dim3& block_dim,
+    const int w_threshold_warp,
     const cudaStream_t stream) {
     switch (kernel_launch_type) {
         case KernelLaunchType::FULL_WALK: {
@@ -531,7 +532,8 @@ void launch_walk_kernel_dispatch(
                 start_node_ids, num_walks, all_starts_unconstrained,
                 walk_bias, initial_edge_bias, walk_direction,
                 base_seed, grid_dim, block_dim, stream,
-                /*force_global_only=*/false);
+                /*force_global_only=*/false,
+                w_threshold_warp);
             break;
         }
         case KernelLaunchType::NODE_GROUPED_GLOBAL_ONLY: {
@@ -542,7 +544,8 @@ void launch_walk_kernel_dispatch(
                 start_node_ids, num_walks, all_starts_unconstrained,
                 walk_bias, initial_edge_bias, walk_direction,
                 base_seed, grid_dim, block_dim, stream,
-                /*force_global_only=*/true);
+                /*force_global_only=*/true,
+                w_threshold_warp);
             break;
         }
         default:
@@ -561,7 +564,8 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
     const KernelLaunchType kernel_launch_type,
-    const size_t block_dim) {
+    const size_t block_dim,
+    const int w_threshold_warp) {
     NVTX_RANGE_COLORED("Walk Sampling (all nodes)", nvtx_colors::walk_green);
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
@@ -602,7 +606,7 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
         max_walk_len, repeated_node_ids.data, repeated_node_ids.size,
         /*all_starts_unconstrained=*/false,
         *walk_bias, *initial_edge_bias, walk_direction,
-        base_seed, grid_dim, launch_block_dim, trw->stream());
+        base_seed, grid_dim, launch_block_dim, w_threshold_warp, trw->stream());
 
     CUDA_KERNEL_CHECK(
         "After generate_random_walks_kernel in get_random_walks_and_times_for_all_nodes_cuda");
@@ -624,7 +628,8 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
     const KernelLaunchType kernel_launch_type,
-    const size_t block_dim) {
+    const size_t block_dim,
+    const int w_threshold_warp) {
     NVTX_RANGE_COLORED("Walk Sampling (last batch)", nvtx_colors::walk_green);
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
@@ -661,7 +666,7 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
         max_walk_len, repeated_node_ids.data, repeated_node_ids.size,
         /*all_starts_unconstrained=*/false,
         *walk_bias, *initial_edge_bias, walk_direction,
-        base_seed, grid_dim, launch_block_dim, trw->stream());
+        base_seed, grid_dim, launch_block_dim, w_threshold_warp, trw->stream());
 
     CUDA_KERNEL_CHECK(
         "After generate_random_walks_kernel in get_random_walks_and_times_for_last_batch_cuda");
@@ -682,7 +687,8 @@ temporal_random_walk::get_random_walks_and_times_cuda(
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
     const KernelLaunchType kernel_launch_type,
-    const size_t block_dim) {
+    const size_t block_dim,
+    const int w_threshold_warp) {
     NVTX_RANGE_COLORED("Walk Sampling", nvtx_colors::walk_green);
     if (!initial_edge_bias) {
         initial_edge_bias = walk_bias;
@@ -715,7 +721,7 @@ temporal_random_walk::get_random_walks_and_times_cuda(
         max_walk_len, start_node_ids.data(), static_cast<size_t>(num_walks_total),
         /*all_starts_unconstrained=*/true,
         *walk_bias, *initial_edge_bias, walk_direction,
-        base_seed, grid_dim, launch_block_dim, trw->stream());
+        base_seed, grid_dim, launch_block_dim, w_threshold_warp, trw->stream());
 
     CUDA_KERNEL_CHECK(
         "After generate_random_walks_kernel in get_random_walks_and_times_cuda");
@@ -761,16 +767,19 @@ core::TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
     const KernelLaunchType kernel_launch_type,
-    const size_t block_dim) {
+    const size_t block_dim,
+    const int w_threshold_warp) {
 #ifdef HAS_CUDA
     if (data_.use_gpu) {
         return temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
             this, max_walk_len, walk_bias, num_walks_per_node,
-            initial_edge_bias, walk_direction, kernel_launch_type, block_dim);
+            initial_edge_bias, walk_direction, kernel_launch_type,
+            block_dim, w_threshold_warp);
     }
 #endif
     (void)kernel_launch_type;
     (void)block_dim;
+    (void)w_threshold_warp;
     return temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
         this, max_walk_len, walk_bias, num_walks_per_node,
         initial_edge_bias, walk_direction);
@@ -783,16 +792,19 @@ core::TemporalRandomWalk::get_random_walks_and_times_for_last_batch(
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
     const KernelLaunchType kernel_launch_type,
-    const size_t block_dim) {
+    const size_t block_dim,
+    const int w_threshold_warp) {
 #ifdef HAS_CUDA
     if (data_.use_gpu) {
         return temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
             this, max_walk_len, walk_bias, num_walks_per_node,
-            initial_edge_bias, walk_direction, kernel_launch_type, block_dim);
+            initial_edge_bias, walk_direction, kernel_launch_type,
+            block_dim, w_threshold_warp);
     }
 #endif
     (void)kernel_launch_type;
     (void)block_dim;
+    (void)w_threshold_warp;
     return temporal_random_walk::get_random_walks_and_times_for_last_batch_std(
         this, max_walk_len, walk_bias, num_walks_per_node,
         initial_edge_bias, walk_direction);
@@ -805,16 +817,19 @@ core::TemporalRandomWalk::get_random_walks_and_times(
     const RandomPickerType* initial_edge_bias,
     const WalkDirection walk_direction,
     const KernelLaunchType kernel_launch_type,
-    const size_t block_dim) {
+    const size_t block_dim,
+    const int w_threshold_warp) {
 #ifdef HAS_CUDA
     if (data_.use_gpu) {
         return temporal_random_walk::get_random_walks_and_times_cuda(
             this, max_walk_len, walk_bias, num_walks_total,
-            initial_edge_bias, walk_direction, kernel_launch_type, block_dim);
+            initial_edge_bias, walk_direction, kernel_launch_type,
+            block_dim, w_threshold_warp);
     }
 #endif
     (void)kernel_launch_type;
     (void)block_dim;
+    (void)w_threshold_warp;
     return temporal_random_walk::get_random_walks_and_times_std(
         this, max_walk_len, walk_bias, num_walks_total,
         initial_edge_bias, walk_direction);

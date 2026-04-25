@@ -54,13 +54,17 @@ public:
     // kernel launch block size end-to-end — including the scheduler's
     // W-tier boundary (W > block_dim -> block tier) and the warp-tier
     // grid (warps_per_block = block_dim / 32).
+    // w_threshold_warp defaults to W_THRESHOLD_WARP (solo / warp-tier
+    // boundary in the NODE_GROUPED W-partition: W <= w_threshold_warp -> solo,
+    // W in (w_threshold_warp, BLOCK_DIM] -> warp tier, W > BLOCK_DIM -> block).
     WalksWithEdgeFeaturesHost get_random_walks_and_times_for_all_nodes(
         int max_walk_len, const RandomPickerType* walk_bias,
         int num_walks_per_node,
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
         KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
-        size_t block_dim = BLOCK_DIM) const;
+        size_t block_dim = BLOCK_DIM,
+        int w_threshold_warp = W_THRESHOLD_WARP) const;
 
     WalksWithEdgeFeaturesHost get_random_walks_and_times_for_last_batch(
         int max_walk_len, const RandomPickerType* walk_bias,
@@ -68,7 +72,8 @@ public:
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
         KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
-        size_t block_dim = BLOCK_DIM) const;
+        size_t block_dim = BLOCK_DIM,
+        int w_threshold_warp = W_THRESHOLD_WARP) const;
 
     WalksWithEdgeFeaturesHost get_random_walks_and_times(
         int max_walk_len, const RandomPickerType* walk_bias,
@@ -76,7 +81,8 @@ public:
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time,
         KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
-        size_t block_dim = BLOCK_DIM) const;
+        size_t block_dim = BLOCK_DIM,
+        int w_threshold_warp = W_THRESHOLD_WARP) const;
 
     void set_node_features(
         const int* node_ids, size_t num_nodes,

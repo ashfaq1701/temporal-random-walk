@@ -20,6 +20,12 @@ constexpr auto DEVICE_EXECUTION_POLICY = thrust::device;
 // =========================================================================
 
 // W <= W_THRESHOLD_WARP -> solo; W <= BLOCK_DIM -> warp; W > BLOCK_DIM -> block.
+// Throughput is flat across W in [1, 32] on coin once the W-partition correctly
+// handles W>1 in the solo tier — earlier sweeps that suggested W=32 was a big
+// win were measuring a bug where walks at hubs with W>1 routed to solo got
+// silently dropped (see scheduler.cu partition_by_w_kernel). Default kept at
+// 1 (safest semantics: solo only when there is exactly one walk at this node).
+// Override per call via the w_threshold_warp parameter if a workload differs.
 constexpr int W_THRESHOLD_WARP = 1;
 
 // Above this, a block task splits into ceil(W/cap) disjoint block-tasks.

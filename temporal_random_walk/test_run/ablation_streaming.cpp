@@ -50,7 +50,8 @@ int main(int argc, char **argv) {
                   << " [num_windows=3]"
                   << " [max_walk_len=80]"
                   << " [timescale_bound=-1]"
-                  << " [block_dim=256]\n";
+                  << " [block_dim=256]"
+                  << " [w_threshold_warp=" << W_THRESHOLD_WARP << "]\n";
         return 1;
     }
 
@@ -65,6 +66,8 @@ int main(int argc, char **argv) {
     const int max_walk_len = (argc > 9) ? std::stoi(argv[9]) : 80;
     const double timescale_bound = (argc > 10) ? std::stod(argv[10]) : -1;
     const size_t block_dim = (argc > 11) ? static_cast<size_t>(std::stoi(argv[11])) : 256;
+    const int w_threshold_warp = (argc > 12) ? std::stoi(argv[12])
+                                              : static_cast<int>(W_THRESHOLD_WARP);
 
     const RandomPickerType hop_picker = parse_picker(picker_str);
     const KernelLaunchType kernel_launch_type =
@@ -82,7 +85,8 @@ int main(int argc, char **argv) {
               << "Num windows: " << num_windows << "\n"
               << "Max walk length: " << max_walk_len << "\n"
               << "Timescale bound: " << timescale_bound << "\n"
-              << "Block dim: " << block_dim << "\n";
+              << "Block dim: " << block_dim << "\n"
+              << "W threshold (solo): " << w_threshold_warp << "\n";
 
     std::vector<int> sources, targets;
     std::vector<int64_t> timestamps;
@@ -153,7 +157,8 @@ int main(int argc, char **argv) {
             warm_src.data(), warm_dst.data(), warm_ts.data(), warm_ts.size());
         auto warm_walks = trw.get_random_walks_and_times_for_all_nodes(
             max_walk_len, &hop_picker, num_walks_per_node, &start_picker,
-            WalkDirection::Forward_In_Time, kernel_launch_type, block_dim);
+            WalkDirection::Forward_In_Time, kernel_launch_type, block_dim,
+            w_threshold_warp);
 #ifdef HAS_CUDA
         if (use_gpu) cudaDeviceSynchronize();
 #endif
@@ -216,7 +221,8 @@ int main(int argc, char **argv) {
                 &start_picker,
                 WalkDirection::Forward_In_Time,
                 kernel_launch_type,
-                block_dim);
+                block_dim,
+                w_threshold_warp);
 
             #ifdef HAS_CUDA
             if (use_gpu) cudaDeviceSynchronize();
@@ -249,6 +255,7 @@ int main(int argc, char **argv) {
 
     std::cout << "\n=== Summary ===\n"
               << "Block dim:            " << block_dim << "\n"
+              << "W threshold (solo):   " << w_threshold_warp << "\n"
               << "Total ingestion time: " << total_ingestion << " sec\n"
               << "Mean ingestion time:  "
               << (total_ingestion / num_batches) << " sec\n"

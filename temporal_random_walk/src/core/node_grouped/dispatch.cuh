@@ -14,6 +14,9 @@ namespace temporal_random_walk {
 // Routes NODE_GROUPED to the scheduler+coop path or to per_walk_step_kernel
 // for Node2Vec (whose prev_node-dependent CDF can't share a coop panel).
 // force_global_only: ablation — route every coop task to *_global (no smem).
+// w_threshold_warp: solo/warp-tier boundary used by the W-partition; tasks
+// with W <= w_threshold_warp go to solo, W in (w_threshold_warp, BLOCK_DIM]
+// go to warp tier, W > BLOCK_DIM go to block tier.
 inline void dispatch_node_grouped_kernel(
     const TemporalGraphView& view,
     const bool is_directed,
@@ -29,7 +32,8 @@ inline void dispatch_node_grouped_kernel(
     const dim3& grid_dim,
     const dim3& block_dim,
     const cudaStream_t stream = 0,
-    const bool force_global_only = false) {
+    const bool force_global_only = false,
+    const int w_threshold_warp = W_THRESHOLD_WARP) {
 
     if (num_walks == 0) return;
 
@@ -68,7 +72,7 @@ inline void dispatch_node_grouped_kernel(
                         grid, block_dim, stream);
                 }
             } else {
-                NodeGroupedScheduler scheduler(num_walks, block_dim, stream);
+                NodeGroupedScheduler scheduler(num_walks, block_dim, w_threshold_warp, stream);
 
                 // Direction-dependent ts-group offsets; matches get_node_edge_at_device.
                 const std::size_t* count_ts_group_per_node =

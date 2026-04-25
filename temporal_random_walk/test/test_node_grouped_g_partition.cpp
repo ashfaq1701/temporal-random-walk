@@ -206,7 +206,8 @@ GResult run_and_materialize(
 
     auto g = make_count_ts_group_per_node(g_per_node);
 
-    NodeGroupedScheduler scheduler(ws->num_walks, block_dim, stream);
+    // Tests use W=10 -> warp tier — pin to original W=1 solo/warp boundary.
+    NodeGroupedScheduler scheduler(ws->num_walks, block_dim, /*w_threshold_warp=*/1, stream);
     auto outs = scheduler.run_step(
         view, STEP_NUMBER, MAX_WALK_LEN, g->ptr, picker);
 

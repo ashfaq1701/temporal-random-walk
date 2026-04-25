@@ -198,7 +198,8 @@ SchedulerResult run_and_materialize(
     }
     auto g = make_trivial_count_ts_group(max_node_id);
 
-    NodeGroupedScheduler scheduler(ws->num_walks, block_dim, stream);
+    // Tests assert W={1,2} solo/warp boundary — pin to original semantics.
+    NodeGroupedScheduler scheduler(ws->num_walks, block_dim, /*w_threshold_warp=*/1, stream);
     auto outs = scheduler.run_step(
         view, step_number, static_cast<int>(max_walk_len),
         g->ptr,

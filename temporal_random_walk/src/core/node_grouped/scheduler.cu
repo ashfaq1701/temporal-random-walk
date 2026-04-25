@@ -86,8 +86,15 @@ __global__ void partition_by_w_kernel(
     const int node = unique_nodes[r];
 
     if (W <= t_warp) {
-        const int idx = atomicAdd(&counters[0], 1);
-        solo_walks[idx] = sorted_walk_idx[start];
+        // Solo tier: every walk at this node gets one thread. Reserve W
+        // slots in a single atomicAdd, then write all W walks. Pre-fix,
+        // this only wrote sorted_walk_idx[start] (assuming W==1), so any
+        // node with W>1 routed to solo silently dropped its other W-1
+        // walks. Latent until t_warp>1.
+        const int idx = atomicAdd(&counters[0], W);
+        for (int k = 0; k < W; ++k) {
+            solo_walks[idx + k] = sorted_walk_idx[start + k];
+        }
     } else if (W <= t_block) {
         const int idx = atomicAdd(&counters[1], 1);
         warp_nodes[idx]       = node;
@@ -187,10 +194,12 @@ __global__ void expand_block_tasks_kernel(
 NodeGroupedScheduler::NodeGroupedScheduler(
     const std::size_t num_walks,
     const dim3 block_dim,
+    const int w_threshold_warp,
     const cudaStream_t stream)
     : num_walks_(num_walks),
       num_walks_int_(static_cast<int>(num_walks)),
       block_dim_(block_dim),
+      w_threshold_warp_(w_threshold_warp),
       stream_(stream),
       arena_(/*use_gpu=*/true),
       iota_src_(/*use_gpu=*/true) {
@@ -365,7 +374,7 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
         partition_by_w_kernel<<<active_grid, block_dim_, 0, stream_>>>(
             unique_last_nodes, step_run_starts, step_run_lengths,
             step_num_runs, sorted_active_idx,
-            W_THRESHOLD_WARP,
+            w_threshold_warp_,
             static_cast<int>(BLOCK_DIM),
             solo_walks,
             warp_nodes_w,  warp_walk_starts_w,  warp_walk_counts_w,
