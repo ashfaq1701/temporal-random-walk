@@ -651,38 +651,6 @@ HOST void node_edge_index::update_temporal_weights_std(
  */
 #ifdef HAS_CUDA
 
-// Per-direction CSR offsets via thrust::sort + vectorized thrust::lower_bound.
-// For sorted node IDs s[0..n), lower_bound(s, k) is the count of samples < k;
-// taken over k in [0, num_nodes+1) this is exactly the prefix-summed CSR
-// offset row. One sort + one search; no histogram, no RLE, no scan.
-// Replaces cub::DeviceHistogram::HistogramEven, whose internal ScaleTransform
-// computes `(sample - lower) * num_levels` in int32 and overflows when
-// num_levels^2 crosses 2^31 (delicious's 33.8M nodes wrap to ~INT_MIN bin
-// index and write ~17 GB before the histogram allocation).
-static void fill_csr_offsets_via_lower_bound(
-    const int* d_node_ids,
-    const size_t num_samples,
-    size_t* d_offsets,
-    const size_t num_offsets) {
-    if (num_samples == 0 || num_offsets == 0) return;
-
-    Buffer<int> sorted(/*use_gpu=*/true);
-    sorted.resize(num_samples);
-    CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
-        sorted.data(), d_node_ids, num_samples * sizeof(int),
-        cudaMemcpyDeviceToDevice, /*stream=*/0));
-
-    thrust::sort(DEVICE_EXECUTION_POLICY,
-                 sorted.data(), sorted.data() + num_samples);
-
-    thrust::lower_bound(
-        DEVICE_EXECUTION_POLICY,
-        sorted.data(), sorted.data() + num_samples,
-        thrust::make_counting_iterator<int>(0),
-        thrust::make_counting_iterator<int>(static_cast<int>(num_offsets)),
-        d_offsets);
-}
-
 HOST void node_edge_index::compute_node_group_offsets_cuda(TemporalGraphData& data) {
     const size_t num_edges = data.timestamps.size();
     const bool is_directed = data.is_directed;
@@ -701,8 +669,8 @@ HOST void node_edge_index::compute_node_group_offsets_cuda(TemporalGraphData& da
     }
 
     if (is_directed) {
-        fill_csr_offsets_via_lower_bound(src_ptr, num_edges, outbound_offsets_ptr, outbound_size);
-        fill_csr_offsets_via_lower_bound(tgt_ptr, num_edges, inbound_offsets_ptr,  inbound_size);
+        compute_csr_offsets_from_samples<int>(src_ptr, num_edges, outbound_offsets_ptr, outbound_size);
+        compute_csr_offsets_from_samples<int>(tgt_ptr, num_edges, inbound_offsets_ptr,  inbound_size);
     } else {
         // Undirected: each edge contributes to both endpoints, so concatenate
         // [sources, targets] into one sample stream and run a single pass.
@@ -716,7 +684,7 @@ HOST void node_edge_index::compute_node_group_offsets_cuda(TemporalGraphData& da
             concat.data() + num_edges, tgt_ptr, num_edges * sizeof(int),
             cudaMemcpyDeviceToDevice, /*stream=*/0));
 
-        fill_csr_offsets_via_lower_bound(
+        compute_csr_offsets_from_samples<int>(
             concat.data(), num_edges * 2, outbound_offsets_ptr, outbound_size);
     }
 }

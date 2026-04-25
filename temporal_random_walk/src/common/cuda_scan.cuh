@@ -7,6 +7,10 @@
 #include <cub/device/device_run_length_encode.cuh>
 #include <cub/device/device_partition.cuh>
 #include <cuda_runtime.h>
+#include <thrust/binary_search.h>
+#include <thrust/execution_policy.h>
+#include <thrust/iterator/counting_iterator.h>
+#include <thrust/sort.h>
 
 #include "error_handlers.cuh"
 #include "../data/buffer.cuh"
@@ -134,6 +138,49 @@ inline void cub_partition_flagged(
         temp.data(), temp_bytes,
         d_in, d_flags, d_out, d_num_selected_out,
         num_items, stream));
+}
+
+/**
+ * Build a CSR-style offset row from a stream of bucket-id samples in
+ * [0, num_offsets). For sorted samples s[0..n), lower_bound(s, k) is the
+ * count of samples < k; taken over k in [0, num_offsets) this is exactly
+ * the prefix-summed CSR offsets — i.e. histogram + inclusive scan in a
+ * single search, with no scale arithmetic that could overflow int32.
+ *
+ * Sorts a scratch copy (input is not mutated). Output row size is
+ * num_offsets; d_offsets[k] = first slot for bucket k, d_offsets[N]
+ * = total sample count.
+ *
+ * Drop-in replacement for the cub::DeviceHistogram::HistogramEven +
+ * cub_inclusive_sum pipeline; HistogramEven's internal ScaleTransform
+ * computes `(sample - lower) * num_levels` in int32 and overflows when
+ * num_levels^2 crosses 2^31.
+ */
+template <typename SampleT>
+inline void compute_csr_offsets_from_samples(
+    const SampleT* d_samples,
+    const size_t num_samples,
+    size_t* d_offsets,
+    const size_t num_offsets,
+    const cudaStream_t stream = 0) {
+
+    if (num_samples == 0 || num_offsets == 0) return;
+
+    Buffer<SampleT> sorted(/*use_gpu=*/true);
+    sorted.resize(num_samples);
+    CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
+        sorted.data(), d_samples, num_samples * sizeof(SampleT),
+        cudaMemcpyDeviceToDevice, stream));
+
+    thrust::sort(thrust::cuda::par.on(stream),
+                 sorted.data(), sorted.data() + num_samples);
+
+    thrust::lower_bound(
+        thrust::cuda::par.on(stream),
+        sorted.data(), sorted.data() + num_samples,
+        thrust::make_counting_iterator<SampleT>(0),
+        thrust::make_counting_iterator<SampleT>(static_cast<SampleT>(num_offsets)),
+        d_offsets);
 }
 
 #endif  // HAS_CUDA
