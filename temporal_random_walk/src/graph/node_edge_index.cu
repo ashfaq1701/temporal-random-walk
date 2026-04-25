@@ -651,6 +651,38 @@ HOST void node_edge_index::update_temporal_weights_std(
  */
 #ifdef HAS_CUDA
 
+// Per-direction CSR offsets via thrust::sort + vectorized thrust::lower_bound.
+// For sorted node IDs s[0..n), lower_bound(s, k) is the count of samples < k;
+// taken over k in [0, num_nodes+1) this is exactly the prefix-summed CSR
+// offset row. One sort + one search; no histogram, no RLE, no scan.
+// Replaces cub::DeviceHistogram::HistogramEven, whose internal ScaleTransform
+// computes `(sample - lower) * num_levels` in int32 and overflows when
+// num_levels^2 crosses 2^31 (delicious's 33.8M nodes wrap to ~INT_MIN bin
+// index and write ~17 GB before the histogram allocation).
+static void fill_csr_offsets_via_lower_bound(
+    const int* d_node_ids,
+    const size_t num_samples,
+    size_t* d_offsets,
+    const size_t num_offsets) {
+    if (num_samples == 0 || num_offsets == 0) return;
+
+    Buffer<int> sorted(/*use_gpu=*/true);
+    sorted.resize(num_samples);
+    CUDA_CHECK_AND_CLEAR(cudaMemcpyAsync(
+        sorted.data(), d_node_ids, num_samples * sizeof(int),
+        cudaMemcpyDeviceToDevice, /*stream=*/0));
+
+    thrust::sort(DEVICE_EXECUTION_POLICY,
+                 sorted.data(), sorted.data() + num_samples);
+
+    thrust::lower_bound(
+        DEVICE_EXECUTION_POLICY,
+        sorted.data(), sorted.data() + num_samples,
+        thrust::make_counting_iterator<int>(0),
+        thrust::make_counting_iterator<int>(static_cast<int>(num_offsets)),
+        d_offsets);
+}
+
 HOST void node_edge_index::compute_node_group_offsets_cuda(TemporalGraphData& data) {
     const size_t num_edges = data.timestamps.size();
     const bool is_directed = data.is_directed;
@@ -662,50 +694,18 @@ HOST void node_edge_index::compute_node_group_offsets_cuda(TemporalGraphData& da
 
     const size_t outbound_size = data.node_group_outbound_offsets.size();
     const size_t inbound_size  = is_directed ? data.node_group_inbound_offsets.size() : 0;
-    const int    num_out_buckets = static_cast<int>(outbound_size) - 1;
-    const int    num_in_buckets  = static_cast<int>(inbound_size)  - 1;
 
-    if (num_edges == 0 || num_out_buckets <= 0) {
-        // offsets already zeroed by allocate_node_group_offsets; nothing to scan.
+    if (num_edges == 0 || outbound_size <= 1) {
+        // offsets already zeroed by allocate_node_group_offsets; nothing to do.
         return;
     }
 
-    // Per-node degree counts via CUB histogram. Replaces the atomic-increment
-    // for_each; HistogramEven builds per-block shared-memory local histograms
-    // and reduces them, eliminating the global-atomic contention that
-    // serialized the old kernel on hub nodes (degree >> average).
-    //
-    // Counter type must be unsigned long long (not size_t) because CUB's
-    // internal atomicAdd overload set only covers the ULL type. On LP64 this
-    // is layout-identical to size_t, so we reinterpret the offsets pointer —
-    // same cast pattern the old atomicAdd-based code used.
-    static_assert(sizeof(size_t) == sizeof(unsigned long long),
-                  "compute_node_group_offsets_cuda reinterpret-cast assumes "
-                  "size_t and unsigned long long are layout-compatible.");
-    auto* outbound_ull = reinterpret_cast<unsigned long long*>(outbound_offsets_ptr + 1);
-    auto* inbound_ull  = is_directed
-        ? reinterpret_cast<unsigned long long*>(inbound_offsets_ptr + 1)
-        : nullptr;
-
-    // Layout: counts write into offsets[1..n-1] so offsets[0] stays 0 and the
-    // downstream inclusive scan produces the CSR offsets directly.
     if (is_directed) {
-        cub_histogram_even<int, unsigned long long>(
-            src_ptr, outbound_ull,
-            num_out_buckets, /*lower=*/0, /*upper=*/num_out_buckets,
-            num_edges);
-        CUDA_KERNEL_CHECK("After cub histogram outbound in compute_node_group_offsets_cuda");
-
-        cub_histogram_even<int, unsigned long long>(
-            tgt_ptr, inbound_ull,
-            num_in_buckets, /*lower=*/0, /*upper=*/num_in_buckets,
-            num_edges);
-        CUDA_KERNEL_CHECK("After cub histogram inbound in compute_node_group_offsets_cuda");
+        fill_csr_offsets_via_lower_bound(src_ptr, num_edges, outbound_offsets_ptr, outbound_size);
+        fill_csr_offsets_via_lower_bound(tgt_ptr, num_edges, inbound_offsets_ptr,  inbound_size);
     } else {
-        // Undirected: each edge contributes to both endpoints' degree, so
-        // concatenate [sources, targets] into one sample stream and run a
-        // single histogram. Two D->D memcpys + one histogram, which is still
-        // less work than the two-atomic-per-edge kernel we used to launch.
+        // Undirected: each edge contributes to both endpoints, so concatenate
+        // [sources, targets] into one sample stream and run a single pass.
         Buffer<int> concat(/*use_gpu=*/true);
         concat.resize(num_edges * 2);
 
@@ -716,28 +716,8 @@ HOST void node_edge_index::compute_node_group_offsets_cuda(TemporalGraphData& da
             concat.data() + num_edges, tgt_ptr, num_edges * sizeof(int),
             cudaMemcpyDeviceToDevice, /*stream=*/0));
 
-        cub_histogram_even<int, unsigned long long>(
-            concat.data(), outbound_ull,
-            num_out_buckets, /*lower=*/0, /*upper=*/num_out_buckets,
-            num_edges * 2);
-        CUDA_KERNEL_CHECK("After cub histogram undirected in compute_node_group_offsets_cuda");
-    }
-
-    // Counts -> exclusive-style offsets via CUB inclusive scan on offsets[1..n].
-    cub_inclusive_sum(
-        outbound_offsets_ptr + 1,
-        outbound_offsets_ptr + 1,
-        outbound_size - 1
-    );
-    CUDA_KERNEL_CHECK("After cub inclusive_sum outbound in compute_node_group_offsets_cuda");
-
-    if (is_directed) {
-        cub_inclusive_sum(
-            inbound_offsets_ptr + 1,
-            inbound_offsets_ptr + 1,
-            inbound_size - 1
-        );
-        CUDA_KERNEL_CHECK("After cub inclusive_sum inbound in compute_node_group_offsets_cuda");
+        fill_csr_offsets_via_lower_bound(
+            concat.data(), num_edges * 2, outbound_offsets_ptr, outbound_size);
     }
 }
 
