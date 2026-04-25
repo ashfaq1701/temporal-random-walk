@@ -316,10 +316,31 @@ values are perf knobs.
 class. It threads through `dispatch_node_grouped_kernel →
 NodeGroupedScheduler` and replaces the previous `constexpr` reference
 in `partition_by_w_kernel`. CLI exposure: 13th positional in both
-`ablation_streaming` and `test_alibaba_streaming`, and as
-`--w-threshold-warp` in `tempest-benchmarks/ablation_runner/run_ablation.py`.
-The Python pybind binding does **not** expose it (intentional — perf
-tuning lives at the C++ benchmark layer for now).
+`ablation_streaming` and `test_alibaba_streaming`, and (along with the
+sweep machinery) in `tempest-benchmarks/ablation_runner/run_ablation.py`.
+
+**Standing rule on the Python surface:** perf knobs (`block_dim`,
+`w_threshold_warp`) are intentionally NOT exposed through the pybind
+module — they're for the C++ benchmark layer where someone is already
+hand-tuning. Wheel users get sane defaults; the C++ proxy still accepts
+both with their `cuda_config.cuh` defaults.
+
+`run_ablation.py` runs a two-phase sweep:
+- **Phase 1** sweeps `W ∈ {1, 2, 4, 8, 16, 32, 64}` per (dataset, NG
+  variant) at `TUNE_RUNS_PER_W` runs each. FW is skipped (it ignores
+  the parameter).
+- **Aggregation** picks ONE universal W: per-row throughputs are
+  normalized to that row's max → fraction in [0, 1], then averaged
+  across all (dataset, NG variant) rows. Highest mean fraction wins.
+- **Tie-break:** if multiple Ws are within `NOISE_BAND = 1 %` of the
+  absolute best, the smallest W wins (most conservative, closest to
+  the historical default of 1).
+- **Phase 2** runs `FINAL_RUNS` per (dataset, variant) at the
+  picked W; FW always at `W=1`.
+
+The script also flags `Note: aggregate scores spread less than 1 %
+across all W — likely no real signal.` when the entire sweep is in the
+noise floor, so the "no signal" finding is visible in the report.
 
 Empirical finding on coin (laptop, exponential_weight): post-bug-fix
 sweep over W ∈ {1, 4, 8, 16, 32} is flat to within ±2 % of run-to-run
@@ -551,27 +572,31 @@ untimed to absorb one-shot CUDA/CUB init costs.
 
 ```bash
 build/bin/ablation_streaming data/sample_data.csv 1 \
-    exponential_index node_grouped 0 1 5 3 80 -1
+    exponential_index node_grouped 0 1 5 3 80 -1 256 1
 # args: file use_gpu picker kernel_launch_type is_directed walks_per_node
 #       num_batches num_windows max_walk_len timescale_bound
+#       block_dim w_threshold_warp
 ```
 
 `kernel_launch_type` accepts `full_walk`, `node_grouped`, or
-`node_grouped_global_only`.
+`node_grouped_global_only`. `block_dim` defaults to `BLOCK_DIM` (256)
+and `w_threshold_warp` defaults to `W_THRESHOLD_WARP` (1); both are
+optional positionals tail-end of the command line.
 
 ### `test_run/test_alibaba_streaming`
 
 C++ port of `tempest-benchmarks/alibaba_benchmark/test_alibaba_dataset.py`,
 for running the three-variant ablation without Python-side overhead in the
-timed loop. Expects the dataset as `data_{0..total-1}.csv` (header +
-`u,i,ts` columns). Convert from parquet once upstream; pyarrow→csv on the
-60-file Alibaba dump takes ~18 s.
+timed loop. Per-shard input is `data_{0..total-1}.{parquet,csv}` under
+`dataset_dir` — parquet is preferred when both exist (CSV is the fallback).
+Each file is a header-prefixed `u,i,ts` table.
 
 ```bash
-build/bin/test_alibaba_streaming /path/to/alibaba_csv_dir \
-    1 exponential_index node_grouped 20 3 1800000 100 60 -1
+build/bin/test_alibaba_streaming /path/to/alibaba_dir \
+    1 exponential_index node_grouped 20 3 1800000 100 60 -1 1
 # args: dataset_dir use_gpu picker kernel_launch_type walks_per_node
 #       minutes_per_step window_ms max_walk_len total_minutes timescale_bound
+#       w_threshold_warp
 ```
 
 Laptop VRAM cap: a 30-min window on the full Alibaba trace hits ~85 M
@@ -587,6 +612,30 @@ with `total_minutes=21` on this laptop; the A40 (48 GB) handles the full
 - `laptop_bench.py` — reduced-scale variant for the 8 GB laptop.
 - `profile_one.py` — single timed walk call under `nsys` for NVTX range
   inspection.
+
+### `tempest-benchmarks/ablation_runner/run_ablation.py`
+
+Two-phase server-side ablation runner over coin / flight / delicious ×
+{full_walk, node_grouped, node_grouped_global_only}. Drives
+`ablation_streaming` as a subprocess and writes per-run metrics to CSV
+plus a markdown summary on stdout.
+
+- **Phase 1:** sweeps `w_threshold_warp ∈ {1, 2, 4, 8, 16, 32, 64}` for
+  the two NG variants only (FW ignores the parameter), runs
+  `TUNE_RUNS_PER_W` per cell, then aggregates across datasets to pick
+  ONE universal W (mean of per-row-normalized throughputs; tie-break to
+  the smallest W within `NOISE_BAND = 1 %` of the absolute max).
+- **Phase 2:** runs `FINAL_RUNS = 5` per (dataset, variant) at the
+  picked W; FW always at `W=1`.
+- Reports the tuning matrix, the aggregate score table, the picked W
+  (with a `(tied)` flag if tie-break activated and a separate `no real
+  signal` flag if all Ws are within `NOISE_BAND`), and the final
+  mean ± std table.
+
+CSV columns include `phase` (`tune` / `final`), `dataset`, `variant`,
+`w_threshold_warp`, `run`, `walks_per_sec`, `steps_per_sec`,
+`avg_walk_length`, plus the preset configuration values (`wpn`,
+`num_batches`, `num_windows`, `max_walk_len`, `block_dim`).
 
 ---
 
