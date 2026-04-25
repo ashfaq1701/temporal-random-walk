@@ -121,13 +121,18 @@ inline void dispatch_node_grouped_block_smem_kernel(
     dispatch_picker_type(edge_picker_type, [&](auto edge_tag) {
         constexpr auto kEdge = decltype(edge_tag)::value;
         constexpr size_t kSmemBytes = block_smem_dynamic_smem_bytes<kEdge>();
-        node_grouped_block_smem_kernel<IsDirected, Forward, kEdge>
-            <<<grid, block_dim, kSmemBytes, stream>>>(
-                view, walk_set_view,
-                sorted_walk_idx,
-                node_walk_nodes, node_walk_starts, node_walk_counts,
-                num_tasks_ptr,
-                step_number, max_walk_len, base_seed);
+        auto* kernel = node_grouped_block_smem_kernel<IsDirected, Forward, kEdge>;
+        // Opt-in for parity with warp-smem; lets a future G cap bump push
+        // panel bytes past the 48 KB static envelope without a launch error.
+        cudaFuncSetAttribute(kernel,
+            cudaFuncAttributeMaxDynamicSharedMemorySize,
+            static_cast<int>(kSmemBytes));
+        kernel<<<grid, block_dim, kSmemBytes, stream>>>(
+            view, walk_set_view,
+            sorted_walk_idx,
+            node_walk_nodes, node_walk_starts, node_walk_counts,
+            num_tasks_ptr,
+            step_number, max_walk_len, base_seed);
     });
 }
 

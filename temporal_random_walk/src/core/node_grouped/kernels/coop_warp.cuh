@@ -134,13 +134,19 @@ inline void dispatch_node_grouped_warp_smem_kernel(
     dispatch_picker_type(edge_picker_type, [&](auto edge_tag) {
         constexpr auto kEdge = decltype(edge_tag)::value;
         const size_t smem_bytes = warp_smem_dynamic_smem_bytes<kEdge>(block_dim);
-        node_grouped_warp_smem_kernel<IsDirected, Forward, kEdge>
-            <<<grid, block_dim, smem_bytes, stream>>>(
-                view, walk_set_view,
-                sorted_walk_idx,
-                node_walk_nodes, node_walk_starts, node_walk_counts,
-                num_tasks_ptr,
-                step_number, max_walk_len, base_seed);
+        auto* kernel = node_grouped_warp_smem_kernel<IsDirected, Forward, kEdge>;
+        // Opt into the arch's dynamic-smem ceiling so block_dim > 256 (warps
+        // per block > 8) can allocate the larger tiled per-warp panel past
+        // the 48 KB static envelope.
+        cudaFuncSetAttribute(kernel,
+            cudaFuncAttributeMaxDynamicSharedMemorySize,
+            static_cast<int>(smem_bytes));
+        kernel<<<grid, block_dim, smem_bytes, stream>>>(
+            view, walk_set_view,
+            sorted_walk_idx,
+            node_walk_nodes, node_walk_starts, node_walk_counts,
+            num_tasks_ptr,
+            step_number, max_walk_len, base_seed);
     });
 }
 
