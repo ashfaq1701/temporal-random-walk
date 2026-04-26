@@ -18,9 +18,10 @@
 // These two paths are NOT bit-exact today: both key Philox on
 // (base_seed, walk_idx) so they share a substream, but FULL_WALK walks
 // the counter sequentially while NODE_GROUPED re-inits per step at
-// offset = 3 + step * 2 (step_kernel_philox_offset). The two paths
-// therefore draw from different counter positions and produce genuinely
-// different walks for the same seed.
+// offset = step_kernel_philox_offset(step) (0 at step 0, then
+// 3 + step * 2 for step >= 1). The two paths therefore draw from
+// different counter positions and produce genuinely different walks
+// for the same seed.
 //
 // What this harness verifies instead — invariants that must hold
 // regardless of the Philox offset gap:

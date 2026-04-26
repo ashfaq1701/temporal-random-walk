@@ -17,9 +17,16 @@ namespace temporal_random_walk {
 
 #ifdef HAS_CUDA
 
-// Start kernel burns 3 Philox draws (2 directed / 3 undirected, rounded up)
-// so intermediate steps hit the same substream offset regardless of tier.
+// Step 0 is the start step: pick_start_edges_kernel (unconstrained) or the
+// step-0 coop pass (constrained walks-per-node) keys Philox at offset 0.
+// pick_start_edges_kernel uses up to 3 draws (2 directed / 3 undirected, the
+// 3rd picks an endpoint); the constrained coop start pass uses 2. Either way
+// the start step's substream is contained in [0, START_KERNEL_BUDGET=3).
+// Step k>=1 starts at START_KERNEL_BUDGET + k*2, leaving offsets 3,4 unused
+// so intermediate steps stay on the same substream regardless of tier or
+// constrained/unconstrained mode.
 DEVICE __forceinline__ uint64_t step_kernel_philox_offset(const int step_number) {
+    if (step_number == 0) return 0ULL;
     constexpr uint64_t START_KERNEL_BUDGET = 3ULL;
     return START_KERNEL_BUDGET + static_cast<uint64_t>(step_number) * 2ULL;
 }
@@ -106,6 +113,46 @@ inline void dispatch_start_edges_kernel(
                     max_walk_len, num_walks, base_seed);
         });
     });
+}
+
+// Constrained walks-per-node start: write slot 0 = (start_node_ids[walk_idx],
+// sentinel_ts) and set walk_lens[walk_idx] = 1. The step-0 coop pass then
+// reads slot 0, picks the first edge under start_picker_type, and the
+// resulting hop is appended to slot 1 via add_hop.
+//
+// Sentinel timestamp matches pick_start_edges_kernel (Forward: INT64_MIN,
+// Backward: INT64_MAX) so user-visible slot-0 timestamps stay identical to
+// the per-walk start path. filter_valid_groups_by_timestamp_slice's -1 fast
+// path doesn't fire here, but the binary-search path returns [0, G) for
+// either sentinel — semantically identical, log G probes of overhead at
+// step 0 only.
+template <bool Forward>
+__global__ void prepopulate_start_slot_kernel(
+    WalkSetView walk_set,
+    const int* __restrict__ start_node_ids,
+    const size_t num_walks) {
+
+    const size_t walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (walk_idx >= num_walks) return;
+
+    constexpr int64_t sentinel_timestamp = Forward ? INT64_MIN : INT64_MAX;
+    walk_set.add_hop(walk_idx,
+                     start_node_ids[walk_idx],
+                     sentinel_timestamp);
+}
+
+template <bool Forward>
+inline void dispatch_prepopulate_start_slot_kernel(
+    WalkSetView walk_set_view,
+    const int* start_node_ids,
+    const size_t num_walks,
+    const dim3& grid,
+    const dim3& block_dim,
+    const cudaStream_t stream) {
+
+    prepopulate_start_slot_kernel<Forward>
+        <<<grid, block_dim, 0, stream>>>(
+            walk_set_view, start_node_ids, num_walks);
 }
 
 // Advance one walk by one step. Outcome depends only on

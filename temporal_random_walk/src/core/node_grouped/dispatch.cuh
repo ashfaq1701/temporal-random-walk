@@ -48,18 +48,36 @@ inline void dispatch_node_grouped_kernel(
     const bool use_per_walk_path =
         (edge_picker_type == RandomPickerType::TemporalNode2Vec);
 
+    const bool starts_constrained = !all_starts_unconstrained;
+
     dispatch_bool(is_directed, [&](auto dir_tag) {
         constexpr bool kDir = decltype(dir_tag)::value;
         dispatch_bool(should_walk_forward, [&](auto fwd_tag) {
             constexpr bool kFwd = decltype(fwd_tag)::value;
 
-            {
+            // Step-0 routing:
+            //   unconstrained → pick_start_edges_kernel writes slots 0+1 in
+            //     a single per-walk launch. No coop benefit — every walk's
+            //     start node is independent across walks at this step.
+            //   constrained (walks-per-node) → pre-populate slot 0 with
+            //     (start_node_id, sentinel_ts) and let the scheduler/coop
+            //     pipeline handle step 0. Consecutive walks share a
+            //     start node, so warp/block panels amortize.
+            int first_coop_step;
+            if (use_per_walk_path || !starts_constrained) {
                 NVTX_RANGE_COLORED("NG step0 pick", nvtx_colors::walk_green);
                 dispatch_start_edges_kernel<kDir, kFwd>(
                     view, walk_set_view, start_node_ids,
-                    /*constrained=*/!all_starts_unconstrained,
+                    /*constrained=*/starts_constrained,
                     max_walk_len, num_walks, start_picker_type,
                     base_seed, grid, block_dim, stream);
+                first_coop_step = 1;
+            } else {
+                NVTX_RANGE_COLORED("NG step0 prepop", nvtx_colors::walk_green);
+                dispatch_prepopulate_start_slot_kernel<kFwd>(
+                    walk_set_view, start_node_ids, num_walks,
+                    grid, block_dim, stream);
+                first_coop_step = 0;
             }
 
             if (use_per_walk_path) {
@@ -81,10 +99,16 @@ inline void dispatch_node_grouped_kernel(
                         : (kDir ? view.count_ts_group_per_node_inbound
                                 : view.count_ts_group_per_node_outbound);
 
-                for (int step_number = 1; step_number < max_walk_len; ++step_number) {
+                for (int step_number = first_coop_step; step_number < max_walk_len; ++step_number) {
+                    // At step 0 the coop pipeline samples the START edge from
+                    // the user-pinned start node, so it must use the
+                    // start-picker. Step 1+ uses the regular edge-picker.
+                    const RandomPickerType picker_for_step =
+                        (step_number == 0) ? start_picker_type : edge_picker_type;
+
                     auto step_outs = scheduler.run_step(
                         walk_set_view, step_number, max_walk_len,
-                        count_ts_group_per_node, edge_picker_type,
+                        count_ts_group_per_node, picker_for_step,
                         force_global_only);
 
                     // Walk padding is absorbing — once all walks are dead, none revive.
@@ -102,7 +126,7 @@ inline void dispatch_node_grouped_kernel(
                             step_outs.solo_walks,
                             step_outs.num_solo_walks_device,
                             step_number, max_walk_len,
-                            edge_picker_type, base_seed,
+                            picker_for_step, base_seed,
                             solo_grid, block_dim, stream);
                     }
 
@@ -121,7 +145,7 @@ inline void dispatch_node_grouped_kernel(
                             step_outs.warp_smem.walk_counts,
                             step_outs.warp_smem.num_tasks_device,
                             step_number, max_walk_len,
-                            edge_picker_type, base_seed,
+                            picker_for_step, base_seed,
                             warp_smem_grid, block_dim, stream);
                     }
 
@@ -138,7 +162,7 @@ inline void dispatch_node_grouped_kernel(
                             step_outs.warp_global.walk_counts,
                             step_outs.warp_global.num_tasks_device,
                             step_number, max_walk_len,
-                            edge_picker_type, base_seed,
+                            picker_for_step, base_seed,
                             warp_global_grid, block_dim, stream);
                     }
 
@@ -153,7 +177,7 @@ inline void dispatch_node_grouped_kernel(
                             step_outs.block_smem.walk_counts,
                             step_outs.block_smem.num_tasks_device,
                             step_number, max_walk_len,
-                            edge_picker_type, base_seed,
+                            picker_for_step, base_seed,
                             block_smem_grid, block_dim, stream);
                     }
 
@@ -168,7 +192,7 @@ inline void dispatch_node_grouped_kernel(
                             step_outs.block_global.walk_counts,
                             step_outs.block_global.num_tasks_device,
                             step_number, max_walk_len,
-                            edge_picker_type, base_seed,
+                            picker_for_step, base_seed,
                             block_global_grid, block_dim, stream);
                     }
                 }
