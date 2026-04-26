@@ -151,6 +151,57 @@ inline std::vector<std::string> get_sorted_data_files(const std::string& base_pa
     return file_paths;
 }
 
+// Write a header + body of strings to a CSV file at `path`. Each row is
+// a vector of string-typed fields, written verbatim with comma
+// separation. Fields containing comma, double-quote, or newline are
+// wrapped in double quotes with embedded quotes doubled (RFC 4180).
+// Path empty → no-op (let callers gate on opt-in flags without an `if`
+// at every call-site).
+inline void write_strings_to_csv(const std::string& path,
+                                 const std::vector<std::string>& header,
+                                 const std::vector<std::vector<std::string>>& rows) {
+    if (path.empty()) {
+        return;
+    }
+    std::ofstream out(path);
+    if (!out.is_open()) {
+        std::cerr << "Failed to open CSV file for write: " << path << std::endl;
+        return;
+    }
+
+    auto write_field = [&out](const std::string& v) {
+        const bool needs_quote =
+            v.find(',') != std::string::npos
+            || v.find('"') != std::string::npos
+            || v.find('\n') != std::string::npos
+            || v.find('\r') != std::string::npos;
+        if (!needs_quote) {
+            out << v;
+            return;
+        }
+        out << '"';
+        for (char c : v) {
+            if (c == '"') out << "\"\"";
+            else out << c;
+        }
+        out << '"';
+    };
+
+    auto write_row = [&](const std::vector<std::string>& row) {
+        for (size_t i = 0; i < row.size(); ++i) {
+            write_field(row[i]);
+            if (i + 1 < row.size()) out << ',';
+        }
+        out << '\n';
+    };
+
+    if (!header.empty()) write_row(header);
+    for (const auto& r : rows) write_row(r);
+    out.close();
+
+    std::cout << "Wrote " << rows.size() << " row(s) to " << path << std::endl;
+}
+
 inline void dump_walks_to_file(const WalkSetHost& walk_set,
                                const int max_walk_len,
                                const std::string& output_file_path)

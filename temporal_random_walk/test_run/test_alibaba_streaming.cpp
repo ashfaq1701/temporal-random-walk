@@ -7,6 +7,7 @@
 #include <vector>
 #include <chrono>
 #include <numeric>
+#include <sstream>
 #include <string>
 #include <tuple>
 
@@ -101,10 +102,13 @@ int main(int argc, char** argv) {
             << " [max_walk_len=" << DEFAULT_MAX_WALK_LEN << "]"
             << " [total_minutes=" << DEFAULT_TOTAL_MINUTES << "]"
             << " [timescale_bound=-1]"
-            << " [w_threshold_warp=" << W_THRESHOLD_WARP << "]\n"
+            << " [w_threshold_warp=" << W_THRESHOLD_WARP << "]"
+            << " [per_batch_csv=]\n"
             << "\n"
             << "<dataset_dir> must contain data_0.csv .. data_{total-1}.csv,\n"
-            << "each a header-prefixed CSV with u,i,ts columns.\n";
+            << "each a header-prefixed CSV with u,i,ts columns.\n"
+            << "If [per_batch_csv] is non-empty, one row per timed step is\n"
+            << "written to that file (header + one row per batch).\n";
         return 1;
     }
 
@@ -120,6 +124,7 @@ int main(int argc, char** argv) {
     const double      timescale_bound     = (argc > 10) ? std::stod(argv[10]) : -1.0;
     const int         w_threshold_warp    = (argc > 11) ? std::stoi(argv[11])
                                                         : static_cast<int>(W_THRESHOLD_WARP);
+    const std::string per_batch_csv       = (argc > 12) ? argv[12] : std::string();
 
     const RandomPickerType hop_picker = parse_picker(picker_str);
     const KernelLaunchType kernel_launch_type = parse_kernel_launch_type(klt_str);
@@ -136,7 +141,8 @@ int main(int argc, char** argv) {
               << "Max walk len:      " << max_walk_len << "\n"
               << "Total minutes:     " << total_minutes << "\n"
               << "Timescale bound:   " << timescale_bound << "\n"
-              << "W threshold (solo):" << w_threshold_warp << "\n";
+              << "W threshold (solo):" << w_threshold_warp << "\n"
+              << "Per-batch CSV:     " << (per_batch_csv.empty() ? "(none)" : per_batch_csv) << "\n";
 
     const bool use_weight = (hop_picker == RandomPickerType::ExponentialWeight);
 
@@ -172,6 +178,20 @@ int main(int argc, char** argv) {
     size_t total_walks = 0;
     double total_walk_len_sum = 0.0;
     size_t total_edges_added  = 0;
+
+    // One row per timed step → flushed to per_batch_csv at the end.
+    // Schema mirrors the per-batch fields the binary already prints,
+    // plus derived walks/sec and steps/sec for that single batch.
+    std::vector<std::vector<std::string>> per_batch_rows;
+    const std::vector<std::string> per_batch_header = {
+        "step_idx", "step_min_begin", "minutes_per_step",
+        "edges_in_batch", "ingest_time_sec", "walk_time_sec",
+        "walks", "avg_walk_length", "active_edges", "total_edges_added",
+        "walks_per_sec", "steps_per_sec",
+    };
+    auto fmt_d = [](double v) {
+        std::ostringstream os; os.precision(9); os << v; return os.str();
+    };
 
     for (int i = 0; i < total_minutes; i += minutes_per_step) {
         EdgeBatch batch = load_step(dataset_dir, i, minutes_per_step, total_minutes);
@@ -227,7 +247,30 @@ int main(int argc, char** argv) {
                   << "  Avg length:  " << avg_len_this_step << "\n"
                   << "  Active edges in TRW: " << active_edges << "\n"
                   << "  Total edges added:   " << total_edges_added << "\n";
+
+        const double walks_ps_batch = (walk_time > 0.0)
+            ? (static_cast<double>(walks_this_step) / walk_time) : 0.0;
+        const double steps_ps_batch = (walk_time > 0.0)
+            ? (avg_len_this_step * static_cast<double>(walks_this_step) / walk_time)
+            : 0.0;
+        per_batch_rows.push_back({
+            std::to_string(static_cast<int>(walk_times.size())),  // 1-based step index
+            std::to_string(i),
+            std::to_string(minutes_per_step),
+            std::to_string(batch.src.size()),
+            fmt_d(ingest_time),
+            fmt_d(walk_time),
+            std::to_string(walks_this_step),
+            fmt_d(avg_len_this_step),
+            std::to_string(active_edges),
+            std::to_string(total_edges_added),
+            fmt_d(walks_ps_batch),
+            fmt_d(steps_ps_batch),
+        });
     }
+
+    // Flush per-batch rows once at the end (no-op if path is empty).
+    write_strings_to_csv(per_batch_csv, per_batch_header, per_batch_rows);
 
     const size_t num_steps = walk_times.size();
     const double total_ingestion =
