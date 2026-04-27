@@ -11,9 +11,9 @@
 #include "../test/test_utils.h"
 
 #ifdef HAS_CUDA
-constexpr bool USE_GPU = true;
+constexpr bool DEFAULT_USE_GPU = true;
 #else
-constexpr bool USE_GPU = false;
+constexpr bool DEFAULT_USE_GPU = false;
 #endif
 
 // ============================
@@ -82,24 +82,31 @@ int main(int argc, char* argv[])
         std::cerr << "Usage:\n"
                   << argv[0]
                   << " <edge_file_path>"
-                  << " [walk_dump_file]"
+                  << " [use_gpu (0|1, default=" << (DEFAULT_USE_GPU ? 1 : 0) << ")]"
                   << " [is_directed (0|1, default=0)]"
                   << " [num_total_walks]"
                   << " [num_walks_per_node]"
                   << " [max_walk_length]"
                   << " [edge_picker]"
                   << " [start_picker]"
-                  << " [kernel_launch_type]";
+                  << " [kernel_launch_type=FULL_WALK|NODE_GROUPED|NODE_GROUPED_GLOBAL_ONLY]"
+                  << " [walk_dump_file]"
+                  << "\n\n"
+                  << "Bulk-ingest, single-shot walk-sampling timer. Prints both\n"
+                  << "ingest and walk-sampling phases on parseable lines\n"
+                  << "(\"Ingest time: <s>\", \"Walk time: <s>\") so a Python\n"
+                  << "scheduler can run the same binary across CPU/GPU and\n"
+                  << "kernel-launch-type combinations and aggregate results.\n";
         return 1;
     }
 
     const std::string file_path = argv[1];
 
-    // NEW: walk_dump_file is now immediately after edge_file_path
-    const std::string walk_dump_file =
-        (argc > 2) ? argv[2] : "";
+    const bool use_gpu =
+        (argc > 2)
+            ? (std::stoi(argv[2]) != 0)
+            : DEFAULT_USE_GPU;
 
-    // Shifted argument positions by +1
     const bool is_directed =
         (argc > 3)
             ? (std::stoi(argv[3]) != 0)
@@ -123,10 +130,16 @@ int main(int argc, char* argv[])
     const std::string kernel_launch_type_str =
         (argc > 9) ? argv[9] : DEFAULT_KERNEL_LAUNCH_TYPE_STR;
 
-    std::cout << "Running on: " << (USE_GPU ? "GPU" : "CPU") << "\n";
+    const std::string walk_dump_file =
+        (argc > 10) ? argv[10] : "";
+
+    std::cout << "Running on: " << (use_gpu ? "GPU" : "CPU") << "\n";
     std::cout << "Graph type: "
               << (is_directed ? "Directed" : "Undirected")
               << "\n";
+    std::cout << "Kernel launch type: " << kernel_launch_type_str << "\n";
+    std::cout << "Edge picker: " << edge_picker
+              << "  Start picker: " << start_picker << "\n";
 
     // ============================
     // Load Edges
@@ -150,23 +163,32 @@ int main(int argc, char* argv[])
     const RandomPickerType start_picker_enum =
         picker_type_from_string(start_picker);
 
+    const KernelLaunchType kernel_launch_type =
+        kernel_launch_type_from_string(kernel_launch_type_str);
+
     // ============================
-    // Construct Walker
+    // Construct Walker (untimed) and Bulk Ingest (timed)
     // ============================
 
-    bool enable_temporal_node2vec = edge_picker_enum == RandomPickerType::TemporalNode2Vec;
-    bool enable_weight_computation = edge_picker_enum == RandomPickerType::ExponentialWeight || start_picker_enum == RandomPickerType::ExponentialWeight;
-
-    KernelLaunchType kernel_launch_type = kernel_launch_type_str == "FULL_WALK" ? KernelLaunchType::FULL_WALK : KernelLaunchType::NODE_GROUPED;
+    const bool enable_temporal_node2vec =
+        edge_picker_enum == RandomPickerType::TemporalNode2Vec;
+    const bool enable_weight_computation =
+        edge_picker_enum  == RandomPickerType::ExponentialWeight
+        || start_picker_enum == RandomPickerType::ExponentialWeight;
 
     TemporalRandomWalk walker(
         is_directed,
-        USE_GPU,
-        -1,                          // max_time_capacity
-        enable_weight_computation,   // enable_weight_computation
-        enable_temporal_node2vec,    // enable_temporal_node2vec
+        use_gpu,
+        -1,                          // max_time_capacity (no eviction; bulk mode)
+        enable_weight_computation,
+        enable_temporal_node2vec,
         34                           // timescale_bound
     );
+
+    std::cout << "\nIngesting edges in bulk...\n";
+
+    const auto ingest_start =
+        std::chrono::high_resolution_clock::now();
 
     walker.add_multiple_edges(
         sources.data(),
@@ -175,6 +197,14 @@ int main(int argc, char* argv[])
         timestamps.size()
     );
 
+    const auto ingest_end =
+        std::chrono::high_resolution_clock::now();
+
+    const double ingest_seconds =
+        std::chrono::duration<double>(ingest_end - ingest_start).count();
+
+    std::cout << std::fixed << std::setprecision(6)
+              << "Ingest time: " << ingest_seconds << " seconds\n";
     std::cout << "Graph constructed. Nodes: "
               << walker.get_node_count()
               << " Edges: "
@@ -187,7 +217,7 @@ int main(int argc, char* argv[])
 
     std::cout << "\nGenerating walks...\n";
 
-    const auto start_time =
+    const auto walk_start =
         std::chrono::high_resolution_clock::now();
 
     auto walks_with_edge_features =
@@ -211,16 +241,19 @@ int main(int argc, char* argv[])
 
     const auto& walk_set = walks_with_edge_features.walk_set;
 
-    const auto end_time =
+    const auto walk_end =
         std::chrono::high_resolution_clock::now();
 
-    const std::chrono::duration<double> duration =
-        end_time - start_time;
+    const double walk_seconds =
+        std::chrono::duration<double>(walk_end - walk_start).count();
+
+    std::cout << std::fixed << std::setprecision(6)
+              << "Walk time: " << walk_seconds << " seconds\n";
 
     print_walk_performance_stats(
         walk_set.num_walks(),
         walk_set.walk_lens_ptr(),
-        duration.count()
+        walk_seconds
     );
 
     // ============================
@@ -235,8 +268,10 @@ int main(int argc, char* argv[])
         );
     }
 
-    size_t memory_footprint_bytes = walker.get_memory_used() + walk_set.get_memory_used();
-    double memory_gb = static_cast<double>(memory_footprint_bytes) / (1024.0 * 1024.0 * 1024.0);
+    const size_t memory_footprint_bytes =
+        walker.get_memory_used() + walk_set.get_memory_used();
+    const double memory_gb =
+        static_cast<double>(memory_footprint_bytes) / (1024.0 * 1024.0 * 1024.0);
     std::cout << "Memory used (GB): " << memory_gb << std::endl;
 
     return 0;
