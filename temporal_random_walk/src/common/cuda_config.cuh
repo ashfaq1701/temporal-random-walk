@@ -19,7 +19,7 @@ constexpr size_t BLOCK_DIM = 256;
 // silently dropped (see scheduler.cu partition_by_w_kernel). Default kept at
 // 1 (safest semantics: solo only when there is exactly one walk at this node).
 // Override per call via the w_threshold_warp parameter if a workload differs.
-constexpr int W_THRESHOLD_WARP = 1;
+constexpr int W_THRESHOLD_WARP = 4;
 
 #ifdef HAS_CUDA
 
