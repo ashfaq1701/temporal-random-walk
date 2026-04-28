@@ -16,16 +16,20 @@
 namespace temporal_graph {
 
     // -------------------------------------------------------------------------
-    // K-candidate sampling primitives  (HOST + DEVICE)
+    // K-candidate sampling helpers (HOST + DEVICE).
     //
     // SplitMix64 derives K well-distributed pseudo-random uint64 values from
-    // the single rand-num the caller passes in. The K-candidate path uses
-    // them for K uniform offsets into the candidate group plus one final
-    // [0,1) draw for A-Res selection.
+    // a single seed (the per-call rand-num the caller already had). We use
+    // these to draw K uniform offsets into the candidate group and one
+    // uniform [0,1) draw for the final β-weighted pick. Quality is far
+    // above what a K=64 Monte Carlo estimator needs.
     //
-    // A-Res (Algorithm-A with Reservoir, Efraimidis & Spirakis): item with
-    // weight β gets key log(u)/β; the running argmax wins. Single pass over
-    // K, O(1) state, selection probability ∝ β.
+    // Weighted selection inside the K-sample uses A-Res (Algorithm-A with
+    // Reservoir, Efraimidis & Spirakis). Item with weight β gets key
+    // log(u)/β; we keep the running argmax. Single pass over K, O(1) state,
+    // selection probability ∝ β. (Standard derivation: argmax of u^(1/β)
+    // produces the desired distribution; we work in log-space to avoid
+    // pow.)
     // -------------------------------------------------------------------------
 
     HOST DEVICE inline uint64_t splitmix64_step(uint64_t x) {
@@ -35,7 +39,7 @@ namespace temporal_graph {
         return x ^ (x >> 31);
     }
 
-    // r ∈ [0, 1) → uint64. Uses the full 53-bit double mantissa.
+    // r ∈ [0, 1) → uint64. Uses the full mantissa.
     HOST DEVICE inline uint64_t splitmix_seed_from_u01(const double r) {
         return static_cast<uint64_t>(r * 9007199254740992.0);  // 2^53
     }
@@ -45,13 +49,7 @@ namespace temporal_graph {
         return static_cast<double>(x >> 11) * (1.0 / 9007199254740992.0);
     }
 
-    // =========================================================================
-    // HOST
-    // =========================================================================
-
-    // -------------------------------------------------------------------------
-    // Node2Vec beta primitives
-    // -------------------------------------------------------------------------
+    // ==================== HOST ====================
 
     HOST inline bool is_node_adjacent_to_host(
         const TemporalGraphView& view,
@@ -61,6 +59,7 @@ namespace temporal_graph {
         if (!view.enable_temporal_node2vec || view.node_adj_offsets == nullptr) {
             return false;
         }
+
         if (prev_node < 0
             || static_cast<size_t>(prev_node) + 1 >= view.node_adj_offsets_size) {
             return false;
@@ -69,21 +68,22 @@ namespace temporal_graph {
         const size_t start = view.node_adj_offsets[prev_node];
         const size_t end   = view.node_adj_offsets[prev_node + 1];
         const size_t n     = end - start;
+
         if (n == 0) {
             return false;
         }
 
         const int* arr = view.node_adj_neighbors + start;
 
-        // Linear scan beats binary search at small N: the n loads can
-        // overlap (ILP) instead of serializing on a dependent-load chain.
-        // Exact either way.
+        // Linear scan beats binary search at small N (cache-friendly, no
+        // dependent-load chain). Exact either way.
         if (n <= static_cast<size_t>(N2V_ADJ_LINEAR_SCAN_THRESHOLD)) {
             for (size_t i = 0; i < n; ++i) {
                 if (arr[i] == candidate_node) return true;
             }
             return false;
         }
+
         return std::binary_search(arr, arr + n, candidate_node);
     }
 
@@ -94,20 +94,20 @@ namespace temporal_graph {
         if (w == prev_node) {
             return view.inv_p;
         }
+
         if (is_node_adjacent_to_host(view, prev_node, w)) {
             return 1.0;
         }
+
         return view.inv_q;
     }
 
     // -------------------------------------------------------------------------
-    // K-candidate β-sum estimator (subroutine for the group picker).
-    // Returns an unbiased estimate of Σ β over [edge_start, edge_start+group_size)
-    // using K uniform-with-replacement samples scaled to group_size. Caller
-    // seeds `state` so the same K offsets can be re-derived in the second
-    // outer pass of the group picker.
+    // K-sample β-sum estimator. Returns an unbiased estimate of
+    // Σ_{i=edge_start}^{edge_end} β(prev, candidate(i)) using K uniform
+    // samples scaled up to group size. Caller seeds `state` so the same
+    // K offsets can be re-derived in a second pass when needed.
     // -------------------------------------------------------------------------
-
     template<bool Forward, bool IsDirected>
     HOST inline double n2v_kapped_beta_sum_host(
         const TemporalGraphView& view,
@@ -121,10 +121,9 @@ namespace temporal_graph {
         double sum_K = 0.0;
         for (int k = 0; k < K_NODE2VEC; ++k) {
             state = splitmix64_step(state);
-            const size_t off      = static_cast<size_t>(state % group_size);
+            const size_t off = static_cast<size_t>(state % group_size);
             const size_t edge_idx = node_ts_sorted_indices[edge_start + off];
-            const int    w        =
-                get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+            const int    w        = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
             sum_K += compute_node2vec_beta_host(view, prev_node, w);
         }
         return (sum_K / static_cast<double>(K_NODE2VEC))
@@ -132,7 +131,7 @@ namespace temporal_graph {
     }
 
     // -------------------------------------------------------------------------
-    // Temporal-node2vec edge selection inside one timestamp group
+    // Temporal-node2vec edge selection inside selected timestamp group
     // -------------------------------------------------------------------------
 
     template<bool Forward, bool IsDirected>
@@ -150,29 +149,30 @@ namespace temporal_graph {
         }
 
         const size_t group_size = edge_end - edge_start;
+
         if (group_size == 1) {
             return static_cast<long>(node_ts_sorted_indices[edge_start]);
         }
 
-        // K-candidate path: A-Res over K uniform samples.
+        // Bounded-degree path: A-Res over K uniform samples.
         if (group_size > static_cast<size_t>(K_NODE2VEC)) {
             uint64_t state = splitmix_seed_from_u01(edge_selector_rand_num);
 
-            double max_key     = -1e300;
-            long   winner_edge = -1;
-            double beta_sum    = 0.0;
+            double max_key      = -1e300;
+            long   winner_edge  = -1;
+            double beta_sum     = 0.0;
 
             for (int k = 0; k < K_NODE2VEC; ++k) {
                 state = splitmix64_step(state);
                 const size_t off      = static_cast<size_t>(state % group_size);
                 const size_t edge_idx = node_ts_sorted_indices[edge_start + off];
-                const int    w        =
-                    get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+                const int    w        = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
                 const double beta     = compute_node2vec_beta_host(view, prev_node, w);
                 beta_sum += beta;
 
                 state = splitmix64_step(state);
                 const double u   = u01_from_uint64(state);
+                // A-Res key = log(u) / β. β > 0 always for valid Node2Vec.
                 const double key = (beta > 0.0)
                                    ? std::log(u + 1e-300) / beta
                                    : -1e300;
@@ -181,6 +181,7 @@ namespace temporal_graph {
                     winner_edge = static_cast<long>(edge_idx);
                 }
             }
+
             return (beta_sum > 0.0) ? winner_edge : -1;
         }
 
@@ -188,10 +189,10 @@ namespace temporal_graph {
         double beta_sum = 0.0;
         for (size_t i = edge_start; i < edge_end; ++i) {
             const size_t edge_idx = node_ts_sorted_indices[i];
-            const int    w        =
-                get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+            const int    w        = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
             beta_sum += compute_node2vec_beta_host(view, prev_node, w);
         }
+
         if (beta_sum <= 0.0) {
             return -1;
         }
@@ -200,8 +201,7 @@ namespace temporal_graph {
         double running_sum  = 0.0;
         for (size_t i = edge_start; i < edge_end; ++i) {
             const size_t edge_idx = node_ts_sorted_indices[i];
-            const int    w        =
-                get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+            const int    w        = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
             running_sum += compute_node2vec_beta_host(view, prev_node, w);
             if (running_sum >= target) {
                 return static_cast<long>(edge_idx);
@@ -232,12 +232,10 @@ namespace temporal_graph {
             return -1;
         }
 
-        // Per-group seed mixes the call seed with group_pos so each group
-        // samples different offsets, and the second outer pass below can
-        // re-derive each group's K samples deterministically (running-sum
-        // stays in sync with the first-pass total).
-        const uint64_t base_seed =
-            splitmix_seed_from_u01(group_selector_rand_num);
+        // Per-group seed mixes the call seed with group_pos so different
+        // groups don't sample the same offsets, and so the second pass
+        // can re-derive each group's K samples deterministically.
+        const uint64_t base_seed = splitmix_seed_from_u01(group_selector_rand_num);
 
         auto group_beta_sum = [&](const size_t group_pos,
                                   const size_t edge_start,
@@ -254,14 +252,12 @@ namespace temporal_graph {
             double sum = 0.0;
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
-                const int    w        =
-                    get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+                const int    w        = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
                 sum += compute_node2vec_beta_host(view, prev_node, w);
             }
             return sum;
         };
 
-        // Pass 1: total weight across all valid groups.
         double total_weight = 0.0;
         for (size_t group_pos = valid_node_ts_group_begin;
              group_pos < valid_node_ts_group_end; ++group_pos) {
@@ -271,8 +267,9 @@ namespace temporal_graph {
             if (edge_start == edge_end) continue;
 
             const double beta_sum   = group_beta_sum(group_pos, edge_start, edge_end);
-            const double exp_weight = get_group_exponential_weight_from_cumulative(
-                weights, group_pos, node_group_begin);
+            const double exp_weight =
+                get_group_exponential_weight_from_cumulative(
+                    weights, group_pos, node_group_begin);
             total_weight += exp_weight * beta_sum;
         }
 
@@ -280,7 +277,6 @@ namespace temporal_graph {
             return -1;
         }
 
-        // Pass 2: re-derive same per-group estimates, walk prefix sum to target.
         const double target = group_selector_rand_num * total_weight;
         double running_sum  = 0.0;
         int    selected_group = static_cast<int>(valid_node_ts_group_end - 1);
@@ -293,8 +289,9 @@ namespace temporal_graph {
             if (edge_start == edge_end) continue;
 
             const double beta_sum   = group_beta_sum(group_pos, edge_start, edge_end);
-            const double exp_weight = get_group_exponential_weight_from_cumulative(
-                weights, group_pos, node_group_begin);
+            const double exp_weight =
+                get_group_exponential_weight_from_cumulative(
+                    weights, group_pos, node_group_begin);
             running_sum += exp_weight * beta_sum;
 
             if (running_sum >= target) {
@@ -305,15 +302,9 @@ namespace temporal_graph {
         return selected_group;
     }
 
-    // =========================================================================
-    // DEVICE  (mirrors HOST: same banners, same function order)
-    // =========================================================================
+    // ==================== DEVICE ====================
 
     #ifdef HAS_CUDA
-
-    // -------------------------------------------------------------------------
-    // Node2Vec beta primitives
-    // -------------------------------------------------------------------------
 
     DEVICE inline bool is_node_adjacent_to_device(
         const TemporalGraphView& view,
@@ -322,6 +313,7 @@ namespace temporal_graph {
         if (!view.enable_temporal_node2vec || view.node_adj_offsets == nullptr) {
             return false;
         }
+
         if (prev_node < 0
             || static_cast<size_t>(prev_node) + 1 >= view.node_adj_offsets_size) {
             return false;
@@ -330,6 +322,7 @@ namespace temporal_graph {
         const size_t start = view.node_adj_offsets[prev_node];
         const size_t end   = view.node_adj_offsets[prev_node + 1];
         const size_t n     = end - start;
+
         if (n == 0) {
             return false;
         }
@@ -338,7 +331,7 @@ namespace temporal_graph {
 
         // Linear scan beats binary search at small N: the n loads can
         // overlap (ILP) instead of serializing on a dependent-load chain.
-        // Exact either way.
+        // Exact either way — pure Tier-0.
         if (n <= static_cast<size_t>(N2V_ADJ_LINEAR_SCAN_THRESHOLD)) {
             #pragma unroll 8
             for (size_t i = 0; i < n; ++i) {
@@ -346,6 +339,7 @@ namespace temporal_graph {
             }
             return false;
         }
+
         const int* it = cuda::std::lower_bound(arr, arr + n, candidate_node);
         return (it != arr + n && *it == candidate_node);
     }
@@ -357,15 +351,13 @@ namespace temporal_graph {
         if (w == prev_node) {
             return view.inv_p;
         }
+
         if (is_node_adjacent_to_device(view, prev_node, w)) {
             return 1.0;
         }
+
         return view.inv_q;
     }
-
-    // -------------------------------------------------------------------------
-    // K-candidate β-sum estimator (subroutine for the group picker).
-    // -------------------------------------------------------------------------
 
     template<bool Forward, bool IsDirected>
     DEVICE inline double n2v_kapped_beta_sum_device(
@@ -382,96 +374,12 @@ namespace temporal_graph {
             state = splitmix64_step(state);
             const size_t off      = static_cast<size_t>(state % group_size);
             const size_t edge_idx = node_ts_sorted_indices[edge_start + off];
-            const int    w        =
-                get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+            const int    w        = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
             sum_K += compute_node2vec_beta_device(view, prev_node, w);
         }
         return (sum_K / static_cast<double>(K_NODE2VEC))
                * static_cast<double>(group_size);
     }
-
-    // -------------------------------------------------------------------------
-    // Temporal-node2vec edge selection inside one timestamp group
-    // -------------------------------------------------------------------------
-
-    template<bool Forward, bool IsDirected>
-    DEVICE long pick_random_temporal_node2vec_edge_device(
-        const TemporalGraphView& view,
-        const int node_id,
-        const int prev_node,
-        const size_t edge_start,
-        const size_t edge_end,
-        const size_t* node_ts_sorted_indices,
-        const double edge_selector_rand_num) {
-
-        if (prev_node == -1 || edge_start >= edge_end) {
-            return -1;
-        }
-
-        const size_t group_size = edge_end - edge_start;
-        if (group_size == 1) {
-            return static_cast<long>(node_ts_sorted_indices[edge_start]);
-        }
-
-        // K-candidate path: A-Res over K uniform samples.
-        if (group_size > static_cast<size_t>(K_NODE2VEC)) {
-            uint64_t state = splitmix_seed_from_u01(edge_selector_rand_num);
-
-            double max_key     = -1e300;
-            long   winner_edge = -1;
-            double beta_sum    = 0.0;
-
-            for (int k = 0; k < K_NODE2VEC; ++k) {
-                state = splitmix64_step(state);
-                const size_t off      = static_cast<size_t>(state % group_size);
-                const size_t edge_idx = node_ts_sorted_indices[edge_start + off];
-                const int    w        =
-                    get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
-                const double beta     = compute_node2vec_beta_device(view, prev_node, w);
-                beta_sum += beta;
-
-                state = splitmix64_step(state);
-                const double u   = u01_from_uint64(state);
-                const double key = (beta > 0.0)
-                                   ? log(u + 1e-300) / beta
-                                   : -1e300;
-                if (key > max_key) {
-                    max_key     = key;
-                    winner_edge = static_cast<long>(edge_idx);
-                }
-            }
-            return (beta_sum > 0.0) ? winner_edge : -1;
-        }
-
-        // Exact path for small groups (n <= K).
-        double beta_sum = 0.0;
-        for (size_t i = edge_start; i < edge_end; ++i) {
-            const size_t edge_idx = node_ts_sorted_indices[i];
-            const int    w        =
-                get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
-            beta_sum += compute_node2vec_beta_device(view, prev_node, w);
-        }
-        if (beta_sum <= 0.0) {
-            return -1;
-        }
-
-        const double target = edge_selector_rand_num * beta_sum;
-        double running_sum  = 0.0;
-        for (size_t i = edge_start; i < edge_end; ++i) {
-            const size_t edge_idx = node_ts_sorted_indices[i];
-            const int    w        =
-                get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
-            running_sum += compute_node2vec_beta_device(view, prev_node, w);
-            if (running_sum >= target) {
-                return static_cast<long>(edge_idx);
-            }
-        }
-        return static_cast<long>(node_ts_sorted_indices[edge_end - 1]);
-    }
-
-    // -------------------------------------------------------------------------
-    // Temporal-node2vec timestamp-group selection
-    // -------------------------------------------------------------------------
 
     template<bool Forward, bool IsDirected>
     DEVICE int pick_random_temporal_node2vec_device(
@@ -491,8 +399,7 @@ namespace temporal_graph {
             return -1;
         }
 
-        const uint64_t base_seed =
-            splitmix_seed_from_u01(group_selector_rand_num);
+        const uint64_t base_seed = splitmix_seed_from_u01(group_selector_rand_num);
 
         auto group_beta_sum = [&](const size_t group_pos,
                                   const size_t edge_start,
@@ -509,14 +416,12 @@ namespace temporal_graph {
             double sum = 0.0;
             for (size_t i = edge_start; i < edge_end; ++i) {
                 const size_t edge_idx = node_ts_sorted_indices[i];
-                const int    w        =
-                    get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+                const int    w        = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
                 sum += compute_node2vec_beta_device(view, prev_node, w);
             }
             return sum;
         };
 
-        // Pass 1: total weight across all valid groups.
         double total_weight = 0.0;
         for (size_t group_pos = valid_node_ts_group_begin;
              group_pos < valid_node_ts_group_end; ++group_pos) {
@@ -526,8 +431,9 @@ namespace temporal_graph {
             if (edge_start == edge_end) continue;
 
             const double beta_sum   = group_beta_sum(group_pos, edge_start, edge_end);
-            const double exp_weight = get_group_exponential_weight_from_cumulative(
-                weights, group_pos, node_group_begin);
+            const double exp_weight =
+                get_group_exponential_weight_from_cumulative(
+                    weights, group_pos, node_group_begin);
             total_weight += exp_weight * beta_sum;
         }
 
@@ -535,7 +441,6 @@ namespace temporal_graph {
             return -1;
         }
 
-        // Pass 2: re-derive same per-group estimates, walk prefix sum to target.
         const double target = group_selector_rand_num * total_weight;
         double running_sum  = 0.0;
         int    selected_group = static_cast<int>(valid_node_ts_group_end - 1);
@@ -548,8 +453,9 @@ namespace temporal_graph {
             if (edge_start == edge_end) continue;
 
             const double beta_sum   = group_beta_sum(group_pos, edge_start, edge_end);
-            const double exp_weight = get_group_exponential_weight_from_cumulative(
-                weights, group_pos, node_group_begin);
+            const double exp_weight =
+                get_group_exponential_weight_from_cumulative(
+                    weights, group_pos, node_group_begin);
             running_sum += exp_weight * beta_sum;
 
             if (running_sum >= target) {
@@ -558,6 +464,82 @@ namespace temporal_graph {
             }
         }
         return selected_group;
+    }
+
+    template<bool Forward, bool IsDirected>
+    DEVICE long pick_random_temporal_node2vec_edge_device(
+        const TemporalGraphView& view,
+        const int node_id,
+        const int prev_node,
+        const size_t edge_start,
+        const size_t edge_end,
+        const size_t* node_ts_sorted_indices,
+        const double edge_selector_rand_num) {
+
+        if (prev_node == -1 || edge_start >= edge_end) {
+            return -1;
+        }
+
+        const size_t group_size = edge_end - edge_start;
+
+        if (group_size == 1) {
+            return static_cast<long>(node_ts_sorted_indices[edge_start]);
+        }
+
+        // Bounded-degree path: A-Res over K uniform samples.
+        if (group_size > static_cast<size_t>(K_NODE2VEC)) {
+            uint64_t state = splitmix_seed_from_u01(edge_selector_rand_num);
+
+            double max_key      = -1e300;
+            long   winner_edge  = -1;
+            double beta_sum     = 0.0;
+
+            for (int k = 0; k < K_NODE2VEC; ++k) {
+                state = splitmix64_step(state);
+                const size_t off      = static_cast<size_t>(state % group_size);
+                const size_t edge_idx = node_ts_sorted_indices[edge_start + off];
+                const int    w        = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+                const double beta     = compute_node2vec_beta_device(view, prev_node, w);
+                beta_sum += beta;
+
+                state = splitmix64_step(state);
+                const double u   = u01_from_uint64(state);
+                // A-Res key = log(u) / β. β > 0 always for valid Node2Vec.
+                const double key = (beta > 0.0)
+                                   ? log(u + 1e-300) / beta
+                                   : -1e300;
+                if (key > max_key) {
+                    max_key     = key;
+                    winner_edge = static_cast<long>(edge_idx);
+                }
+            }
+
+            return (beta_sum > 0.0) ? winner_edge : -1;
+        }
+
+        // Exact path for small groups (n <= K).
+        double beta_sum = 0.0;
+        for (size_t i = edge_start; i < edge_end; ++i) {
+            const size_t edge_idx = node_ts_sorted_indices[i];
+            const int    w        = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+            beta_sum += compute_node2vec_beta_device(view, prev_node, w);
+        }
+
+        if (beta_sum <= 0.0) {
+            return -1;
+        }
+
+        const double target = edge_selector_rand_num * beta_sum;
+        double running_sum  = 0.0;
+        for (size_t i = edge_start; i < edge_end; ++i) {
+            const size_t edge_idx = node_ts_sorted_indices[i];
+            const int    w        = get_candidate_node<Forward, IsDirected>(view, node_id, edge_idx);
+            running_sum += compute_node2vec_beta_device(view, prev_node, w);
+            if (running_sum >= target) {
+                return static_cast<long>(edge_idx);
+            }
+        }
+        return static_cast<long>(node_ts_sorted_indices[edge_end - 1]);
     }
 
     #endif
