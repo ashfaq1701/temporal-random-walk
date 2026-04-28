@@ -67,24 +67,16 @@ namespace temporal_graph {
 
         const size_t start = view.node_adj_offsets[prev_node];
         const size_t end   = view.node_adj_offsets[prev_node + 1];
-        const size_t n     = end - start;
 
-        if (n == 0) {
+        if (start >= end) {
             return false;
         }
 
-        const int* arr = view.node_adj_neighbors + start;
-
-        // Linear scan beats binary search at small N (cache-friendly, no
-        // dependent-load chain). Exact either way.
-        if (n <= static_cast<size_t>(N2V_ADJ_LINEAR_SCAN_THRESHOLD)) {
-            for (size_t i = 0; i < n; ++i) {
-                if (arr[i] == candidate_node) return true;
-            }
-            return false;
-        }
-
-        return std::binary_search(arr, arr + n, candidate_node);
+        return std::binary_search(
+            view.node_adj_neighbors + start,
+            view.node_adj_neighbors + end,
+            candidate_node
+        );
     }
 
     HOST inline double compute_node2vec_beta_host(
@@ -321,27 +313,16 @@ namespace temporal_graph {
 
         const size_t start = view.node_adj_offsets[prev_node];
         const size_t end   = view.node_adj_offsets[prev_node + 1];
-        const size_t n     = end - start;
 
-        if (n == 0) {
+        if (start >= end) {
             return false;
         }
 
-        const int* arr = view.node_adj_neighbors + start;
+        const int* begin  = view.node_adj_neighbors + start;
+        const int* finish = view.node_adj_neighbors + end;
 
-        // Linear scan beats binary search at small N: the n loads can
-        // overlap (ILP) instead of serializing on a dependent-load chain.
-        // Exact either way — pure Tier-0.
-        if (n <= static_cast<size_t>(N2V_ADJ_LINEAR_SCAN_THRESHOLD)) {
-            #pragma unroll 8
-            for (size_t i = 0; i < n; ++i) {
-                if (arr[i] == candidate_node) return true;
-            }
-            return false;
-        }
-
-        const int* it = cuda::std::lower_bound(arr, arr + n, candidate_node);
-        return (it != arr + n && *it == candidate_node);
+        const int* it = cuda::std::lower_bound(begin, finish, candidate_node);
+        return (it != finish && *it == candidate_node);
     }
 
     DEVICE inline double compute_node2vec_beta_device(
