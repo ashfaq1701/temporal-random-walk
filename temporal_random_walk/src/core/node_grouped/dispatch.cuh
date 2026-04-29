@@ -15,8 +15,9 @@ namespace temporal_random_walk {
 // for Node2Vec (whose prev_node-dependent CDF can't share a coop panel).
 // force_global_only: ablation — route every coop task to *_global (no smem).
 // w_threshold_warp: solo/warp-tier boundary used by the W-partition; tasks
-// with W <= w_threshold_warp go to solo, W in (w_threshold_warp, BLOCK_DIM]
-// go to warp tier, W > BLOCK_DIM go to block tier.
+// with W <= w_threshold_warp go to solo, W in (w_threshold_warp, block_dim.x]
+// go to warp tier, W > block_dim.x go to block tier. Both thresholds are
+// runtime values (block_dim.x is the per-call dispatcher block size).
 inline void dispatch_node_grouped_kernel(
     const TemporalGraphView& view,
     const bool is_directed,

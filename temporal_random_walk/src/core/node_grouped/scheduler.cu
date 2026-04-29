@@ -151,7 +151,8 @@ __global__ void partition_by_g_kernel(
 }
 
 // Split mega-hubs (W > cap) into ceil(W/cap) disjoint sub-tasks so no
-// single block monopolizes an SM. Warp tier doesn't need this (W <= BLOCK_DIM).
+// single block monopolizes an SM. Warp tier doesn't need this — its
+// W upper bound is the runtime block_dim, well below the mega-hub cap.
 __global__ void expand_block_tasks_kernel(
     const int* __restrict__ in_nodes,
     const int* __restrict__ in_walk_starts,
@@ -371,11 +372,15 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
 
     {
         NVTX_RANGE_COLORED("NG W-partition", nvtx_colors::weight_orange);
+        // Warp/block W boundary tracks the runtime block_dim_.x: a warp
+        // task carries up to block_dim_.x walks via its 32-wide stride
+        // loop. Above that, block tier amortizes the metadata preload
+        // across more cooperating threads.
         partition_by_w_kernel<<<active_grid, block_dim_, 0, stream_>>>(
             unique_last_nodes, step_run_starts, step_run_lengths,
             step_num_runs, sorted_active_idx,
             w_threshold_warp_,
-            static_cast<int>(BLOCK_DIM),
+            static_cast<int>(block_dim_.x),
             solo_walks,
             warp_nodes_w,  warp_walk_starts_w,  warp_walk_counts_w,
             block_nodes_w, block_walk_starts_w, block_walk_counts_w,
