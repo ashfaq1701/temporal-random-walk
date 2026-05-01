@@ -125,10 +125,19 @@ int main(int argc, char** argv) {
     const int         w_threshold_warp    = (argc > 11) ? std::stoi(argv[11])
                                                         : static_cast<int>(W_THRESHOLD_WARP);
     const std::string per_batch_csv       = (argc > 12) ? argv[12] : std::string();
+    const std::string walk_dir_str        = (argc > 13) ? argv[13] : "backward";
 
     const RandomPickerType hop_picker = parse_picker(picker_str);
     const KernelLaunchType kernel_launch_type = parse_kernel_launch_type(klt_str);
     constexpr RandomPickerType start_picker = RandomPickerType::Uniform;
+    WalkDirection walk_direction;
+    if (walk_dir_str == "backward" || walk_dir_str == "Backward_In_Time") {
+        walk_direction = WalkDirection::Backward_In_Time;
+    } else if (walk_dir_str == "forward" || walk_dir_str == "Forward_In_Time") {
+        walk_direction = WalkDirection::Forward_In_Time;
+    } else {
+        throw std::runtime_error("Invalid walk_direction — expected 'forward' or 'backward'");
+    }
 
     std::cout << "=== Alibaba streaming benchmark (C++) ===\n"
               << "Dataset dir:       " << dataset_dir << "\n"
@@ -142,7 +151,8 @@ int main(int argc, char** argv) {
               << "Total minutes:     " << total_minutes << "\n"
               << "Timescale bound:   " << timescale_bound << "\n"
               << "W threshold (solo):" << w_threshold_warp << "\n"
-              << "Per-batch CSV:     " << (per_batch_csv.empty() ? "(none)" : per_batch_csv) << "\n";
+              << "Per-batch CSV:     " << (per_batch_csv.empty() ? "(none)" : per_batch_csv) << "\n"
+              << "Walk direction:    " << walk_dir_str << "\n";
 
     const bool use_weight = (hop_picker == RandomPickerType::ExponentialWeight);
 
@@ -162,7 +172,7 @@ int main(int argc, char** argv) {
             warm.src.data(), warm.dst.data(), warm.ts.data(), warm.ts.size());
         auto warm_walks = trw.get_random_walks_and_times_for_last_batch(
             max_walk_len, &hop_picker, num_walks_per_node, &start_picker,
-            WalkDirection::Forward_In_Time, kernel_launch_type,
+            walk_direction, kernel_launch_type,
             BLOCK_DIM, w_threshold_warp);
 #ifdef HAS_CUDA
         if (use_gpu) cudaDeviceSynchronize();
@@ -223,7 +233,7 @@ int main(int argc, char** argv) {
             const auto t0 = std::chrono::high_resolution_clock::now();
             const auto walks = trw.get_random_walks_and_times_for_last_batch(
                 max_walk_len, &hop_picker, num_walks_per_node, &start_picker,
-                WalkDirection::Forward_In_Time, kernel_launch_type,
+                walk_direction, kernel_launch_type,
                 BLOCK_DIM, w_threshold_warp);
 #ifdef HAS_CUDA
             if (use_gpu) cudaDeviceSynchronize();
