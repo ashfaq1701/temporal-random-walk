@@ -75,8 +75,8 @@ inline void dispatch_node_grouped_kernel(
                 first_coop_step = 1;
             } else {
                 NVTX_RANGE_COLORED("NG step0 prepop", nvtx_colors::walk_green);
-                dispatch_prepopulate_start_slot_kernel<kFwd>(
-                    walk_set_view, start_node_ids, num_walks,
+                dispatch_prepopulate_start_slot_kernel<kFwd, kDir>(
+                    view, walk_set_view, start_node_ids, num_walks,
                     grid, block_dim, stream);
                 first_coop_step = 0;
             }

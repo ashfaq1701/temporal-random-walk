@@ -115,34 +115,56 @@ inline void dispatch_start_edges_kernel(
     });
 }
 
-// Constrained walks-per-node start: write slot 0 = (start_node_ids[walk_idx],
-// sentinel_ts) and set walk_lens[walk_idx] = 1. The step-0 coop pass then
-// reads slot 0, picks the first edge under start_picker_type, and the
-// resulting hop is appended to slot 1 via add_hop.
+// Constrained walks-per-node start: for each walk, if the start node has at
+// least one edge in the walk direction (outbound for Forward; inbound for
+// Backward+directed; outbound for Backward+undirected), write slot 0 =
+// (start_node_ids[walk_idx], sentinel_ts) and set walk_lens[walk_idx] = 1.
+// The step-0 coop pass then reads slot 0, picks the first edge under
+// start_picker_type, and appends the resulting hop to slot 1 via add_hop.
+//
+// Walks whose start node has no edges in the chosen direction are left as
+// length-0 dead-starts (walk_lens stays 0), matching FULL_WALK's behavior
+// when get_node_edge_at_device returns no valid edge for the start node.
+// Without this guard, NG produced walks of length 1 for dead-start nodes
+// while FULL_WALK produced length-0 walks; this divergence inflated NG's
+// walks_per_sec and depressed its avg_walk_length on Backward + last_batch
+// workloads where many last-batch source nodes have no inbound edges.
 //
 // Sentinel timestamp matches pick_start_edges_kernel (Forward: INT64_MIN,
 // Backward: INT64_MAX) so user-visible slot-0 timestamps stay identical to
-// the per-walk start path. filter_valid_groups_by_timestamp_slice's -1 fast
-// path doesn't fire here, but the binary-search path returns [0, G) for
-// either sentinel — semantically identical, log G probes of overhead at
-// step 0 only.
-template <bool Forward>
+// the per-walk start path.
+template <bool Forward, bool IsDirected>
 __global__ void prepopulate_start_slot_kernel(
     WalkSetView walk_set,
+    TemporalGraphView view,
     const int* __restrict__ start_node_ids,
     const size_t num_walks) {
 
     const size_t walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (walk_idx >= num_walks) return;
 
+    const int node_id = start_node_ids[walk_idx];
+    if (!temporal_graph::is_node_active(view, node_id)) return;
+
+    // Direction-resolved per-node ts-group counts: outbound for Forward;
+    // inbound for Backward+directed; outbound for Backward+undirected (the
+    // graph's outbound index covers both endpoints when undirected). Mirrors
+    // get_node_edge_at_device's direction selection.
+    const size_t* count_ts_group_per_node =
+        Forward ? view.count_ts_group_per_node_outbound
+                : (IsDirected ? view.count_ts_group_per_node_inbound
+                              : view.count_ts_group_per_node_outbound);
+    const size_t group_begin = count_ts_group_per_node[node_id];
+    const size_t group_end   = count_ts_group_per_node[node_id + 1];
+    if (group_begin == group_end) return;  // dead start: no edges this dir
+
     constexpr int64_t sentinel_timestamp = Forward ? INT64_MIN : INT64_MAX;
-    walk_set.add_hop(walk_idx,
-                     start_node_ids[walk_idx],
-                     sentinel_timestamp);
+    walk_set.add_hop(walk_idx, node_id, sentinel_timestamp);
 }
 
-template <bool Forward>
+template <bool Forward, bool IsDirected>
 inline void dispatch_prepopulate_start_slot_kernel(
+    const TemporalGraphView& view,
     WalkSetView walk_set_view,
     const int* start_node_ids,
     const size_t num_walks,
@@ -150,9 +172,9 @@ inline void dispatch_prepopulate_start_slot_kernel(
     const dim3& block_dim,
     const cudaStream_t stream) {
 
-    prepopulate_start_slot_kernel<Forward>
+    prepopulate_start_slot_kernel<Forward, IsDirected>
         <<<grid, block_dim, 0, stream>>>(
-            walk_set_view, start_node_ids, num_walks);
+            walk_set_view, view, start_node_ids, num_walks);
 }
 
 // Advance one walk by one step. Outcome depends only on
