@@ -13,13 +13,14 @@ to what the C++ binary exposes:
     max_walk_len       = 100
     walk_bias          = exponential_weight
     is_directed        = true (binary default; not a CLI knob)
-    walk_direction     = Backward_In_Time (hardcoded in the binary)
+    walk_direction     = backward (CLI knob; --walk_direction forward to flip)
     window_ms          = 900_000  (15-minute sliding window)
     minutes_per_step   = 3        (30 streaming iters across 90 minutes)
     total_minutes      = 90
     REPS               = 3 per variant
-This matches the laptop sweep's P0 cell exactly (the binary was patched
-to use Backward_In_Time in both the warmup and the main loop).
+Defaults match the laptop sweep's P0 cell. The binary takes walk_direction
+as its 13th positional arg so both directions can be tested without
+rebuilds.
 
 Place this script at the repo root next to `build/`. Resolves the
 binary as <script_dir>/build/bin/test_alibaba_streaming.
