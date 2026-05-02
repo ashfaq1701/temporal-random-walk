@@ -13,8 +13,14 @@ namespace temporal_random_walk {
 
 #ifdef HAS_CUDA
 
-// One block per block-task. Cooperatively preloads s_group_offsets[G] +
-// s_first_ts[G], then strides by blockDim.x through the task's walks.
+// One block per block-task. Cooperatively preloads s_group_offsets[G],
+// s_first_ts[G], and (for weighted pickers only) s_cum_weights[G], then
+// strides by blockDim.x through the task's walks. The cum_weights slot
+// is template-conditional: index pickers don't read cum_weights at all,
+// so they skip the allocation and preload entirely (smem footprint stays
+// at 16 B/group). Weighted pickers reserve an extra 8 B/group; the
+// G_THRESHOLD_BLOCK_WEIGHT cap (1800) was already sized assuming this
+// 24 B/group budget.
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_block_smem_kernel(
     TemporalGraphView view,
@@ -42,25 +48,38 @@ __global__ void node_grouped_block_smem_kernel(
     const int    G                = static_cast<int>(node_group_end - node_group_begin);
     const size_t node_edge_end    = ptrs.node_edge_offsets[node_id + 1];
 
-    constexpr int kGCap = coop_block_smem_g_cap<EdgePickerType>();
+    constexpr int  kGCap     = coop_block_smem_g_cap<EdgePickerType>();
+    constexpr bool kIsWeight =
+        !random_pickers::is_index_based_picker_v<EdgePickerType>;
     constexpr size_t kHeaderBytes        = 64;
     constexpr size_t kGroupOffsetsOffset = kHeaderBytes;
     constexpr size_t kFirstTsOffset      =
         kGroupOffsetsOffset + sizeof(size_t) * kGCap;
+    constexpr size_t kCumWeightsOffset   =
+        kFirstTsOffset + sizeof(int64_t) * kGCap;
 
     extern __shared__ unsigned char s_panel[];
     size_t* const  s_group_offsets =
         reinterpret_cast<size_t*>(s_panel + kGroupOffsetsOffset);
     int64_t* const s_first_ts      =
         reinterpret_cast<int64_t*>(s_panel + kFirstTsOffset);
+    double* const  s_cum_weights   = kIsWeight
+        ? reinterpret_cast<double*>(s_panel + kCumWeightsOffset)
+        : nullptr;
 
     // Preload kills the 3-deep dependent load chain at search time.
+    // For weighted pickers, also preload the per-node cum_weights slice
+    // so the picker's binary search runs against smem (Stage 2 wires it
+    // up via find_group_pos_slice's s_cum_weights parameter).
     for (int p = threadIdx.x; p < G; p += blockDim.x) {
         const size_t ts_group_offset =
             ptrs.node_ts_groups_offsets[node_group_begin + p];
         s_group_offsets[p] = ts_group_offset;
         s_first_ts[p] =
             view.timestamps[ptrs.node_ts_sorted_indices[ts_group_offset]];
+        if constexpr (kIsWeight) {
+            s_cum_weights[p] = ptrs.weights[node_group_begin + p];
+        }
     }
     __syncthreads();
 
@@ -83,7 +102,8 @@ __global__ void node_grouped_block_smem_kernel(
             /*node_ts_sorted_indices=*/nullptr,
             /*view_timestamps=*/nullptr,
             ptrs.weights, ptrs.weights_size,
-            node_group_begin, G, last_ts, r_group);
+            node_group_begin, G, last_ts, r_group,
+            /*s_cum_weights=*/s_cum_weights);
         if (local_pos == -1) continue;
 
         sample_edge_and_add_hop<IsDirected, Forward>(
@@ -93,12 +113,18 @@ __global__ void node_grouped_block_smem_kernel(
     }
 }
 
-// 64B pad + G_CAP*(size_t + int64_t). Picker-class-driven at compile time.
+// 64 B header + G_CAP × (size_t + int64_t [+ double for weighted]).
+// Picker-class-driven at compile time so index variants don't pay for
+// the cum_weights slot.
 template <RandomPickerType PickerType>
 HOST constexpr inline size_t block_smem_dynamic_smem_bytes() {
-    constexpr size_t kGCap = static_cast<size_t>(
+    constexpr size_t kGCap     = static_cast<size_t>(
         coop_block_smem_g_cap<PickerType>());
-    return size_t{64} + (sizeof(size_t) + sizeof(int64_t)) * kGCap;
+    constexpr bool   kIsWeight =
+        !random_pickers::is_index_based_picker_v<PickerType>;
+    constexpr size_t kPerGroupBytes =
+        sizeof(size_t) + sizeof(int64_t) + (kIsWeight ? sizeof(double) : 0);
+    return size_t{64} + kPerGroupBytes * kGCap;
 }
 
 template <bool IsDirected, bool Forward>

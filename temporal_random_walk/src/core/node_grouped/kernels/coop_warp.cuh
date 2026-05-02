@@ -48,13 +48,18 @@ __global__ void node_grouped_warp_smem_kernel(
     const int    G                = static_cast<int>(node_group_end - node_group_begin);
     const size_t node_edge_end    = ptrs.node_edge_offsets[node_id + 1];
 
-    constexpr int kGCap = coop_warp_smem_g_cap<EdgePickerType>();
+    constexpr int  kGCap     = coop_warp_smem_g_cap<EdgePickerType>();
+    constexpr bool kIsWeight =
+        !random_pickers::is_index_based_picker_v<EdgePickerType>;
     constexpr size_t kHeaderBytes        = 64;
     constexpr size_t kGroupOffsetsOffset = kHeaderBytes;
     constexpr size_t kFirstTsOffset      =
         kGroupOffsetsOffset + sizeof(size_t) * kGCap;
-    constexpr size_t kPerWarpBytes =
+    constexpr size_t kCumWeightsOffset   =
         kFirstTsOffset + sizeof(int64_t) * kGCap;
+    constexpr size_t kPerWarpBytes       = kIsWeight
+        ? kCumWeightsOffset + sizeof(double) * kGCap
+        : kFirstTsOffset    + sizeof(int64_t) * kGCap;
 
     extern __shared__ unsigned char s_pool[];
     unsigned char* const s_my =
@@ -63,15 +68,22 @@ __global__ void node_grouped_warp_smem_kernel(
         reinterpret_cast<size_t*>(s_my + kGroupOffsetsOffset);
     int64_t* const s_first_ts      =
         reinterpret_cast<int64_t*>(s_my + kFirstTsOffset);
+    double* const  s_cum_weights   = kIsWeight
+        ? reinterpret_cast<double*>(s_my + kCumWeightsOffset)
+        : nullptr;
 
     // Cooperative preload (stride 32) kills the 3-deep dependent load
-    // chain at search time.
+    // chain at search time. Weighted pickers also preload cum_weights
+    // so the binary search runs against smem.
     for (int p = lane_id; p < G; p += 32) {
         const size_t ts_group_offset =
             ptrs.node_ts_groups_offsets[node_group_begin + p];
         s_group_offsets[p] = ts_group_offset;
         s_first_ts[p] =
             view.timestamps[ptrs.node_ts_sorted_indices[ts_group_offset]];
+        if constexpr (kIsWeight) {
+            s_cum_weights[p] = ptrs.weights[node_group_begin + p];
+        }
     }
     __syncwarp();
 
@@ -94,7 +106,8 @@ __global__ void node_grouped_warp_smem_kernel(
             /*node_ts_sorted_indices=*/nullptr,
             /*view_timestamps=*/nullptr,
             ptrs.weights, ptrs.weights_size,
-            node_group_begin, G, last_ts, r_group);
+            node_group_begin, G, last_ts, r_group,
+            /*s_cum_weights=*/s_cum_weights);
         if (local_pos == -1) continue;
 
         sample_edge_and_add_hop<IsDirected, Forward>(
@@ -104,13 +117,18 @@ __global__ void node_grouped_warp_smem_kernel(
     }
 }
 
-// Per-warp panel × (block_dim/32). Per-warp footprint is compile-time.
+// Per-warp panel × (block_dim/32). Per-warp footprint is compile-time;
+// weighted variants reserve an extra 8 B/group for cum_weights.
 template <RandomPickerType PickerType>
 HOST inline size_t warp_smem_dynamic_smem_bytes(const dim3& block_dim) {
-    constexpr size_t kGCap = static_cast<size_t>(
+    constexpr size_t kGCap     = static_cast<size_t>(
         coop_warp_smem_g_cap<PickerType>());
+    constexpr bool   kIsWeight =
+        !random_pickers::is_index_based_picker_v<PickerType>;
+    constexpr size_t kPerGroupBytes =
+        sizeof(size_t) + sizeof(int64_t) + (kIsWeight ? sizeof(double) : 0);
     constexpr size_t kPerWarp =
-        size_t{64} + (sizeof(size_t) + sizeof(int64_t)) * kGCap;
+        size_t{64} + kPerGroupBytes * kGCap;
     return kPerWarp * static_cast<size_t>(block_dim.x >> 5);
 }
 
