@@ -117,23 +117,41 @@ namespace random_pickers {
     // which would be the previous segment's total, garbage for this segment).
     // Without this, any weighted pick starting exactly at a node boundary
     // degenerates to "always pick the last group of the node."
+    //
+    // smem_weights: optional smem-resident slice of `weights`, covering
+    // `weights[slice_start..]`. When non-null, all weights[i] reads are
+    // redirected to smem_weights[i - slice_start]. Used by NG block_smem /
+    // warp_smem coop kernels to avoid the global-memory binary-search cost
+    // on weighted pickers. Caller must guarantee the smem slice spans
+    // [slice_start, group_end). nullptr (default) keeps the original
+    // global-memory path.
     HOST DEVICE inline int pick_random_exponential_weights(
         const double* weights,
         const size_t weights_size,
         const size_t group_start,
         const size_t group_end,
         const double random_number,
-        const size_t slice_start = 0) {
+        const size_t slice_start = 0,
+        const double* smem_weights = nullptr) {
         if (group_start >= group_end || group_end > weights_size) {
             return -1;
         }
 
+        // Comparator: read from smem when available, else global. The branch
+        // is on a kernel-uniform pointer (set once per task), so the compiler
+        // hoists it out of the binary-search loop.
+        auto w_at = [&](const size_t pos) -> double {
+            return smem_weights != nullptr
+                ? smem_weights[pos - slice_start]
+                : weights[pos];
+        };
+
         // Start and end cumulative sums.
         double start_sum = 0.0;
         if (group_start > slice_start) {
-            start_sum = weights[group_start - 1];
+            start_sum = w_at(group_start - 1);
         }
-        const double end_sum = weights[group_end - 1];
+        const double end_sum = w_at(group_end - 1);
 
         if (end_sum < start_sum) {
             return -1;
@@ -142,12 +160,12 @@ namespace random_pickers {
         const double random_val = start_sum + random_number * (end_sum - start_sum);
 
         // Manual lower_bound over weights[group_start..group_end). Returns
-        // the iterator offset within weights.
+        // the iterator offset within weights (global coordinates).
         size_t lo = group_start;
         size_t hi = group_end;
         while (lo < hi) {
             const size_t mid = lo + ((hi - lo) >> 1);
-            if (weights[mid] < random_val) {
+            if (w_at(mid) < random_val) {
                 lo = mid + 1;
             } else {
                 hi = mid;
@@ -198,6 +216,11 @@ namespace random_pickers {
     // slice_start: see pick_random_exponential_weights. Default 0 covers
     // global / single-CDF callers; per-node (piecewise) callers must pass
     // node_group_begin.
+    //
+    // smem_weights: optional smem-resident slice of `weights` covering
+    // [slice_start, ...]. Forwarded to pick_random_exponential_weights;
+    // see that function's docstring. nullptr (default) preserves the
+    // original global-memory path.
     HOST DEVICE inline int pick_using_weight_based_picker(
         const RandomPickerType random_picker,
         const double* weights,
@@ -205,14 +228,15 @@ namespace random_pickers {
         const size_t group_start,
         const size_t group_end,
         const double random_number,
-        const size_t slice_start = 0) {
+        const size_t slice_start = 0,
+        const double* smem_weights = nullptr) {
         if (random_picker != RandomPickerType::ExponentialWeight &&
             random_picker != RandomPickerType::TemporalNode2Vec) {
             return -1;
         }
         return pick_random_exponential_weights(
             weights, weights_size, group_start, group_end, random_number,
-            slice_start);
+            slice_start, smem_weights);
     }
 }
 

@@ -134,6 +134,15 @@ namespace temporal_graph {
     // group_start-1). slice_global_begin is the origin offset of this
     // slice in cum_weights; the helper converts local positions to global
     // for the picker and back for the return value.
+    //
+    // s_cum_weights: optional smem-resident slice of `cum_weights`,
+    // covering `cum_weights[slice_global_begin..slice_global_begin + G)`
+    // — same span as the slice the helper already operates on. When
+    // non-null and the picker is weighted, the picker's binary search and
+    // boundary reads are redirected to smem (1 cycle/probe instead of one
+    // dependent global load). nullptr (default) keeps the original
+    // global-memory path. No effect on index pickers (they don't use
+    // cum_weights at all).
     template <bool Forward, RandomPickerType PickerType>
     HOST DEVICE inline long find_group_pos_slice(
         const size_t*  group_offsets,
@@ -145,7 +154,8 @@ namespace temporal_graph {
         const size_t   slice_global_begin,
         const int      G,
         const int64_t  timestamp,
-        const double   r_group) {
+        const double   r_group,
+        const double*  s_cum_weights = nullptr) {
 
         int valid_begin = 0;
         int valid_end   = G;
@@ -176,7 +186,8 @@ namespace temporal_graph {
             const int global_pos = random_pickers::pick_using_weight_based_picker(
                 PickerType, cum_weights, cum_weights_size,
                 g_begin, g_end, r_group,
-                /*slice_start=*/slice_global_begin);
+                /*slice_start=*/slice_global_begin,
+                /*smem_weights=*/s_cum_weights);
             if (global_pos == -1) return -1;
             return static_cast<long>(global_pos) -
                    static_cast<long>(slice_global_begin);
