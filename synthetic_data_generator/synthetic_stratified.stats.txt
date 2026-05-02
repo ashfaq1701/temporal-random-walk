@@ -1,19 +1,19 @@
 # Synthetic stratified graph stats
-total_nodes  = 24,600
-total_edges  = 27,000,000
+total_nodes  = 37,000
+total_edges  = 51,000,000
 ts_min       = 0
-ts_max       = 975528
-ts_median    = 462542
+ts_max       = 979157
+ts_median    = 465187
 
-[mega] sampled 50 of 600 nodes
+[mega] sampled 50 of 1000 nodes
   G  min/median/max = 2000 / 2000 / 2000
-  degree (first 10 sampled): min=25000 median=25000 max=25000
+  degree (first 10 sampled): min=30000 median=30000 max=30000
 
-[warm] sampled 50 of 4000 nodes
-  G  min/median/max = 298 / 300 / 300
-  degree (first 10 sampled): min=2500 median=2500 max=2500
+[warm] sampled 50 of 6000 nodes
+  G  min/median/max = 299 / 300 / 300
+  degree (first 10 sampled): min=3000 median=3000 max=3000
 
-[tail] sampled 50 of 20000 nodes
+[tail] sampled 50 of 30000 nodes
   G  min/median/max = 10 / 10 / 10
   degree (first 10 sampled): min=100 median=100 max=100
 
