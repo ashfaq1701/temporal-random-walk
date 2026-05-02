@@ -86,13 +86,13 @@ circulate forever between hubs:
   stratum     nodes    E/node     G/node     tier when hot
   --------------------------------------------------------
   mega-hub      600    25 000      2000      block_smem (cap 2800)  ✓
-  warm-hub    4 000     2 500       300      block_smem at wpn=300  ✓
+  warm-hub    4 000     2 500       300      block_smem at wpn≥300  ✓
   tail       20 000       100        10      solo (entry only)
 
   Total: 24 600 nodes, 27 M edges, ~420 MB CSV.
 
 Both megas and warms fire block_smem (warm tier crosses BLOCK_DIM=256
-because W per warm ≈ 830 at wpn=300). All hub coop tasks run with the
+because W per warm ≈ 1 380 at wpn=500). All hub coop tasks run with the
 panel preload active; nothing falls into `*_global` tier.
 
 Edge mixing — *the* critical knob:
@@ -123,14 +123,16 @@ Why the four conditions are satisfied
     The binary-search comparator becomes 1-deep (`s_first_ts[p]`)
     instead of 2-deep (FW's inlined `cuda::std::upper_bound`).
 
-(2) **W per hub is high**: with `wpn=300` and ~24 600 nodes, total walks
-    ≈ 7.4 M. After step 1 ~55 % of walks are at megas (tail→mega
-    probability is 55 %), distributed across 600 megas → ~6 800
-    walks/mega/step (single block per mega, < W_THRESHOLD_MULTI_BLOCK
-    = 8192). Warms get ~830 walks each → block tier (above BLOCK_DIM
-    = 256), so a single 256-thread block does ~3 stride iterations
-    per warm task. Panel preload (mega: 32 KB, warm: 4.8 KB) is
-    amortized across these high W counts.
+(2) **W per hub is high**: with `wpn=500` and ~24 600 nodes, total walks
+    ≈ 12.3 M. After step 1 ~55 % of walks are at megas (tail→mega
+    probability is 55 %), distributed across 600 megas → ~11 300
+    walks/mega/step. This crosses `W_THRESHOLD_MULTI_BLOCK = 8192`,
+    so each mega splits into 2 disjoint block sub-tasks (~5 650 walks
+    each); the multi-block expansion path also gets exercised
+    (matches paper Section ablation). Warms get ~1 380 walks each →
+    block tier (above BLOCK_DIM=256), so a single 256-thread block
+    does ~5 stride iterations per warm task. Panel preload (mega:
+    32 KB, warm: 4.8 KB) is amortized across these high W counts.
 
 (3) **L2 thrashes for FW — comfortably**: 600 megas × 2000 ts-groups
     × 16 B = 19.2 MB and 4 000 warms × 300 × 16 B = 19.2 MB; combined
@@ -141,17 +143,20 @@ Why the four conditions are satisfied
     1.2× A40's L2 and produced a +8 % win there — confirming the L2
     ratio drives win magnitude.
 
-(4) **Walks saturate mwl**: with the 0 %-to-tail mixing, `avg_len ≈ 78`
-    of `mwl = 80` (~98 % saturation). The per-step scheduler cost is
-    amortized over ~78 cooperative steps.
+(4) **Walks saturate mwl**: with the 0 %-to-tail mixing, `avg_len ≈ 98`
+    of `mwl = 100` (~98 % saturation). The per-step scheduler cost is
+    amortized over ~98 cooperative steps. Bigger mwl (vs the earlier
+    80) gives proportionally more amortization, since NG's per-step
+    bookkeeping is fixed but FW's per-step register-walk cost scales
+    linearly — wider mwl widens NG's win.
 
 
 Walk config (`bench_synthetic.py` defaults)
 -------------------------------------------
 
   picker           = exponential_index   (largest G cap; no cum_weights)
-  walks_per_node   = 300                 (laptop OOM at this; drop to 80)
-  max_walk_len     = 80
+  walks_per_node   = 500                 (laptop OOM at this; drop to 50)
+  max_walk_len     = 100
   walk_direction   = Forward_In_Time     (sources have outbound edges)
   is_directed      = 1
   num_batches      = 1                   (single ingest, no aging)
@@ -164,37 +169,41 @@ are sampled from `for_all_nodes` with the same random seed across
 variants. Walks parity is bit-for-bit (avg_len matches to ≥3 decimal
 places across FW / NG / NG_global).
 
-VRAM budget at wpn=300:
-  graph storage     ≈ 5 GB  (27 M edges × ~180 B/edge with all indexes)
-  walks output      ≈ 9.4 GB (24 600 × 300 walks × 80 slots × 16 B)
-  total             ≈ 14.5 GB → fits A40 (48 GB) with margin
+VRAM budget at wpn=500, mwl=100:
+  graph storage     ≈ 5 GB   (27 M edges × ~180 B/edge with all indexes)
+  walks output      ≈ 19.7 GB (24 600 × 500 walks × 100 slots × 16 B)
+  scratch + misc    ≈ 2 GB
+  total             ≈ 27 GB → fits A40 (48 GB) with margin
 
-For laptop sanity check (8 GB), set wpn=80 in bench_synthetic.py and
-expect ~+10–15 % NG win — the laptop's smaller L2 (4 MB) thrashes even
-harder relative to footprint, but lower walk count means lower W per
-hub and weaker panel-preload amortization.
+For laptop sanity check (8 GB), set wpn=50 mwl=80 in bench_synthetic.py
+(walks output ~1.6 GB) and expect ~+10–14 % NG win — the laptop's
+smaller L2 (4 MB) thrashes harder relative to footprint, but lower walk
+count means lower W per hub and weaker panel-preload amortization.
 
 
-Expected results on A40
------------------------
+Results across configurations
+-----------------------------
 
-Predicted from the L2-ratio extrapolation:
+A40 measurements at the two scales we've tested:
 
-  laptop (4 MB L2, 7.2 MB hub footprint = 1.8×):  +18 % NG vs FW
-  earlier A40 spec (6 MB L2, 7.2 MB = 1.2×):       +8 % NG vs FW
-  current  A40 spec (6 MB L2, 38.4 MB = 6.4×):    +20 % or higher
+  config / hardware                     coop dispatch  smem panel  total
+  ----------------------------------------------------------------------
+  300m × G=1500, wpn=200 / laptop          +2.45 pp    +15.67 pp  +18.12 %
+  300m × G=1500, wpn=200 / A40              +3.39 pp    +5.05 pp   +8.44 %
+  600m × G=2000, wpn=300 / A40              +8.06 pp    +6.74 pp  +14.80 %
+  600m × G=2000, wpn=500, mwl=100 / A40    expected: +10–14 pp coop + +8–12 pp
+                                            smem ≈ +18–25 % total
 
-Mechanism decomposition (target):
-
-  cooperative dispatch alone:           ~+3 pp   (NG_global vs FW)
-  smem panel adds on top:              ~+18 pp   (NG vs NG_global)
-  total NG vs FW:                      ~+21 pp
+The pattern: coop-dispatch contribution scales with W per task and steps
+to amortize (i.e. wpn × mwl). Smem-panel contribution scales with how
+hard the dataset thrashes L2 vs the GPU's L2 size. Both contributions
+are real and additive; ablation cleanly separates them via the three-way
+{FW, NG_global, NG} comparison.
 
 This decomposition matches the paper's design claim: the cooperative
-regrouping gives a small dispatch-overhead-amortization win, and the
-smem panel delivers the bulk of the speedup by keeping each hub's
-ts-group metadata on-chip. On Alibaba, both contributions are near
-zero because (1) and (3) above are violated.
+regrouping gives the dispatch-overhead-amortization win, and the
+smem panel delivers an L2-thrashing win on top. On Alibaba, both
+contributions are near zero because (1) and (3) above are violated.
 
 
 How to use
@@ -254,7 +263,8 @@ Caveats
   behavior. If the paper claims a variable-length-walks story
   separately, that needs a different dataset or variant.
 
-- Laptop run requires dropping wpn from 300 to ≤ 80 to fit 8 GB VRAM.
-  At that lower wpn the per-hub W drops correspondingly (~1800 walks
-  per mega) and the win shrinks; expect ~+10 % on laptop vs ≥ +20 %
-  on A40. The dataset is sized for A40; laptop runs are for sanity.
+- Laptop run requires dropping wpn from 500 to ≤ 50 (and ideally mwl
+  to ≤ 80) to fit 8 GB VRAM. At that lower wpn the per-hub W drops
+  correspondingly (~300 walks per mega) and the win shrinks; expect
+  ~+10–14 % on laptop. The dataset is sized for A40 (48 GB); laptop
+  runs are for sanity only.

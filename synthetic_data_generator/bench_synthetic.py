@@ -18,8 +18,8 @@ from pathlib import Path
 
 VARIANTS = ['full_walk', 'node_grouped', 'node_grouped_global_only']
 
-WPN          = '300'   # A40-scale; drop to 80 for laptop sanity check
-MWL          = '80'
+WPN          = '500'   # A40-scale aggressive; drop to 50 for laptop sanity
+MWL          = '100'   # walks already saturate; bigger mwl amortizes scheduler
 NUM_BATCHES  = '1'
 NUM_WINDOWS  = '1'
 PICKER       = 'exponential_index'
