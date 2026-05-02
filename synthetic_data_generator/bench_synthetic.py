@@ -18,7 +18,7 @@ from pathlib import Path
 
 VARIANTS = ['full_walk', 'node_grouped', 'node_grouped_global_only']
 
-WPN          = '200'
+WPN          = '300'   # A40-scale; drop to 80 for laptop sanity check
 MWL          = '80'
 NUM_BATCHES  = '1'
 NUM_WINDOWS  = '1'

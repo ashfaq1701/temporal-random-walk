@@ -4,17 +4,25 @@ Three node strata with controlled G (distinct-timestamp count per node)
 chosen so the cooperative scheduler's smem panel actually fires, and edge
 mixing chosen so walks circulate forever between hubs (saturating mwl).
 
-Final tuning (laptop RTX 2000 Ada, sm_89, 8 GB VRAM):
+Tuning (A40-scale, sm_86, 6 MB L2, 48 GB VRAM):
 
   stratum    nodes    E/node   G/node    smem cap   tier when hot
   ----------------------------------------------------------------
-  mega-hub    300    35_000     1500     2800 idx   block_smem
-  warm-hub   1000     2_000      300      340 idx   warp_smem
-  tail       5000       100       10            -   solo (entry only)
+  mega-hub    600    25_000     2000     2800 idx   block_smem
+  warm-hub   4000     2_500      300     2800 idx   block_smem
+  tail      20000       100       10            -   solo (entry only)
 
-Mega L2 footprint = 300 × 1500 × 16 B = 7.2 MB > 4 MB L2 → FW's binary-search
-metadata thrashes L2; NG's smem panel keeps each block-task's working set in
-fast on-chip memory regardless.
+L2 thrashing — the architecturally critical knob:
+  mega metadata = 600  × 2000 × 16 B = 19.2 MB  (3.2× A40 L2)
+  warm metadata = 4000 ×  300 × 16 B = 19.2 MB  (3.2× A40 L2)
+  combined hub metadata footprint     = 38.4 MB  (6.4× A40 L2)
+
+Both megas and warms (with wpn=300, W per warm ~830 > BLOCK_DIM=256) fire
+block_smem, pushing their per-task metadata far past A40's 6 MB L2. FW's
+binary-search probes pay DRAM; NG's smem panel keeps each block-task's
+~32 KB working set on-chip regardless. The previous tuning (300 megas,
+7.2 MB) only marginally exceeded A40's L2 (1.2× L2) which is why the win
+shrunk from +18 % on laptop (4 MB L2) to +8 % on A40.
 
 Edge mixing keeps walks at hubs once they arrive (no hub→tail outflow):
   Mega: 85% mega / 15% warm / 0% tail
@@ -25,11 +33,9 @@ Per-node timestamps are sampled uniformly from [0, T_MAX] without
 replacement, so G is exactly the configured value per stratum. Each edge's
 timestamp is drawn (with replacement) from the source node's G timestamps.
 
-With wpn=200 mwl=80 ExpIdx Forward (run via ablation_streaming):
-    walks saturate mwl (avg_len ≈ 78 of 80)
-    NG vs FW:        +19.5 % (3-rep mean ± 2.2 % std)
-    NG_global vs FW:  +4.1 %   (cooperative dispatch alone)
-    smem contribution: ~15 pp on top of the +4 % dispatch gain
+Total: ~27 M edges, ~24 600 nodes, ~420 MB CSV. Fits A40 (48 GB)
+comfortably; the laptop (8 GB) will OOM at wpn=300 — drop wpn to 80 in
+bench_synthetic.py for a laptop sanity check.
 
 Output: CSV with header `u,i,ts` sorted by ts ascending, plus a stats file.
 """
@@ -41,15 +47,16 @@ from pathlib import Path
 
 import numpy as np
 
-# Strata sizes / edges / G targets — tuned for NG block_smem + warp_smem tiers.
-# Iter 3: 500 mega-hubs so the per-graph mega metadata footprint
-# (500*1500*16B = 12 MB) exceeds L2 (4 MB on RTX 2000 Ada). FW's binary
-# searches stop being L2-resident and pay DRAM; NG's smem panel keeps
-# each task's working set in fast on-chip memory regardless. W per mega
-# at step 1 stays above BLOCK_DIM=256 so block_smem still fires.
-N_MEGA, E_MEGA, G_MEGA =    300,  35_000, 1500
-N_WARM, E_WARM, G_WARM =  1_000,   2_000,  300
-N_TAIL, E_TAIL, G_TAIL =  5_000,     100,   10
+# Strata sizes / edges / G targets — A40 scale (6 MB L2, sm_86).
+# Pushed past 3× L2 on both mega and warm hub metadata (38 MB combined,
+# 6.4× A40 L2) so FW's binary-search probes are forced to DRAM on every
+# probe. NG's smem panel pays a one-time 32 KB on-chip preload per block
+# task, then runs binary searches against smem. W per mega ≈ 6800 walks
+# at step 1 (single block per mega, < W_THRESHOLD_MULTI_BLOCK=8192). W
+# per warm ≈ 830 (block tier, well above BLOCK_DIM=256).
+N_MEGA, E_MEGA, G_MEGA =    600,  25_000, 2000
+N_WARM, E_WARM, G_WARM =  4_000,   2_500,  300
+N_TAIL, E_TAIL, G_TAIL = 20_000,     100,   10
 
 # Mixing matrix: row = source stratum, col = target stratum
 # (mega, warm, tail) probabilities per source.
