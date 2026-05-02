@@ -22,11 +22,14 @@ WPN          = '500'   # A40-scale aggressive; drop to 50 for laptop sanity
 MWL          = '100'   # walks already saturate; bigger mwl amortizes scheduler
 NUM_BATCHES  = '1'
 NUM_WINDOWS  = '1'
-PICKER       = 'exponential_index'
+PICKER_DEFAULT = 'exponential_index'
 IS_DIRECTED  = '1'
 TIMESCALE    = '-1'
 BLOCK_DIM    = '256'
 W_THR_WARP   = '4'
+
+PICKER_CHOICES = ['exponential_index', 'exponential_weight',
+                  'uniform', 'linear']
 
 THROUGHPUT_RE = re.compile(r'^Throughput:\s+([\d.eE+-]+)\s+walks/sec', re.MULTILINE)
 STEPS_RE      = re.compile(r'^Steps/sec:\s+([\d.eE+-]+)\s+steps/sec',  re.MULTILINE)
@@ -50,6 +53,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--csv', default=str(here / 'synthetic_stratified.csv'))
     ap.add_argument('--reps', type=int, default=3)
+    ap.add_argument('--picker', default=PICKER_DEFAULT, choices=PICKER_CHOICES,
+                    help='Hop picker. exponential_weight exercises the '
+                         'cum_weights smem panel; index pickers exercise '
+                         'first_ts only.')
     ap.add_argument('--binary',
                     default=str(here.parent / 'build' / 'bin' / 'ablation_streaming'))
     args = ap.parse_args()
@@ -64,7 +71,7 @@ def main():
     print(f'# binary : {binary}')
     print(f'# csv    : {csv_path}')
     print(f'# config : wpn={WPN} mwl={MWL} nb={NUM_BATCHES} nw={NUM_WINDOWS} '
-          f'picker={PICKER} dir=Forward')
+          f'picker={args.picker} dir=Forward')
     print(f'# reps   : {args.reps}')
 
     results = {v: [] for v in VARIANTS}
@@ -72,7 +79,7 @@ def main():
         print(f'\n=== {variant} ===', flush=True)
         for rep in range(args.reps):
             argv = [str(binary), str(csv_path),
-                    '1', PICKER, variant, IS_DIRECTED,
+                    '1', args.picker, variant, IS_DIRECTED,
                     WPN, NUM_BATCHES, NUM_WINDOWS, MWL, TIMESCALE,
                     BLOCK_DIM, W_THR_WARP]
             proc = subprocess.run(argv, capture_output=True,

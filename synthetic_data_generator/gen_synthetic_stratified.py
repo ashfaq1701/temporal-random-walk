@@ -6,23 +6,31 @@ mixing chosen so walks circulate forever between hubs (saturating mwl).
 
 Tuning (A40-scale, sm_86, 6 MB L2, 48 GB VRAM):
 
-  stratum    nodes    E/node   G/node    smem cap   tier when hot
-  ----------------------------------------------------------------
-  mega-hub    600    25_000     2000     2800 idx   block_smem
-  warm-hub   4000     2_500      300     2800 idx   block_smem
-  tail      20000       100       10            -   solo (entry only)
+  stratum    nodes    E/node   G/node   index cap   weighted cap   tier
+  -------------------------------------------------------------------------
+  mega-hub    600    25_000     1500     2800       1800           block_smem
+  warm-hub   4000     2_500      300     2800       1800           block_smem
+  tail      20000       100       10            -          -       solo (entry)
+
+Both pickers (ExponentialIndex and ExponentialWeight) hit the smem-fit
+cap on every hub. With Stage 2 of cum_weights preload, block_smem fires
+the s_first_ts panel for index pickers and additionally the
+s_cum_weights panel for weighted pickers — both binary searches go to
+smem instead of global.
 
 L2 thrashing — the architecturally critical knob:
-  mega metadata = 600  × 2000 × 16 B = 19.2 MB  (3.2× A40 L2)
-  warm metadata = 4000 ×  300 × 16 B = 19.2 MB  (3.2× A40 L2)
-  combined hub metadata footprint     = 38.4 MB  (6.4× A40 L2)
+  mega metadata (first_ts)   = 600  × 1500 × 16 B = 14.4 MB  (2.4× A40 L2)
+  warm metadata (first_ts)   = 4000 ×  300 × 16 B = 19.2 MB  (3.2× A40 L2)
+  combined first_ts footprint                     = 33.6 MB  (5.6× A40 L2)
+  cum_weights (weighted only) = 600  × 1500 ×  8 B =  7.2 MB
+                              + 4000 ×  300 ×  8 B =  9.6 MB = 16.8 MB
+  combined weighted-picker DRAM footprint         = 50.4 MB  (8.4× A40 L2)
 
-Both megas and warms (with wpn=300, W per warm ~830 > BLOCK_DIM=256) fire
-block_smem, pushing their per-task metadata far past A40's 6 MB L2. FW's
-binary-search probes pay DRAM; NG's smem panel keeps each block-task's
-~32 KB working set on-chip regardless. The previous tuning (300 megas,
-7.2 MB) only marginally exceeded A40's L2 (1.2× L2) which is why the win
-shrunk from +18 % on laptop (4 MB L2) to +8 % on A40.
+FW's binary-search probes pay DRAM on every probe; NG's smem panel
+keeps each block-task's working set on-chip regardless. The previous
+tuning (300 megas, 7.2 MB) only marginally exceeded A40's L2 (1.2× L2)
+which is why the win shrunk from +18 % on laptop (4 MB L2) to +8 % on
+A40.
 
 Edge mixing keeps walks at hubs once they arrive (no hub→tail outflow):
   Mega: 85% mega / 15% warm / 0% tail
@@ -48,13 +56,18 @@ from pathlib import Path
 import numpy as np
 
 # Strata sizes / edges / G targets — A40 scale (6 MB L2, sm_86).
-# Pushed past 3× L2 on both mega and warm hub metadata (38 MB combined,
-# 6.4× A40 L2) so FW's binary-search probes are forced to DRAM on every
-# probe. NG's smem panel pays a one-time 32 KB on-chip preload per block
-# task, then runs binary searches against smem. W per mega ≈ 6800 walks
-# at step 1 (single block per mega, < W_THRESHOLD_MULTI_BLOCK=8192). W
-# per warm ≈ 830 (block tier, well above BLOCK_DIM=256).
-N_MEGA, E_MEGA, G_MEGA =    600,  25_000, 2000
+# Mega G=1500 fits BOTH the index smem cap (G_THRESHOLD_BLOCK_INDEX=2800)
+# and the weighted smem cap (G_THRESHOLD_BLOCK_WEIGHT=1800). With G=1500,
+# block_smem fires for both picker classes — index variants get the
+# s_first_ts smem panel, weighted variants additionally get the
+# s_cum_weights smem panel (Stage 2 of cum_weights preload).
+#
+# Mega L2 footprint = 600 × 1500 × 16 B = 14.4 MB (2.4× A40 L2). FW's
+# binary-search probes still pay DRAM on every probe; NG's smem panel
+# keeps each block-task's working set on-chip. W per mega ≈ 6800 walks
+# at wpn=500 (single block per mega, < W_THRESHOLD_MULTI_BLOCK=8192).
+# W per warm ≈ 830 (block tier, above BLOCK_DIM=256).
+N_MEGA, E_MEGA, G_MEGA =    600,  25_000, 1500
 N_WARM, E_WARM, G_WARM =  4_000,   2_500,  300
 N_TAIL, E_TAIL, G_TAIL = 20_000,     100,   10
 

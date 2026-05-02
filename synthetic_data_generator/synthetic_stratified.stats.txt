@@ -3,14 +3,14 @@ total_nodes  = 24,600
 total_edges  = 27,000,000
 ts_min       = 0
 ts_max       = 975528
-ts_median    = 462542
+ts_median    = 462029
 
 [mega] sampled 50 of 600 nodes
-  G  min/median/max = 2000 / 2000 / 2000
+  G  min/median/max = 1500 / 1500 / 1500
   degree (first 10 sampled): min=25000 median=25000 max=25000
 
 [warm] sampled 50 of 4000 nodes
-  G  min/median/max = 298 / 300 / 300
+  G  min/median/max = 299 / 300 / 300
   degree (first 10 sampled): min=2500 median=2500 max=2500
 
 [tail] sampled 50 of 20000 nodes

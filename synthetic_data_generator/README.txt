@@ -16,7 +16,8 @@ contribution and a large smem-panel contribution.
 
 The dataset is the *complement* of Alibaba: where Alibaba puts most active
 hubs above the smem-fit cap (G > 2800), this synthetic puts every hub
-inside the cap (G ≤ 2000) so the panel preload mechanism actually fires.
+inside the cap (G ≤ 1500) so the panel preload mechanism actually fires
+for both index and weighted pickers (the weighted cap is 1800).
 The cooperative-dispatch contribution and the smem-panel contribution
 separate cleanly when we compare NODE_GROUPED vs NODE_GROUPED_GLOBAL_ONLY.
 
@@ -52,7 +53,7 @@ NG's fixed per-step scheduler tax. Four conditions must all hold:
 2. **W per hub must be high enough that the panel preload amortizes.**
    The panel preload cost is O(G) memory reads per task. The per-walk
    savings is O(log G × W). Net benefit is positive when `W × log(G) ≫
-   G`, i.e. W in the thousands when G is in [1000, 2000]. On this
+   G`, i.e. W in the thousands when G is in [500, 2000]. On this
    dataset W ≈ 3 500 walks per mega-hub block-task per step.
 
 3. **Hub metadata footprint must exceed L2 — by a lot.** When the per-hub
@@ -86,12 +87,16 @@ circulate forever between hubs:
 
   stratum     nodes    E/node     G/node     tier when hot
   --------------------------------------------------------
-  mega-hub      600    25 000      2000      block_smem (cap 2800)  ✓
-  warm-hub    4 000     2 500       300      block_smem at wpn≥300  ✓
+  mega-hub      600    25 000      1500      block_smem ✓ (both pickers)
+  warm-hub    4 000     2 500       300      block_smem at wpn≥300 ✓
   tail       20 000       100        10      solo (entry only)
 
   Total: 24 600 nodes, 27 M edges, ~420 MB CSV.
 
+G=1500 fits both the index cap (`G_THRESHOLD_BLOCK_INDEX = 2800`) and the
+weighted cap (`G_THRESHOLD_BLOCK_WEIGHT = 1800`). For weighted pickers,
+the smem panel additionally preloads `s_cum_weights[G]` (Stage 2 of
+cum_weights preload) so the picker's binary search runs against smem.
 Both megas and warms fire block_smem (warm tier crosses BLOCK_DIM=256
 because W per warm ≈ 1 380 at wpn=500). All hub coop tasks run with the
 panel preload active; nothing falls into `*_global` tier.
@@ -118,11 +123,14 @@ good — uniform pick within a group is the cheap part).
 Why the four conditions are satisfied
 -------------------------------------
 
-(1) **G fits the cap**: mega G=2000 ≤ 2800 (block_smem index cap),
-    warm G=300 ≤ 2800. Verified in `synthetic_stratified.stats.txt`.
-    Every coop task at a hub fires `*_smem` (no `*_global` fallback).
-    The binary-search comparator becomes 1-deep (`s_first_ts[p]`)
-    instead of 2-deep (FW's inlined `cuda::std::upper_bound`).
+(1) **G fits both caps**: mega G=1500 ≤ 1800 (block_smem weighted cap)
+    ≤ 2800 (block_smem index cap). Warm G=300 ≤ 1800. Verified in
+    `synthetic_stratified.stats.txt`. Every coop task at a hub fires
+    `*_smem` (no `*_global` fallback) for both index and weighted
+    pickers. The binary-search comparator becomes 1-deep (`s_first_ts[p]`)
+    instead of 2-deep (FW's inlined `cuda::std::upper_bound`). For
+    weighted pickers, the cum_weights binary search additionally moves
+    from global to smem (Stage 2 of cum_weights preload).
 
 (2) **W per hub is high**: with `wpn=500` and ~24 600 nodes, total walks
     ≈ 12.3 M. After step 1 ~55 % of walks are at megas (tail→mega
@@ -133,13 +141,17 @@ Why the four conditions are satisfied
     (matches paper Section ablation). Warms get ~1 380 walks each →
     block tier (above BLOCK_DIM=256), so a single 256-thread block
     does ~5 stride iterations per warm task. Panel preload (mega:
-    32 KB, warm: 4.8 KB) is amortized across these high W counts.
+    24 KB index / 36 KB weighted, warm: 4.8 KB index / 7.2 KB weighted)
+    is amortized across these high W counts.
 
-(3) **L2 thrashes for FW — comfortably**: 600 megas × 2000 ts-groups
-    × 16 B = 19.2 MB and 4 000 warms × 300 × 16 B = 19.2 MB; combined
-    hub metadata = 38.4 MB vs A40's 6 MB L2 = 6.4× L2. FW's
-    binary-search metadata pays DRAM on every probe; NG's smem panel
-    keeps each block-task's ~32 KB working set on-chip regardless.
+(3) **L2 thrashes for FW — comfortably**: 600 megas × 1500 ts-groups
+    × 16 B = 14.4 MB and 4 000 warms × 300 × 16 B = 19.2 MB; combined
+    first_ts metadata = 33.6 MB vs A40's 6 MB L2 = 5.6× L2. For
+    weighted pickers FW additionally pays the cum_weights array (8 B
+    per group): 600 × 1500 × 8 = 7.2 MB + 4000 × 300 × 8 = 9.6 MB =
+    16.8 MB more, totalling 50.4 MB DRAM pressure (8.4× A40 L2).
+    FW's binary-search probes pay DRAM on every probe; NG's smem
+    panel keeps each block-task's working set on-chip regardless.
     The earlier laptop spec (300 megas × 1500 G = 7.2 MB) hit only
     1.2× A40's L2 and produced a +8 % win there — confirming the L2
     ratio drives win magnitude.
@@ -152,10 +164,10 @@ Why the four conditions are satisfied
     linearly — wider mwl widens NG's win.
 
 
-Walk config (`bench_synthetic.py` defaults)
--------------------------------------------
+Walk config (`bench_synthetic.py` / `profile_synthetic.py` defaults)
+--------------------------------------------------------------------
 
-  picker           = exponential_index   (largest G cap; no cum_weights)
+  picker           = exponential_index   (--picker exponential_weight to flip)
   walks_per_node   = 500                 (laptop OOM at this; drop to 50)
   max_walk_len     = 100
   walk_direction   = Forward_In_Time     (sources have outbound edges)
@@ -164,6 +176,11 @@ Walk config (`bench_synthetic.py` defaults)
   num_windows      = 1
   block_dim        = 256
   w_threshold_warp = 4
+
+Both bench / profile scripts accept `--picker {exponential_index,
+exponential_weight, uniform, linear}`. With G_MEGA=1500 the dataset
+exercises block_smem on every hub for both pickers, so swapping the
+picker gives a clean A/B on the smem-cum_weights mechanism (Stage 2).
 
 Ingest mode is single-batch: the entire CSV is loaded once, then walks
 are sampled from `for_all_nodes` with the same random seed across
@@ -177,29 +194,42 @@ VRAM budget at wpn=500, mwl=100:
   total             ≈ 27 GB → fits A40 (48 GB) with margin
 
 For laptop sanity check (8 GB), set wpn=50 mwl=80 in bench_synthetic.py
-(walks output ~1.6 GB) and expect ~+10–14 % NG win — the laptop's
-smaller L2 (4 MB) thrashes harder relative to footprint, but lower walk
-count means lower W per hub and weaker panel-preload amortization.
+(walks output ~1.6 GB).
 
 
-Results across configurations
------------------------------
+Results — laptop at G_MEGA=1500, wpn=50, mwl=80, 3 reps each
+------------------------------------------------------------
 
-A40 measurements at the two scales we've tested:
+  picker             FW (M-s/s)    NG (M-s/s)    NG_global  vs FW    smem
+  -----------------------------------------------------------------------
+  exponential_index  55.62 ± 0.42  68.49 ± 0.41  61.74      +23.13%  +12.13 pp
+  exponential_weight 47.50 ± 0.69  67.75 ± 0.65  60.87      +42.64%  +14.48 pp
+
+The weighted picker shows the bigger NG vs FW gain because:
+  - FW pays DRAM for both first_ts (33.6 MB metadata) AND cum_weights
+    (16.8 MB additional) binary searches per probe.
+  - NG keeps both panels in smem; the cum_weights smem panel (Stage 2)
+    contributes ~+2.4 pp on top of the first_ts smem panel.
+  - The cooperative dispatch contribution (NG_global vs FW) is also
+    bigger on weighted (+28.16 % vs +11.00 %), because regrouping
+    benefits compound with the larger DRAM-pressure FW pays.
+
+A40 measurements across iterations (index picker only):
 
   config / hardware                     coop dispatch  smem panel  total
   ----------------------------------------------------------------------
   300m × G=1500, wpn=200 / laptop          +2.45 pp    +15.67 pp  +18.12 %
   300m × G=1500, wpn=200 / A40              +3.39 pp    +5.05 pp   +8.44 %
   600m × G=2000, wpn=300 / A40              +8.06 pp    +6.74 pp  +14.80 %
-  600m × G=2000, wpn=500, mwl=100 / A40    expected: +10–14 pp coop + +8–12 pp
-                                            smem ≈ +18–25 % total
+  600m × G=2000, wpn=500, mwl=100 / A40     +8.37 pp   +10.28 pp  +18.65 %
+  600m × G=1500, wpn=500, mwl=100 / A40    pending (Stage 3 A40 run, both pickers)
 
 The pattern: coop-dispatch contribution scales with W per task and steps
 to amortize (i.e. wpn × mwl). Smem-panel contribution scales with how
-hard the dataset thrashes L2 vs the GPU's L2 size. Both contributions
-are real and additive; ablation cleanly separates them via the three-way
-{FW, NG_global, NG} comparison.
+hard the dataset thrashes L2 vs the GPU's L2 size — and, on weighted
+pickers, additionally benefits from moving cum_weights from DRAM to
+smem. Both contributions are real and additive; ablation cleanly
+separates them via the three-way {FW, NG_global, NG} comparison.
 
 This decomposition matches the paper's design claim: the cooperative
 regrouping gives the dispatch-overhead-amortization win, and the

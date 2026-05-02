@@ -34,15 +34,18 @@ VARIANTS = ['full_walk', 'node_grouped', 'node_grouped_global_only']
 REPS     = 3
 
 # Walk config — matches bench_synthetic.py exactly.
-WPN          = '500'
-MWL          = '100'
-NUM_BATCHES  = '1'
-NUM_WINDOWS  = '1'
-PICKER       = 'exponential_index'
-IS_DIRECTED  = '1'
-TIMESCALE    = '-1'
-BLOCK_DIM    = '256'
-W_THR_WARP   = '4'
+WPN            = '500'
+MWL            = '100'
+NUM_BATCHES    = '1'
+NUM_WINDOWS    = '1'
+PICKER_DEFAULT = 'exponential_index'
+IS_DIRECTED    = '1'
+TIMESCALE      = '-1'
+BLOCK_DIM      = '256'
+W_THR_WARP     = '4'
+
+PICKER_CHOICES = ['exponential_index', 'exponential_weight',
+                  'uniform', 'linear']
 
 # Bucket name → demangled-name substring. Order matters; more specific first.
 # Mirrors alibaba_bench_profiling.py — same kernel names, just exercised
@@ -184,14 +187,14 @@ def extract_kernel_breakdown(db, nvtx_tbl):
     return counts
 
 
-def invoke_nsys(nsys_bin, rep_path, binary, csv_path, variant):
+def invoke_nsys(nsys_bin, rep_path, binary, csv_path, variant, picker):
     # Positional CLI for ablation_streaming (in order):
     #   file use_gpu picker klt is_directed wpn nb nw mwl tsb block_dim wtw
     cmd = [nsys_bin, 'profile', '--trace=cuda,nvtx', '--stats=true',
            '--force-overwrite=true',
            '--output', str(rep_path.with_suffix('')),
            str(binary), str(csv_path),
-           '1', PICKER, variant, IS_DIRECTED,
+           '1', picker, variant, IS_DIRECTED,
            WPN, NUM_BATCHES, NUM_WINDOWS, MWL, TIMESCALE,
            BLOCK_DIM, W_THR_WARP]
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
@@ -211,6 +214,10 @@ def main():
     ap.add_argument('--nsys',    default='nsys')
     ap.add_argument('--rep-dir', default=str(here / 'synthetic_profiling_nsys'))
     ap.add_argument('--out-prefix', default=str(here / 'synthetic_profiling'))
+    ap.add_argument('--picker', default=PICKER_DEFAULT, choices=PICKER_CHOICES,
+                    help='Hop picker. exponential_weight exercises the '
+                         'cum_weights smem panel; index pickers exercise '
+                         'first_ts only.')
     args = ap.parse_args()
 
     binary   = Path(args.binary)
@@ -225,7 +232,7 @@ def main():
     print(f'# nsys       : {args.nsys}')
     print(f'# csv        : {csv_path}')
     print(f'# config     : wpn={WPN} mwl={MWL} nb={NUM_BATCHES} nw={NUM_WINDOWS}'
-          f' picker={PICKER}')
+          f' picker={args.picker}')
     print(f'# reps       : {args.reps}')
     print(f'# rep dir    : {rep_dir}')
     print(f'# out prefix : {args.out_prefix}')
@@ -242,7 +249,7 @@ def main():
             print(f'  rep {rep+1}/{args.reps}: profiling ...', end=' ', flush=True)
             try:
                 wps, sps, avg_len = invoke_nsys(
-                    args.nsys, rep_path, binary, csv_path, variant)
+                    args.nsys, rep_path, binary, csv_path, variant, args.picker)
             except RuntimeError as e:
                 print(f'FAIL: {e}', file=sys.stderr); continue
             throughput[variant].append((wps, sps, avg_len))
