@@ -81,8 +81,18 @@ inline void dispatch_node_grouped_kernel(
                 first_coop_step = 0;
             }
 
+            // Loop bound is `max_walk_len - 1` rather than `max_walk_len`: the final
+            // iteration would write slot max_walk_len (out of bounds) and is already
+            // guarded by an early-return in every pick kernel and in advance_one_walk
+            // (`if (step_number >= max_walk_len - 1) return`). The early-return makes
+            // the last iteration produce no walk output, but the host still pays the
+            // entire NG scheduler pipeline (filter / sort / RLE / partition / expand
+            // + 2 D2H syncs) plus the conditional pick-kernel dispatches. Skipping
+            // the last iteration saves those ~17 launches per walk call (~1–2% on
+            // saturated workloads). Defensive guards in the kernels stay — anyone
+            // calling them directly with step_number = max_walk_len - 1 still no-ops.
             if (use_per_walk_path) {
-                for (int step_number = 1; step_number < max_walk_len; ++step_number) {
+                for (int step_number = 1; step_number < max_walk_len - 1; ++step_number) {
                     NVTX_RANGE_COLORED("NG per-walk step", nvtx_colors::walk_green);
                     dispatch_per_walk_step_kernel<kDir, kFwd>(
                         view, walk_set_view,
@@ -100,7 +110,7 @@ inline void dispatch_node_grouped_kernel(
                         : (kDir ? view.count_ts_group_per_node_inbound
                                 : view.count_ts_group_per_node_outbound);
 
-                for (int step_number = first_coop_step; step_number < max_walk_len; ++step_number) {
+                for (int step_number = first_coop_step; step_number < max_walk_len - 1; ++step_number) {
                     // At step 0 the coop pipeline samples the START edge from
                     // the user-pinned start node, so it must use the
                     // start-picker. Step 1+ uses the regular edge-picker.
