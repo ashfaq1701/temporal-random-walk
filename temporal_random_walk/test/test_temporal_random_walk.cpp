@@ -182,6 +182,14 @@ TYPED_TEST(FilledDirectedTemporalRandomWalkTest, TestNodeFoundTest) {
 
 // Test that the number of random walks generated matches the expected count and checks that no walk exceeds its length.
 // Also test that the system can sample walks of length more than 1.
+//
+// Walks of length exactly 1 are unreachable by the walk-state machine: every start
+// path either (a) fails before writing slot 0 → walk_lens=0 (skipped by the iterator)
+// or (b) writes slot 0 + slot 1 atomically → walk_lens ≥ 2. A length-1 walk is the
+// exact signature of the dead-start prepopulate bug fixed in af1263e
+// (NG's prepopulate_start_slot_kernel previously wrote slot 0 unconditionally even
+// for nodes with no edges in the chosen direction). Strict `> 1` guards against
+// that class of regression.
 TYPED_TEST(FilledDirectedTemporalRandomWalkTest, WalkCountAndLensTest) {
     const auto walk_set = this->temporal_random_walk->get_random_walks_and_times_for_all_nodes(
         MAX_WALK_LEN, &linear_picker_type, 10);
@@ -191,7 +199,8 @@ TYPED_TEST(FilledDirectedTemporalRandomWalkTest, WalkCountAndLensTest) {
     for (auto it = walk_set.walks_begin(); it != walk_set.walks_end(); ++it) {
         const auto& walk = *it;
         EXPECT_LE(walk.size(), MAX_WALK_LEN) << "A walk exceeds the maximum length of " << MAX_WALK_LEN;
-        EXPECT_GT(walk.size(), 0);
+        EXPECT_GT(walk.size(), 1) << "Length-1 walks are unreachable by the walk-state machine — "
+                                  << "this is the dead-start prepopulate bug (af1263e) regressing.";
 
         total_walk_lens += static_cast<int>(walk.size());
     }
