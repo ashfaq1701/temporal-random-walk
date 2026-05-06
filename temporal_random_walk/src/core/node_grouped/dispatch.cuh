@@ -88,6 +88,8 @@ inline void dispatch_node_grouped_kernel(
                         : (kDir ? view.count_ts_group_per_node_inbound
                                 : view.count_ts_group_per_node_outbound);
 
+                const unsigned warps_per_block = block_dim.x / 32u;
+
                 for (int step_number = first_coop_step; step_number < max_walk_len - 1; ++step_number) {
                     // step 0 uses start-picker (samples from start node)
                     const RandomPickerType picker_for_step =
@@ -117,71 +119,32 @@ inline void dispatch_node_grouped_kernel(
                             solo_grid, block_dim, stream);
                     }
 
-                    const unsigned warps_per_block = block_dim.x / 32u;
+                    auto launch_coop_tier = [&](auto dispatcher,
+                                                const NodeGroupedScheduler::TierTaskList& tier,
+                                                const bool is_warp_tier) {
+                        if (tier.num_tasks_host <= 0) return;
+                        dim3 tier_grid;
+                        if (is_warp_tier) {
+                            const size_t blocks =
+                                (static_cast<size_t>(tier.num_tasks_host) + warps_per_block - 1)
+                                / warps_per_block;
+                            tier_grid = dim3(static_cast<unsigned>(blocks));
+                        } else {
+                            tier_grid = dim3(static_cast<unsigned>(tier.num_tasks_host));
+                        }
+                        dispatcher(view, walk_set_view,
+                                   step_outs.sorted_walk_idx,
+                                   tier.nodes, tier.walk_starts, tier.walk_counts,
+                                   tier.num_tasks_device,
+                                   step_number, max_walk_len,
+                                   picker_for_step, base_seed,
+                                   tier_grid, block_dim, stream);
+                    };
 
-                    if (step_outs.warp_smem.num_tasks_host > 0) {
-                        const size_t warp_smem_blocks =
-                            (static_cast<size_t>(step_outs.warp_smem.num_tasks_host)
-                             + warps_per_block - 1) / warps_per_block;
-                        const dim3 warp_smem_grid(static_cast<unsigned>(warp_smem_blocks));
-                        dispatch_node_grouped_warp_smem_kernel<kDir, kFwd>(
-                            view, walk_set_view,
-                            step_outs.sorted_walk_idx,
-                            step_outs.warp_smem.nodes,
-                            step_outs.warp_smem.walk_starts,
-                            step_outs.warp_smem.walk_counts,
-                            step_outs.warp_smem.num_tasks_device,
-                            step_number, max_walk_len,
-                            picker_for_step, base_seed,
-                            warp_smem_grid, block_dim, stream);
-                    }
-
-                    if (step_outs.warp_global.num_tasks_host > 0) {
-                        const size_t warp_global_blocks =
-                            (static_cast<size_t>(step_outs.warp_global.num_tasks_host)
-                             + warps_per_block - 1) / warps_per_block;
-                        const dim3 warp_global_grid(static_cast<unsigned>(warp_global_blocks));
-                        dispatch_node_grouped_warp_global_kernel<kDir, kFwd>(
-                            view, walk_set_view,
-                            step_outs.sorted_walk_idx,
-                            step_outs.warp_global.nodes,
-                            step_outs.warp_global.walk_starts,
-                            step_outs.warp_global.walk_counts,
-                            step_outs.warp_global.num_tasks_device,
-                            step_number, max_walk_len,
-                            picker_for_step, base_seed,
-                            warp_global_grid, block_dim, stream);
-                    }
-
-                    if (step_outs.block_smem.num_tasks_host > 0) {
-                        const dim3 block_smem_grid(
-                            static_cast<unsigned>(step_outs.block_smem.num_tasks_host));
-                        dispatch_node_grouped_block_smem_kernel<kDir, kFwd>(
-                            view, walk_set_view,
-                            step_outs.sorted_walk_idx,
-                            step_outs.block_smem.nodes,
-                            step_outs.block_smem.walk_starts,
-                            step_outs.block_smem.walk_counts,
-                            step_outs.block_smem.num_tasks_device,
-                            step_number, max_walk_len,
-                            picker_for_step, base_seed,
-                            block_smem_grid, block_dim, stream);
-                    }
-
-                    if (step_outs.block_global.num_tasks_host > 0) {
-                        const dim3 block_global_grid(
-                            static_cast<unsigned>(step_outs.block_global.num_tasks_host));
-                        dispatch_node_grouped_block_global_kernel<kDir, kFwd>(
-                            view, walk_set_view,
-                            step_outs.sorted_walk_idx,
-                            step_outs.block_global.nodes,
-                            step_outs.block_global.walk_starts,
-                            step_outs.block_global.walk_counts,
-                            step_outs.block_global.num_tasks_device,
-                            step_number, max_walk_len,
-                            picker_for_step, base_seed,
-                            block_global_grid, block_dim, stream);
-                    }
+                    launch_coop_tier(dispatch_node_grouped_warp_smem_kernel<kDir, kFwd>,    step_outs.warp_smem,    true);
+                    launch_coop_tier(dispatch_node_grouped_warp_global_kernel<kDir, kFwd>,  step_outs.warp_global,  true);
+                    launch_coop_tier(dispatch_node_grouped_block_smem_kernel<kDir, kFwd>,   step_outs.block_smem,   false);
+                    launch_coop_tier(dispatch_node_grouped_block_global_kernel<kDir, kFwd>, step_outs.block_global, false);
                 }
             }
 
