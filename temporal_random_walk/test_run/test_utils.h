@@ -87,11 +87,7 @@ inline double get_average_walk_length(const WalkSetHost& walk_set) {
         static_cast<double>(total_length) / static_cast<double>(total_walks) : 0.0;
 }
 
-// Arrow-backed parquet reader for the alibaba streaming benchmark. Same
-// (u, i, ts) tuple shape as read_edges_from_csv; u/i are int32 and ts is
-// int64 in both formats. Implemented in test_utils_parquet.cpp (CXX TU,
-// isolated from the CUDA headers that trip up nvcc under Arrow). Throws
-// at runtime if the build didn't link Arrow.
+// implemented in test_utils_parquet.cpp (CXX TU isolated from CUDA headers)
 std::vector<std::tuple<int, int, int64_t>>
 load_edges_from_parquet(const char* path);
 
@@ -101,12 +97,10 @@ convert_edge_tuples_to_components(const std::vector<std::tuple<int, int, int64_t
     std::vector<int> targets;
     std::vector<int64_t> timestamps;
 
-    // Reserve space to avoid reallocations
     sources.reserve(edges.size());
     targets.reserve(edges.size());
     timestamps.reserve(edges.size());
 
-    // Extract components from each tuple
     for (const auto& edge : edges) {
         sources.push_back(std::get<0>(edge));
         targets.push_back(std::get<1>(edge));
@@ -125,13 +119,11 @@ inline std::vector<std::string> get_sorted_data_files(const std::string& base_pa
             std::string filename = entry.path().filename().string();
             std::smatch matches;
 
-            // Check if the filename matches our pattern
             if (std::regex_match(filename, matches, pattern)) {
                 file_paths.push_back(entry.path().string());
             }
         }
 
-        // Sort files based on the index number
         std::sort(file_paths.begin(), file_paths.end(),
             [&pattern](const std::string& a, const std::string& b) {
                 std::smatch matches_a, matches_b;
@@ -151,12 +143,7 @@ inline std::vector<std::string> get_sorted_data_files(const std::string& base_pa
     return file_paths;
 }
 
-// Write a header + body of strings to a CSV file at `path`. Each row is
-// a vector of string-typed fields, written verbatim with comma
-// separation. Fields containing comma, double-quote, or newline are
-// wrapped in double quotes with embedded quotes doubled (RFC 4180).
-// Path empty → no-op (let callers gate on opt-in flags without an `if`
-// at every call-site).
+// RFC 4180 quoting; empty path is a no-op
 inline void write_strings_to_csv(const std::string& path,
                                  const std::vector<std::string>& header,
                                  const std::vector<std::vector<std::string>>& rows) {

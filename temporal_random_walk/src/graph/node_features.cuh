@@ -27,7 +27,6 @@ namespace node_features {
         const float* node_features_src,
         size_t feature_dim);
 
-    // Test / debug helper.
     struct NodeFeaturesSnapshot {
         std::vector<float> node_features;
         size_t             feature_dim;

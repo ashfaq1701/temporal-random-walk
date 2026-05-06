@@ -114,8 +114,6 @@ TYPED_TEST(EdgeDataTest, FindGroupTest) {
     this->push_back(300, 400, 300);
     this->update_timestamp_groups();
 
-    // find_group_after_timestamp — host-side binary search on
-    // unique_timestamps. snapshot gives us a host copy.
     const auto unique_ts = this->data().unique_timestamps.to_host_vector();
 
     auto after = [&](const int64_t t) -> size_t {
@@ -141,10 +139,10 @@ TYPED_TEST(EdgeDataTest, FindGroupTest) {
 }
 
 TYPED_TEST(EdgeDataTest, TimestampGroupRangeTest) {
-    this->push_back(100, 200, 100);  // Group 0
+    this->push_back(100, 200, 100);
     this->push_back(200, 300, 100);
-    this->push_back(300, 400, 200);  // Group 1
-    this->push_back(400, 500, 300);  // Group 2
+    this->push_back(300, 400, 200);
+    this->push_back(400, 500, 300);
     this->push_back(500, 600, 300);
     this->update_timestamp_groups();
 

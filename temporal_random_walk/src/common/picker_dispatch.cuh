@@ -3,16 +3,7 @@
 
 #include "../data/enums.cuh"
 
-// Dispatch a runtime RandomPickerType / bool value to a generic-lambda
-// visitor that pulls the value out as a constexpr template parameter
-// via tag dispatch. C++17-compatible (no template-parameter-list on
-// generic lambdas required).
-//
-// Usage:
-//   dispatch_picker_type(pt, [&](auto tag) {
-//       constexpr auto value = decltype(tag)::value;
-//       // value is a compile-time RandomPickerType
-//   });
+// runtime->constexpr tag dispatch (C++17-compatible).
 
 template <RandomPickerType PT>
 struct PickerTag {

@@ -1,9 +1,6 @@
 #ifndef NODE_GROUPED_KERNELS_PER_WALK_CUH
 #define NODE_GROUPED_KERNELS_PER_WALK_CUH
 
-// Single-walk-per-thread kernels: start edges, advance_one_walk,
-// solo wrapper, Node2Vec per-walk step, backward-walk reversal.
-
 #include "../../../data/walk_set/walk_set_view.cuh"
 #include "../../../data/temporal_graph_view.cuh"
 #include "../../../graph/temporal_graph.cuh"
@@ -17,14 +14,7 @@ namespace temporal_random_walk {
 
 #ifdef HAS_CUDA
 
-// Step 0 is the start step: pick_start_edges_kernel (unconstrained) or the
-// step-0 coop pass (constrained walks-per-node) keys Philox at offset 0.
-// pick_start_edges_kernel uses up to 3 draws (2 directed / 3 undirected, the
-// 3rd picks an endpoint); the constrained coop start pass uses 2. Either way
-// the start step's substream is contained in [0, START_KERNEL_BUDGET=3).
-// Step k>=1 starts at START_KERNEL_BUDGET + k*2, leaving offsets 3,4 unused
-// so intermediate steps stay on the same substream regardless of tier or
-// constrained/unconstrained mode.
+// step 0 reserves [0,3) of Philox substream so all tiers stay bit-exact
 DEVICE __forceinline__ uint64_t step_kernel_philox_offset(const int step_number) {
     if (step_number == 0) return 0ULL;
     constexpr uint64_t START_KERNEL_BUDGET = 3ULL;
@@ -59,7 +49,7 @@ __global__ void pick_start_edges_kernel(
             view, /*timestamp=*/-1, r_start_a, r_start_b);
     }
 
-    // No edge satisfies the constraint → walk stays at len 0, filter drops it.
+    // dead start: walk stays len 0, filter drops it
     if (start_edge.i == -1) return;
 
     const int64_t sentinel_timestamp = Forward ? INT64_MIN : INT64_MAX;
@@ -76,7 +66,7 @@ __global__ void pick_start_edges_kernel(
             walk_set.add_hop(walk_idx, start_src, start_ts, start_edge.edge_id);
         }
     } else {
-        // 3rd Philox draw here matches START_KERNEL_BUDGET=3 so all tiers stay bit-exact.
+        // 3rd draw matches START_KERNEL_BUDGET=3 (bit-exact across tiers)
         int picked_node;
         if constexpr (Constrained) {
             picked_node = start_node_ids[walk_idx];
@@ -115,24 +105,7 @@ inline void dispatch_start_edges_kernel(
     });
 }
 
-// Constrained walks-per-node start: for each walk, if the start node has at
-// least one edge in the walk direction (outbound for Forward; inbound for
-// Backward+directed; outbound for Backward+undirected), write slot 0 =
-// (start_node_ids[walk_idx], sentinel_ts) and set walk_lens[walk_idx] = 1.
-// The step-0 coop pass then reads slot 0, picks the first edge under
-// start_picker_type, and appends the resulting hop to slot 1 via add_hop.
-//
-// Walks whose start node has no edges in the chosen direction are left as
-// length-0 dead-starts (walk_lens stays 0), matching FULL_WALK's behavior
-// when get_node_edge_at_device returns no valid edge for the start node.
-// Without this guard, NG produced walks of length 1 for dead-start nodes
-// while FULL_WALK produced length-0 walks; this divergence inflated NG's
-// walks_per_sec and depressed its avg_walk_length on Backward + last_batch
-// workloads where many last-batch source nodes have no inbound edges.
-//
-// Sentinel timestamp matches pick_start_edges_kernel (Forward: INT64_MIN,
-// Backward: INT64_MAX) so user-visible slot-0 timestamps stay identical to
-// the per-walk start path.
+// writes slot 0 only if start node has edges in walk direction (else dead-start)
 template <bool Forward, bool IsDirected>
 __global__ void prepopulate_start_slot_kernel(
     WalkSetView walk_set,
@@ -146,17 +119,14 @@ __global__ void prepopulate_start_slot_kernel(
     const int node_id = start_node_ids[walk_idx];
     if (!temporal_graph::is_node_active(view, node_id)) return;
 
-    // Direction-resolved per-node ts-group counts: outbound for Forward;
-    // inbound for Backward+directed; outbound for Backward+undirected (the
-    // graph's outbound index covers both endpoints when undirected). Mirrors
-    // get_node_edge_at_device's direction selection.
+    // mirrors get_node_edge_at_device direction resolution
     const size_t* count_ts_group_per_node =
         Forward ? view.count_ts_group_per_node_outbound
                 : (IsDirected ? view.count_ts_group_per_node_inbound
                               : view.count_ts_group_per_node_outbound);
     const size_t group_begin = count_ts_group_per_node[node_id];
     const size_t group_end   = count_ts_group_per_node[node_id + 1];
-    if (group_begin == group_end) return;  // dead start: no edges this dir
+    if (group_begin == group_end) return;  // dead start
 
     constexpr int64_t sentinel_timestamp = Forward ? INT64_MIN : INT64_MAX;
     walk_set.add_hop(walk_idx, node_id, sentinel_timestamp);
@@ -177,8 +147,7 @@ inline void dispatch_prepopulate_start_slot_kernel(
             walk_set_view, view, start_node_ids, num_walks);
 }
 
-// Advance one walk by one step. Outcome depends only on
-// (walk_idx, step_number, base_seed) so any tier produces the same walk.
+// outcome depends only on (walk_idx, step_number, base_seed) — tier-independent
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 DEVICE __forceinline__ void advance_one_walk(
     TemporalGraphView view,
@@ -221,7 +190,6 @@ DEVICE __forceinline__ void advance_one_walk(
     }
 }
 
-// Solo tier: one thread per walk in solo_walks.
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_solo_kernel(
     TemporalGraphView view,
@@ -264,8 +232,7 @@ inline void dispatch_node_grouped_solo_kernel(
     });
 }
 
-// Node2Vec path: one thread per walk, no scheduler. prev_node-dependent
-// CDF makes coop panels useless. Dead walks no-op inside is_node_active.
+// node2vec: prev-dependent CDF rules out coop panels
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void per_walk_step_kernel(
     TemporalGraphView view,

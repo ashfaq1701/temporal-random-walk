@@ -1,8 +1,6 @@
 #ifndef NODE_GROUPED_KERNELS_COMMON_CUH
 #define NODE_GROUPED_KERNELS_COMMON_CUH
 
-// Shared helpers for the node-grouped coop kernels.
-
 #include "../../../common/macros.cuh"
 #include "../../../common/cuda_config.cuh"
 #include "../../../data/temporal_graph_view.cuh"
@@ -15,7 +13,7 @@ namespace temporal_random_walk {
 
 #ifdef HAS_CUDA
 
-// Direction-resolved per-node pointers. Same set get_node_edge_at_device uses.
+// matches get_node_edge_at_device direction resolution
 struct NodeDirPtrs {
     const size_t* count_ts_group_per_node;
     const size_t* node_ts_groups_offsets;
@@ -63,7 +61,6 @@ resolve_node_dir_ptrs(const TemporalGraphView& view) {
     return p;
 }
 
-// Picker-class G caps for the smem tiers; scheduler's G-partition enforces <=.
 template <RandomPickerType PickerType>
 HOST DEVICE constexpr inline int coop_block_smem_g_cap() {
     return random_pickers::is_index_based_picker_v<PickerType>
@@ -78,9 +75,7 @@ HOST DEVICE constexpr inline int coop_warp_smem_g_cap() {
                : G_THRESHOLD_WARP_WEIGHT;
 }
 
-// Shared per-walk tail for all four coop kernels. Given a picked group
-// position and the ts-group-offsets slice (smem or global), resolves the
-// edge range, picks a uniform edge, and appends the hop. No-ops on empty range.
+// shared per-walk tail for the four coop kernels
 template <bool IsDirected, bool Forward>
 DEVICE __forceinline__ void sample_edge_and_add_hop(
     const TemporalGraphView& view,

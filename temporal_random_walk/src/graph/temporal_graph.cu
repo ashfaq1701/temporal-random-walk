@@ -56,10 +56,6 @@ HOST std::vector<Edge> temporal_graph::get_edges(const TemporalGraphData& data) 
     return edge_data::get_edges(data);
 }
 
-/**
- * Std implementations
- */
-
 HOST void temporal_graph::sort_and_merge_edges_std(
     TemporalGraphData& data, const size_t start_idx) {
     const size_t total_size = edge_data::size(data);
@@ -70,7 +66,6 @@ HOST void temporal_graph::sort_and_merge_edges_std(
     int* targets = data.targets.data();
     int64_t* timestamps = data.timestamps.data();
 
-    // === Step 1: Build index arrays for old and new edges ===
     std::vector<int> old_indices(start_idx);
     std::vector<int> new_indices(new_edges_count);
     std::vector<int> merged_indices(total_size);
@@ -83,19 +78,16 @@ HOST void temporal_graph::sort_and_merge_edges_std(
     for (int i = 0; i < static_cast<int>(new_edges_count); ++i)
         new_indices[i] = static_cast<int>(start_idx) + i;
 
-    // === Step 2: Sort new indices by timestamp ===
     parallel::sort(
         new_indices.begin(), new_indices.end(),
         TimestampComparator(timestamps));
 
-    // === Step 3: Merge indices by timestamp ===
     parallel::merge(
         old_indices.begin(), old_indices.end(),
         new_indices.begin(), new_indices.end(),
         merged_indices.begin(),
         TimestampComparator(timestamps));
 
-    // === Step 4: Allocate temporary arrays for merged output ===
     std::vector<int> merged_sources(total_size);
     std::vector<int> merged_targets(total_size);
     std::vector<int64_t> merged_timestamps(total_size);
@@ -108,7 +100,6 @@ HOST void temporal_graph::sort_and_merge_edges_std(
         merged_edge_features.resize(total_size * feature_dim);
     }
 
-    // === Step 5: Gather edge data using merged indices ===
     #pragma omp parallel for
     for (int i = 0; i < static_cast<int>(total_size); ++i) {
         const int idx = merged_indices[i];
@@ -124,7 +115,6 @@ HOST void temporal_graph::sort_and_merge_edges_std(
         }
     }
 
-    // === Step 6: Copy merged data back to graph ===
     std::memcpy(sources, merged_sources.data(), total_size * sizeof(int));
     std::memcpy(targets, merged_targets.data(), total_size * sizeof(int));
     std::memcpy(timestamps, merged_timestamps.data(), total_size * sizeof(int64_t));
@@ -168,10 +158,8 @@ HOST void temporal_graph::add_multiple_edges_std(
 
     if (num_new_edges == 0) return;
 
-    // Get start index for new edges
     const size_t start_idx = edge_data::size(data);
 
-    // Find maximum timestamp in the new edges
     int64_t max_timestamp = data.latest_timestamp;
 
     #pragma omp parallel for reduction(max:max_timestamp)
@@ -288,7 +276,6 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_std(
         return 0;
     }
 
-    // Used for forward walks
     const size_t* timestamp_group_offsets =
         data.count_ts_group_per_node_outbound.data();
     const size_t* timestamp_group_indices =
@@ -313,10 +300,6 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_std(
     return std::distance(it, timestamp_group_indices + static_cast<int>(group_end));
 }
 
-/**
- * CUDA implementations
- */
-
 #ifdef HAS_CUDA
 
 HOST void temporal_graph::sort_and_merge_edges_cuda(
@@ -331,20 +314,17 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(
     int* d_targets = data.targets.data();
     int64_t* d_timestamps = data.timestamps.data();
 
-    // === Step 1: Prepare old and new index arrays ===
     thrust::device_vector<int> old_indices(static_cast<int>(start_idx));
     thrust::sequence(old_indices.begin(), old_indices.end(), 0);
 
     thrust::device_vector<int> new_indices(static_cast<int>(new_edges_count));
     thrust::sequence(new_indices.begin(), new_indices.end(), static_cast<int>(start_idx));
 
-    // === Step 2: Sort new indices using CUB radix sort (direct keys) ===
     cub_radix_sort_values_by_keys(
         d_timestamps + start_idx,
         thrust::raw_pointer_cast(new_indices.data()),
         new_edges_count);
 
-    // === Step 3: Merge ===
     thrust::device_vector<int> merged_indices(static_cast<int>(total_size));
 
     thrust::merge(
@@ -354,7 +334,6 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(
         TimestampComparator(d_timestamps)
     );
 
-    // === Step 4: Allocate temporary merged arrays (RAII via Buffer) ===
     Buffer<int> d_merged_sources(true);
     d_merged_sources.resize(total_size);
     Buffer<int> d_merged_targets(true);
@@ -362,7 +341,6 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(
     Buffer<int64_t> d_merged_timestamps(true);
     d_merged_timestamps.resize(total_size);
 
-    // === Step 5: Gather merged edge data ===
     thrust::gather(
         merged_indices.begin(), merged_indices.end(),
         thrust::device_pointer_cast(d_sources),
@@ -383,7 +361,6 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(
 
     CUDA_KERNEL_CHECK("After thrust gather");
 
-    // === Step 6: Copy back to graph ===
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_sources, d_merged_sources.data(),
         total_size * sizeof(int), cudaMemcpyDeviceToDevice));
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_targets, d_merged_targets.data(),
@@ -417,7 +394,6 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(
             merged_edge_features.data(),
             total_size * feature_dim * sizeof(float));
     }
-    // d_merged_* RAII-free on scope exit.
 }
 
 HOST void temporal_graph::delete_old_edges_cuda(TemporalGraphData& data) {
@@ -461,10 +437,9 @@ HOST void temporal_graph::add_multiple_edges_cuda(
     const size_t feature_dim) {
     if (num_new_edges == 0) return;
 
-    // Get start index for new edges
     const size_t start_idx = edge_data::size(data);
 
-    // Find maximum timestamp on host (timestamps is a host pointer here).
+    // timestamps is a host pointer here
     int64_t max_timestamp = data.latest_timestamp;
     #pragma omp parallel for reduction(max:max_timestamp)
     for (size_t i = 0; i < num_new_edges; i++) {
@@ -570,7 +545,6 @@ HOST size_t temporal_graph::count_node_timestamps_less_than_cuda(
         edge_indices = data.node_ts_sorted_outbound_indices.data();
     }
 
-    // Copy offsets from device to host
     size_t group_start, group_end;
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(&group_start,
         timestamp_group_offsets + node_id, sizeof(size_t), cudaMemcpyDeviceToHost));
@@ -607,7 +581,6 @@ HOST size_t temporal_graph::count_node_timestamps_greater_than_cuda(
     const size_t* edge_indices =
         data.node_ts_sorted_outbound_indices.data();
 
-    // Copy offsets from device to host
     size_t group_start, group_end;
     CUDA_CHECK_AND_CLEAR(cudaMemcpy(&group_start,
         timestamp_group_offsets + node_id, sizeof(size_t), cudaMemcpyDeviceToHost));

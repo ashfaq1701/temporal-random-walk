@@ -6,10 +6,7 @@
 
 #include "walk.cuh"
 
-// Iterator over non-empty walks in a host-resident walk buffer set.
-// Non-owning: the caller must keep the underlying arrays alive for the
-// iterator's lifetime. Decoupled from any particular owning container
-// (WalkSetHost today) by taking raw pointers at construction.
+// non-owning iterator over non-empty walks in host-resident buffers.
 class WalksIterator {
 private:
     const int*     nodes_;

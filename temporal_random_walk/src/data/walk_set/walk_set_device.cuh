@@ -11,17 +11,7 @@
 
 class WalkSetHost;
 
-/**
- * WalkSetDevice — RAII owner of the four device-side buffers that hold a
- * batch of in-progress walks.
- *
- * Construction allocates and fills each buffer with its padding value.
- * make_view() produces a POD WalkSetView suitable for kernel arguments.
- * download_to_host() (&&) consumes *this and returns a WalkSetHost with
- * freshly-allocated host buffers populated from the device buffers.
- *
- * Move-only.
- */
+// RAII owner of the four device buffers for a walk batch.
 class WalkSetDevice {
 public:
     WalkSetDevice() = default;

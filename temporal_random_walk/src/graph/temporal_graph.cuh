@@ -18,9 +18,6 @@
 
 namespace temporal_graph {
 
-    /**
-     * Common
-     */
     HOST void update_temporal_weights(TemporalGraphData& data);
 
     HOST DEVICE size_t get_total_edges(const TemporalGraphData& data);
@@ -33,9 +30,6 @@ namespace temporal_graph {
 
     HOST std::vector<Edge> get_edges(const TemporalGraphData& data);
 
-    /**
-     * Std implementations
-     */
     HOST void sort_and_merge_edges_std(
         TemporalGraphData& data,
         size_t start_idx);
@@ -63,9 +57,6 @@ namespace temporal_graph {
     HOST size_t count_node_timestamps_greater_than_std(
         const TemporalGraphData& data, int node_id, int64_t timestamp);
 
-    /**
-     * CUDA implementations
-     */
     #ifdef HAS_CUDA
 
     HOST void sort_and_merge_edges_cuda(

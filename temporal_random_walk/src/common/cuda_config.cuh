@@ -3,22 +3,10 @@
 
 #include <cstddef>
 
-// Library-wide default CUDA block dim. Overridable per public-API call via
-// block_dim. Defined outside HAS_CUDA because public headers use it as a
-// default-parameter value — it must be visible on CPU-only builds too.
+// visible on CPU-only builds: used as a default-parameter value in public headers.
 constexpr size_t BLOCK_DIM = 256;
 
 // W <= W_THRESHOLD_WARP -> solo; W <= BLOCK_DIM -> warp; W > BLOCK_DIM -> block.
-// Defined outside HAS_CUDA for the same reason as BLOCK_DIM — the public
-// get_random_walks_* methods take this as a default parameter value and
-// the CPU-only build needs to see the symbol.
-//
-// Throughput is flat across W in [1, 32] on coin once the W-partition correctly
-// handles W>1 in the solo tier — earlier sweeps that suggested W=32 was a big
-// win were measuring a bug where walks at hubs with W>1 routed to solo got
-// silently dropped (see scheduler.cu partition_by_w_kernel). Default kept at
-// 1 (safest semantics: solo only when there is exactly one walk at this node).
-// Override per call via the w_threshold_warp parameter if a workload differs.
 constexpr int W_THRESHOLD_WARP = 4;
 
 #ifdef HAS_CUDA
@@ -27,19 +15,14 @@ constexpr int W_THRESHOLD_WARP = 4;
 
 constexpr auto DEVICE_EXECUTION_POLICY = thrust::device;
 
-// =========================================================================
-// NODE_GROUPED warp-coop configuration. Rationale in CLAUDE.md §3, §4.
-// W_THRESHOLD_BLOCK is naturally BLOCK_DIM.
-// =========================================================================
-
-// Above this, a block task splits into ceil(W/cap) disjoint block-tasks.
+// above this, a block task splits into ceil(W/cap) disjoint block-tasks.
 constexpr int W_THRESHOLD_MULTI_BLOCK = 8192;
 
-// G-fit thresholds per tier × picker class. Per-group bytes: index=16, weight=24.
-constexpr int G_THRESHOLD_BLOCK_INDEX  = 2800;  // 2800 * 16 = 44800 B  (≤ 44 KB panel)
-constexpr int G_THRESHOLD_BLOCK_WEIGHT = 1800;  // 1800 * 24 = 43200 B
-constexpr int G_THRESHOLD_WARP_INDEX   = 340;   // 340 * 16 = 5440 B per warp
-constexpr int G_THRESHOLD_WARP_WEIGHT  = 220;   // 220 * 24 = 5280 B per warp
+// G-fit thresholds per tier × picker class. per-group bytes: index=16, weight=24.
+constexpr int G_THRESHOLD_BLOCK_INDEX  = 2800;
+constexpr int G_THRESHOLD_BLOCK_WEIGHT = 1800;
+constexpr int G_THRESHOLD_WARP_INDEX   = 340;
+constexpr int G_THRESHOLD_WARP_WEIGHT  = 220;
 
 #endif  // HAS_CUDA
 

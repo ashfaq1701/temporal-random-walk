@@ -50,7 +50,7 @@ core::TemporalRandomWalk::TemporalRandomWalk(
       global_seed_(global_seed),
       shuffle_walk_order_(shuffle_walk_order) {
 
-    // Re-bind to match data_.use_gpu (headers pinned them to false).
+    // header default pinned use_gpu=false; rebind
     last_batch_unique_sources_ = Buffer<int>(use_gpu);
     last_batch_unique_targets_ = Buffer<int>(use_gpu);
 
@@ -68,7 +68,7 @@ core::TemporalRandomWalk::TemporalRandomWalk(
 #ifdef HAS_CUDA
     if (use_gpu) {
         CUDA_CHECK_AND_CLEAR(cudaGetDeviceProperties(&cuda_device_prop_, 0));
-        // Non-blocking so concurrent TRW instances don't serialize on stream 0.
+        // non-blocking: concurrent TRW instances must not serialize on stream 0
         CUDA_CHECK_AND_CLEAR(cudaStreamCreateWithFlags(
             &stream_, cudaStreamNonBlocking));
     }
@@ -138,8 +138,7 @@ void set_last_batch_unique_std(
 }
 
 #ifdef HAS_CUDA
-// In-place sort+unique on caller-provided device scratch. Runs on the
-// legacy null stream so it orders naturally with add_multiple_edges_cuda.
+// runs on null stream to order with add_multiple_edges_cuda
 void set_last_batch_unique_cuda_device_input(
     int* values_device, const size_t n, Buffer<int>& out) {
     if (n == 0) {
@@ -254,7 +253,7 @@ HOST void temporal_random_walk::add_multiple_edges(
     const float* edge_features, const size_t feature_dim,
     const size_t block_dim) {
 
-    // Plumbed for API symmetry; ingestion kernels still use compile-time BLOCK_DIM.
+    // ingestion kernels use compile-time BLOCK_DIM; param kept for API symmetry
     (void)block_dim;
     if (num_edges == 0) return;
 
@@ -350,8 +349,7 @@ WalksWithEdgeFeaturesHost finalize_host_walks(
     const int fdim = static_cast<int>(trw->data().feature_dim);
     WalksWithEdgeFeaturesHost result(std::move(host_walks), fdim);
     if (fdim > 0) {
-        // edge_features is host-resident in TemporalGraphData regardless
-        // of use_gpu (Buffer<float> edge_features{false}).
+        // edge_features is always host-resident
         result.populate_walk_edge_features(trw->data().edge_features.data());
     }
     return result;
@@ -571,7 +569,7 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
         initial_edge_bias = walk_bias;
     }
 
-    // Drain default-stream work (prior add_multiple_edges); non-blocking stream won't auto-sync.
+    // non-blocking stream won't auto-sync with prior default-stream work
     CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
 
     std::vector<int> host_node_ids = temporal_graph::get_node_ids(trw->data());
@@ -598,7 +596,6 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
 
     const TemporalGraphView view = make_temporal_graph_view(trw->data());
 
-    // Drain prep-phase writes on stream 0 before launching on trw->stream().
     CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
 
     launch_walk_kernel_dispatch(
@@ -611,7 +608,6 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
     CUDA_KERNEL_CHECK(
         "After generate_random_walks_kernel in get_random_walks_and_times_for_all_nodes_cuda");
 
-    // download_to_host's cudaMemcpy won't block our non-blocking stream.
     trw->sync_stream();
 
     WalkSetHost host_walks = std::move(device_walks).download_to_host();
@@ -703,7 +699,7 @@ temporal_random_walk::get_random_walks_and_times_cuda(
         &trw->cuda_device_prop(),
         block_dim);
 
-    // -1 per entry = random-start sentinel.
+    // -1 sentinel = random start
     Buffer<int> start_node_ids(true);
     start_node_ids.resize(num_walks_total);
     start_node_ids.fill(-1);

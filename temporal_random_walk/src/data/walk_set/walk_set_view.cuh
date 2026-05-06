@@ -7,15 +7,7 @@
 #include "../../common/macros.cuh"
 #include "../../common/const.cuh"
 
-/**
- * WalkSetView — POD view of a WalkSetDevice's underlying buffers, passed
- * to kernels by value. Kernels write hops via add_hop and optionally
- * reverse walks via reverse_walk. The view itself owns nothing.
- *
- * Replaces the old to_device_ptr path (which allocated a device mirror of
- * the struct). A kernel now takes `WalkSetView view` as a regular by-value
- * parameter — no cudaMalloc, no cudaMemcpy.
- */
+// non-owning POD view of WalkSetDevice buffers for pass-by-value to kernels.
 struct WalkSetView {
     int*     nodes;
     int64_t* timestamps;
@@ -26,14 +18,7 @@ struct WalkSetView {
     size_t max_len;
     int    walk_padding_value;
 
-    /**
-     * Append a hop to walk `walk_idx`. hop_pos is the current length of the
-     * walk, which becomes the index of the newly written hop.
-     *
-     * edge_id corresponds to the transition INTO this hop:
-     *   - hop 0 has no incoming edge (edge_id field skipped).
-     *   - hop i (i >= 1) stores edge_id at edge_ids[walk_idx * (max_len-1) + (i-1)].
-     */
+    // edge_id is the transition INTO this hop; skipped when hop_pos == 0.
     HOST DEVICE void add_hop(
         const int walk_idx,
         const int node,
@@ -56,11 +41,7 @@ struct WalkSetView {
         walk_lens[walk_idx] = hop_pos + 1;
     }
 
-    /**
-     * Reverse the walk at walk_idx in place (nodes + timestamps + edge_ids).
-     * Used for backward-in-time walks so the caller always sees a
-     * chronologically forward sequence.
-     */
+    // backward-in-time walks need this so callers see chronological order.
     HOST DEVICE void reverse_walk(const int walk_idx) const {
         const size_t walk_length = walk_lens[walk_idx];
         if (walk_length <= 1) return;

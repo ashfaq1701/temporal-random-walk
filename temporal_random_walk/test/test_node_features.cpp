@@ -5,12 +5,6 @@
 #include "../src/core/temporal_random_walk.cuh"
 #include "../src/graph/node_features.cuh"
 
-// node_features is a host-only buffer (TemporalGraphData::node_features is
-// always allocated on host). The fixture still parameterizes on use_gpu to
-// keep CPU/GPU pairing uniform across the suite — GPU fixtures just exercise
-// the host-only feature buffer through a GPU-backed TemporalRandomWalk.
-// See test/CPU_GPU_PAIRING.md.
-
 template<typename T>
 class NodeFeaturesTest : public ::testing::Test {
 protected:

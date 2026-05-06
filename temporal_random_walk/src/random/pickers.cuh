@@ -33,29 +33,18 @@ namespace random_pickers {
 
         const int len_seq = end - start;
 
-        // For a sequence of length n, weights form an arithmetic sequence
-        // When prioritizing end: weights are 1, 2, 3, ..., n
-        // When prioritizing start: weights are n, n-1, n-2, ..., 1
-        // Sum of arithmetic sequence = n(a1 + an)/2 = n(n+1)/2
+        // arithmetic-weight CDF inverted via quadratic i^2 + i - 2r = 0.
         const double total_weight = static_cast<double>(len_seq) *
                                        (static_cast<double>(len_seq) + 1.0) / 2.0;
-
-        // Generate random value in [0, total_weight)
         const double scaled_random_value = total_weight * rand_number;
 
-        // For both cases, we solve quadratic equation i² + i - 2r = 0
-        // where r is our random value (or transformed random value)
-        // Using quadratic formula: (-1 ± √(1 + 8r))/2
         const double discriminant = 1.0 + 8.0 * scaled_random_value;
         const double root = (-1.0 + std::sqrt(discriminant)) / 2.0;
         const int index = static_cast<int>(std::floor(root));
 
         if (prioritize_end) {
-            // For prioritize_end=true, larger indices should have higher probability
             return start + std::min(index, len_seq - 1);
         } else {
-            // For prioritize_end=false, we reverse the index to give
-            // higher probability to smaller indices
             const int revered_index = len_seq - 1 - index;
             return start + std::max(0, revered_index);
         }
@@ -74,18 +63,13 @@ namespace random_pickers {
 
         double k;
         if (len_seq < 710) {
-            // Inverse CDF formula,
-            // k = ln(1 + u * (e^len seq − 1)) − 1
             k = log1p(rand_number * expm1(len_seq)) - 1;
         } else {
-            // Inverse CDF approximation for large len_seq,
-            // k = len_seq + ln(u) − 1
+            // expm1 overflows; fall back to large-x approximation.
             k = len_seq + std::log(rand_number) - 1;
         }
 
-        // Due to rounding, the trailing "-1" in the inverse CDF formula causes error.
-        // To compensate for this we add 1 with k.
-        // And bound the results within limits.
+        // +1 corrects the inverse-CDF rounding bias before clamping.
         const int rounded_index = std::max(0, std::min(static_cast<int>(k + 1), len_seq - 1));
 
         if (prioritize_end) {
@@ -103,28 +87,10 @@ namespace random_pickers {
         return start + static_cast<int>(rand_number * (end - start));
     }
 
-    // Host+device unified. The previous code had split _host / _device
-    // variants that differed only in std::lower_bound vs cuda::std::lower_bound;
-    // this version does a manual binary search so the same body works on
-    // both.
-    //
-    // slice_start marks the start of the piecewise-CDF segment that
-    // [group_start, group_end) lives in. Global / single-CDF callers pass 0
-    // (default) — the prefix before group_start is weights[group_start - 1],
-    // which is meaningful because the whole array is one monotonic CDF.
-    // Per-node (piecewise) CDF callers pass node_group_begin — when
-    // group_start == slice_start, the prefix is 0 (not weights[group_start-1],
-    // which would be the previous segment's total, garbage for this segment).
-    // Without this, any weighted pick starting exactly at a node boundary
-    // degenerates to "always pick the last group of the node."
-    //
-    // smem_weights: optional smem-resident slice of `weights`, covering
-    // `weights[slice_start..]`. When non-null, all weights[i] reads are
-    // redirected to smem_weights[i - slice_start]. Used by NG block_smem /
-    // warp_smem coop kernels to avoid the global-memory binary-search cost
-    // on weighted pickers. Caller must guarantee the smem slice spans
-    // [slice_start, group_end). nullptr (default) keeps the original
-    // global-memory path.
+    // slice_start: start of the piecewise-CDF segment containing [group_start, group_end).
+    // per-node callers pass node_group_begin so the prefix at a node boundary is 0
+    // rather than the previous segment's total. smem_weights, when set, redirects
+    // weights[i] reads to smem_weights[i - slice_start].
     HOST DEVICE inline int pick_random_exponential_weights(
         const double* weights,
         const size_t weights_size,
@@ -137,16 +103,13 @@ namespace random_pickers {
             return -1;
         }
 
-        // Comparator: read from smem when available, else global. The branch
-        // is on a kernel-uniform pointer (set once per task), so the compiler
-        // hoists it out of the binary-search loop.
+        // branch on a kernel-uniform pointer; compiler hoists it out of the loop.
         auto w_at = [&](const size_t pos) -> double {
             return smem_weights != nullptr
                 ? smem_weights[pos - slice_start]
                 : weights[pos];
         };
 
-        // Start and end cumulative sums.
         double start_sum = 0.0;
         if (group_start > slice_start) {
             start_sum = w_at(group_start - 1);
@@ -159,8 +122,6 @@ namespace random_pickers {
 
         const double random_val = start_sum + random_number * (end_sum - start_sum);
 
-        // Manual lower_bound over weights[group_start..group_end). Returns
-        // the iterator offset within weights (global coordinates).
         size_t lo = group_start;
         size_t hi = group_end;
         while (lo < hi) {
@@ -213,14 +174,6 @@ namespace random_pickers {
         }
     }
 
-    // slice_start: see pick_random_exponential_weights. Default 0 covers
-    // global / single-CDF callers; per-node (piecewise) callers must pass
-    // node_group_begin.
-    //
-    // smem_weights: optional smem-resident slice of `weights` covering
-    // [slice_start, ...]. Forwarded to pick_random_exponential_weights;
-    // see that function's docstring. nullptr (default) preserves the
-    // original global-memory path.
     HOST DEVICE inline int pick_using_weight_based_picker(
         const RandomPickerType random_picker,
         const double* weights,

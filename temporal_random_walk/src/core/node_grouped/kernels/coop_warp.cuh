@@ -1,9 +1,6 @@
 #ifndef NODE_GROUPED_KERNELS_COOP_WARP_CUH
 #define NODE_GROUPED_KERNELS_COOP_WARP_CUH
 
-// Warp-tier coop kernels: warp_smem (G <= cap, preloaded panel) and
-// warp_global (G > cap, no preload). Non-Node2Vec only.
-
 #include "common.cuh"
 #include "per_walk.cuh"
 #include "../../../common/picker_dispatch.cuh"
@@ -13,9 +10,7 @@ namespace temporal_random_walk {
 
 #ifdef HAS_CUDA
 
-// blockDim.x/32 warps per block, one task per warp. Panels tiled
-// side-by-side in dynamic smem. __syncwarp() only — block-wide syncs
-// would deadlock the partial last block's idle warps.
+// __syncwarp() only — block-wide sync would deadlock idle warps in last block
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_warp_smem_kernel(
     TemporalGraphView view,
@@ -72,9 +67,7 @@ __global__ void node_grouped_warp_smem_kernel(
         ? reinterpret_cast<double*>(s_my + kCumWeightsOffset)
         : nullptr;
 
-    // Cooperative preload (stride 32) kills the 3-deep dependent load
-    // chain at search time. Weighted pickers also preload cum_weights
-    // so the binary search runs against smem.
+    // preload kills the 3-deep dependent load chain at search time
     for (int p = lane_id; p < G; p += 32) {
         const size_t ts_group_offset =
             ptrs.node_ts_groups_offsets[node_group_begin + p];
@@ -117,8 +110,6 @@ __global__ void node_grouped_warp_smem_kernel(
     }
 }
 
-// Per-warp panel × (block_dim/32). Per-warp footprint is compile-time;
-// weighted variants reserve an extra 8 B/group for cum_weights.
 template <RandomPickerType PickerType>
 HOST inline size_t warp_smem_dynamic_smem_bytes(const dim3& block_dim) {
     constexpr size_t kGCap     = static_cast<size_t>(
@@ -162,8 +153,7 @@ inline void dispatch_node_grouped_warp_smem_kernel(
     });
 }
 
-// Warp-global: same launch shape as warp-smem, no panel. Cooperation
-// buys L1/L2 residency across lanes sharing one node's arrays.
+// no panel; coop here buys L1/L2 residency across lanes
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_warp_global_kernel(
     TemporalGraphView view,

@@ -136,9 +136,6 @@ namespace temporal_random_walk {
         const double* rand_nums,
         const RandomPickerType edge_picker_type,
         const RandomPickerType start_picker_type) {
-        // Two-level tag dispatch: turns the runtime (edge, start) picker
-        // pair into compile-time template parameters and calls the
-        // fully-instantiated walk generator.
         dispatch_picker_type(edge_picker_type, [&](auto edge_tag) {
             constexpr auto kEdge = decltype(edge_tag)::value;
             dispatch_picker_type(start_picker_type, [&](auto start_tag) {

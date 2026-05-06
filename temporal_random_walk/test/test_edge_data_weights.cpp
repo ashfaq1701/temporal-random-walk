@@ -8,7 +8,6 @@
 
 namespace {
 
-// Fixture-less helpers (all tests below create their own TemporalRandomWalk).
 static void do_update_timestamp_groups(TemporalGraphData& data) {
 #ifdef HAS_CUDA
     if (data.use_gpu) {

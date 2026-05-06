@@ -26,11 +26,9 @@ int main(int argc, char* argv[]) {
 
     if (argc > 2) {
         std::string gpu_arg = argv[2];
-        // Convert to lowercase for case-insensitive comparison
         std::transform(gpu_arg.begin(), gpu_arg.end(), gpu_arg.begin(),
                        [](const unsigned char c){ return std::tolower(c); });
 
-        // Accept various forms of true/false input
         if (gpu_arg == "1" || gpu_arg == "true" || gpu_arg == "yes" || gpu_arg == "y") {
             use_gpu = true;
         } else if (gpu_arg == "0" || gpu_arg == "false" || gpu_arg == "no" || gpu_arg == "n") {
@@ -72,7 +70,6 @@ int main(int argc, char* argv[]) {
     const auto edge_infos = read_edges_from_csv(file_path, num_rows, delimiter);
     std::cout << "Total edges loaded: " << edge_infos.size() << std::endl;
 
-    // Split edges into two equal parts
     size_t mid_point = edge_infos.size() / 2;
     auto first_half_begin = edge_infos.begin();
     auto first_half_end = edge_infos.begin() + static_cast<long>(mid_point);
@@ -82,11 +79,9 @@ int main(int argc, char* argv[]) {
     std::cout << "First half: " << mid_point << " edges" << std::endl;
     std::cout << "Second half: " << (edge_infos.size() - mid_point) << " edges" << std::endl;
 
-    // Start timing for the entire process
     auto start = std::chrono::high_resolution_clock::now();
     TemporalRandomWalk temporal_random_walk(false, use_gpu, -1, false, true, 50);
 
-    // Add first half of edges
     std::vector first_half(first_half_begin, first_half_end);
     auto [sources_first_half, targets_first_half, timestamps_first_half] =
         convert_edge_tuples_to_components(first_half);
@@ -110,7 +105,6 @@ int main(int argc, char* argv[]) {
 
     constexpr RandomPickerType effective_step_picker = exponential_picker_type;
 
-    // Generate walks with first half
     auto first_half_walks_start = std::chrono::high_resolution_clock::now();
 
     const auto walks_backward_with_edge_feats_for_all_nodes_1 = temporal_random_walk.get_random_walks_and_times(
@@ -137,7 +131,6 @@ int main(int argc, char* argv[]) {
     auto [sources_second_half, targets_second_half, timestamps_second_half] =
         convert_edge_tuples_to_components(second_half);
 
-    // Add second half of edges to the same object
     auto second_half_start = std::chrono::high_resolution_clock::now();
     temporal_random_walk.add_multiple_edges(
         sources_second_half.data(),
@@ -150,7 +143,6 @@ int main(int argc, char* argv[]) {
     std::cout << "Second half edge addition time: " << second_half_duration.count() << " seconds" << std::endl;
     std::cout << "Inserted edge count after second half insertion: " << temporal_random_walk.get_edge_count() << std::endl;
 
-    // Generate walks with all edges
     auto second_half_walks_start = std::chrono::high_resolution_clock::now();
 
     const auto walks_backward_with_edge_feats_for_all_nodes_2 = temporal_random_walk.get_random_walks_and_times(

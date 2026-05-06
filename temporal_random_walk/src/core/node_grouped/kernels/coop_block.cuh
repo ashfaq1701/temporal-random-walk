@@ -1,9 +1,6 @@
 #ifndef NODE_GROUPED_KERNELS_COOP_BLOCK_CUH
 #define NODE_GROUPED_KERNELS_COOP_BLOCK_CUH
 
-// Block-tier coop kernels: block_smem (G <= cap, preloaded panel) and
-// block_global (G > cap, no preload). Non-Node2Vec only.
-
 #include "common.cuh"
 #include "per_walk.cuh"
 #include "../../../common/picker_dispatch.cuh"
@@ -13,14 +10,7 @@ namespace temporal_random_walk {
 
 #ifdef HAS_CUDA
 
-// One block per block-task. Cooperatively preloads s_group_offsets[G],
-// s_first_ts[G], and (for weighted pickers only) s_cum_weights[G], then
-// strides by blockDim.x through the task's walks. The cum_weights slot
-// is template-conditional: index pickers don't read cum_weights at all,
-// so they skip the allocation and preload entirely (smem footprint stays
-// at 16 B/group). Weighted pickers reserve an extra 8 B/group; the
-// G_THRESHOLD_BLOCK_WEIGHT cap (1800) was already sized assuming this
-// 24 B/group budget.
+// one block per block-task; weighted pickers reserve cum_weights slot
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_block_smem_kernel(
     TemporalGraphView view,
@@ -67,10 +57,7 @@ __global__ void node_grouped_block_smem_kernel(
         ? reinterpret_cast<double*>(s_panel + kCumWeightsOffset)
         : nullptr;
 
-    // Preload kills the 3-deep dependent load chain at search time.
-    // For weighted pickers, also preload the per-node cum_weights slice
-    // so the picker's binary search runs against smem (Stage 2 wires it
-    // up via find_group_pos_slice's s_cum_weights parameter).
+    // preload kills the 3-deep dependent load chain at search time
     for (int p = threadIdx.x; p < G; p += blockDim.x) {
         const size_t ts_group_offset =
             ptrs.node_ts_groups_offsets[node_group_begin + p];
@@ -113,9 +100,6 @@ __global__ void node_grouped_block_smem_kernel(
     }
 }
 
-// 64 B header + G_CAP × (size_t + int64_t [+ double for weighted]).
-// Picker-class-driven at compile time so index variants don't pay for
-// the cum_weights slot.
 template <RandomPickerType PickerType>
 HOST constexpr inline size_t block_smem_dynamic_smem_bytes() {
     constexpr size_t kGCap     = static_cast<size_t>(
@@ -157,8 +141,7 @@ inline void dispatch_node_grouped_block_smem_kernel(
     });
 }
 
-// Block-global: same launch shape, no panel. Coop buys L1/L2 residency
-// of the per-node arrays shared across threads in the block.
+// no panel; coop buys L1/L2 residency across the block
 template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
 __global__ void node_grouped_block_global_kernel(
     TemporalGraphView view,

@@ -1,31 +1,3 @@
-// GPU-only tests for the NODE_GROUPED scheduler's W-partition stage.
-//
-// The W-partition (task 5) classifies each unique node at a step into one
-// of three tiers based on its walk count W:
-//   W <= W_THRESHOLD_WARP   (==1)   -> solo_walks
-//   W_THRESHOLD_WARP <  W <= BLOCK_DIM         (<=255) -> warp_nodes + walk_starts/counts
-//   W  >  BLOCK_DIM                  (>=256) -> block_nodes + walk_starts/counts
-//
-// Scope covered here:
-//   - disjoint coverage: the three tier lists partition exactly the active
-//     walks, no duplicates, no terminated leaks,
-//   - count identity: num_solo + sum(warp_counts) + sum(block_counts)
-//     == num_active,
-//   - tier boundaries: W={1,2} (solo/warp) and W={BLOCK_DIM, BLOCK_DIM+1}
-//     (warp/block),
-//   - termination filtering: walks with walk_padding_value at the current
-//     step never reach the partition,
-//   - walk-idx preservation: solo_walks carries original sparse indices.
-//
-// Scope deferred to sibling files:
-//   - G-partition of warp/block into (smem, global) variants by per-node
-//     timestamp-group count ->  test_node_grouped_g_partition.cpp
-//   - Block-task expansion of W>W_THRESHOLD_MULTI_BLOCK nodes into multiple tasks
-//     ->                         test_node_grouped_block_task_expansion.cpp
-//
-// This file is guarded by HAS_CUDA. It is NOT paired with a CPU variant
-// because the scheduler only exists on GPU.
-
 #ifdef HAS_CUDA
 
 #include <gtest/gtest.h>
@@ -49,15 +21,6 @@ namespace {
 
 using temporal_random_walk::NodeGroupedScheduler;
 
-// --------------------------------------------------------------------------
-// Controllable WalkSetView builder.
-//
-// Allocates the four device buffers the view points at, fills `nodes` with
-// walk_padding_value everywhere except the caller-specified step_number
-// slot (which receives last_nodes_at_step[walk_idx]). The scheduler only
-// reads walk_set.nodes at that offset for its filter/gather stages, so the
-// other buffers can stay uninitialized.
-// --------------------------------------------------------------------------
 struct DeviceWalkSet {
     int*     nodes              = nullptr;
     int64_t* timestamps         = nullptr;
@@ -100,7 +63,6 @@ std::unique_ptr<DeviceWalkSet> make_walk_set(
     cudaMalloc(&ws->nodes, total_nodes * sizeof(int));
     cudaMemcpy(ws->nodes, h_nodes.data(),
                total_nodes * sizeof(int), cudaMemcpyHostToDevice);
-    // Other buffers: contents don't matter for scheduler-only tests.
     cudaMalloc(&ws->timestamps, total_nodes * sizeof(int64_t));
     cudaMalloc(&ws->walk_lens,  ws->num_walks * sizeof(std::size_t));
     const std::size_t edge_total =
@@ -123,22 +85,12 @@ WalkSetView make_view(const DeviceWalkSet& ws) {
     return v;
 }
 
-// --------------------------------------------------------------------------
-// SchedulerResult — host-side materialization of a run_step output. Keeps
-// pointers to the scheduler's arena-backed buffers off the public surface
-// of each test; tests read the host vectors directly.
-// --------------------------------------------------------------------------
-// Tests here pass a trivial (all-zero) count_ts_group_per_node, so every
-// node sees G=0 <= g_cap and the G-partition routes every warp/block task
-// into its smem variant (the global variants should stay empty). Under
-// that setup, num_warp_tasks_host below == the number of warp_smem tasks
-// (same for block). The G-partition's real routing is covered by a
-// sibling file, test_node_grouped_g_partition.cpp.
+// G=0 setup forces all warp/block tasks into smem variants.
 struct SchedulerResult {
     int num_active_host          = 0;
     int num_solo_walks_host      = 0;
-    int num_warp_tasks_host      = 0;   // warp_smem (global expected empty)
-    int num_block_tasks_host     = 0;   // block_smem (global expected empty)
+    int num_warp_tasks_host      = 0;
+    int num_block_tasks_host     = 0;
 
     std::vector<int> sorted_walk_idx;
     std::vector<int> solo_walks;
@@ -159,10 +111,6 @@ std::vector<int> download_ints(const int* device_ptr, const std::size_t n) {
     return h;
 }
 
-// Trivial count_ts_group_per_node — all zeros, so every node reports
-// G = 0 groups, forcing the G-partition to route every task to the smem
-// variant (G <= g_cap for any g_cap >= 0). Owned device buffer, freed
-// when the returned unique_ptr drops.
 struct DeviceG {
     std::size_t* ptr = nullptr;
     ~DeviceG() { if (ptr) cudaFree(ptr); }
@@ -170,8 +118,7 @@ struct DeviceG {
 
 std::unique_ptr<DeviceG> make_trivial_count_ts_group(int max_node_id) {
     auto g = std::make_unique<DeviceG>();
-    // Size: (max_node_id + 2) so indices [0..max_node_id+1] are addressable
-    // (the G-partition kernel reads [node] and [node+1]). Zero-initialize.
+    // need indices [0..max_node_id+1] addressable (kernel reads [node] and [node+1]).
     const std::size_t n = static_cast<std::size_t>(max_node_id) + 2;
     cudaMalloc(&g->ptr, n * sizeof(std::size_t));
     cudaMemset(g->ptr, 0, n * sizeof(std::size_t));
@@ -190,35 +137,22 @@ SchedulerResult run_and_materialize(
                             max_walk_len, padding_value);
     const WalkSetView view = make_view(*ws);
 
-    // Largest node_id that might appear in last_nodes_at_step (ignore
-    // padding_value). Use that to size the count_ts_group_per_node array.
     int max_node_id = 0;
     for (int n : last_nodes_at_step) {
         if (n != padding_value && n > max_node_id) max_node_id = n;
     }
     auto g = make_trivial_count_ts_group(max_node_id);
 
-    // Tests assert W={1,2} solo/warp boundary — pin to original semantics.
     NodeGroupedScheduler scheduler(ws->num_walks, block_dim, /*w_threshold_warp=*/1, stream);
     auto outs = scheduler.run_step(
         view, step_number, static_cast<int>(max_walk_len),
         g->ptr,
-        RandomPickerType::Linear);   // picker class doesn't matter when G=0.
+        RandomPickerType::Linear);
 
-    // run_step already does its own stream sync. A final sync here is
-    // defensive — guarantees the arena's buffers are stable before
-    // we copy them down to host.
     cudaStreamSynchronize(stream);
 
-    // With G=0 everywhere, the global tiers MUST be empty. Catching this
-    // here flags a future change that breaks the W-partition tests'
-    // setup assumption.
-    EXPECT_EQ(outs.warp_global.num_tasks_host, 0)
-        << "test setup invariant broken: warp_global should be empty "
-           "when count_ts_group_per_node is all zeros";
-    EXPECT_EQ(outs.block_global.num_tasks_host, 0)
-        << "test setup invariant broken: block_global should be empty "
-           "when count_ts_group_per_node is all zeros";
+    EXPECT_EQ(outs.warp_global.num_tasks_host, 0);
+    EXPECT_EQ(outs.block_global.num_tasks_host, 0);
 
     SchedulerResult r;
     r.num_active_host      = outs.num_active_host;
@@ -246,9 +180,6 @@ SchedulerResult run_and_materialize(
     return r;
 }
 
-// Collects the set of walk indices covered by the three tier outputs.
-// Asserts no duplicates as it accumulates. Returns the set for caller
-// to do additional coverage assertions.
 std::set<int> collect_covered_walks(const SchedulerResult& r,
                                     std::string* duplicate_detail) {
     std::set<int> covered;
@@ -298,17 +229,11 @@ protected:
     dim3 block_dim_{};
     cudaStream_t stream_ = nullptr;
 
-    // step_number=1 means we need max_walk_len >= 2 for a valid slot.
     static constexpr int STEP_NUMBER   = 1;
     static constexpr int MAX_WALK_LEN  = 4;
 };
 
-// ==========================================================================
-// Edge cases.
-// ==========================================================================
-
 TEST_F(GpuSchedulingTest, AllWalksTerminated_AllTierCountsZero) {
-    // Every walk has walk_padding_value at step_number -> filtered out.
     std::vector<int> last_nodes(10, PAD);
     auto r = run_and_materialize(last_nodes, STEP_NUMBER, MAX_WALK_LEN, PAD,
                                  block_dim_, stream_);
@@ -320,7 +245,6 @@ TEST_F(GpuSchedulingTest, AllWalksTerminated_AllTierCountsZero) {
 }
 
 TEST_F(GpuSchedulingTest, SingleActiveWalk_IsSolo) {
-    // One active walk at node 42, rest terminated -> a single solo walk.
     std::vector<int> last_nodes(5, PAD);
     last_nodes[2] = 42;
     auto r = run_and_materialize(last_nodes, STEP_NUMBER, MAX_WALK_LEN, PAD,
@@ -331,15 +255,10 @@ TEST_F(GpuSchedulingTest, SingleActiveWalk_IsSolo) {
     EXPECT_EQ(r.num_warp_tasks_host, 0);
     EXPECT_EQ(r.num_block_tasks_host, 0);
     ASSERT_EQ(r.solo_walks.size(), 1u);
-    EXPECT_EQ(r.solo_walks[0], 2);  // original walk_idx preserved
+    EXPECT_EQ(r.solo_walks[0], 2);
 }
 
-// ==========================================================================
-// Tier routing by W.
-// ==========================================================================
-
 TEST_F(GpuSchedulingTest, AllUniqueNodes_AllWalksGoToSolo) {
-    // Each walk at a distinct node -> every run has W=1 -> solo for all.
     std::vector<int> last_nodes;
     for (int i = 0; i < 10; ++i) last_nodes.push_back(100 + i);
     auto r = run_and_materialize(last_nodes, STEP_NUMBER, MAX_WALK_LEN, PAD,
@@ -350,7 +269,6 @@ TEST_F(GpuSchedulingTest, AllUniqueNodes_AllWalksGoToSolo) {
     EXPECT_EQ(r.num_warp_tasks_host, 0);
     EXPECT_EQ(r.num_block_tasks_host, 0);
 
-    // Each walk_idx [0..10) appears exactly once.
     std::set<int> solo_set(r.solo_walks.begin(), r.solo_walks.end());
     EXPECT_EQ(solo_set.size(), 10u);
     for (int w : solo_set) {
@@ -360,7 +278,6 @@ TEST_F(GpuSchedulingTest, AllUniqueNodes_AllWalksGoToSolo) {
 }
 
 TEST_F(GpuSchedulingTest, AllSameNodeWarpSize_SingleWarpTask) {
-    // W=10 at node 42 -> single warp task.
     constexpr int W = 10;
     std::vector<int> last_nodes(W, 42);
     auto r = run_and_materialize(last_nodes, STEP_NUMBER, MAX_WALK_LEN, PAD,
@@ -377,8 +294,7 @@ TEST_F(GpuSchedulingTest, AllSameNodeWarpSize_SingleWarpTask) {
 }
 
 TEST_F(GpuSchedulingTest, AllSameNodeBlockSize_SingleBlockTask) {
-    // W>BLOCK_DIM -> single block task.
-    const int W = static_cast<int>(BLOCK_DIM) + 1;  // 256, just over the boundary
+    const int W = static_cast<int>(BLOCK_DIM) + 1;
     std::vector<int> last_nodes(W, 7);
     auto r = run_and_materialize(last_nodes, STEP_NUMBER, MAX_WALK_LEN, PAD,
                                  block_dim_, stream_);
@@ -393,13 +309,7 @@ TEST_F(GpuSchedulingTest, AllSameNodeBlockSize_SingleBlockTask) {
     EXPECT_EQ(r.block_walk_counts[0], W);
 }
 
-// ==========================================================================
-// Tier boundaries — the partition's if-else cascade must be correct at the
-// exact threshold values, not just comfortably above/below them.
-// ==========================================================================
-
 TEST_F(GpuSchedulingTest, BoundaryW1IsSolo_W2IsWarp) {
-    // Run at node 100 with W=1 -> solo. Run at node 200 with W=2 -> warp.
     std::vector<int> last_nodes;
     last_nodes.push_back(100);
     last_nodes.push_back(200);
@@ -413,14 +323,13 @@ TEST_F(GpuSchedulingTest, BoundaryW1IsSolo_W2IsWarp) {
     EXPECT_EQ(r.num_warp_tasks_host, 1);
     EXPECT_EQ(r.num_block_tasks_host, 0);
 
-    EXPECT_EQ(r.solo_walks[0], 0);       // walk_idx 0 was the W=1 one
+    EXPECT_EQ(r.solo_walks[0], 0);
     EXPECT_EQ(r.warp_nodes[0], 200);
     EXPECT_EQ(r.warp_walk_counts[0], 2);
 }
 
 TEST_F(GpuSchedulingTest, BoundaryW_BLOCK_DIM_IsWarp_AndW_BLOCK_DIMPlus1_IsBlock) {
-    // The warp tier's upper bound (BLOCK_DIM) is inclusive: W=BLOCK_DIM
-    // stays in warp; W=BLOCK_DIM+1 goes to block.
+    // upper bound is inclusive: W=BLOCK_DIM stays warp, +1 flips to block.
     const int W_warp  = static_cast<int>(BLOCK_DIM);
     const int W_block = static_cast<int>(BLOCK_DIM) + 1;
 
@@ -440,14 +349,7 @@ TEST_F(GpuSchedulingTest, BoundaryW_BLOCK_DIM_IsWarp_AndW_BLOCK_DIMPlus1_IsBlock
     EXPECT_EQ(r.block_walk_counts[0], W_block);
 }
 
-// ==========================================================================
-// Compositional invariants — count identity + disjoint coverage.
-// ==========================================================================
-
 TEST_F(GpuSchedulingTest, MixedTiers_CountIdentityHolds) {
-    // Solo: 5 walks at 5 distinct nodes.
-    // Warp: 10 walks at node 42.
-    // Block: 300 walks at node 7.
     std::vector<int> last_nodes;
     for (int i = 0; i < 5;   ++i) last_nodes.push_back(201 + i);
     for (int i = 0; i < 10;  ++i) last_nodes.push_back(42);
@@ -467,15 +369,10 @@ TEST_F(GpuSchedulingTest, MixedTiers_CountIdentityHolds) {
                              r.warp_walk_counts.end(), 0);
     total += std::accumulate(r.block_walk_counts.begin(),
                              r.block_walk_counts.end(), 0);
-    EXPECT_EQ(total, expected_active)
-        << "num_solo + sum(warp_counts) + sum(block_counts) "
-        << "must equal num_active";
+    EXPECT_EQ(total, expected_active);
 }
 
 TEST_F(GpuSchedulingTest, MixedWithTermination_DisjointUnionEqualsActive) {
-    // 5 solo (unique nodes), 10 warp at node 42, 5 terminated, 10 warp at 99.
-    // Active = 25; partition must cover exactly those 25 with no duplicates
-    // and no terminated walks.
     std::vector<int> last_nodes(30);
     std::vector<int> alive_indices;
     for (int i = 0; i < 5;  ++i) { last_nodes[i] = 201 + i;   alive_indices.push_back(i); }
@@ -507,16 +404,12 @@ TEST_F(GpuSchedulingTest, MixedWithTermination_DisjointUnionEqualsActive) {
 }
 
 TEST_F(GpuSchedulingTest, SoloTierPreservesOriginalWalkIdx) {
-    // All walks at distinct nodes -> every run goes to solo and every
-    // walk_idx [0..N) must appear exactly once in solo_walks. Also
-    // verifies that solo_walks carries the ORIGINAL walk_idx (not any
-    // dense renumbering) even when some walks are terminated.
     std::vector<int> last_nodes(20, PAD);
     std::vector<int> expected_solo;
     const int alive_indices[] = {3, 5, 8, 11, 13, 17, 19};
     int node = 500;
     for (int i : alive_indices) {
-        last_nodes[i] = node++;   // unique node per alive walk
+        last_nodes[i] = node++;
         expected_solo.push_back(i);
     }
 

@@ -12,8 +12,6 @@
 
 namespace temporal_graph {
 
-    // ==================== HOST ====================
-
     HOST inline bool is_node_adjacent_to_host(
         const TemporalGraphView& view,
         const int prev_node,
@@ -56,10 +54,6 @@ namespace temporal_graph {
 
         return view.inv_q;
     }
-
-    // -------------------------------------------------------------------------
-    // Temporal-node2vec edge selection inside selected timestamp group
-    // -------------------------------------------------------------------------
 
     template<bool Forward, bool IsDirected>
     HOST long pick_random_temporal_node2vec_edge_host(
@@ -106,10 +100,6 @@ namespace temporal_graph {
 
         return static_cast<long>(node_ts_sorted_indices[edge_end - 1]);
     }
-
-    // -------------------------------------------------------------------------
-    // Temporal-node2vec timestamp-group selection
-    // -------------------------------------------------------------------------
 
     template<bool Forward, bool IsDirected>
     HOST int pick_random_temporal_node2vec_host(
@@ -188,8 +178,6 @@ namespace temporal_graph {
 
         return selected_group;
     }
-
-    // ==================== DEVICE ====================
 
     #ifdef HAS_CUDA
 

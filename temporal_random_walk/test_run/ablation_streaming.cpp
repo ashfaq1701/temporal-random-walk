@@ -137,7 +137,6 @@ int main(int argc, char **argv) {
     size_t cursor = 0;
     const size_t N = timestamps.size();
 
-    // Warmup: batch 0 runs untimed via a local cursor so the main loop still processes it.
     if (num_batches > 0) {
         size_t warm_cursor = 0;
         const int64_t warm_end_ts =

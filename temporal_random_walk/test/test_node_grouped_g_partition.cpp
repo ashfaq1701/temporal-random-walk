@@ -1,34 +1,3 @@
-// GPU-only tests for the NODE_GROUPED scheduler's G-partition stage.
-//
-// The G-partition (task 6) runs AFTER the W-partition has classified each
-// unique node into the warp or block tier. For every warp task it reads
-// G = count_ts_group_per_node[node+1] - count_ts_group_per_node[node] and
-// splits the task into:
-//   G <= G_THRESHOLD_WARP_{INDEX,WEIGHT}   -> warp_smem
-//   G >  cap                                             -> warp_global
-// Same split for block tasks, using G_THRESHOLD_BLOCK_*.
-//
-// The picker class selects the cap:
-//   Index    picker (Uniform/Linear/ExponentialIndex)    -> _INDEX cap
-//   Weighted picker (ExponentialWeight/TemporalNode2Vec) -> _WEIGHTED cap
-//
-// Scope covered here:
-//   - routing by G: nodes with small/large G land in the right smem/global
-//     tier for both warp and block levels,
-//   - tier boundaries: G=cap (smem) vs G=cap+1 (global) at all four
-//     (tier, picker-class) combinations,
-//   - picker-class selects the correct cap,
-//   - count identity: num_solo + sum over all four coop tiers == num_active,
-//   - solo tier (W=1) is unaffected by G — W-routing dominates,
-//   - mixed scenarios: a single run step emits into all five tiers
-//     according to (W, G).
-//
-// Scope deferred to sibling files:
-//   - W-partition itself        -> test_node_grouped_w_partition.cpp
-//   - Block-task expansion      -> test_node_grouped_block_task_expansion.cpp
-//
-// This file is guarded by HAS_CUDA. It is NOT paired with a CPU variant.
-
 #ifdef HAS_CUDA
 
 #include <gtest/gtest.h>
@@ -52,13 +21,8 @@ namespace {
 
 using temporal_random_walk::NodeGroupedScheduler;
 
-// Must match the run_step implementation — walks with walk_padding_value at
-// the current step are filtered out.
 constexpr int PAD = EMPTY_NODE_VALUE;
 
-// --------------------------------------------------------------------------
-// Controllable WalkSetView (same shape as the W-partition tests).
-// --------------------------------------------------------------------------
 struct DeviceWalkSet {
     int*         nodes              = nullptr;
     int64_t*     timestamps         = nullptr;
@@ -123,15 +87,7 @@ WalkSetView make_view(const DeviceWalkSet& ws) {
     return v;
 }
 
-// --------------------------------------------------------------------------
-// count_ts_group_per_node builder.
-//
-// Given a per-node G mapping (index = node_id, value = G for that node),
-// produce the prefix-sum device array the G-partition kernel expects —
-// count_ts_group_per_node[node+1] - count_ts_group_per_node[node] == G_node.
-// The array needs max_node_id + 2 entries so `[max_node_id + 1]` is
-// addressable.
-// --------------------------------------------------------------------------
+// builds prefix-sum array: count_ts_group_per_node[node+1] - [node] == G_node.
 struct DeviceG {
     std::size_t* ptr = nullptr;
     ~DeviceG() { if (ptr) cudaFree(ptr); }
@@ -140,7 +96,7 @@ struct DeviceG {
 std::unique_ptr<DeviceG> make_count_ts_group_per_node(
     const std::vector<int>& g_per_node) {
     auto g = std::make_unique<DeviceG>();
-    const std::size_t n = g_per_node.size() + 1;  // prefix-sum length
+    const std::size_t n = g_per_node.size() + 1;
     std::vector<std::size_t> h(n, 0);
     for (std::size_t node = 0; node < g_per_node.size(); ++node) {
         h[node + 1] = h[node] + static_cast<std::size_t>(g_per_node[node]);
@@ -151,12 +107,6 @@ std::unique_ptr<DeviceG> make_count_ts_group_per_node(
     return g;
 }
 
-// --------------------------------------------------------------------------
-// Host-side materialization of run_step output. This file focuses on the
-// G-partition so we expose all four coop tiers separately (unlike the
-// W-partition tests, which collapsed smem+global into a single 'warp'
-// view because they forced G=0 globally).
-// --------------------------------------------------------------------------
 struct GResult {
     int num_active_host        = 0;
     int num_solo_walks_host    = 0;
@@ -187,9 +137,6 @@ std::vector<int> download_ints(const int* device_ptr, const std::size_t n) {
     return h;
 }
 
-// Run one intermediate step with the given (last_nodes, g_per_node, picker).
-// step_number=1 / max_walk_len=4 is fixed — the G-partition doesn't depend
-// on either, so one choice covers all cases.
 GResult run_and_materialize(
     const std::vector<int>& last_nodes_at_step,
     const std::vector<int>& g_per_node,
@@ -206,7 +153,6 @@ GResult run_and_materialize(
 
     auto g = make_count_ts_group_per_node(g_per_node);
 
-    // Tests use W=10 -> warp tier — pin to original W=1 solo/warp boundary.
     NodeGroupedScheduler scheduler(ws->num_walks, block_dim, /*w_threshold_warp=*/1, stream);
     auto outs = scheduler.run_step(
         view, STEP_NUMBER, MAX_WALK_LEN, g->ptr, picker);
@@ -247,7 +193,6 @@ GResult run_and_materialize(
     return r;
 }
 
-// Fills g_per_node[node_id] = g. Resizes if needed.
 void set_g(std::vector<int>& g_per_node, int node_id, int g) {
     if (static_cast<int>(g_per_node.size()) <= node_id) {
         g_per_node.resize(node_id + 1, 0);
@@ -275,13 +220,8 @@ protected:
     cudaStream_t stream_ = nullptr;
 };
 
-// ==========================================================================
-// Warp tier — routing by G with index-class picker.
-// ==========================================================================
-
 TEST_F(GpuGPartitionTest, WarpTier_SmallG_RoutesToWarpSmem) {
-    // W=10 at node 5; G=100 for node 5, zero elsewhere.
-    // 100 < G_THRESHOLD_WARP_INDEX (340) → warp_smem.
+    // W=10, G=100 < 340 -> warp_smem.
     const int NODE = 5;
     std::vector<int> last_nodes(10, NODE);
     std::vector<int> g; set_g(g, NODE, 100);
@@ -300,7 +240,7 @@ TEST_F(GpuGPartitionTest, WarpTier_SmallG_RoutesToWarpSmem) {
 }
 
 TEST_F(GpuGPartitionTest, WarpTier_LargeG_RoutesToWarpGlobal) {
-    // W=10 at node 5; G=400 > G_THRESHOLD_WARP_INDEX (340) → warp_global.
+    // W=10, G=400 > 340 -> warp_global.
     const int NODE = 5;
     std::vector<int> last_nodes(10, NODE);
     std::vector<int> g; set_g(g, NODE, 400);
@@ -318,12 +258,8 @@ TEST_F(GpuGPartitionTest, WarpTier_LargeG_RoutesToWarpGlobal) {
     EXPECT_EQ(r.warp_global_walk_counts[0], 10);
 }
 
-// ==========================================================================
-// Block tier — routing by G with index-class picker.
-// ==========================================================================
-
 TEST_F(GpuGPartitionTest, BlockTier_SmallG_RoutesToBlockSmem) {
-    // W=300 (>BLOCK_DIM) at node 7; G=1000 < G_THRESHOLD_BLOCK_INDEX (2800).
+    // W=300, G=1000 < 2800 -> block_smem.
     const int NODE = 7;
     std::vector<int> last_nodes(300, NODE);
     std::vector<int> g; set_g(g, NODE, 1000);
@@ -341,7 +277,7 @@ TEST_F(GpuGPartitionTest, BlockTier_SmallG_RoutesToBlockSmem) {
 }
 
 TEST_F(GpuGPartitionTest, BlockTier_LargeG_RoutesToBlockGlobal) {
-    // W=300 at node 7; G=3000 > G_THRESHOLD_BLOCK_INDEX (2800) → block_global.
+    // W=300, G=3000 > 2800 -> block_global.
     const int NODE = 7;
     std::vector<int> last_nodes(300, NODE);
     std::vector<int> g; set_g(g, NODE, 3000);
@@ -358,13 +294,8 @@ TEST_F(GpuGPartitionTest, BlockTier_LargeG_RoutesToBlockGlobal) {
     EXPECT_EQ(r.block_global_walk_counts[0], 300);
 }
 
-// ==========================================================================
-// Tier boundaries at every (tier, picker-class) combination. G=cap stays
-// in smem; G=cap+1 flips to global.
-// ==========================================================================
-
 TEST_F(GpuGPartitionTest, BoundaryWarpIndex_GEqCap_IsSmem_GCapPlus1_IsGlobal) {
-    const int cap    = G_THRESHOLD_WARP_INDEX;  // 340
+    const int cap    = G_THRESHOLD_WARP_INDEX;
     const int NODE_A = 5;
     const int NODE_B = 6;
     std::vector<int> last_nodes;
@@ -372,8 +303,8 @@ TEST_F(GpuGPartitionTest, BoundaryWarpIndex_GEqCap_IsSmem_GCapPlus1_IsGlobal) {
     for (int i = 0; i < 10; ++i) last_nodes.push_back(NODE_B);
 
     std::vector<int> g;
-    set_g(g, NODE_A, cap);        // -> warp_smem
-    set_g(g, NODE_B, cap + 1);    // -> warp_global
+    set_g(g, NODE_A, cap);
+    set_g(g, NODE_B, cap + 1);
 
     auto r = run_and_materialize(last_nodes, g,
                                  RandomPickerType::Linear,
@@ -386,7 +317,7 @@ TEST_F(GpuGPartitionTest, BoundaryWarpIndex_GEqCap_IsSmem_GCapPlus1_IsGlobal) {
 }
 
 TEST_F(GpuGPartitionTest, BoundaryWarpWeighted_GEqCap_IsSmem_GCapPlus1_IsGlobal) {
-    const int cap    = G_THRESHOLD_WARP_WEIGHT;  // 220
+    const int cap    = G_THRESHOLD_WARP_WEIGHT;
     const int NODE_A = 5;
     const int NODE_B = 6;
     std::vector<int> last_nodes;
@@ -408,7 +339,7 @@ TEST_F(GpuGPartitionTest, BoundaryWarpWeighted_GEqCap_IsSmem_GCapPlus1_IsGlobal)
 }
 
 TEST_F(GpuGPartitionTest, BoundaryBlockIndex_GEqCap_IsSmem_GCapPlus1_IsGlobal) {
-    const int cap    = G_THRESHOLD_BLOCK_INDEX;  // 2800
+    const int cap    = G_THRESHOLD_BLOCK_INDEX;
     const int NODE_A = 5;
     const int NODE_B = 6;
     std::vector<int> last_nodes;
@@ -430,7 +361,7 @@ TEST_F(GpuGPartitionTest, BoundaryBlockIndex_GEqCap_IsSmem_GCapPlus1_IsGlobal) {
 }
 
 TEST_F(GpuGPartitionTest, BoundaryBlockWeighted_GEqCap_IsSmem_GCapPlus1_IsGlobal) {
-    const int cap    = G_THRESHOLD_BLOCK_WEIGHT;  // 1800
+    const int cap    = G_THRESHOLD_BLOCK_WEIGHT;
     const int NODE_A = 5;
     const int NODE_B = 6;
     std::vector<int> last_nodes;
@@ -451,16 +382,8 @@ TEST_F(GpuGPartitionTest, BoundaryBlockWeighted_GEqCap_IsSmem_GCapPlus1_IsGlobal
     EXPECT_EQ(r.block_global_nodes[0], NODE_B);
 }
 
-// ==========================================================================
-// Picker class actually selects the right cap. One node's G sits between
-// the weighted and index caps — routing must flip depending on which
-// picker is passed.
-// ==========================================================================
-
 TEST_F(GpuGPartitionTest, PickerClassSelectsCap_WarpTier) {
-    // G=300 for warp tier:
-    //   Index picker    -> 300 <= 340 (cap_warp_index)    -> warp_smem
-    //   Weighted picker -> 300 >  220 (cap_warp_weighted) -> warp_global
+    // G=300: index (cap 340) -> smem; weighted (cap 220) -> global.
     const int NODE = 5;
     std::vector<int> last_nodes(10, NODE);
     std::vector<int> g; set_g(g, NODE, 300);
@@ -478,9 +401,7 @@ TEST_F(GpuGPartitionTest, PickerClassSelectsCap_WarpTier) {
 }
 
 TEST_F(GpuGPartitionTest, PickerClassSelectsCap_BlockTier) {
-    // G=2000 for block tier:
-    //   Index picker    -> 2000 <= 2800 -> block_smem
-    //   Weighted picker -> 2000 >  1800 -> block_global
+    // G=2000: index (cap 2800) -> smem; weighted (cap 1800) -> global.
     const int NODE = 7;
     std::vector<int> last_nodes(300, NODE);
     std::vector<int> g; set_g(g, NODE, 2000);
@@ -497,20 +418,13 @@ TEST_F(GpuGPartitionTest, PickerClassSelectsCap_BlockTier) {
     EXPECT_EQ(r_weighted.num_block_global_host, 1);
 }
 
-// ==========================================================================
-// Solo tier is W-routed only — G for a solo walk's node doesn't matter.
-// Ensures the G-partition doesn't accidentally pull solo walks.
-// ==========================================================================
-
 TEST_F(GpuGPartitionTest, SoloTier_UnaffectedByG) {
-    // Each walk at a unique node (W=1 each) -> all solo.
-    // Give those nodes huge G; partition must still route them as solo.
     std::vector<int> last_nodes;
     std::vector<int> g;
     for (int i = 0; i < 10; ++i) {
         const int node = 100 + i;
         last_nodes.push_back(node);
-        set_g(g, node, 99999);   // far above any cap
+        set_g(g, node, 99999);
     }
 
     auto r = run_and_materialize(last_nodes, g,
@@ -524,23 +438,17 @@ TEST_F(GpuGPartitionTest, SoloTier_UnaffectedByG) {
     EXPECT_EQ(r.num_block_global_host, 0);
 }
 
-// ==========================================================================
-// All five tiers populated in one run. Verifies the W-partition + G-partition
-// composition: tier decided by W first, then routed by G within that tier.
-// ==========================================================================
-
 TEST_F(GpuGPartitionTest, MixedScenario_AllFiveTiersPopulated_CountIdentity) {
-    // Use the index picker caps (G_THRESHOLD_WARP_INDEX=340, G_THRESHOLD_BLOCK_INDEX=2800).
     const int NODE_SOLO_A = 101;
     const int NODE_SOLO_B = 102;
-    const int NODE_WARP_SMEM   = 11;   // W=10, G=100
-    const int NODE_WARP_GLOBAL = 12;   // W=10, G=400
-    const int NODE_BLOCK_SMEM  = 13;   // W=300, G=1000
-    const int NODE_BLOCK_GLOB  = 14;   // W=300, G=3000
+    const int NODE_WARP_SMEM   = 11;
+    const int NODE_WARP_GLOBAL = 12;
+    const int NODE_BLOCK_SMEM  = 13;
+    const int NODE_BLOCK_GLOB  = 14;
 
     std::vector<int> last_nodes;
-    last_nodes.push_back(NODE_SOLO_A);  // W=1 solo
-    last_nodes.push_back(NODE_SOLO_B);  // W=1 solo
+    last_nodes.push_back(NODE_SOLO_A);
+    last_nodes.push_back(NODE_SOLO_B);
     for (int i = 0; i < 10;  ++i) last_nodes.push_back(NODE_WARP_SMEM);
     for (int i = 0; i < 10;  ++i) last_nodes.push_back(NODE_WARP_GLOBAL);
     for (int i = 0; i < 300; ++i) last_nodes.push_back(NODE_BLOCK_SMEM);
@@ -548,8 +456,8 @@ TEST_F(GpuGPartitionTest, MixedScenario_AllFiveTiersPopulated_CountIdentity) {
     const int expected_active = 2 + 10 + 10 + 300 + 300;
 
     std::vector<int> g;
-    set_g(g, NODE_SOLO_A,       50);    // G doesn't matter (solo)
-    set_g(g, NODE_SOLO_B,       9999);  // G doesn't matter (solo)
+    set_g(g, NODE_SOLO_A,       50);
+    set_g(g, NODE_SOLO_B,       9999);
     set_g(g, NODE_WARP_SMEM,    100);
     set_g(g, NODE_WARP_GLOBAL,  400);
     set_g(g, NODE_BLOCK_SMEM,   1000);
@@ -559,7 +467,6 @@ TEST_F(GpuGPartitionTest, MixedScenario_AllFiveTiersPopulated_CountIdentity) {
                                  RandomPickerType::Linear,
                                  block_dim_, stream_);
 
-    // Exact count per tier.
     EXPECT_EQ(r.num_active_host,       expected_active);
     EXPECT_EQ(r.num_solo_walks_host,   2);
     EXPECT_EQ(r.num_warp_smem_host,    1);
@@ -567,7 +474,6 @@ TEST_F(GpuGPartitionTest, MixedScenario_AllFiveTiersPopulated_CountIdentity) {
     EXPECT_EQ(r.num_block_smem_host,   1);
     EXPECT_EQ(r.num_block_global_host, 1);
 
-    // Right node went to right tier.
     ASSERT_EQ(r.warp_smem_nodes.size(),   1u);
     EXPECT_EQ(r.warp_smem_nodes[0],       NODE_WARP_SMEM);
     ASSERT_EQ(r.warp_global_nodes.size(), 1u);
@@ -577,7 +483,6 @@ TEST_F(GpuGPartitionTest, MixedScenario_AllFiveTiersPopulated_CountIdentity) {
     ASSERT_EQ(r.block_global_nodes.size(), 1u);
     EXPECT_EQ(r.block_global_nodes[0],    NODE_BLOCK_GLOB);
 
-    // Count identity: every active walk ends up in exactly one tier.
     int total = r.num_solo_walks_host;
     total += std::accumulate(r.warp_smem_walk_counts.begin(),
                              r.warp_smem_walk_counts.end(), 0);
@@ -587,9 +492,7 @@ TEST_F(GpuGPartitionTest, MixedScenario_AllFiveTiersPopulated_CountIdentity) {
                              r.block_smem_walk_counts.end(), 0);
     total += std::accumulate(r.block_global_walk_counts.begin(),
                              r.block_global_walk_counts.end(), 0);
-    EXPECT_EQ(total, expected_active)
-        << "num_solo + sum(warp_smem) + sum(warp_global) + "
-           "sum(block_smem) + sum(block_global) must equal num_active";
+    EXPECT_EQ(total, expected_active);
 }
 
 #endif  // HAS_CUDA

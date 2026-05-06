@@ -11,9 +11,7 @@
 
 namespace {
 
-// Value chosen to be well outside any real node id in sample_data.csv (max
-// id is 111). A padding that collides with a real node would conflate
-// "unused slot" with "legitimate node", which is a separate design concern.
+// well outside any real node id in sample_data.csv (max id 111).
 constexpr int CUSTOM_WALK_PADDING_VALUE = 1000000;
 constexpr int MAX_WALK_LEN = 20;
 constexpr int NUM_WALKS_PER_NODE = 10;
@@ -30,12 +28,6 @@ using GPU_USAGE_TYPES = ::testing::Types<
 >;
 #endif
 
-// One trw instance per fixture — KernelLaunchType is chosen per
-// walk-sampling call, so the same trw drives both FullWalk and StepBased
-// invocations. On CPU (use_gpu=false) both dispatch to
-// launch_random_walk_cpu_new; on GPU each KernelLaunchType exercises its
-// own kernel pipeline. This satisfies CPU_GPU_PAIRING.md: both backends
-// covered, both GPU kernel variants covered.
 template <typename T>
 class WalkPaddingValueTest : public ::testing::Test {
 protected:
@@ -65,19 +57,8 @@ struct WalkStats {
     size_t num_walks_longer_than_3 = 0;
 };
 
-// Runs the three invariants the wiring fix has to uphold:
-//   (a) every slot in [0, walk_len) holds a real node — no -1 sentinel
-//       leak, and no accidental hop onto the configured padding value
-//       (which would mean the termination check failed to fire).
-//   (b) every slot in [walk_len, max_walk_len) equals the configured
-//       padding value — the WalkSet tail is consistent with what the user
-//       asked for.
-//   (c) enough walks extend past length 3 — if wiring is wrong, the
-//       symptom we care about is *every* walk getting stuck at 2 or 3
-//       (start edge + maybe one hop, then jammed), which this catches.
-// ASSERT_* inside a helper can only short-circuit a void function, so the
-// caller reads stats via outparam and wraps the call with
-// ASSERT_NO_FATAL_FAILURE.
+// (a) prefix has no sentinel/padding leaks; (b) tail is all padding;
+// (c) caller gates on enough walks > length 3.
 void assert_walks_respect_padding(
     const WalksWithEdgeFeaturesHost& walks,
     const int expected_padding_value,
@@ -103,20 +84,15 @@ void assert_walks_respect_padding(
         for (size_t i = 0; i < walk_len; ++i) {
             const int node = nodes_ptr[row_base + i];
             ASSERT_NE(node, -1)
-                << "Walk " << w << " hop " << i
-                << " leaked the -1 sentinel into the valid prefix";
+                << "Walk " << w << " hop " << i << " leaked -1 sentinel";
             ASSERT_NE(node, expected_padding_value)
-                << "Walk " << w << " hop " << i
-                << " equals the configured padding value; the termination "
-                << "check should have fired before this hop was written";
+                << "Walk " << w << " hop " << i << " equals padding value";
         }
 
         for (size_t i = walk_len; i < max_walk_len; ++i) {
             const int node = nodes_ptr[row_base + i];
             ASSERT_EQ(node, expected_padding_value)
-                << "Walk " << w << " tail slot " << i << " is " << node
-                << " but should be the configured padding value "
-                << expected_padding_value;
+                << "Walk " << w << " tail slot " << i << " is " << node;
         }
     }
 }
@@ -128,10 +104,7 @@ void expect_enough_long_walks(const WalkStats& stats) {
         / static_cast<double>(stats.num_walks);
     EXPECT_GE(frac_long, 0.05)
         << "Only " << stats.num_walks_longer_than_3 << " / "
-        << stats.num_walks
-        << " walks reached length > 3 under non-default padding. "
-        << "The walk path is likely truncating because walk_padding_value "
-        << "is not threaded into the kernel's termination check.";
+        << stats.num_walks << " walks reached length > 3.";
 }
 
 }  // namespace

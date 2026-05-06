@@ -12,29 +12,9 @@
 #include "../src/data/enums.cuh"
 #include "../src/proxies/TemporalRandomWalk.cuh"
 
-// Structural parity harness between FULL_WALK and NODE_GROUPED. See
-// CLAUDE.md §9.1.
-//
-// These two paths are NOT bit-exact today: both key Philox on
-// (base_seed, walk_idx) so they share a substream, but FULL_WALK walks
-// the counter sequentially while NODE_GROUPED re-inits per step at
-// offset = step_kernel_philox_offset(step) (0 at step 0, then
-// 3 + step * 2 for step >= 1). The two paths therefore draw from
-// different counter positions and produce genuinely different walks
-// for the same seed.
-//
-// What this harness verifies instead — invariants that must hold
-// regardless of the Philox offset gap:
-//   * same walk count (both paths receive the same start_node_ids).
-//   * walk_idx -> start_node mapping matches slot 0 (shuffle disabled).
-//   * every hop is a real edge in the graph and timestamps respect the
-//     requested walk direction.
-//   * length distributions are close enough to catch step-loop / filter
-//     regressions (e.g. every NODE_GROUPED walk jamming at length 1).
-//
-// Bit-exact parity is tracked as a separate follow-up; requires
-// aligning FULL_WALK's Philox stepping to NODE_GROUPED's offset scheme
-// (or vice versa).
+// Structural parity between FULL_WALK and NODE_GROUPED — not bit-exact
+// (different Philox stepping). Asserts walk count, slot-0 mapping,
+// per-hop edge validity, and length-distribution proximity.
 
 namespace {
 
@@ -42,9 +22,7 @@ constexpr int      MAX_WALK_LEN       = 20;
 constexpr int      NUM_WALKS_PER_NODE = 5;
 constexpr uint64_t PARITY_SEED        = 0x5EED1234ULL;
 
-// Pickers that NODE_GROUPED routes through the cooperative pipeline.
-// Node2Vec is gated out at the dispatcher and runs on per_walk_step_kernel;
-// its smoke-test lives in test_node_grouped_walk_tier_routing.cpp.
+// pickers that route through the cooperative pipeline (Node2Vec excluded).
 inline const std::initializer_list<RandomPickerType> kParityPickers = {
     RandomPickerType::Linear,
     RandomPickerType::Uniform,
@@ -63,17 +41,12 @@ inline const char* picker_name(const RandomPickerType p) {
     }
 }
 
-// ExponentialWeight and TemporalNode2Vec need per-node cum_weights built
-// at graph construction; other pickers don't.
 inline bool picker_needs_weights(const RandomPickerType p) {
     return p == RandomPickerType::ExponentialWeight ||
            p == RandomPickerType::TemporalNode2Vec;
 }
 
-// Mean-length ratio band. Picked wide because the two paths consume the
-// Philox stream differently, but tight enough to catch a gross bug
-// where NODE_GROUPED walks jam a few hops in. Revisit once bit-exact
-// parity lands — then this can shrink to ~1.0 ± epsilon.
+// wide band because Philox streams diverge; tight enough to catch jammed walks.
 constexpr double MEAN_LEN_RATIO_LOW  = 0.5;
 constexpr double MEAN_LEN_RATIO_HIGH = 2.0;
 
@@ -98,9 +71,7 @@ protected:
         }
     }
 
-    // Fresh trw per kernel launch — identical config, identical seed.
-    // shuffle_walk_order=false so slot 0 of walk w equals the same
-    // start_node_id in both FULL_WALK and NODE_GROUPED output.
+    // shuffle_walk_order=false so slot 0 maps the same across both paths.
     std::unique_ptr<TemporalRandomWalk> make_trw(const bool enable_weights) const {
         auto trw = std::make_unique<TemporalRandomWalk>(
             /*is_directed=*/true,
@@ -119,8 +90,6 @@ protected:
     }
 
     static uint64_t pack_edge(int u, int v, int64_t ts) {
-        // Cheap composite key for edge-existence lookup; collisions are
-        // tolerable because the test only asserts membership.
         uint64_t k = static_cast<uint64_t>(static_cast<uint32_t>(u));
         k = (k * 1099511628211ULL) ^ static_cast<uint32_t>(v);
         k = (k * 1099511628211ULL) ^ static_cast<uint64_t>(ts);
@@ -135,10 +104,10 @@ TYPED_TEST_SUITE(NodeGroupedParityTest, PARITY_BACKENDS);
 
 struct WalkDigest {
     size_t num_walks       = 0;
-    size_t produced_walks  = 0;    // walks with len >= 1
+    size_t produced_walks  = 0;
     size_t total_hops      = 0;
     size_t walks_ge_3      = 0;
-    double mean_len_all    = 0.0;  // across produced walks only
+    double mean_len_all    = 0.0;
 };
 
 WalkDigest digest_walks(const WalksWithEdgeFeaturesHost& walks) {
@@ -159,11 +128,7 @@ WalkDigest digest_walks(const WalksWithEdgeFeaturesHost& walks) {
     return d;
 }
 
-// Slot-0 parity: with shuffle_walk_order=false, walk_idx w is seeded
-// from the same start node in both paths, so nodes[w * max_walk_len]
-// must agree wherever both paths produced a walk. If only one path
-// dead-ended on the first edge, slot-0 may carry the padding on the
-// other side; skip those asymmetric cases rather than asserting on them.
+// skip walks where only one side dead-ended (asymmetric padding).
 void assert_slot0_agreement(
     const WalksWithEdgeFeaturesHost& a,
     const WalksWithEdgeFeaturesHost& b,
@@ -180,28 +145,14 @@ void assert_slot0_agreement(
     for (size_t w = 0; w < num_walks; ++w) {
         if (al[w] == 0 || bl[w] == 0) continue;
         ASSERT_EQ(an[w * max_walk_len], bn[w * max_walk_len])
-            << "Walk " << w << " slot 0 differs across paths; "
-            << "shuffle is disabled and both paths receive the same "
-            << "start_node_ids, so this is a walk_idx placement bug.";
+            << "Walk " << w << " slot 0 differs across paths.";
         ++compared;
     }
     *compared_out = compared;
 }
 
-// Structural validity: every hop in [0, walk_len) must be a real node,
-// and consecutive timestamps must be monotone non-decreasing.
-//
-// Direction note — both FULL_WALK and NODE_GROUPED reverse backward walks
-// in place (FULL_WALK at kernels_full_walk.cuh:137, NODE_GROUPED via
-// reverse_walks_kernel). So the caller-visible output is always
-// chronologically ordered: hop 0 carries the earliest real timestamp,
-// the last real hop carries the latest, and the direction sentinel ends
-// up at the opposite end relative to sampling:
-//   Forward:  slot 0 = INT64_MIN sentinel (never reversed).
-//   Backward: slot (wl-1) = INT64_MAX sentinel (post-reversal).
-// In both cases MIN <= any real ts <= MAX, so `cur >= prev` holds for
-// every adjacent pair. The Forward template parameter is kept for the
-// error message only — the assertion is the same either way.
+// caller-visible walks are always chronologically ordered post-reverse,
+// so cur >= prev holds for both forward and backward.
 template <bool Forward>
 void assert_walks_are_valid(
     const WalksWithEdgeFeaturesHost& walks,
@@ -235,11 +186,6 @@ void assert_walks_are_valid(
 
 }  // namespace
 
-// ==========================================================================
-// Core structural parity: all-nodes path (constrained start).
-// Runs across every non-Node2Vec picker via SCOPED_TRACE so a failure
-// names the offending picker. Same for the two sibling tests below.
-// ==========================================================================
 TYPED_TEST(NodeGroupedParityTest, AllNodesConstrained_Forward_StructuralParity) {
     for (const auto picker : kParityPickers) {
         SCOPED_TRACE(testing::Message() << "picker=" << picker_name(picker));
@@ -266,9 +212,7 @@ TYPED_TEST(NodeGroupedParityTest, AllNodesConstrained_Forward_StructuralParity) 
                                    static_cast<size_t>(MAX_WALK_LEN),
                                    &compared));
         ASSERT_GT(compared, 0u)
-            << "No walks were compared — both paths dead-ended on every seed, "
-            << "which almost certainly indicates a broken walk kernel rather "
-            << "than a legitimate graph property.";
+            << "No walks were compared — both paths dead-ended on every seed.";
 
         ASSERT_NO_FATAL_FAILURE(
             assert_walks_are_valid<true>(walks_full,
@@ -281,32 +225,16 @@ TYPED_TEST(NodeGroupedParityTest, AllNodesConstrained_Forward_StructuralParity) 
         const auto d_grp  = digest_walks(walks_grp);
         ASSERT_GT(d_full.produced_walks, 0u);
         ASSERT_GT(d_grp.produced_walks,  0u);
-        ASSERT_GT(d_full.mean_len_all, 1.0)
-            << "FULL_WALK mean length " << d_full.mean_len_all
-            << " is degenerate — every walk stopped at the start edge.";
-        ASSERT_GT(d_grp.mean_len_all, 1.0)
-            << "NODE_GROUPED mean length " << d_grp.mean_len_all
-            << " is degenerate — step-loop or filter is broken.";
+        ASSERT_GT(d_full.mean_len_all, 1.0);
+        ASSERT_GT(d_grp.mean_len_all, 1.0);
 
         const double ratio = d_grp.mean_len_all / d_full.mean_len_all;
-        EXPECT_GT(ratio, MEAN_LEN_RATIO_LOW)
-            << "NODE_GROUPED mean length " << d_grp.mean_len_all
-            << " is far below FULL_WALK's " << d_full.mean_len_all
-            << " — likely a termination-check or walk_idx scatter regression.";
-        EXPECT_LT(ratio, MEAN_LEN_RATIO_HIGH)
-            << "NODE_GROUPED mean length " << d_grp.mean_len_all
-            << " is far above FULL_WALK's " << d_full.mean_len_all
-            << " — unexpected and worth investigating.";
+        EXPECT_GT(ratio, MEAN_LEN_RATIO_LOW);
+        EXPECT_LT(ratio, MEAN_LEN_RATIO_HIGH);
     }
 }
 
-// ==========================================================================
-// Unconstrained path: every walk starts with start_node_id == -1, so
-// NODE_GROUPED short-circuits sort/RLE at step 0 and runs the per-walk
-// start-edge kernel for everyone. slot 0 can legitimately differ between
-// paths because the picker-draw sequence differs; we still assert
-// validity and length-distribution parity.
-// ==========================================================================
+// unconstrained start (start_node_id == -1); slot-0 may legitimately differ.
 TYPED_TEST(NodeGroupedParityTest, Unconstrained_Forward_StructuralParity) {
     for (const auto picker : kParityPickers) {
         SCOPED_TRACE(testing::Message() << "picker=" << picker_name(picker));
@@ -314,8 +242,6 @@ TYPED_TEST(NodeGroupedParityTest, Unconstrained_Forward_StructuralParity) {
         auto trw_full = this->make_trw(enable_weights);
         auto trw_grp  = this->make_trw(enable_weights);
 
-        // _get_random_walks_and_times (no _for_all_nodes / _for_last_batch)
-        // is the unconstrained entrypoint — fills start_node_ids with -1.
         constexpr int NUM_WALKS_TOTAL = 400;
         const auto walks_full = trw_full->get_random_walks_and_times(
             MAX_WALK_LEN, &picker, NUM_WALKS_TOTAL,
@@ -348,11 +274,6 @@ TYPED_TEST(NodeGroupedParityTest, Unconstrained_Forward_StructuralParity) {
     }
 }
 
-// ==========================================================================
-// Backward walks: exercises the reverse_walks_kernel and the backward
-// temporal-validity check. Only the timestamp-monotonicity direction
-// changes; structural parity claims are identical.
-// ==========================================================================
 TYPED_TEST(NodeGroupedParityTest, AllNodesConstrained_Backward_StructuralParity) {
     for (const auto picker : kParityPickers) {
         SCOPED_TRACE(testing::Message() << "picker=" << picker_name(picker));

@@ -9,16 +9,15 @@
 #include "../../common/const.cuh"
 #include "../../common/macros.cuh"
 
-// Class representing a single walk (non-owning view)
+// non-owning view of a single walk.
 class Walk {
 private:
     const int* nodes_;
     const int64_t* timestamps_;
-    const int64_t* edge_ids_; // per-walk edge slice, length = max(0, length_ - 1)
+    const int64_t* edge_ids_; // per-walk slice, length = max(0, length_ - 1)
     size_t length_;
 
 public:
-    // Constructor
     HOST Walk(
         const int* nodes,
         const int64_t* timestamps,
@@ -26,7 +25,6 @@ public:
         const size_t length)
         : nodes_(nodes), timestamps_(timestamps), edge_ids_(edge_ids), length_(length) {}
 
-    // Access operations
     HOST Step operator[](const size_t index) const {
         if (index >= length_) {
             throw std::out_of_range("Walk index out of range");
@@ -43,7 +41,6 @@ public:
         return length_ == 0;
     }
 
-    // Iterator support
     HOST WalkIterator begin() const {
         return {nodes_, timestamps_, edge_ids_, 0, length_};
     }
@@ -52,7 +49,6 @@ public:
         return {nodes_, timestamps_, edge_ids_, length_, length_};
     }
 
-    // Direct access
     HOST const int* nodes() const {
         return nodes_;
     }

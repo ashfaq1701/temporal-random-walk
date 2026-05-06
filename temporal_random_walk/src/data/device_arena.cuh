@@ -12,30 +12,8 @@
 #include "../common/macros.cuh"
 #include "../common/error_handlers.cuh"
 
-/**
- * DeviceArena — chunked bump allocator with pointer-stable growth.
- *
- * Semantics mirror LLVM's BumpPtrAllocator, std::pmr::monotonic_buffer_resource,
- * and protobuf's Arena: pointers returned by acquire() remain valid until
- * reset() or destruction. Growth never invalidates prior handles — when the
- * current chunk runs out, acquire() allocates a new chunk and keeps the old
- * one live.
- *
- *   acquire<T>(n)  -> pointer into some chunk, 256-byte aligned.
- *   reset()        -> rewind cur_chunk_/offset_in_cur_ to 0. All chunks stay
- *                     allocated and are reused on subsequent acquires.
- *   ~DeviceArena() -> frees every chunk in one pass.
- *
- * Memory footprint stabilizes at the peak acquire extent across all calls.
- * First-batch acquires pay per-chunk cudaMalloc; subsequent batches are
- * pure offset arithmetic.
- *
- * Not stream-aware. Plain cudaFree at destruction time waits globally for
- * in-flight kernels; per-step reset() doesn't free anything, so no sync is
- * required between steps on the same stream.
- *
- * Move-only.
- */
+// chunked bump allocator. acquire returns 256-byte-aligned pointers that stay
+// valid until reset() or destruction. not stream-aware.
 class DeviceArena {
 public:
     DeviceArena() noexcept : use_gpu_(false) {}
@@ -85,7 +63,6 @@ public:
         constexpr size_t kAlign = 256;
         const size_t bytes_needed = n * sizeof(T);
 
-        // Fast path: fit in the current chunk.
         if (cur_chunk_ < chunks_.size()) {
             const size_t aligned =
                 (offset_in_cur_ + kAlign - 1) & ~(kAlign - 1);
@@ -96,9 +73,7 @@ public:
             }
         }
 
-        // Current chunk is exhausted (or doesn't exist). Walk forward to
-        // the next already-allocated chunk that can hold the request at
-        // offset 0 — this reuses chunks left behind on earlier peak steps.
+        // reuse a later chunk left behind on an earlier peak step.
         const size_t start = chunks_.empty() ? 0 : cur_chunk_ + 1;
         for (size_t c = start; c < chunks_.size(); ++c) {
             if (chunks_[c].capacity >= bytes_needed) {
@@ -108,9 +83,7 @@ public:
             }
         }
 
-        // No existing chunk fits — allocate a new one. Double the last
-        // chunk's capacity (or use bytes_needed if larger) so the arena
-        // converges quickly on repeat calls.
+        // grow geometrically so the arena converges on repeat calls.
         const size_t prev_cap =
             chunks_.empty() ? size_t{0} : chunks_.back().capacity;
         size_t new_cap = prev_cap * 2;
@@ -134,9 +107,7 @@ public:
     }
 
     size_t used_bytes() const noexcept {
-        // Capacity of every fully-crossed chunk + offset in the current.
-        // A loose metric; earlier chunks may not have been 100% consumed
-        // at the moment we moved past them.
+        // loose metric — earlier chunks may not have been fully consumed.
         size_t total = 0;
         for (size_t i = 0; i < cur_chunk_ && i < chunks_.size(); ++i) {
             total += chunks_[i].capacity;

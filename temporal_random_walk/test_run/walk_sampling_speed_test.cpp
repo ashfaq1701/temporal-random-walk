@@ -16,23 +16,13 @@ constexpr bool DEFAULT_USE_GPU = true;
 constexpr bool DEFAULT_USE_GPU = false;
 #endif
 
-// ============================
-// Defaults
-// ============================
-
 constexpr bool DEFAULT_IS_DIRECTED = false;
 constexpr int DEFAULT_MAX_WALK_LENGTH = 80;
 constexpr int DEFAULT_NUM_TOTAL_WALKS = 10'000'000;
 constexpr int DEFAULT_NUM_WALKS_PER_NODE = -1;
 constexpr auto DEFAULT_EDGE_PICKER = "ExponentialIndex";
 constexpr auto DEFAULT_START_PICKER = "Uniform";
-// Match the library default (DEFAULT_KERNEL_LAUNCH_TYPE in enums.cuh)
-// as a string so CLI `--help` shows a realistic default.
 constexpr auto DEFAULT_KERNEL_LAUNCH_TYPE_STR = "NODE_GROUPED";
-
-// ============================
-// Performance Stats
-// ============================
 
 void print_walk_performance_stats(
     const size_t num_walks,
@@ -69,10 +59,6 @@ void print_walk_performance_stats(
               << "  Steps/sec: " << steps_per_sec << "\n";
 }
 
-// ============================
-// Main
-// ============================
-
 int main(int argc, char* argv[])
 {
     if (argc < 2) {
@@ -87,13 +73,7 @@ int main(int argc, char* argv[])
                   << " [edge_picker]"
                   << " [start_picker]"
                   << " [kernel_launch_type=FULL_WALK|NODE_GROUPED|NODE_GROUPED_GLOBAL_ONLY]"
-                  << " [walk_dump_file]"
-                  << "\n\n"
-                  << "Bulk-ingest, single-shot walk-sampling timer. Prints both\n"
-                  << "ingest and walk-sampling phases on parseable lines\n"
-                  << "(\"Ingest time: <s>\", \"Walk time: <s>\") so a Python\n"
-                  << "scheduler can run the same binary across CPU/GPU and\n"
-                  << "kernel-launch-type combinations and aggregate results.\n";
+                  << " [walk_dump_file]\n";
         return 1;
     }
 
@@ -137,20 +117,12 @@ int main(int argc, char* argv[])
     std::cout << "Edge picker: " << edge_picker
               << "  Start picker: " << start_picker << "\n";
 
-    // ============================
-    // Load Edges
-    // ============================
-
     const auto edge_infos = read_edges_from_csv(file_path);
 
     auto [sources, targets, timestamps] =
         convert_edge_tuples_to_components(edge_infos);
 
     std::cout << "Edges loaded: " << edge_infos.size() << "\n";
-
-    // ============================
-    // Resolve Pickers
-    // ============================
 
     const RandomPickerType edge_picker_enum =
         picker_type_from_string(edge_picker);
@@ -161,10 +133,6 @@ int main(int argc, char* argv[])
     const KernelLaunchType kernel_launch_type =
         kernel_launch_type_from_string(kernel_launch_type_str);
 
-    // ============================
-    // Construct Walker
-    // ============================
-
     const bool enable_temporal_node2vec =
         edge_picker_enum == RandomPickerType::TemporalNode2Vec;
     const bool enable_weight_computation =
@@ -174,15 +142,11 @@ int main(int argc, char* argv[])
     TemporalRandomWalk walker(
         is_directed,
         use_gpu,
-        -1,                          // max_time_capacity (no eviction)
+        -1,
         enable_weight_computation,
         enable_temporal_node2vec,
-        34                           // timescale_bound
+        34
     );
-
-    // ============================
-    // Bulk Ingest (timed)
-    // ============================
 
     std::cout << "\nIngesting edges in bulk...\n";
 
@@ -208,10 +172,6 @@ int main(int argc, char* argv[])
               << walker.get_node_count()
               << " Edges: "
               << walker.get_edge_count() << "\n";
-
-    // ============================
-    // Walk Sampling (timed)
-    // ============================
 
     std::cout << "\nGenerating walks...\n";
 
@@ -249,10 +209,6 @@ int main(int argc, char* argv[])
         walk_set.num_walks(),
         walk_set.walk_lens_ptr(),
         walk_seconds);
-
-    // ============================
-    // Optional Dump
-    // ============================
 
     if (!walk_dump_file.empty()) {
         dump_walks_to_file(

@@ -26,9 +26,6 @@ using BACKEND_TYPES = ::testing::Types<
 >;
 #endif
 
-// -----------------------------------------------------------------------
-// Buffer<T>
-// -----------------------------------------------------------------------
 template <typename T>
 class BufferTest : public ::testing::Test {};
 TYPED_TEST_SUITE(BufferTest, BACKEND_TYPES);
@@ -84,9 +81,6 @@ TYPED_TEST(BufferTest, MoveOnlySemantics) {
     for (int x : v) EXPECT_EQ(x, 7);
 }
 
-// -----------------------------------------------------------------------
-// DeviceArena
-// -----------------------------------------------------------------------
 template <typename T>
 class DeviceArenaTest : public ::testing::Test {};
 TYPED_TEST_SUITE(DeviceArenaTest, BACKEND_TYPES);
@@ -103,9 +97,6 @@ TYPED_TEST(DeviceArenaTest, AcquireAndReset) {
     EXPECT_EQ(arena.used_bytes(), 0u);
 }
 
-// -----------------------------------------------------------------------
-// TemporalGraphData
-// -----------------------------------------------------------------------
 template <typename T>
 class TemporalGraphDataTest : public ::testing::Test {};
 TYPED_TEST_SUITE(TemporalGraphDataTest, BACKEND_TYPES);
@@ -156,15 +147,6 @@ TYPED_TEST(TemporalGraphDataTest, ViewAliasesDataFields) {
     EXPECT_EQ(view.timestamps, data.timestamps.data());
 }
 
-// -----------------------------------------------------------------------
-// WalkSetDevice / Host / View
-//
-// Both typed suites below cover the host path on use_gpu=false and the
-// device-allocation + D->H download path on use_gpu=true. They are the
-// natural CPU/GPU pairing per test/CPU_GPU_PAIRING.md: on the host side
-// we exercise a WalkSetHost directly; on the device side we build a
-// WalkSetDevice, download to host, and then exercise the same surface.
-// -----------------------------------------------------------------------
 template <typename T>
 class WalkSetRoundTripTest : public ::testing::Test {};
 TYPED_TEST_SUITE(WalkSetRoundTripTest, BACKEND_TYPES);

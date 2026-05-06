@@ -7,19 +7,7 @@
 #include "../common/macros.cuh"
 #include "temporal_graph_data.cuh"
 
-/**
- * TemporalGraphView — a plain-old-data view of a TemporalGraphData
- * suitable for passing to CUDA kernels by value. All pointers refer to
- * memory owned elsewhere (by the originating TemporalGraphData). The
- * view itself owns nothing.
- *
- * Used in later tasks (4+) to kill the to_device_ptr / free_device_pointers
- * mirror pattern: instead of replicating a tree of heap-allocated structs
- * onto the device, the kernel takes this POD by value.
- *
- * Do NOT add methods that allocate, free, or modify pointers. This struct
- * is intentionally a dumb bag of raw pointers.
- */
+// non-owning POD view of TemporalGraphData for pass-by-value to kernels.
 struct TemporalGraphView {
     bool    is_directed;
     bool    enable_temporal_node2vec;
@@ -72,15 +60,7 @@ struct TemporalGraphView {
     size_t         inbound_backward_cumulative_weights_exponential_size;
 };
 
-/**
- * Build a TemporalGraphView from a TemporalGraphData. Zero allocation.
- * The returned view aliases into data; it becomes invalid when data is
- * mutated or destroyed.
- *
- * This is a free function (not a method on TemporalGraphData) because it
- * is layer-crossing: TemporalGraphData lives at the data layer and is
- * unaware of the view concept.
- */
+// view aliases into data; invalid if data is mutated or destroyed.
 HOST inline TemporalGraphView make_temporal_graph_view(
     const TemporalGraphData& data) {
     TemporalGraphView v{};

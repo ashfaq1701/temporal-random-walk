@@ -30,22 +30,18 @@ namespace temporal_random_walk {
 
         const int walk_padding_value = walk_set.walk_padding_value;
 
-        // Philox is counter-based: one init per thread, then step the
-        // counter via successive draw_u01_philox calls for each of the
-        // ~2*max_walk_len draws this walk needs.
         PhiloxState rng;
         init_philox_state(rng, base_seed, static_cast<uint64_t>(walk_idx));
 
         const double r0 = draw_u01_philox(rng);
         const double r1 = draw_u01_philox(rng);
 
-        // Get start edge based on whether we have a starting node
         const auto padding_value = walk_set.nodes[walk_idx * max_walk_len];
         InternalEdge start_edge;
         if (start_node_ids[walk_idx] == -1) {
             start_edge = temporal_graph::get_edge_at_device<Forward, StartPickerType>(
                 view,
-                -1, // timestamp
+                -1,
                 r0,
                 r1);
         } else {
@@ -54,7 +50,7 @@ namespace temporal_random_walk {
             start_edge = temporal_graph::get_node_edge_at_device<Forward, StartPickerType, IsDirected>(
                 view,
                 start_node_ids[walk_idx],
-                -1, // timestamp
+                -1,
                 -1,
                 r0,
                 r1);
@@ -72,7 +68,6 @@ namespace temporal_random_walk {
         const int start_dst = start_edge.i;
         const int64_t start_ts = start_edge.ts;
 
-        // Set initial node and add first hop - use template conditions
         if constexpr (IsDirected) {
             if constexpr (Forward) {
                 walk_set.add_hop(walk_idx, start_src, current_timestamp);
@@ -84,7 +79,6 @@ namespace temporal_random_walk {
         } else {
             const double r2 = draw_u01_philox(rng);
 
-            // For undirected graphs, use specified start node or pick a random node
             const int picked_node = (start_node_ids[walk_idx] != -1)
                                         ? start_node_ids[walk_idx]
                                         : pick_random_number(start_src, start_dst, r2);
@@ -96,15 +90,13 @@ namespace temporal_random_walk {
         current_timestamp = start_ts;
         int64_t current_edge_id = start_edge.edge_id;
 
-        // Main walk loop
-        int walk_len = 1; // Start at 1 since we already added first hop
+        int walk_len = 1;
         while (walk_len < max_walk_len && current_node != walk_padding_value) {
             const double r_step0 = draw_u01_philox(rng);
             const double r_step1 = draw_u01_philox(rng);
 
             walk_set.add_hop(walk_idx, current_node, current_timestamp, current_edge_id);
 
-            // Use templated edge selector function
             InternalEdge next_edge = temporal_graph::get_node_edge_at_device<Forward, EdgePickerType, IsDirected>(
                 view,
                 current_node,
@@ -118,7 +110,6 @@ namespace temporal_random_walk {
                 continue;
             }
 
-            // Update current node based on template parameters
             if constexpr (IsDirected) {
                 prev_node = current_node;
                 current_node = Forward ? next_edge.i : next_edge.u;
@@ -132,7 +123,6 @@ namespace temporal_random_walk {
             walk_len++;
         }
 
-        // Reverse walk only when walking backward
         if constexpr (!Forward) {
             walk_set.reverse_walk(walk_idx);
         }
@@ -152,7 +142,6 @@ namespace temporal_random_walk {
         const dim3 &grid_dim,
         const dim3 &block_dim,
         const cudaStream_t stream = 0) {
-        // Calculate grid dimensions if not provided
         dim3 grid = grid_dim;
         if (grid.x == 0) {
             grid.x = (num_walks + block_dim.x - 1) / block_dim.x;
@@ -160,14 +149,8 @@ namespace temporal_random_walk {
 
         const bool should_walk_forward = get_should_walk_forward(walk_direction);
 
-        // Convert to int since the kernel accepts int, not size_t
         const int num_walks_int = static_cast<int>(num_walks);
 
-        // 4-level tag dispatch: (is_directed, should_walk_forward,
-        // edge_picker_type, start_picker_type). Each level converts a
-        // runtime value into a constexpr template parameter, giving the
-        // compiler enough info to emit the correct kernel instantiation.
-        // Same 196 instantiations as the old preprocessor macro.
         dispatch_bool(is_directed, [&](auto dir_tag) {
             constexpr bool kDir = decltype(dir_tag)::value;
             dispatch_bool(should_walk_forward, [&](auto fwd_tag) {

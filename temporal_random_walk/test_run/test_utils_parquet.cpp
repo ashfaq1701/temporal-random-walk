@@ -1,11 +1,3 @@
-// CXX-compiled TU for the parquet reader declared in test_utils.h. Isolated
-// from nvcc because Arrow/Parquet headers don't compile under nvcc, and
-// from the TRW library headers (which drag in thrust that g++ can't compile).
-//
-// CMake sets TRW_HAS_PARQUET for this TU when a pyarrow install (headers +
-// libs) is discovered at configure time. Without it, the throwing stub
-// path compiles and the build still succeeds.
-
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -71,9 +63,7 @@ load_edges_from_parquet(const char* path) {
     const auto i_col  = table->column(1);
     const auto ts_col = table->column(2);
 
-    // Alibaba dumps u/i as int64; we narrow to int32 (node ids fit).
-    // If a dataset ships u/i as int32 we'd need a schema type branch,
-    // but we don't have one today.
+    // alibaba dumps u/i as int64; narrowing to int32
     for (int c = 0; c < u_col->num_chunks(); ++c) {
         const auto u_arr  = std::static_pointer_cast<arrow::Int64Array>(u_col->chunk(c));
         const auto i_arr  = std::static_pointer_cast<arrow::Int64Array>(i_col->chunk(c));

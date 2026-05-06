@@ -3,8 +3,7 @@
 
 #include <cstdint>
 
-// Step representation for a node, timestamp, and incoming edge id.
-// edge_id is EMPTY_EDGE_ID for the first hop in a walk.
+// edge_id is EMPTY_EDGE_ID for the first hop.
 struct Step {
     int node;
     int64_t timestamp;

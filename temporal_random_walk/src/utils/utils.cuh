@@ -19,7 +19,6 @@ HOST inline DataBlock<int> repeat_elements(const DataBlock<int>& arr, int times,
     const size_t input_size = arr.size;
     const size_t output_size = input_size * times;
 
-    // Allocate memory for the output
     DataBlock<int> repeated_items(output_size, use_gpu);
     if (input_size == 0 || times <= 0) {
         return repeated_items;
@@ -27,10 +26,8 @@ HOST inline DataBlock<int> repeat_elements(const DataBlock<int>& arr, int times,
 
     #ifdef HAS_CUDA
     if (use_gpu) {
-        // Create device pointers
         const int* arr_ptr = arr.data;
 
-        // Use thrust to perform the transformation
         thrust::transform(
             DEVICE_EXECUTION_POLICY,
             thrust::counting_iterator(0),
@@ -47,7 +44,6 @@ HOST inline DataBlock<int> repeat_elements(const DataBlock<int>& arr, int times,
     else
     #endif
     {
-        // CPU implementation
         for (size_t i = 0; i < input_size; ++i) {
             for (int j = 0; j < times; ++j) {
                 repeated_items.data[i * times + j] = arr.data[i];
@@ -68,7 +64,6 @@ HOST inline DataBlock<int> repeat_elements(const int* arr, const size_t input_si
 
     #ifdef HAS_CUDA
     if (use_gpu) {
-        // Copy vector data to device first
         Buffer<int> d_arr_buf(input_size, true);
         int* d_arr = d_arr_buf.data();
         CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_arr, arr, input_size * sizeof(int), cudaMemcpyHostToDevice));
@@ -104,12 +99,10 @@ HOST DEVICE inline int pick_other_number(const int first, const int second, cons
 }
 
 HOST DEVICE inline size_t next_power_of_two(const size_t n) {
-    // If n is already a power of 2, return it
     if ((n & (n - 1)) == 0) {
         return n;
     }
 
-    // Otherwise, find the next power of 2
     size_t power = 1;
     while (power < n) {
         power <<= 1;

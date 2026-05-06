@@ -13,9 +13,7 @@
 
 namespace buffer_detail {
 
-// Byte-pattern fast paths for fill(): comparing T against an all-0 or
-// all-0xFF buffer lets cudaMemsetAsync replace a full kernel launch for
-// common values (int(0), size_t::max(), double(+0.0), etc.).
+// byte-pattern checks let fill() use cudaMemsetAsync for common values.
 template <typename T>
 inline bool is_zero_value(const T& v) {
     constexpr size_t N = sizeof(T);

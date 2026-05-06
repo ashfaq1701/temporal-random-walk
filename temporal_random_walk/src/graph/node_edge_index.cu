@@ -31,10 +31,6 @@
 #include <cub/block/block_scan.cuh>
 #endif
 
-/**
- * Common Functions
- */
-
 HOST void node_edge_index::clear(TemporalGraphData& data) {
     data.node_group_outbound_offsets.shrink_to_fit_empty();
     data.node_group_inbound_offsets.shrink_to_fit_empty();
@@ -127,9 +123,7 @@ HOST SizeRange node_edge_index::get_timestamp_group_range(
 HOST const Buffer<size_t>& node_edge_index::get_timestamp_offset_vector(
     const TemporalGraphData& data,
     const bool forward) {
-    // Returns the live count-per-node buffer. Its .data() pointer is only
-    // dereferenceable on the side (host / device) matching data.use_gpu;
-    // host-side callers must go through read_one_host_safe or copy out.
+    // .data() pointer only valid on the side matching data.use_gpu
     if (data.is_directed && !forward) {
         return data.count_ts_group_per_node_inbound;
     }
@@ -152,10 +146,6 @@ HOST size_t node_edge_index::get_timestamp_group_count(
     const size_t end   = read_one_host_safe(offsets + dense_node_id + 1, data.use_gpu);
     return end - start;
 }
-
-/**
- * Rebuild allocation
- */
 
 HOST void node_edge_index::allocate_node_group_offsets(
     TemporalGraphData& data,
@@ -190,9 +180,6 @@ HOST void node_edge_index::allocate_node_ts_sorted_indices(TemporalGraphData& da
     }
 }
 
-/**
- * Std implementations
- */
 HOST void node_edge_index::compute_node_group_offsets_std(TemporalGraphData& data) {
     const size_t num_edges = data.timestamps.size();
     const bool is_directed = data.is_directed;
@@ -204,13 +191,11 @@ HOST void node_edge_index::compute_node_group_offsets_std(TemporalGraphData& dat
 
     const size_t offset_size = data.node_group_outbound_offsets.size();
 
-    // Step 1: Zero out offset arrays
     std::fill_n(outbound_offsets, offset_size, 0);
     if (is_directed) {
         std::fill_n(inbound_offsets, data.node_group_inbound_offsets.size(), 0);
     }
 
-    // Step 2: Count edge occurrences (use atomic to avoid collisions)
     #pragma omp parallel for
     for (size_t i = 0; i < num_edges; ++i) {
         const int src_idx = sources[i];
@@ -228,7 +213,6 @@ HOST void node_edge_index::compute_node_group_offsets_std(TemporalGraphData& dat
         }
     }
 
-    // Step 3: Inclusive scan over offsets[1..]
     parallel_inclusive_scan(outbound_offsets + 1, offset_size - 1);
 
     if (is_directed) {
@@ -248,7 +232,6 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_std(
     const int* targets = data.targets.data();
     size_t* outbound_indices = data.node_ts_sorted_outbound_indices.data();
 
-    // === Step 1: Initialize node_ts_sorted_outbound_indices ===
     #pragma omp parallel for
     for (size_t i = 0; i < edges_size; ++i) {
         if (is_directed) {
@@ -259,7 +242,6 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_std(
         }
     }
 
-    // === Step 2: Generate node keys for sorting ===
     #pragma omp parallel for
     for (size_t i = 0; i < outbound_buffer_size; ++i) {
         const size_t edge_id = outbound_indices[i];
@@ -267,14 +249,12 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_std(
         outbound_node_ids[i] = is_source ? sources[edge_id] : targets[edge_id];
     }
 
-    // === Step 3: Build a permutation array ===
     std::vector<size_t> indices(outbound_buffer_size);
     #pragma omp parallel for
     for (size_t i = 0; i < outbound_buffer_size; ++i) {
         indices[i] = i;
     }
 
-    // === Step 4: Stable sort the permutation by node ID ===
     parallel::stable_sort(
         indices.begin(),
         indices.end(),
@@ -283,7 +263,6 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_std(
         }
     );
 
-    // === Step 5: Apply permutation ===
     std::vector<size_t> sorted_outbound_indices(outbound_buffer_size);
     std::vector<int> sorted_outbound_node_ids(outbound_buffer_size);
 
@@ -299,7 +278,6 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_std(
         outbound_node_ids[i] = sorted_outbound_node_ids[i];
     }
 
-    // === Step 6: Inbound indices for directed graphs ===
     if (is_directed) {
         size_t* inbound_indices = data.node_ts_sorted_inbound_indices.data();
 
@@ -346,7 +324,6 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
     const size_t num_outbound = data.node_ts_sorted_outbound_indices.size();
     const size_t num_inbound = data.node_ts_sorted_inbound_indices.size();
 
-    // === OUTBOUND ===
     {
         std::vector<size_t> flags(num_outbound, 0);
 
@@ -376,9 +353,7 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
         std::vector<size_t> flag_scan(num_outbound + 1, 0);
         parallel_exclusive_scan(flags.data(), flag_scan.data(), num_outbound);
 
-        // Fused pass (mirrors GPU thrust::for_each): if flags[i] is set,
-        // scatter i into group_indices_out AND atomically bump the per-node
-        // group count in one loop.
+        // fused: scatter group index and bump per-node count in one loop
         std::vector<size_t> group_counts(node_count, 0);
         #pragma omp parallel for
         for (size_t i = 0; i < num_outbound; ++i) {
@@ -391,8 +366,6 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
             }
         }
 
-        // Exclusive scan into count_ts_group_per_node_outbound — mirrors the
-        // GPU's memset(data, 0) + inclusive_scan(group_counts -> data + 1).
         data.count_ts_group_per_node_outbound.resize(node_count + 1);
         parallel_exclusive_scan(
             group_counts.data(),
@@ -400,7 +373,6 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
             node_count);
     }
 
-    // === INBOUND ===
     if (is_directed) {
         std::vector<size_t> flags(num_inbound, 0);
 
@@ -430,8 +402,6 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
         std::vector<size_t> flag_scan(num_inbound + 1, 0);
         parallel_exclusive_scan(flags.data(), flag_scan.data(), num_inbound);
 
-        // Fused pass: see outbound block above for rationale. Mirrors the
-        // inbound GPU fused thrust::for_each.
         std::vector<size_t> group_counts(node_count, 0);
         #pragma omp parallel for
         for (size_t i = 0; i < num_inbound; ++i) {
@@ -444,8 +414,6 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
             }
         }
 
-        // Exclusive scan into count_ts_group_per_node_inbound — mirrors the
-        // GPU's memset(data, 0) + inclusive_scan(group_counts -> data + 1).
         data.count_ts_group_per_node_inbound.resize(node_count + 1);
         parallel_exclusive_scan(
             group_counts.data(),
@@ -456,28 +424,22 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
 
 namespace {
 
-// Host-side per-direction pipeline used by update_temporal_weights_std.
-// Runs the full weight stack (group→node map, per-node min/max + time
-// scale, raw weights, per-node sums, normalize, per-node inclusive
-// cumulative) for a single direction. Outbound calls with ComputeForward
-// = true (sampler reads both fwd and bwd cumulative arrays); the inbound
-// call in directed graphs uses ComputeForward = false (only bwd needed).
+// per-direction host weight pipeline; outbound runs fwd+bwd, inbound bwd-only
 template <bool ComputeForward>
 void compute_per_node_direction_weights_std(
-    const size_t* ts_group_per_node_offsets, // count_ts_group_per_node_(out|in)bound
-    const size_t* node_ts_group_offsets,     // node_ts_group_(out|in)bound_offsets
-    const size_t* edge_sorted_indices,       // node_ts_sorted_(out|in)bound_indices
-    const size_t* node_to_edge_offsets,      // node_group_(out|in)bound_offsets
+    const size_t* ts_group_per_node_offsets,
+    const size_t* node_ts_group_offsets,
+    const size_t* edge_sorted_indices,
+    const size_t* node_to_edge_offsets,
     const int64_t* timestamps,
     const size_t groups_size,
     const size_t node_index_capacity,
     const double timescale_bound,
-    double* forward_cum_out,                 // unused when !ComputeForward
+    double* forward_cum_out,
     double* backward_cum_out)
 {
     if (groups_size == 0 || node_index_capacity == 0) return;
 
-    // Group index -> owning node.
     std::vector<size_t> group_to_node(groups_size);
     #pragma omp parallel for
     for (size_t node = 0; node < node_index_capacity; ++node) {
@@ -488,7 +450,6 @@ void compute_per_node_direction_weights_std(
         }
     }
 
-    // Per-node min/max timestamps and time-scale factor.
     std::vector<int64_t> node_min_ts(node_index_capacity);
     std::vector<int64_t> node_max_ts(ComputeForward ? node_index_capacity : 0);
     std::vector<double>  node_time_scale(node_index_capacity);
@@ -514,7 +475,6 @@ void compute_per_node_direction_weights_std(
         node_time_scale[node] = time_scale;
     }
 
-    // Raw (unnormalized) weights per group position.
     std::vector<double> raw_forward (ComputeForward ? groups_size : 0);
     std::vector<double> raw_backward(groups_size);
 
@@ -546,7 +506,6 @@ void compute_per_node_direction_weights_std(
         }
     }
 
-    // Per-node sums via scattered atomic adds.
     std::vector<double> node_fwd_sum(ComputeForward ? node_index_capacity : 0, 0.0);
     std::vector<double> node_bwd_sum(node_index_capacity, 0.0);
 
@@ -561,7 +520,6 @@ void compute_per_node_direction_weights_std(
         }
     }
 
-    // Normalize raw -> probability mass per group position.
     std::vector<double> norm_forward (ComputeForward ? groups_size : 0);
     std::vector<double> norm_backward(groups_size);
 
@@ -574,8 +532,7 @@ void compute_per_node_direction_weights_std(
         }
     }
 
-    // Per-node inclusive cumulative (sequential within each node,
-    // parallel across nodes).
+    // sequential cumulative within node, parallel across nodes
     #pragma omp parallel for
     for (size_t node = 0; node < node_index_capacity; ++node) {
         const size_t start = ts_group_per_node_offsets[node];
@@ -613,7 +570,6 @@ HOST void node_edge_index::update_temporal_weights_std(
 
     const bool is_directed = data.node_group_inbound_offsets.size() > 0;
 
-    // Outbound: both fwd and bwd cumulative (sampler uses both directions).
     compute_per_node_direction_weights_std</*ComputeForward=*/true>(
         data.count_ts_group_per_node_outbound.data(),
         data.node_ts_group_outbound_offsets.data(),
@@ -626,7 +582,6 @@ HOST void node_edge_index::update_temporal_weights_std(
         data.outbound_forward_cumulative_weights_exponential.data(),
         data.outbound_backward_cumulative_weights_exponential.data());
 
-    // Inbound: bwd cumulative only (directed graphs only).
     if (is_directed) {
         const size_t inbound_groups_size = data.node_ts_group_inbound_offsets.size();
         const size_t inbound_node_capacity = data.node_group_inbound_offsets.size() - 1;
@@ -646,9 +601,6 @@ HOST void node_edge_index::update_temporal_weights_std(
     }
 }
 
-/**
- * Cuda implementations
- */
 #ifdef HAS_CUDA
 
 HOST void node_edge_index::compute_node_group_offsets_cuda(TemporalGraphData& data) {
@@ -664,7 +616,6 @@ HOST void node_edge_index::compute_node_group_offsets_cuda(TemporalGraphData& da
     const size_t inbound_size  = is_directed ? data.node_group_inbound_offsets.size() : 0;
 
     if (num_edges == 0 || outbound_size <= 1) {
-        // offsets already zeroed by allocate_node_group_offsets; nothing to do.
         return;
     }
 
@@ -672,8 +623,7 @@ HOST void node_edge_index::compute_node_group_offsets_cuda(TemporalGraphData& da
         compute_csr_offsets_from_samples<int>(src_ptr, num_edges, outbound_offsets_ptr, outbound_size);
         compute_csr_offsets_from_samples<int>(tgt_ptr, num_edges, inbound_offsets_ptr,  inbound_size);
     } else {
-        // Undirected: each edge contributes to both endpoints, so concatenate
-        // [sources, targets] into one sample stream and run a single pass.
+        // undirected: concat [sources, targets] so each edge counts for both endpoints
         Buffer<int> concat(/*use_gpu=*/true);
         concat.resize(num_edges * 2);
 
@@ -703,7 +653,6 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_cuda(
     const int* targets = data.targets.data();
     size_t* outbound_indices = data.node_ts_sorted_outbound_indices.data();
 
-    // === Step 1: Initialize node_ts_sorted_outbound_indices ===
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
@@ -719,7 +668,6 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_cuda(
     );
     CUDA_KERNEL_CHECK("Initialized node_ts_sorted_outbound_indices");
 
-    // === Step 2: Fill outbound_node_ids
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
@@ -732,7 +680,6 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_cuda(
     );
     CUDA_KERNEL_CHECK("Generated outbound_node_ids");
 
-    // === Step 3: Build permutation array
     thrust::device_vector<size_t> indices(outbound_buffer_size);
     thrust::sequence(
         DEVICE_EXECUTION_POLICY,
@@ -741,7 +688,6 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_cuda(
     );
     CUDA_KERNEL_CHECK("Generated permutation indices");
 
-    // === Step 4: Sort indices by outbound_node_ids using CUB wrapper
     cub_radix_sort_values_by_keys(
         outbound_node_ids,
         thrust::raw_pointer_cast(indices.data()),
@@ -749,7 +695,6 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_cuda(
     );
     CUDA_KERNEL_CHECK("Sorted indices by node keys");
 
-    // === Step 5: Apply permutation
     thrust::device_vector<size_t> sorted_outbound_indices(outbound_buffer_size);
     thrust::device_vector<int> sorted_outbound_node_ids(outbound_buffer_size);
 
@@ -784,7 +729,6 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_cuda(
     );
     CUDA_KERNEL_CHECK("Copied sorted outbound data");
 
-    // === Step 6: Inbound for directed
     if (is_directed) {
         size_t* inbound_indices = data.node_ts_sorted_inbound_indices.data();
 
@@ -838,7 +782,6 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
     const bool is_directed = data.is_directed;
     int64_t* timestamps_ptr = data.timestamps.data();
 
-    // === OUTBOUND ===
     {
         const size_t num_edges = data.node_ts_sorted_outbound_indices.size();
         size_t* indices = data.node_ts_sorted_outbound_indices.data();
@@ -880,10 +823,7 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
         thrust::device_vector<unsigned int> group_counts(node_count, 0);
         auto group_counts_ptr = thrust::raw_pointer_cast(group_counts.data());
 
-        // Fused pass: each thread reads flags[i] once and, if set, both
-        // scatters i into group_indices_out AND bumps the per-node group
-        // count. Previously two independent for_each kernels, both
-        // num_edges-sized, both memory-bound on flags[i].
+        // fused: scatter group index and bump per-node count in one pass
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
@@ -912,7 +852,6 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
         );
     }
 
-    // === INBOUND ===
     if (is_directed) {
         const size_t num_edges = data.node_ts_sorted_inbound_indices.size();
         size_t* indices = data.node_ts_sorted_inbound_indices.data();
@@ -954,7 +893,6 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
         thrust::device_vector<unsigned int> group_counts(node_count, 0);
         auto group_counts_ptr = thrust::raw_pointer_cast(group_counts.data());
 
-        // Fused pass: see outbound block above for rationale.
         thrust::for_each(
             DEVICE_EXECUTION_POLICY,
             thrust::make_counting_iterator<size_t>(0),
@@ -986,27 +924,13 @@ HOST void node_edge_index::allocate_and_compute_node_ts_group_counts_and_offsets
 
 namespace {
 
-// Per-node fused fwd+bwd weight kernel (one block per node). Used for the
-// outbound path, where the sampler needs both forward and backward
-// cumulative weights.
-//
-// Replaces the old 8-kernel thrust pipeline (build_group_to_node, min/max
-// per node, raw weights, atomicAdd sums, normalize, 2x inclusive_scan_by_key)
-// with a single kernel:
-//  - Pass 1 (tiled): compute raw_fwd / raw_bwd into scratch, block-reduce
-//    per-tile sums into per-node running sums in shared memory.
-//  - Pass 2 (tiled): divide raw by node-sum, BlockScan::InclusiveSum with a
-//    running carry across tiles, write cumulative normalized weights.
-//
-// __syncthreads() between passes is both a barrier AND a memory fence for
-// the block's writes to raw_*_scratch. Each block only touches its own
-// [out_start, out_end) range, so scratch has no inter-block contention.
+// per-node fused fwd+bwd weights, one block per node (outbound path).
 template <int BLOCK_SIZE>
 __global__ void compute_per_node_weights_fwd_bwd_kernel(
-    const size_t* __restrict__ group_offsets,        // count_ts_group_per_node_outbound
-    const size_t* __restrict__ group_to_edge_start,  // node_ts_group_outbound_offsets
-    const size_t* __restrict__ node_to_edge_offsets, // node_group_outbound_offsets
-    const size_t* __restrict__ edge_sorted_indices,  // node_ts_sorted_outbound_indices
+    const size_t* __restrict__ group_offsets,
+    const size_t* __restrict__ group_to_edge_start,
+    const size_t* __restrict__ node_to_edge_offsets,
+    const size_t* __restrict__ edge_sorted_indices,
     const int64_t* __restrict__ timestamps,
     const double timescale_bound,
     double* __restrict__ raw_fwd_scratch,
@@ -1128,19 +1052,13 @@ __global__ void compute_per_node_weights_fwd_bwd_kernel(
     }
 }
 
-// Per-node bwd-only weight kernel. Used for the inbound path in directed
-// graphs, where the sampler only needs the backward cumulative weights.
-//
-// Structural mirror of compute_per_node_weights_fwd_bwd_kernel with the
-// forward pipeline stripped out — same tiling, same BlockReduce/BlockScan
-// cadence, same carry-across-tiles logic. Keep the two in sync when
-// touching the shared pattern.
+// per-node bwd-only weights for the directed inbound path; mirror of fwd_bwd kernel
 template <int BLOCK_SIZE>
 __global__ void compute_per_node_weights_bwd_only_kernel(
-    const size_t* __restrict__ group_offsets,        // count_ts_group_per_node_inbound
-    const size_t* __restrict__ group_to_edge_start,  // node_ts_group_inbound_offsets
-    const size_t* __restrict__ node_to_edge_offsets, // node_group_inbound_offsets
-    const size_t* __restrict__ edge_sorted_indices,  // node_ts_sorted_inbound_indices
+    const size_t* __restrict__ group_offsets,
+    const size_t* __restrict__ group_to_edge_start,
+    const size_t* __restrict__ node_to_edge_offsets,
+    const size_t* __restrict__ edge_sorted_indices,
     const int64_t* __restrict__ timestamps,
     const double timescale_bound,
     double* __restrict__ raw_bwd_scratch,
@@ -1252,7 +1170,6 @@ HOST void node_edge_index::update_temporal_weights_cuda(
     int64_t* timestamps_ptr = data.timestamps.data();
     constexpr int BLOCK_SIZE = 128;
 
-    // === OUTBOUND weights (single fused kernel per rebuild) ===
     if (outbound_groups_size > 0) {
         Buffer<double> raw_fwd_scratch(/*use_gpu=*/true);
         Buffer<double> raw_bwd_scratch(/*use_gpu=*/true);
@@ -1283,7 +1200,6 @@ HOST void node_edge_index::update_temporal_weights_cuda(
         CUDA_KERNEL_CHECK("After outbound weights processing in update_temporal_weights_cuda");
     }
 
-    // === INBOUND weights (directed only) ===
     if (is_directed) {
         const size_t inbound_groups_size = data.node_ts_group_inbound_offsets.size();
         if (inbound_groups_size > 0) {
@@ -1318,9 +1234,6 @@ HOST void node_edge_index::update_temporal_weights_cuda(
 #endif
 
 HOST void node_edge_index::rebuild(TemporalGraphData& data) {
-    // node_index_capacity matches the old code: pass the active-node bitmap
-    // size as the per-node CSR size; allocate_node_group_offsets resizes the
-    // offsets buffer to that value (which already includes the +1 sentinel).
     const size_t node_index_capacity = data.active_node_ids.size() + 1;
 
     {
@@ -1391,7 +1304,6 @@ HOST void node_edge_index::rebuild(TemporalGraphData& data) {
             );
         }
     }
-    // outbound_node_ids and inbound_node_ids RAII-free on scope exit.
 }
 
 HOST size_t node_edge_index::get_memory_used(const TemporalGraphData& data) {

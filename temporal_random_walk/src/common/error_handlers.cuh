@@ -9,11 +9,7 @@
 #include <stdexcept>
 #include <string>
 
-/**
- * Checks a synchronous CUDA runtime call. Throws std::runtime_error on failure.
- * Also clears any sticky prior error before the call so a failure here cannot
- * be confused with a failure from earlier code.
- */
+// clears sticky prior error so a failure here is unambiguous.
 #define CUDA_CHECK_AND_CLEAR(call) do { \
     cudaGetLastError(); /* clear any prior error */ \
     cudaError_t _err = (call); \
@@ -26,18 +22,7 @@
     } \
 } while(0)
 
-/**
- * Asynchronous kernel-launch check.
- *
- * Only calls cudaGetLastError(), which catches launch-configuration errors
- * (bad grid/block, too much shared memory, invalid args, etc.) without
- * stalling the device. This is the production check: it lets kernels queue up
- * on the stream without a synchronization barrier between them.
- *
- * Asynchronous errors (out-of-bounds accesses, kernel aborts) will not be
- * caught here; they surface at the next synchronizing call
- * (cudaMemcpy, cudaStreamSynchronize, etc.) or via CUDA_KERNEL_CHECK_SYNC.
- */
+// catches launch-config errors only. async errors surface at next sync.
 #define CUDA_KERNEL_CHECK_ASYNC(msg) do { \
     cudaError_t _err = cudaGetLastError(); \
     if (_err != cudaSuccess) { \
@@ -49,14 +34,7 @@
     } \
 } while(0)
 
-/**
- * Synchronous kernel check. Checks the launch error AND synchronizes the
- * device to surface any asynchronous kernel errors.
- *
- * Use this sparingly and deliberately — never in the hot path of a streaming
- * workload. Appropriate places: right before copying results to host, at the
- * end of a self-contained benchmark region, or in tests.
- */
+// syncs the device — never use in the streaming hot path.
 #define CUDA_KERNEL_CHECK_SYNC(msg) do { \
     cudaError_t _err = cudaGetLastError(); \
     if (_err != cudaSuccess) { \
@@ -76,29 +54,14 @@
     } \
 } while(0)
 
-/**
- * Backward-compatible alias kept so the 84 existing call sites do not need to
- * change. In debug builds this preserves the old synchronous behavior so that
- * async errors surface at the offending kernel. In release builds it becomes
- * the async-only check, which is what production should have been doing.
- *
- * New code should prefer CUDA_KERNEL_CHECK_ASYNC explicitly and only reach
- * for CUDA_KERNEL_CHECK_SYNC when a sync point is genuinely intended.
- */
+// debug: sync (errors surface at the offending kernel). release: async.
 #ifdef NDEBUG
     #define CUDA_KERNEL_CHECK(msg) CUDA_KERNEL_CHECK_ASYNC(msg)
 #else
     #define CUDA_KERNEL_CHECK(msg) CUDA_KERNEL_CHECK_SYNC(msg)
 #endif
 
-/**
- * Opt-in per-step stream sync for debugging async-pipeline bugs. Define
- * TEMPORAL_RANDOM_WALK_DEBUG_SYNC at compile time to make this
- * cudaStreamSynchronize(stream) + error check; otherwise it is a no-op
- * and costs nothing. Use at points where you want async errors to
- * surface synchronously without pulling in a full CUDA_KERNEL_CHECK_SYNC
- * every time.
- */
+// opt-in per-step stream sync for debugging async-pipeline bugs; no-op otherwise.
 #ifdef TEMPORAL_RANDOM_WALK_DEBUG_SYNC
     #define TEMPORAL_RANDOM_WALK_STREAM_SYNC(stream, msg) do { \
         cudaError_t _err = cudaStreamSynchronize(stream); \
@@ -114,9 +77,6 @@
     #define TEMPORAL_RANDOM_WALK_STREAM_SYNC(stream, msg) do {} while(0)
 #endif
 
-/**
- * cuRAND error check. Throws on failure.
- */
 #define CHECK_CURAND(call) do { \
     curandStatus_t _status = (call); \
     if (_status != CURAND_STATUS_SUCCESS) { \
@@ -128,9 +88,6 @@
     } \
 } while(0)
 
-/**
- * CUB error check. Throws on failure.
- */
 #define CUB_CHECK(call) do { \
     cudaError_t _err = (call); \
     if (_err != cudaSuccess) { \
@@ -142,10 +99,6 @@
     } \
 } while(0)
 
-/**
- * Explicitly clear the sticky CUDA error state. Use when you want to discard
- * a known-prior error without reacting to it.
- */
 inline void clearCudaErrorState() {
     cudaGetLastError();
 }

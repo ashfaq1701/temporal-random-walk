@@ -16,16 +16,9 @@
 
 namespace node_edge_index {
 
-    /**
-     * Common Functions
-     */
     HOST void clear(TemporalGraphData& data);
 
-    // Host-safe queries: branch on data.use_gpu internally. For GPU data,
-    // they cudaMemcpy the few size_t values they need. Safe to call from
-    // host regardless of where the buffers live. Device-side equivalents
-    // for these same queries operate on TemporalGraphView and live in
-    // edge_selectors.cuh / temporal_node2vec_helpers.cuh.
+    // host-safe queries: dispatch on data.use_gpu, copy scalars D->H as needed
     HOST SizeRange get_edge_range(
         const TemporalGraphData& data,
         int dense_node_id,
@@ -46,18 +39,12 @@ namespace node_edge_index {
         int dense_node_id,
         bool forward);
 
-    /**
-     * Rebuild allocation
-     */
     HOST void allocate_node_group_offsets(
         TemporalGraphData& data,
         size_t node_index_capacity);
 
     HOST void allocate_node_ts_sorted_indices(TemporalGraphData& data);
 
-    /**
-     * Std rebuild compute functions
-     */
     HOST void compute_node_group_offsets_std(TemporalGraphData& data);
 
     HOST void compute_node_ts_sorted_indices_std(
@@ -76,9 +63,6 @@ namespace node_edge_index {
         TemporalGraphData& data,
         double timescale_bound);
 
-    /**
-     * CUDA rebuild compute functions
-     */
     #ifdef HAS_CUDA
 
     HOST void compute_node_group_offsets_cuda(TemporalGraphData& data);
@@ -101,17 +85,11 @@ namespace node_edge_index {
 
     #endif
 
-    /**
-     * Top-level
-     */
     HOST void rebuild(TemporalGraphData& data);
 
     HOST size_t get_memory_used(const TemporalGraphData& data);
 
-    // ============================================================
-    // Test / debug helpers. See edge_data::snapshot for usage notes.
-    // ============================================================
-
+    // test/debug helper; see edge_data::snapshot
     struct NodeEdgeIndexSnapshot {
         std::vector<size_t> node_group_outbound_offsets;
         std::vector<size_t> node_group_inbound_offsets;

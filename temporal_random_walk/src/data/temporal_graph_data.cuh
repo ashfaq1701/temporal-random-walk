@@ -8,22 +8,6 @@
 #include "../common/macros.cuh"
 #include "buffer.cuh"
 
-/**
- * TemporalGraphData — the single flat RAII-managed data type that holds
- * every buffer and scalar describing the current state of the temporal
- * graph. Replaces EdgeDataStore, NodeEdgeIndexStore, NodeFeaturesStore,
- * and the data-carrying part of TemporalGraphStore.
- *
- * Organization follows the paper's structure:
- *   §2.3.1  Shared edge store — physical storage of edges.
- *   §2.3.2  Timestamp-grouped view — global sorted-by-time layout, plus
- *           global cumulative weights for start-edge sampling.
- *   §2.3.3  Node+timestamp-grouped view — per-node sorted-by-time
- *           layout, plus per-node cumulative weights for walk progression.
- *
- * All buffers are move-only (Buffer<T>). The struct itself is move-only
- * by implication. Destructor is defaulted — each Buffer frees itself.
- */
 struct TemporalGraphData {
     bool use_gpu = false;
 

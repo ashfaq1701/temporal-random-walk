@@ -24,8 +24,6 @@ static void do_update_timestamp_groups(TemporalGraphData& data) {
 template<typename T>
 class NodeEdgeIndexTest : public ::testing::Test {
 protected:
-    // Each test creates its own trw so it can choose is_directed.
-    // The empty-state test uses this default trw.
     core::TemporalRandomWalk trw;
 
     NodeEdgeIndexTest() : trw(/*is_directed=*/true, /*use_gpu=*/T::value) {}
@@ -90,7 +88,6 @@ TYPED_TEST(NodeEdgeIndexTest, DirectedEdgeRangeTest) {
     const auto edges = edge_data::snapshot(data);
     const auto idx   = node_edge_index::snapshot(data);
 
-    // Outbound edges for node 10.
     const auto out_start10 = idx.node_group_outbound_offsets[10];
     const auto out_end10   = idx.node_group_outbound_offsets[11];
     EXPECT_EQ(out_end10 - out_start10, 3u);
@@ -99,7 +96,6 @@ TYPED_TEST(NodeEdgeIndexTest, DirectedEdgeRangeTest) {
         EXPECT_EQ(edges.sources[edge_idx], 10);
     }
 
-    // Inbound edges for node 20.
     const auto in_start20 = idx.node_group_inbound_offsets[20];
     const auto in_end20   = idx.node_group_inbound_offsets[21];
     EXPECT_EQ(in_end20 - in_start20, 2u);
@@ -115,13 +111,11 @@ TYPED_TEST(NodeEdgeIndexTest, DirectedTimestampGroupTest) {
     const auto edges = edge_data::snapshot(data);
     const auto idx   = node_edge_index::snapshot(data);
 
-    // Node 10's outbound groups.
     constexpr int node_id = 10;
     const auto grp_start = idx.count_ts_group_per_node_outbound[node_id];
     const auto grp_end   = idx.count_ts_group_per_node_outbound[node_id + 1];
     EXPECT_EQ(grp_end - grp_start, 2u);
 
-    // First group (timestamp 100).
     const auto g0_edge_start = idx.node_ts_group_outbound_offsets[grp_start];
     const auto g0_edge_end =
         (grp_start + 1 < grp_end)
@@ -135,7 +129,6 @@ TYPED_TEST(NodeEdgeIndexTest, DirectedTimestampGroupTest) {
         EXPECT_TRUE(edges.targets[edge_idx] == 20 || edges.targets[edge_idx] == 30);
     }
 
-    // Second group (timestamp 200).
     const auto g1_edge_start = idx.node_ts_group_outbound_offsets[grp_start + 1];
     const auto g1_edge_end   = idx.node_group_outbound_offsets[node_id + 1];
     EXPECT_EQ(g1_edge_end - g1_edge_start, 1u);
@@ -151,7 +144,7 @@ TYPED_TEST(NodeEdgeIndexTest, UndirectedEdgeRangeTest) {
     const auto edges = edge_data::snapshot(data);
     const auto idx   = node_edge_index::snapshot(data);
 
-    // In undirected graph, all edges are stored as outbound.
+    // undirected graph stores all edges as outbound
     const auto s100 = idx.node_group_outbound_offsets[100];
     const auto e100 = idx.node_group_outbound_offsets[101];
     EXPECT_EQ(e100 - s100, 3u);
@@ -179,7 +172,6 @@ TYPED_TEST(NodeEdgeIndexTest, UndirectedTimestampGroupTest) {
     const auto grp_end   = idx.count_ts_group_per_node_outbound[node_id + 1];
     EXPECT_EQ(grp_end - grp_start, 2u);
 
-    // First group (timestamp 1000).
     const auto g0_edge_start = idx.node_ts_group_outbound_offsets[grp_start];
     const auto g0_edge_end =
         (grp_start + 1 < grp_end)
@@ -192,7 +184,6 @@ TYPED_TEST(NodeEdgeIndexTest, UndirectedTimestampGroupTest) {
         EXPECT_EQ(edges.timestamps[edge_idx], 1000);
     }
 
-    // Second group (timestamp 2000).
     const auto g1_edge_start = idx.node_ts_group_outbound_offsets[grp_start + 1];
     const auto g1_edge_end   = idx.node_group_outbound_offsets[node_id + 1];
     EXPECT_EQ(g1_edge_end - g1_edge_start, 1u);
@@ -208,20 +199,16 @@ TYPED_TEST(NodeEdgeIndexTest, EdgeCasesTest) {
     auto local = this->make_simple_directed_graph();
     auto& data = local.data();
 
-    // Invalid node id -> 0 groups (host-safe dispatch; see node_edge_index.cu).
     EXPECT_EQ(node_edge_index::get_timestamp_group_count(data, -1, /*forward=*/true), 0u);
 
-    // Invalid group index -> {0, 0}.
     const SizeRange r =
         node_edge_index::get_timestamp_group_range(data, 1, /*group_idx=*/999, true);
     EXPECT_EQ(r.from, 0u);
     EXPECT_EQ(r.to,   0u);
 
-    // Add an isolated node via a new edge to node 4.
     edge_data::push_back(data, 4, 5, 400);
     do_update_timestamp_groups(data);
     node_edge_index::rebuild(data);
 
-    // Node 4 has edges, but inbound count for node 4 is still 0.
     EXPECT_EQ(node_edge_index::get_timestamp_group_count(data, 4, /*forward=*/false), 0u);
 }

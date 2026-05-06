@@ -73,7 +73,6 @@ struct DataBlock {
 
     DataBlock() = default;
 
-    // Constructor allocates memory internally
     HOST DataBlock(const size_t size, const bool use_gpu) : size(size), use_gpu(use_gpu) {
         if (size == 0) {
             data = nullptr;
@@ -84,15 +83,14 @@ struct DataBlock {
         }
         #endif
         else {
-            data = static_cast<T *>(malloc(sizeof(T) * size));  // CPU allocation
+            data = static_cast<T *>(malloc(sizeof(T) * size));
         }
     }
 
     DataBlock(const DataBlock&) = delete;
     DataBlock& operator=(const DataBlock&) = delete;
 
-    // Explicit moves (not = default) so the moved-from pointer is nulled
-    // and the source's destructor does not double-free.
+    // explicit moves so the moved-from pointer is nulled (no double-free).
     HOST DataBlock(DataBlock&& other) noexcept
         : data(other.data), size(other.size), use_gpu(other.use_gpu) {
         other.data = nullptr;
@@ -114,8 +112,7 @@ struct DataBlock {
     HOST ~DataBlock() noexcept { release(); }
 
 private:
-    // Shared teardown. Uses bare cudaFree + cudaGetLastError instead of the
-    // throwing CUDA_CHECK_AND_CLEAR macro so the destructor is truly noexcept.
+    // bare cudaFree + cudaGetLastError so destructor stays noexcept.
     HOST void release() noexcept {
         if (!data) return;
         #ifdef HAS_CUDA

@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "../common/const.cuh"
-#include "../common/cuda_config.cuh"   // BLOCK_DIM default for block_dim params
+#include "../common/cuda_config.cuh"
 #include "../core/temporal_random_walk.cuh"
 #include "../data/enums.cuh"
 #include "../data/structs.cuh"
@@ -49,14 +49,6 @@ public:
         size_t feature_dim = 0,
         size_t block_dim = BLOCK_DIM) const;
 
-    // kernel_launch_type defaults to DEFAULT_KERNEL_LAUNCH_TYPE; see
-    // enums.cuh. block_dim defaults to BLOCK_DIM (256) and overrides the
-    // kernel launch block size end-to-end — including the scheduler's
-    // W-tier boundary (W > block_dim -> block tier) and the warp-tier
-    // grid (warps_per_block = block_dim / 32).
-    // w_threshold_warp defaults to W_THRESHOLD_WARP (solo / warp-tier
-    // boundary in the NODE_GROUPED W-partition: W <= w_threshold_warp -> solo,
-    // W in (w_threshold_warp, BLOCK_DIM] -> warp tier, W > BLOCK_DIM -> block).
     WalksWithEdgeFeaturesHost get_random_walks_and_times_for_all_nodes(
         int max_walk_len, const RandomPickerType* walk_bias,
         int num_walks_per_node,
@@ -96,8 +88,6 @@ public:
     void clear() const;
     [[nodiscard]] size_t get_memory_used() const;
 
-    // Node-feature access used by py_interface (replaces the old
-    // get_node_features() that returned NodeFeaturesStore*).
     [[nodiscard]] int node_feature_dim() const;
     [[nodiscard]] int node_features_max_node_id() const;
     [[nodiscard]] std::vector<float> node_features_dense() const;

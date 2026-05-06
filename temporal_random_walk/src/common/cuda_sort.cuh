@@ -9,11 +9,7 @@
 #include "error_handlers.cuh"
 #include "../data/buffer.cuh"
 
-/**
- * Legacy sort-by-keys that returns values re-ordered in place. No streams,
- * no pluggable scratch — retained for callers that haven't been moved to the
- * Buffer/stream-aware helpers yet. Prefer cub_sort_pairs below for new work.
- */
+// legacy in-place values-by-keys sort, no streams. prefer cub_sort_pairs.
 template <typename KeyType, typename ValueType>
 void cub_radix_sort_values_by_keys(
     const KeyType* d_keys,
@@ -46,14 +42,6 @@ void cub_radix_sort_values_by_keys(
     cudaFree(d_values_out);
 }
 
-/**
- * CUB-backed sort-by-key producing separate out buffers for keys and values.
- * Stream-aware; scratch held in a scope-local Buffer<uint8_t>. Two-call
- * convention: query temp bytes, then sort. `d_keys_in` is treated as const
- * by CUB — the in-buffer is not mutated.
- *
- * Same signature pattern as cub_exclusive_sum etc. in cuda_scan.cuh.
- */
 template <typename KeyType, typename ValueType>
 inline void cub_sort_pairs(
     const KeyType* d_keys_in,

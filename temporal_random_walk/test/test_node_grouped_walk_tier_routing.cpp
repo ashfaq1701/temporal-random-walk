@@ -1,39 +1,3 @@
-// End-to-end tests that drive each NODE_GROUPED cooperative kernel body
-// (block-smem, block-global, warp-smem, warp-global) by constructing
-// graphs that force the W-partition/G-partition to route at least one
-// task into the target tier. The test body doesn't directly assert
-// "this tier ran" — the scheduler's routing isn't exposed through the
-// public walk API — but under the crafted graph topology, the only way
-// all walks can come out valid is if the target kernel executed without
-// corrupting walks. A tier-body bug (wrong smem indexing, off-by-one in
-// the stride loop, missing __syncwarp, etc.) shows up as a walk with a
-// sentinel node in the middle or a non-monotone timestamp.
-//
-// Topology used across the tier tests is a convergence graph:
-//   - N source nodes (0 .. N-1), each with exactly one edge to the hub
-//     at the SAME timestamp (ts=0).
-//   - Hub node H with G outbound edges at G distinct timestamps
-//     (ts = 1 .. G), each going to a unique destination.
-//
-// With num_walks_per_node = 1, every source spawns one walk that arrives
-// at H at step 1. Together they create a (node=H, step=1) group with
-// W = N. The W and G values determine which tier services that task:
-//
-//   Warp-smem   : W ∈ [2, BLOCK_DIM] AND G ≤ 340   (index-picker cap)
-//   Warp-global : W ∈ [2, BLOCK_DIM]     AND G >  340
-//   Block-smem  : W >  BLOCK_DIM          AND G ≤ 2800
-//   Block-global: W >  BLOCK_DIM          AND G >  2800
-//
-// This file also contains a Node2Vec smoke test — the dispatcher gates
-// Node2Vec out of the cooperative pipeline entirely and runs it on
-// per_walk_step_kernel, so tier routing doesn't apply, but the walk
-// validity story is the same.
-//
-// All tests use the Linear picker (index-based, doesn't need weights)
-// except the Node2Vec one. Picker × tier parity is covered by
-// test_node_grouped_parity.cpp on a realistic graph; this file's job
-// is to guarantee each tier kernel executes at least once in CI.
-
 #include <gtest/gtest.h>
 #include <cstddef>
 #include <cstdint>
@@ -49,7 +13,7 @@ namespace {
 
 constexpr int      MAX_WALK_LEN      = 10;
 constexpr uint64_t TIER_SEED         = 0xC0FFEEULL;
-constexpr int      HUB_NODE          = 100000;   // well above source/dest ranges
+constexpr int      HUB_NODE          = 100000;
 constexpr int      DEST_NODE_BASE    = 200000;
 
 constexpr RandomPickerType LINEAR_PICKER    = RandomPickerType::Linear;
@@ -69,8 +33,7 @@ using TIER_BACKENDS = ::testing::Types<
 template <typename T>
 class NodeGroupedTierRoutingTest : public ::testing::Test {
 protected:
-    // Build a convergence graph (see file header). Returns the edge list
-    // ready to hand to TemporalRandomWalk::add_multiple_edges.
+    // num_sources sources -> HUB at ts=0; HUB -> hub_groups dests at ts=1..G.
     static std::vector<std::tuple<int, int, int64_t>>
     convergence_graph(const int num_sources, const int hub_groups) {
         std::vector<std::tuple<int, int, int64_t>> edges;
@@ -105,11 +68,6 @@ protected:
 
 TYPED_TEST_SUITE(NodeGroupedTierRoutingTest, TIER_BACKENDS);
 
-// Walk validity: every hop is a real node and timestamps are monotone
-// non-decreasing. Both forward and backward walks are reversed in place
-// post-sampling, so the caller-visible timestamp order is the same
-// (earliest real ts first, latest real ts last, sentinel at whichever
-// end is free). cur >= prev holds either way.
 void assert_all_walks_valid(const WalksWithEdgeFeaturesHost& walks,
                             const size_t max_walk_len) {
     const int*     nodes = walks.walk_set.nodes_ptr();
@@ -139,13 +97,7 @@ void assert_all_walks_valid(const WalksWithEdgeFeaturesHost& walks,
 
 }  // namespace
 
-// ==========================================================================
-// Warp-smem tier: W ∈ [2, 255] AND G ≤ 340.
-//
-// 10 sources converge at HUB_NODE at step 1. W = 10 ∈ [2, 255].
-// Hub has 20 distinct-timestamp outbound groups. G = 20 ≤ 340.
-// Scheduler's W-partition -> warp task list, G-partition -> warp_smem.
-// ==========================================================================
+// W=10, G=20 -> warp_smem.
 TYPED_TEST(NodeGroupedTierRoutingTest, WarpSmem_WalksAreValid) {
     auto trw = this->make_trw(/*enable_weights=*/false);
     trw->add_multiple_edges(this->convergence_graph(
@@ -161,12 +113,7 @@ TYPED_TEST(NodeGroupedTierRoutingTest, WarpSmem_WalksAreValid) {
         assert_all_walks_valid(walks, static_cast<size_t>(MAX_WALK_LEN)));
 }
 
-// ==========================================================================
-// Warp-global tier: W ∈ [2, 255] AND G > 340.
-//
-// 10 sources -> HUB with 400 distinct-timestamp outbound groups.
-// G = 400 > G_THRESHOLD_WARP_INDEX (340) -> warp_global.
-// ==========================================================================
+// W=10, G=400 -> warp_global.
 TYPED_TEST(NodeGroupedTierRoutingTest, WarpGlobal_WalksAreValid) {
     auto trw = this->make_trw(/*enable_weights=*/false);
     trw->add_multiple_edges(this->convergence_graph(
@@ -182,12 +129,7 @@ TYPED_TEST(NodeGroupedTierRoutingTest, WarpGlobal_WalksAreValid) {
         assert_all_walks_valid(walks, static_cast<size_t>(MAX_WALK_LEN)));
 }
 
-// ==========================================================================
-// Block-smem tier: W > 255 AND G ≤ 2800.
-//
-// 300 sources -> HUB with 100 distinct-timestamp outbound groups.
-// W = 300 > BLOCK_DIM (255); G = 100 ≤ 2800 -> block_smem.
-// ==========================================================================
+// W=300, G=100 -> block_smem.
 TYPED_TEST(NodeGroupedTierRoutingTest, BlockSmem_WalksAreValid) {
     auto trw = this->make_trw(/*enable_weights=*/false);
     trw->add_multiple_edges(this->convergence_graph(
@@ -203,13 +145,7 @@ TYPED_TEST(NodeGroupedTierRoutingTest, BlockSmem_WalksAreValid) {
         assert_all_walks_valid(walks, static_cast<size_t>(MAX_WALK_LEN)));
 }
 
-// ==========================================================================
-// Block-global tier: W > 255 AND G > 2800.
-//
-// 300 sources -> HUB with 3000 distinct-timestamp outbound groups.
-// W = 300 > BLOCK_DIM; G = 3000 > G_THRESHOLD_BLOCK_INDEX (2800)
-// -> block_global. This tier had zero end-to-end coverage before.
-// ==========================================================================
+// W=300, G=3000 -> block_global.
 TYPED_TEST(NodeGroupedTierRoutingTest, BlockGlobal_WalksAreValid) {
     auto trw = this->make_trw(/*enable_weights=*/false);
     trw->add_multiple_edges(this->convergence_graph(
@@ -225,16 +161,7 @@ TYPED_TEST(NodeGroupedTierRoutingTest, BlockGlobal_WalksAreValid) {
         assert_all_walks_valid(walks, static_cast<size_t>(MAX_WALK_LEN)));
 }
 
-// ==========================================================================
-// Node2Vec smoke test: the dispatcher gates Node2Vec out of the
-// cooperative pipeline entirely (prev_node-dependent sampling breaks
-// panel sharing) and routes every intermediate step through
-// per_walk_step_kernel instead. Tier routing doesn't apply, so the
-// convergence shape is used only to give Node2Vec walks a non-trivial
-// step-1 transition. Parity with FULL_WALK is not asserted here; the
-// two paths step Philox counters differently. This is just a "Node2Vec
-// NODE_GROUPED runs end-to-end and produces valid walks" smoke check.
-// ==========================================================================
+// Node2Vec is gated off the cooperative pipeline; smoke check only.
 TYPED_TEST(NodeGroupedTierRoutingTest, Node2Vec_NodeGroupedSmokeTest) {
     auto trw = this->make_trw(/*enable_weights=*/true,
                               /*enable_node2vec=*/true);

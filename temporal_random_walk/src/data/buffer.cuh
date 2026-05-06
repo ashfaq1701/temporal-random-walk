@@ -16,14 +16,7 @@
 #include <cuda_runtime.h>
 #endif
 
-/**
- * Read a single T from a pointer whose allocator depends on use_gpu.
- *
- * Safe to call from host for both host and device allocations: on GPU
- * data it does a one-element cudaMemcpy, on host data it does a direct
- * load. Host-only — the device side can always dereference its own
- * pointers and needs no wrapper.
- */
+// host-side single-element read that picks cudaMemcpy or direct load.
 template <typename T>
 HOST inline T read_one_host_safe(const T* p, const bool use_gpu) {
 #ifdef HAS_CUDA
@@ -38,16 +31,7 @@ HOST inline T read_one_host_safe(const T* p, const bool use_gpu) {
     return *p;
 }
 
-/**
- * Buffer<T> — RAII owning container for a contiguous array of T, backed by
- * either host memory (malloc/free) or device memory (cudaMalloc/cudaFree)
- * depending on a use_gpu flag fixed at construction.
- *
- * Move-only. Geometric capacity growth.
- */
-
-// POD returned by Buffer<T>::release_host(). Carries the (ptr, bytes)
-// state the downstream deleter needs to free the block.
+// POD returned by Buffer<T>::release_host() so the downstream deleter can free it.
 struct HostRelease {
     void*  ptr   = nullptr;
     size_t bytes = 0;
@@ -184,8 +168,7 @@ public:
 
     void fill(const T& value);
 
-    // Async D->H copy (no internal sync). On host buffers it falls back to
-    // std::memcpy. Caller must sync the passed stream before reading dst.
+    // caller must sync the stream before reading dst.
     void copy_to_host_async(T* dst, size_t n
 #ifdef HAS_CUDA
                             , cudaStream_t stream = 0
@@ -209,11 +192,7 @@ public:
         const size_t remaining = size_ - n;
 #ifdef HAS_CUDA
         if (use_gpu_) {
-            // D2D cudaMemcpy is a parallel copy kernel with no overlap
-            // guarantee — a direct shift-down would race reads against
-            // writes in the overlap region (dst < src). Bounce through a
-            // scratch buffer to keep the semantics aligned with the
-            // CPU memmove below.
+            // D2D cudaMemcpy doesn't guarantee non-overlap; bounce via scratch.
             Buffer<T> scratch(true);
             scratch.resize(remaining);
             CUDA_CHECK_AND_CLEAR(cudaMemcpy(

@@ -16,10 +16,7 @@ namespace temporal_random_walk {
 
 #ifdef HAS_CUDA
 
-// Runs the NODE_GROUPED per-step pipeline (filter, sort-by-node, RLE,
-// W-partition, G-partition, block-task expansion) and emits five disjoint
-// task lists. Per-step scratch lives in a DeviceArena; StepOutputs pointers
-// are valid only until the next run_step call.
+// StepOutputs pointers are valid only until the next run_step call
 class NodeGroupedScheduler {
 public:
     struct TierTaskList {
@@ -49,9 +46,7 @@ public:
                          int w_threshold_warp,
                          cudaStream_t stream);
 
-    // Two blocking D2Hs per call: num_active (drives CUB extents) and
-    // tier counts (drives kernel grids). force_global_only sets both G
-    // caps to -1 so every coop task routes to *_global (ablation knob).
+    // two blocking D2Hs per call: num_active and tier counts
     StepOutputs run_step(WalkSetView walk_set_view,
                          int step_number,
                          int max_walk_len,

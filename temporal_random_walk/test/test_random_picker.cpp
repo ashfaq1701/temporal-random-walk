@@ -39,15 +39,13 @@ using GPU_USAGE_TYPES = ::testing::Types<
 >;
 #else
 using GPU_USAGE_TYPES = ::testing::Types<
-    std::integral_constant<bool, false>   // CPU mode only
+    std::integral_constant<bool, false>
 >;
 #endif
 
 TYPED_TEST_SUITE(RandomPickerTest, GPU_USAGE_TYPES);
 
-// Test that prioritize_end=true gives higher average than prioritize_end=false for both pickers
 TYPED_TEST(RandomPickerTest, PrioritizeEndGivesHigherAverage) {
-    // For Linear Picker
     const double linear_end_prioritized = this->compute_average_picks(false, true);
     const double linear_start_prioritized = this->compute_average_picks(false, false);
     EXPECT_GT(linear_end_prioritized, linear_start_prioritized)
@@ -55,7 +53,6 @@ TYPED_TEST(RandomPickerTest, PrioritizeEndGivesHigherAverage) {
         << linear_end_prioritized << ") than prioritize_end=false ("
         << linear_start_prioritized << ")";
 
-    // For Exponential Picker
     const double exp_end_prioritized = this->compute_average_picks(true, true);
     const double exp_start_prioritized = this->compute_average_picks(true, false);
     EXPECT_GT(exp_end_prioritized, exp_start_prioritized)
@@ -64,7 +61,6 @@ TYPED_TEST(RandomPickerTest, PrioritizeEndGivesHigherAverage) {
         << exp_start_prioritized << ")";
 }
 
-// Test that exponential picker is more extreme than linear picker when prioritizing end
 TYPED_TEST(RandomPickerTest, ExponentialMoreExtremeForEnd) {
     const double linear_end_prioritized = this->compute_average_picks(false, true);
     const double exp_end_prioritized = this->compute_average_picks(true, true);
@@ -75,7 +71,6 @@ TYPED_TEST(RandomPickerTest, ExponentialMoreExtremeForEnd) {
         << linear_end_prioritized << ")";
 }
 
-// Test that exponential picker is more extreme than linear picker when prioritizing start
 TYPED_TEST(RandomPickerTest, ExponentialMoreExtremeForStart) {
     const double linear_start_prioritized = this->compute_average_picks(false, false);
     const double exp_start_prioritized = this->compute_average_picks(true, false);
@@ -86,7 +81,6 @@ TYPED_TEST(RandomPickerTest, ExponentialMoreExtremeForStart) {
         << linear_start_prioritized << ")";
 }
 
-// Test that output is always within bounds
 TYPED_TEST(RandomPickerTest, BoundsTest) {
     const int start = 5;
     const int end = 10;
@@ -114,19 +108,16 @@ TYPED_TEST(RandomPickerTest, BoundsTest) {
     }
 }
 
-// Test single-element range always returns that element
 TYPED_TEST(RandomPickerTest, SingleElementRangeTest) {
     constexpr int start = 5;
-    constexpr int end = 6;  // Range of size 1
+    constexpr int end = 6;
 
-    // Should always return start for both true and false prioritize_end
     EXPECT_EQ(this->linear_picker.pick_random(start, end, true), start);
     EXPECT_EQ(this->linear_picker.pick_random(start, end, false), start);
     EXPECT_EQ(this->exp_picker.pick_random(start, end, true), start);
     EXPECT_EQ(this->exp_picker.pick_random(start, end, false), start);
 }
 
-// Test probabilities more deterministically for linear random picker and two elements.
 TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForLinearRandomPicker) {
     const int start = 0;
     const int end = 2;
@@ -137,37 +128,25 @@ TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForLinearRandomPicke
     Buffer<double> rand_nums_buf = generate_n_random_numbers(num_trials * 2, TypeParam::value);
     double* rand_nums = rand_nums_buf.data();
 
-    // Run trials
     for (int i = 0; i < num_trials; i++) {
-        // Test prioritize_end=true
         int result_end = this->linear_picker.pick_random_with_provided_number(start, end, true, rand_nums + i * 2);
         if (result_end == 1) {
             count_ones_end_prioritized++;
         }
 
-        // Test prioritize_end=false (separate trial)
         int result_start = this->linear_picker.pick_random_with_provided_number(start, end, false, rand_nums + i * 2 + 1);
         if (result_start == 1) {
             count_ones_start_prioritized++;
         }
     }
 
-    // For linear picker with size 2:
-    // When prioritize_end=true:
-    //   weight(0) = 1, weight(1) = 2, total_weight = 3
-    //   prob(0) = 1/3, prob(1) = 2/3
-    // When prioritize_end=false:
-    //   weight(0) = 2, weight(1) = 1, total_weight = 3
-    //   prob(0) = 2/3, prob(1) = 1/3
-
-    constexpr double expected_prob_end = 2.0 / 3.0;    // probability of getting 1 when prioritizing end
-    constexpr double expected_prob_start = 1.0 / 3.0;  // probability of getting 1 when prioritizing start
+    constexpr double expected_prob_end = 2.0 / 3.0;
+    constexpr double expected_prob_start = 1.0 / 3.0;
 
     const double actual_prob_end = static_cast<double>(count_ones_end_prioritized) / num_trials;
     const double actual_prob_start = static_cast<double>(count_ones_start_prioritized) / num_trials;
 
-    // Allow for some statistical variation
-    constexpr double tolerance = 0.02;  // 2% tolerance
+    constexpr double tolerance = 0.02;
 
     EXPECT_NEAR(actual_prob_end, expected_prob_end, tolerance)
         << "When prioritizing end, probability of picking 1 should be approximately "
@@ -178,7 +157,6 @@ TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForLinearRandomPicke
         << expected_prob_start << " but got " << actual_prob_start;
 }
 
-// Test probabilities more deterministically for exponential random picker and two elements.
 TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForExponentialRandomPicker) {
     const int start = 0;
     const int end = 2;
@@ -189,39 +167,27 @@ TYPED_TEST(RandomPickerTest, TwoElementRangeDistributionTestForExponentialRandom
     Buffer<double> rand_nums_buf = generate_n_random_numbers(num_trials * 2, TypeParam::value);
     double* rand_nums = rand_nums_buf.data();
 
-    // Run trials
     for (int i = 0; i < num_trials; i++) {
-        // Test prioritize_end=true
         int result_end = this->exp_picker.pick_random_with_provided_number(start, end, true, rand_nums + i * 2);
         if (result_end == 1) {
             count_ones_end_prioritized++;
         }
 
-        // Test prioritize_end=false (separate trial)
         int result_start = this->exp_picker.pick_random_with_provided_number(start, end, false, rand_nums + i * 2 + 1);
         if (result_start == 1) {
             count_ones_start_prioritized++;
         }
     }
 
-    // For exponential picker with size 2:
-    // When prioritize_end=true:
-    //   P(0) = (e-1)/(e^2 - 1)
-    //   P(1) = (e-1)e/(e^2 - 1)
     const double e = std::exp(1.0);
     const double e_squared = e * e;
-    const double expected_prob_end = (e - 1.0) * e / (e_squared - 1.0);  // probability of getting 1
-
-    // When prioritize_end=false:
-    //   P(0) = (e-1)e/(e^2 - 1)
-    //   P(1) = (e-1)/(e^2 - 1)
-    const double expected_prob_start = (e - 1.0) / (e_squared - 1.0);  // probability of getting 1
+    const double expected_prob_end = (e - 1.0) * e / (e_squared - 1.0);
+    const double expected_prob_start = (e - 1.0) / (e_squared - 1.0);
 
     const double actual_prob_end = static_cast<double>(count_ones_end_prioritized) / num_trials;
     const double actual_prob_start = static_cast<double>(count_ones_start_prioritized) / num_trials;
 
-    // Allow for some statistical variation
-    constexpr double tolerance = 0.02;  // 2% tolerance
+    constexpr double tolerance = 0.02;
 
     EXPECT_NEAR(actual_prob_end, expected_prob_end, tolerance)
         << "When prioritizing end, probability of picking 1 should be approximately "

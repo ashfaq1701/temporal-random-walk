@@ -11,7 +11,6 @@
 
 namespace parallel {
 
-    // ---------- Sort ----------
     template<typename RandomIt>
     void sort(RandomIt first, RandomIt last) {
         #ifdef IS_MACOS
@@ -30,7 +29,6 @@ namespace parallel {
         #endif
     }
 
-    // ---------- Stable Sort ----------
     template<typename RandomIt>
     void stable_sort(RandomIt first, RandomIt last) {
         #ifdef IS_MACOS
@@ -49,7 +47,6 @@ namespace parallel {
         #endif
     }
 
-    // ---------- Merge ----------
     template<typename InputIt1, typename InputIt2, typename OutputIt>
     OutputIt merge(InputIt1 first1, InputIt1 last1,
                    InputIt2 first2, InputIt2 last2,

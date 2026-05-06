@@ -1,7 +1,3 @@
-// C++ port of alibaba_benchmark/test_alibaba_dataset.py. Expects
-// data_{0..total_minutes-1}.{csv,parquet} under <dataset_dir>; parquet
-// is preferred when both exist. CSV: header + u,i,ts; parquet: same columns.
-
 #include <filesystem>
 #include <iostream>
 #include <vector>
@@ -28,7 +24,7 @@ constexpr bool DEFAULT_USE_GPU = false;
 
 constexpr int     DEFAULT_TOTAL_MINUTES      = 60;
 constexpr int     DEFAULT_MINUTES_PER_STEP   = 3;
-constexpr int64_t DEFAULT_WINDOW_MS          = 1'800'000;   // 30 min
+constexpr int64_t DEFAULT_WINDOW_MS          = 1'800'000;
 constexpr int     DEFAULT_NUM_WALKS_PER_NODE = 20;
 constexpr int     DEFAULT_MAX_WALK_LEN       = 100;
 
@@ -55,7 +51,7 @@ struct EdgeBatch {
     std::vector<int64_t> ts;
 };
 
-// Returns (path, is_parquet) for data_{minute}.{parquet,csv}; parquet wins if both exist.
+// parquet wins if both exist
 static std::pair<std::string, bool>
 resolve_shard_path(const std::string& dataset_dir, int minute) {
     const std::string stem = dataset_dir + "/data_" + std::to_string(minute);
@@ -104,12 +100,7 @@ int main(int argc, char** argv) {
             << " [timescale_bound=-1]"
             << " [w_threshold_warp=" << W_THRESHOLD_WARP << "]"
             << " [per_batch_csv=]"
-            << " [walk_direction=backward|forward]\n"
-            << "\n"
-            << "<dataset_dir> must contain data_0.csv .. data_{total-1}.csv,\n"
-            << "each a header-prefixed CSV with u,i,ts columns.\n"
-            << "If [per_batch_csv] is non-empty, one row per timed step is\n"
-            << "written to that file (header + one row per batch).\n";
+            << " [walk_direction=backward|forward]\n";
         return 1;
     }
 
@@ -165,7 +156,6 @@ int main(int argc, char** argv) {
         /*enable_temporal_node2vec=*/false,
         /*timescale_bound=*/timescale_bound);
 
-    // Warmup: step 0 runs untimed; main loop re-ingests the same files.
     {
         NvtxRange r("warmup");
         EdgeBatch warm = load_step(dataset_dir, 0, minutes_per_step, total_minutes);
@@ -190,9 +180,6 @@ int main(int argc, char** argv) {
     double total_walk_len_sum = 0.0;
     size_t total_edges_added  = 0;
 
-    // One row per timed step → flushed to per_batch_csv at the end.
-    // Schema mirrors the per-batch fields the binary already prints,
-    // plus derived walks/sec and steps/sec for that single batch.
     std::vector<std::vector<std::string>> per_batch_rows;
     const std::vector<std::string> per_batch_header = {
         "step_idx", "step_min_begin", "minutes_per_step",
@@ -265,7 +252,7 @@ int main(int argc, char** argv) {
             ? (avg_len_this_step * static_cast<double>(walks_this_step) / walk_time)
             : 0.0;
         per_batch_rows.push_back({
-            std::to_string(static_cast<int>(walk_times.size())),  // 1-based step index
+            std::to_string(static_cast<int>(walk_times.size())),
             std::to_string(i),
             std::to_string(minutes_per_step),
             std::to_string(batch.src.size()),
@@ -280,7 +267,6 @@ int main(int argc, char** argv) {
         });
     }
 
-    // Flush per-batch rows once at the end (no-op if path is empty).
     write_strings_to_csv(per_batch_csv, per_batch_header, per_batch_rows);
 
     const size_t num_steps = walk_times.size();

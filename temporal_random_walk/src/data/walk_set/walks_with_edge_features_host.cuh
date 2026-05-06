@@ -10,9 +10,7 @@
 #include "../buffer.cuh"
 #include "walk_set_host.cuh"
 
-/**
- * RAII host-resident bundle of walks + their per-edge feature rows.
- */
+// host-resident bundle of walks plus per-edge feature rows.
 struct WalksWithEdgeFeaturesHost {
     WalkSetHost   walk_set;
     Buffer<float> walk_edge_features{/*use_gpu=*/false};
@@ -34,7 +32,6 @@ struct WalksWithEdgeFeaturesHost {
     WalksWithEdgeFeaturesHost(WalksWithEdgeFeaturesHost&&) noexcept = default;
     WalksWithEdgeFeaturesHost& operator=(WalksWithEdgeFeaturesHost&&) noexcept = default;
 
-    // Forwarded walk-iteration helpers.
     size_t size() const noexcept { return walk_set.size(); }
     WalksIterator walks_begin() const { return walk_set.walks_begin(); }
     WalksIterator walks_end()   const { return walk_set.walks_end(); }
@@ -43,8 +40,7 @@ struct WalksWithEdgeFeaturesHost {
         return walk_edge_features.release_host();
     }
 
-    // edge_features_src is a host pointer (already D->H copied, or
-    // data.use_gpu == false). Zero-padded for empty slots.
+    // edge_features_src must be host-resident; empty slots stay zero.
     void populate_walk_edge_features(const float* edge_features_src) {
         if (!edge_features_src || feature_dim == 0) return;
 

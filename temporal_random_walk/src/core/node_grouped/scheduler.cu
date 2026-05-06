@@ -16,8 +16,6 @@ namespace temporal_random_walk {
 
 namespace {
 
-// Scheduler-internal helper kernels. Per-walk kernels live in kernels/*.cuh.
-
 __global__ void iota_int_kernel(int* __restrict__ out, const int n) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;
@@ -60,7 +58,6 @@ __global__ void gather_last_nodes_kernel(
     last_nodes_out[i] = walk_set.nodes[offset];
 }
 
-// Classify each RLE run by W into solo/warp/block via atomicAdd into counters[3].
 __global__ void partition_by_w_kernel(
     const int* __restrict__ unique_nodes,
     const int* __restrict__ run_starts,
@@ -86,11 +83,7 @@ __global__ void partition_by_w_kernel(
     const int node = unique_nodes[r];
 
     if (W <= t_warp) {
-        // Solo tier: every walk at this node gets one thread. Reserve W
-        // slots in a single atomicAdd, then write all W walks. Pre-fix,
-        // this only wrote sorted_walk_idx[start] (assuming W==1), so any
-        // node with W>1 routed to solo silently dropped its other W-1
-        // walks. Latent until t_warp>1.
+        // reserve W slots so all walks at this node land in solo
         const int idx = atomicAdd(&counters[0], W);
         for (int k = 0; k < W; ++k) {
             solo_walks[idx + k] = sorted_walk_idx[start + k];
@@ -108,9 +101,7 @@ __global__ void partition_by_w_kernel(
     }
 }
 
-// G-partition: splits one tier's task list into (smem, global) variants
-// Called per coop tier: split by G into (smem-fit, global-fallback).
-// count_ts_group_per_node is the caller's direction-resolved array.
+// splits a tier's task list into (smem-fit, global-fallback) by G
 __global__ void partition_by_g_kernel(
     const int* __restrict__ tier_nodes,
     const int* __restrict__ tier_walk_starts,
@@ -150,9 +141,7 @@ __global__ void partition_by_g_kernel(
     }
 }
 
-// Split mega-hubs (W > cap) into ceil(W/cap) disjoint sub-tasks so no
-// single block monopolizes an SM. Warp tier doesn't need this — its
-// W upper bound is the runtime block_dim, well below the mega-hub cap.
+// split mega-hubs (W > cap) into sub-tasks so no block monopolizes an SM
 __global__ void expand_block_tasks_kernel(
     const int* __restrict__ in_nodes,
     const int* __restrict__ in_walk_starts,
@@ -174,7 +163,7 @@ __global__ void expand_block_tasks_kernel(
     const int num_sub_tasks =
         (count + block_walk_cap - 1) / block_walk_cap;
 
-    // One atomicAdd reserves the whole sub-task range; avoids per-sub-task atomic.
+    // single atomicAdd reserves the whole sub-task range
     const int base_idx = atomicAdd(out_num_tasks, num_sub_tasks);
 
     for (int k = 0; k < num_sub_tasks; ++k) {
@@ -207,7 +196,7 @@ NodeGroupedScheduler::NodeGroupedScheduler(
 
     iota_src_.resize(num_walks);
 
-    // iota_src_ is reused as cub_partition_flagged input on every step.
+    // reused as cub_partition_flagged input every step
     const std::size_t iota_blocks =
         (num_walks + block_dim_.x - 1) / block_dim_.x;
     iota_int_kernel<<<dim3(static_cast<unsigned>(iota_blocks)),
@@ -238,8 +227,6 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
     int*     step_run_starts   = arena_.acquire<int>(num_walks_);
     int*     step_num_runs     = arena_.acquire<int>(1);
 
-    // W-partition intermediates: warp/block lists feed the G-partition below.
-    // All arrays upper-bound-sized to num_walks.
     int*     solo_walks         = arena_.acquire<int>(num_walks_);
     int*     warp_nodes_w       = arena_.acquire<int>(num_walks_);
     int*     warp_walk_starts_w = arena_.acquire<int>(num_walks_);
@@ -255,7 +242,6 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
     int*     warp_global_starts = arena_.acquire<int>(num_walks_);
     int*     warp_global_counts = arena_.acquire<int>(num_walks_);
 
-    // Block-tier G-partition outputs — expansion below splits into final arrays.
     int*     block_smem_pre_nodes    = arena_.acquire<int>(num_walks_);
     int*     block_smem_pre_starts   = arena_.acquire<int>(num_walks_);
     int*     block_smem_pre_counts   = arena_.acquire<int>(num_walks_);
@@ -270,13 +256,11 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
     int*     block_global_starts = arena_.acquire<int>(num_walks_);
     int*     block_global_counts = arena_.acquire<int>(num_walks_);
 
-    // int[9]: solo, warp_w, block_w, warp_smem, warp_global,
-    //         block_smem_pre, block_global_pre, block_smem, block_global.
-    // One contiguous block so the end-of-step readback is a single D2H.
+    // contiguous so end-of-step readback is a single D2H
     constexpr int kCounterSlots = 9;
     int* tier_counters = arena_.acquire<int>(kCounterSlots);
 
-    // force_global_only: caps = -1 route every coop task to *_global (G >= 1 always).
+    // caps=-1 forces every coop task to *_global (G >= 1 always)
     const bool is_index_picker =
         random_pickers::is_index_based_picker(edge_picker_type);
     const int g_cap_warp = force_global_only
@@ -306,7 +290,7 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
             num_walks_, stream_);
     }
 
-    // Blocking D2H so downstream CUB ops know their extent (CUB needs host num_items).
+    // CUB needs host num_items; blocking D2H
     int host_num_active = 0;
     {
         NVTX_RANGE_COLORED("NG num_active readback", nvtx_colors::io_grey);
@@ -372,10 +356,7 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
 
     {
         NVTX_RANGE_COLORED("NG W-partition", nvtx_colors::weight_orange);
-        // Warp/block W boundary tracks the runtime block_dim_.x: a warp
-        // task carries up to block_dim_.x walks via its 32-wide stride
-        // loop. Above that, block tier amortizes the metadata preload
-        // across more cooperating threads.
+        // warp/block W boundary tracks runtime block_dim_.x
         partition_by_w_kernel<<<active_grid, block_dim_, 0, stream_>>>(
             unique_last_nodes, step_run_starts, step_run_lengths,
             step_num_runs, sorted_active_idx,
@@ -398,7 +379,6 @@ NodeGroupedScheduler::StepOutputs NodeGroupedScheduler::run_step(
             warp_global_nodes, warp_global_starts, warp_global_counts,
             &tier_counters[3]);
     }
-    // Block G-partition outputs are intermediate; expanded below.
     {
         NVTX_RANGE_COLORED("NG G-partition (block)", nvtx_colors::weight_orange);
         partition_by_g_kernel<<<active_grid, block_dim_, 0, stream_>>>(

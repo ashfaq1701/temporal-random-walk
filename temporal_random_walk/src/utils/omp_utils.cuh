@@ -21,12 +21,11 @@ void parallel_prefix_sum(const T* input, T* output, size_t n) {
         #pragma omp single
         {
             num_threads = nt;
-            thread_sums.resize(nt + 1, T(0));  // thread_sums[0] = 0
+            thread_sums.resize(nt + 1, T(0));
         }
 
         T local_sum = T(0);
 
-        // First pass: local inclusive scan
         #pragma omp for schedule(static)
         for (size_t i = 0; i < n; ++i) {
             local_sum += input[i];
@@ -37,7 +36,6 @@ void parallel_prefix_sum(const T* input, T* output, size_t n) {
 
         #pragma omp barrier
 
-        // Scan over thread partial sums
         #pragma omp single
         {
             for (int i = 1; i <= num_threads; ++i) {
@@ -45,12 +43,11 @@ void parallel_prefix_sum(const T* input, T* output, size_t n) {
             }
         }
 
-        // Convert to exclusive and apply offset
         T offset = thread_sums[tid];
 
         #pragma omp for schedule(static)
         for (size_t i = 0; i < n; ++i) {
-            output[i] -= input[i];  // convert inclusive to exclusive
+            output[i] -= input[i];
             output[i] += offset;
         }
     }
@@ -75,7 +72,7 @@ void parallel_exclusive_scan(const T* input, T* output_with_offset, const size_t
         #pragma omp single
         {
             num_threads = nt;
-            thread_sums.resize(nt + 1, T(0));  // thread_sums[0] = 0
+            thread_sums.resize(nt + 1, T(0));
         }
 
         T local_sum = 0;
@@ -83,7 +80,7 @@ void parallel_exclusive_scan(const T* input, T* output_with_offset, const size_t
         #pragma omp for schedule(static)
         for (size_t i = 0; i < n; ++i) {
             local_sum += input[i];
-            output_with_offset[i + 1] = local_sum; // write to output[1..n]
+            output_with_offset[i + 1] = local_sum;
         }
 
         thread_sums[tid + 1] = local_sum;
@@ -104,7 +101,7 @@ void parallel_exclusive_scan(const T* input, T* output_with_offset, const size_t
         }
     }
 
-    output_with_offset[0] = 0; // Set base offset
+    output_with_offset[0] = 0;
 }
 
 template <typename T>
@@ -128,7 +125,6 @@ void parallel_inclusive_scan(T* data, size_t n) {
 
         T local_sum = T(0);
 
-        // First pass: local inclusive scan per thread
         #pragma omp for schedule(static)
         for (size_t i = 0; i < n; ++i) {
             local_sum += data[i];
@@ -139,7 +135,6 @@ void parallel_inclusive_scan(T* data, size_t n) {
 
         #pragma omp barrier
 
-        // Prefix sum over thread_sums (serial, small)
         #pragma omp single
         {
             for (int i = 1; i <= num_threads; ++i) {
@@ -147,7 +142,6 @@ void parallel_inclusive_scan(T* data, size_t n) {
             }
         }
 
-        // Second pass: apply offset to each thread’s data
         T offset = thread_sums[tid];
 
         #pragma omp for schedule(static)

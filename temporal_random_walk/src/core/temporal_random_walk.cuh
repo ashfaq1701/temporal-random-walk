@@ -8,7 +8,7 @@
 
 #include "../common/macros.cuh"
 #include "../common/const.cuh"
-#include "../common/cuda_config.cuh"   // BLOCK_DIM default for block_dim params
+#include "../common/cuda_config.cuh"
 #include "../data/structs.cuh"
 #include "../data/enums.cuh"
 #include "../data/buffer.cuh"
@@ -20,10 +20,6 @@
 #ifdef HAS_CUDA
 #include <cuda_runtime.h>
 #endif
-
-// ==================================================================
-// Top-level class.
-// ==================================================================
 
 namespace core {
 
@@ -46,11 +42,10 @@ public:
 
     TemporalRandomWalk(const TemporalRandomWalk&) = delete;
     TemporalRandomWalk& operator=(const TemporalRandomWalk&) = delete;
-    // Move semantics need to manage stream ownership, so implement manually.
+    // moves manage stream ownership manually
     TemporalRandomWalk(TemporalRandomWalk&&) noexcept;
     TemporalRandomWalk& operator=(TemporalRandomWalk&&) noexcept;
 
-    // Accessors
     TemporalGraphData&       data()       { return data_; }
     const TemporalGraphData& data() const { return data_; }
 
@@ -67,15 +62,9 @@ public:
 #ifdef HAS_CUDA
     const cudaDeviceProp& cuda_device_prop() const { return cuda_device_prop_; }
 
-    // Non-blocking stream owned by this instance. All GPU work inside
-    // the walk pipeline (kernel launches, thrust ops, async memcpys)
-    // should eventually flow through this stream so that concurrent
-    // instances don't serialize on the default legacy stream.
+    // per-instance non-blocking stream; avoids serializing on legacy stream 0
     cudaStream_t stream() const { return stream_; }
 
-    // Block the host until any outstanding async work on stream_ has
-    // completed. Called at user-visible boundaries (e.g. before
-    // returning results to the caller) so host-observed reads are safe.
     void sync_stream() const {
         if (data_.use_gpu && stream_ != nullptr) {
             cudaStreamSynchronize(stream_);
@@ -83,7 +72,6 @@ public:
     }
 #endif
 
-    // Public methods (forward to namespace free functions)
     void add_multiple_edges(
         const int* sources, const int* targets,
         const int64_t* timestamps, size_t num_edges,
@@ -151,10 +139,6 @@ private:
 };
 
 } // namespace core
-
-// ==================================================================
-// Namespace free-function overloads taking core::TemporalRandomWalk*.
-// ==================================================================
 
 namespace temporal_random_walk {
 

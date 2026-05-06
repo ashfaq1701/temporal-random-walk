@@ -16,12 +16,7 @@
 
 namespace temporal_graph {
 
-    // -------------------------------------------------------------------------
-    // Inline view-based helpers (host variants).
-    // Mirror edge_data::find_group_after_timestamp,
-    // edge_data::find_group_before_timestamp, edge_data::get_timestamp_group_range,
-    // edge_data::is_node_active — but sourced from TemporalGraphView.
-    // -------------------------------------------------------------------------
+    // view-based mirrors of edge_data:: query helpers (host)
     HOST inline size_t find_group_after_timestamp_host(
         const TemporalGraphView& view, const int64_t timestamp) {
         if (view.num_groups == 0) return 0;
@@ -54,34 +49,9 @@ namespace temporal_graph {
             && view.active_node_ids[node_id] == 1;
     }
 
-    // ==========================================================================
-    // Slice-parameterized stage-1 helpers for get_node_edge_at_*.
-    //
-    // Work on a G-sized slice of one node's per-timestamp-group metadata:
-    //   group_offsets[G]        — global edge offsets into node_ts_sorted_indices.
-    //   first_ts[G] (optional)  — timestamp of the first edge in each group.
-    //                             When non-null, binary-search probes do a
-    //                             single load per step. When null, fall back
-    //                             to the double-indirect path
-    //                             view_timestamps[node_ts_sorted_indices[group_offsets[p]]]
-    //                             on every probe (the legacy solo/host shape).
-    //
-    // Cooperative kernels (tasks 8, 10) preload first_ts into smem so they
-    // call the helper with a non-null pointer and get the fast path. Solo
-    // and host callers pass nullptr.
-    //
-    // Returned positions are LOCAL to the slice (in [0, G)). Callers bridge
-    // back to global addressing by adding node_group_begin.
-    //
-    // Node2Vec's stage-1b picker is prev-node-dependent and NOT handled by
-    // find_group_pos_slice; Node2Vec callers use filter_valid_groups_by_timestamp_slice
-    // for the temporal cutoff and then invoke pick_random_temporal_node2vec_*.
-    // ==========================================================================
-
-    // Stage 1a: narrow [0, G) to the subrange that satisfies the temporal
-    // cutoff. Forward keeps groups with ts > timestamp; backward keeps
-    // groups with ts < timestamp. Sets out_valid_begin / out_valid_end in
-    // LOCAL slice indexing (so both are in [0, G]).
+    // slice-parameterized stage-1 helpers; positions are local to the slice [0, G).
+    // first_ts non-null = single-indirect probe (cooperative kernels preload smem);
+    // null = double-indirect fallback used by solo/host callers.
     template <bool Forward>
     HOST DEVICE inline void filter_valid_groups_by_timestamp_slice(
         const size_t*  group_offsets,
@@ -98,15 +68,12 @@ namespace temporal_graph {
 
         if (timestamp == -1) return;
 
-        // Single- vs double-indirect ts comparator, selected by first_ts
-        // availability. Hot in cooperative panels, cold in the fallback.
         auto ts_of = [&](const int p) -> int64_t {
             if (first_ts != nullptr) return first_ts[p];
             return view_timestamps[node_ts_sorted_indices[group_offsets[p]]];
         };
 
         if constexpr (Forward) {
-            // Upper-bound: first p with ts_of(p) > timestamp.
             int lo = 0, hi = G;
             while (lo < hi) {
                 const int mid = lo + ((hi - lo) >> 1);
@@ -115,7 +82,6 @@ namespace temporal_graph {
             }
             out_valid_begin = lo;
         } else {
-            // Lower-bound: first p with ts_of(p) >= timestamp.
             int lo = 0, hi = G;
             while (lo < hi) {
                 const int mid = lo + ((hi - lo) >> 1);
@@ -126,23 +92,10 @@ namespace temporal_graph {
         }
     }
 
-    // Stage 1 = stage 1a + stage 1b for non-Node2Vec pickers. Returns the
-    // picked group's LOCAL index in [0, G), or -1 on empty / no match.
-    //
-    // cum_weights is the full per-graph cumulative-weight array (not a
-    // slice — the weighted picker needs the prior prefix at index
-    // group_start-1). slice_global_begin is the origin offset of this
-    // slice in cum_weights; the helper converts local positions to global
-    // for the picker and back for the return value.
-    //
-    // s_cum_weights: optional smem-resident slice of `cum_weights`,
-    // covering `cum_weights[slice_global_begin..slice_global_begin + G)`
-    // — same span as the slice the helper already operates on. When
-    // non-null and the picker is weighted, the picker's binary search and
-    // boundary reads are redirected to smem (1 cycle/probe instead of one
-    // dependent global load). nullptr (default) keeps the original
-    // global-memory path. No effect on index pickers (they don't use
-    // cum_weights at all).
+    // returns the picked group's local index in [0, G), or -1.
+    // cum_weights is the full per-graph array; slice_global_begin shifts
+    // local <-> global for the weighted picker. s_cum_weights, when set,
+    // redirects the picker's loads to a smem-resident copy of the slice.
     template <bool Forward, RandomPickerType PickerType>
     HOST DEVICE inline long find_group_pos_slice(
         const size_t*  group_offsets,
@@ -179,10 +132,8 @@ namespace temporal_graph {
                 slice_global_begin + static_cast<size_t>(valid_begin);
             const size_t g_end   =
                 slice_global_begin + static_cast<size_t>(valid_end);
-            // Per-node (piecewise) CDF — the cum array resets at each node
-            // boundary and ends at 1.0 normalized. Pass slice_global_begin
-            // so the picker knows to treat g_begin == slice_global_begin as
-            // "prefix is 0" instead of reading the previous node's total.
+            // per-node piecewise CDF; pass slice_global_begin so g_begin ==
+            // slice_global_begin means "prefix 0" (don't read prev node's total)
             const int global_pos = random_pickers::pick_using_weight_based_picker(
                 PickerType, cum_weights, cum_weights_size,
                 g_begin, g_end, r_group,
@@ -193,10 +144,6 @@ namespace temporal_graph {
                    static_cast<long>(slice_global_begin);
         }
     }
-
-    /**
-     * Host functions
-     */
 
     template<bool Forward, RandomPickerType PickerType>
     HOST InternalEdge get_edge_at_host(
@@ -255,7 +202,6 @@ namespace temporal_graph {
                 }
             }
         } else {
-            // No timestamp constraint - select from all groups
             if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                 const auto index = random_pickers::pick_using_index_based_picker(
                     PickerType, 0, static_cast<int>(num_groups), !Forward, group_selector_rand_num);
@@ -282,13 +228,11 @@ namespace temporal_graph {
             }
         }
 
-        // Get selected group's boundaries
         const SizeRange group_range = get_timestamp_group_range_host(view, group_idx);
         if (group_range.from == group_range.to) {
             return InternalEdge{-1, -1, -1, -1};
         }
 
-        // Random selection from the chosen group
         const size_t random_idx = group_range.from +
                                   generate_random_number_bounded_by(
                                       static_cast<int>(group_range.to - group_range.from),
@@ -314,7 +258,6 @@ namespace temporal_graph {
             return InternalEdge{-1, -1, -1, -1};
         }
 
-        // Direction-dependent index structures
         const size_t* count_ts_group_per_node =
                 Forward
                     ? view.count_ts_group_per_node_outbound
@@ -364,7 +307,6 @@ namespace temporal_graph {
                            ? view.inbound_backward_cumulative_weights_exponential_size
                            : view.outbound_backward_cumulative_weights_exponential_size);
 
-        // Node's full timestamp-group range
         const size_t node_group_begin = count_ts_group_per_node[node_id];
         const size_t node_group_end = count_ts_group_per_node[node_id + 1];
 
@@ -372,9 +314,7 @@ namespace temporal_graph {
             return InternalEdge{-1, -1, -1, -1};
         }
 
-        // Stage 1: pick a timestamp-group position for this node.
-        // Non-Node2Vec pickers delegate to the slice helper; Node2Vec
-        // stays inline because its picker is prev-node-dependent.
+        // node2vec stays inline since its picker depends on prev_node
         const int G = static_cast<int>(node_group_end - node_group_begin);
         long group_pos = -1;
 
@@ -395,9 +335,7 @@ namespace temporal_graph {
             const size_t valid_end   = node_group_begin + static_cast<size_t>(local_end);
 
             if (prev_node == -1) {
-                // Per-node piecewise CDF; pass node_group_begin so the
-                // picker treats valid_begin == node_group_begin as
-                // "prefix is 0" instead of reading the previous node's total.
+                // per-node piecewise CDF; node_group_begin == "prefix 0"
                 group_pos = random_pickers::pick_using_weight_based_picker(
                     RandomPickerType::ExponentialWeight,
                     weights, weights_size,
@@ -433,7 +371,6 @@ namespace temporal_graph {
             group_pos = local_pos + static_cast<long>(node_group_begin);
         }
 
-        // Resolve selected group to edge range
         const size_t valid_edge_start = node_ts_groups_offsets[group_pos];
         const size_t valid_edge_end =
                 (static_cast<size_t>(group_pos) + 1 < node_group_end)
@@ -485,15 +422,8 @@ namespace temporal_graph {
         };
     }
 
-    /**
-     * Device functions
-     */
-
     #ifdef HAS_CUDA
 
-    // -------------------------------------------------------------------------
-    // Inline view-based helpers (device-only).
-    // -------------------------------------------------------------------------
     DEVICE inline size_t find_group_after_timestamp(
         const TemporalGraphView& view, const int64_t timestamp) {
         if (view.num_groups == 0) return 0;
@@ -583,7 +513,6 @@ namespace temporal_graph {
                 }
             }
         } else {
-            // No timestamp constraint - select from all groups
             if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
                 const auto index = random_pickers::pick_using_index_based_picker(
                     PickerType, 0, static_cast<int>(num_groups), !Forward, group_selector_rand_num);
@@ -696,24 +625,9 @@ namespace temporal_graph {
             return InternalEdge{-1, -1, -1, -1};
         }
 
-        // Stage 1: pick a timestamp-group position for this node.
-        //
-        // Inline upper_bound / lower_bound comparator on the per-node slice.
-        // This is the FULL_WALK / solo-path hot path; routing it through the
-        // slice helpers (find_group_pos_slice / filter_valid_groups_by_
-        // timestamp_slice) added a 3-deep dependent-load chain inside the
-        // binary-search comparator — `view_timestamps[node_ts_sorted_
-        // indices[group_offsets[p]]]` — vs master's 2-deep version, because
-        // cuda::std::upper_bound passes the DEREFERENCED iterator (i.e. the
-        // group-offset `size_t` value itself) as `pos`. It also added a
-        // per-probe runtime branch on `first_ts != nullptr` that the
-        // compiler doesn't always constant-propagate through the inlined
-        // lambda chain. Measured ~1–2 ms/run regression on FULL_WALK.
-        //
-        // The slice helpers are kept alive as-is for the cooperative
-        // kernels (which preload first_ts into smem and genuinely need the
-        // variable-cap panel interface). They are simply not on this hot
-        // per-walk path.
+        // inline binary search; routing through slice helpers added a
+        // 3-deep dependent-load chain in the comparator (vs 2-deep here)
+        // and a per-probe runtime branch on first_ts. solo/host hot path.
         size_t valid_begin = node_group_begin;
         size_t valid_end = node_group_end;
 

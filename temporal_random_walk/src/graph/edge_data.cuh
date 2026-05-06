@@ -28,9 +28,6 @@
 
 namespace edge_data {
 
-    /**
-     * Common
-     */
     HOST DEVICE size_t size(const TemporalGraphData& data);
     HOST void set_size(TemporalGraphData& data, size_t size);
     HOST bool empty(const TemporalGraphData& data);
@@ -51,7 +48,6 @@ namespace edge_data {
         const float* edge_features,
         size_t feature_dim);
 
-    // Convenience: append a single edge. Thin wrapper around add_edges.
     HOST inline void push_back(TemporalGraphData& data,
                                const int src, const int tgt, const int64_t ts) {
         const int srcs[1]     = {src};
@@ -70,10 +66,7 @@ namespace edge_data {
         return data.max_node_id;
     }
 
-    // Host-safe: these query functions dispatch on data.use_gpu.
-    // For GPU-resident data, they copy the few size_t values they need
-    // from device to host (or use thrust bounds), so callers can query
-    // freely from host without knowing whether the buffers are on GPU.
+    // host-safe: dispatches on data.use_gpu, copies scalars D->H as needed
     HOST inline SizeRange get_timestamp_group_range(
         const TemporalGraphData& data, const size_t group_idx) {
         if (group_idx >= data.unique_timestamps.size()) {
@@ -134,9 +127,6 @@ namespace edge_data {
 
     HOST bool is_node_active(const TemporalGraphData& data, int node_id);
 
-    /**
-     * Active nodes + CSR (std & cuda)
-     */
     HOST void populate_active_nodes_std(TemporalGraphData& data);
 
     HOST void build_node_adjacency_csr_std(TemporalGraphData& data);
@@ -156,10 +146,6 @@ namespace edge_data {
     HOST void update_temporal_weights_cuda(
         TemporalGraphData& data, double timescale_bound);
 
-    /**
-     * Device queries — take a TemporalGraphView (POD by value) instead of
-     * a TemporalGraphData pointer. Inline so kernels can call them directly.
-     */
     DEVICE inline size_t find_group_after_timestamp_device(
         const TemporalGraphView& view, const int64_t timestamp) {
         if (view.num_groups == 0) return 0;
@@ -193,14 +179,7 @@ namespace edge_data {
 
     HOST size_t get_memory_used(const TemporalGraphData& data);
 
-    // ============================================================
-    // Test / debug helpers (not hot-path). One snapshot() call does
-    // Buffer<T>::to_host_vector() over every edge-layer buffer so
-    // test bodies stay readable. Prefer one snapshot per assertion
-    // block rather than one per assertion (each call incurs D->H
-    // copies when data.use_gpu).
-    // ============================================================
-
+    // test/debug helper; batches D->H copies, prefer one per assertion block
     struct EdgeDataSnapshot {
         std::vector<int>     sources;
         std::vector<int>     targets;
@@ -222,10 +201,7 @@ namespace edge_data {
         ) {
         EdgeDataSnapshot snap;
 
-        // Pre-size every host vector first so .data() pointers are stable
-        // across the async copies that follow. resize never reallocates
-        // again until the trailing sync, which is what makes the batched
-        // copy pattern safe.
+        // pre-size so .data() pointers stay stable through the async copies
         snap.sources.resize(data.sources.size());
         snap.targets.resize(data.targets.size());
         snap.timestamps.resize(data.timestamps.size());

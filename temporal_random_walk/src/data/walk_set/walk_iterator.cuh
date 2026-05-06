@@ -11,12 +11,11 @@ class WalkIterator {
 private:
     const int* nodes_;
     const int64_t* timestamps_;
-    const int64_t* edge_ids_; // per-walk edge slice, length = max(0, walk_len - 1)
+    const int64_t* edge_ids_; // per-walk slice, length = max(0, walk_len - 1)
     size_t index_;
     size_t length_;
 
 public:
-    // Constructor
     HOST WalkIterator(
         const int* nodes,
         const int64_t* timestamps,
@@ -25,7 +24,6 @@ public:
         const size_t length)
         : nodes_(nodes), timestamps_(timestamps), edge_ids_(edge_ids), index_(index), length_(length) {}
 
-    // Iterator operations
     HOST DEVICE Step operator*() const {
         const int64_t incoming_edge_id = (index_ == 0) ? EMPTY_EDGE_ID : edge_ids_[index_ - 1];
         return {nodes_[index_], timestamps_[index_], incoming_edge_id};

@@ -1,10 +1,7 @@
 #ifndef NVTX_CUH
 #define NVTX_CUH
 
-// Zero-overhead RAII range markers for Nsight Systems. The NvtxRange
-// class exists in both modes (push/pop when HAS_NVTX is defined, pure
-// no-op otherwise) so direct uses like `NvtxRange r("foo")` keep
-// working even when the NVTX header is unavailable.
+// no-op when HAS_NVTX is undefined so direct uses keep compiling.
 
 #include <cstdint>
 

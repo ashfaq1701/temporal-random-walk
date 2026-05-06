@@ -15,21 +15,6 @@
 #include "error_handlers.cuh"
 #include "../data/buffer.cuh"
 
-/**
- * CUB-backed inclusive-sum scan. Drop-in replacement for
- * thrust::inclusive_scan when input and output iterators reference the same
- * primitive type (size_t, double, etc.). CUB specializes its scan kernels
- * per-architecture and on primitives is typically 20-30% faster than
- * thrust's generic implementation.
- *
- * Two-call convention: first call queries required temp storage (fast, no
- * device work), second call does the scan. Scratch is held in a
- * scope-local Buffer<uint8_t> so no manual cudaFree is needed.
- *
- * Stream-aware: all CUB + scratch ops run on the given stream. Defaults to
- * 0 (legacy default stream) so existing graph-layer callers that are not
- * yet stream-threaded keep working.
- */
 template <typename InputIteratorT, typename OutputIteratorT>
 inline void cub_inclusive_sum(
     InputIteratorT d_in,
@@ -50,11 +35,6 @@ inline void cub_inclusive_sum(
         temp.data(), temp_bytes, d_in, d_out, num_items, stream));
 }
 
-/**
- * CUB-backed exclusive-sum scan. Same two-call convention as the inclusive
- * variant. Used for boundary-flag -> scatter-index conversion where we need
- * exclusive prefixes (so flag_scan[i] is the output slot for the i'th entry).
- */
 template <typename InputIteratorT, typename OutputIteratorT>
 inline void cub_exclusive_sum(
     InputIteratorT d_in,
@@ -75,11 +55,6 @@ inline void cub_exclusive_sum(
         temp.data(), temp_bytes, d_in, d_out, num_items, stream));
 }
 
-/**
- * CUB-backed run-length encode over a sorted key sequence. Writes unique
- * keys, run lengths, and *d_num_runs_out (single device counter). Same
- * two-call Buffer<uint8_t> scratch convention as the other cub_* helpers.
- */
 template <typename KeyType, typename LengthType, typename NumRunsType>
 inline void cub_run_length_encode(
     const KeyType* d_keys_in,
@@ -106,14 +81,6 @@ inline void cub_run_length_encode(
         num_items, stream));
 }
 
-/**
- * CUB-backed flagged stream compaction. For each i in [0, num_items), copies
- * d_in[i] to the output iff d_flags[i] is truthy. *d_num_selected_out
- * receives the number of selected elements. Used to drop terminated walks
- * before sort-and-group in the node-grouped intermediate-step path: we flag
- * alive walks and compact their original walk indices so downstream kernels
- * never touch the dead ones.
- */
 template <typename InputT, typename FlagT, typename NumSelectedT>
 inline void cub_partition_flagged(
     const InputT* d_in,
@@ -140,22 +107,7 @@ inline void cub_partition_flagged(
         num_items, stream));
 }
 
-/**
- * Build a CSR-style offset row from a stream of bucket-id samples in
- * [0, num_offsets). For sorted samples s[0..n), lower_bound(s, k) is the
- * count of samples < k; taken over k in [0, num_offsets) this is exactly
- * the prefix-summed CSR offsets — i.e. histogram + inclusive scan in a
- * single search, with no scale arithmetic that could overflow int32.
- *
- * Sorts a scratch copy (input is not mutated). Output row size is
- * num_offsets; d_offsets[k] = first slot for bucket k, d_offsets[N]
- * = total sample count.
- *
- * Drop-in replacement for the cub::DeviceHistogram::HistogramEven +
- * cub_inclusive_sum pipeline; HistogramEven's internal ScaleTransform
- * computes `(sample - lower) * num_levels` in int32 and overflows when
- * num_levels^2 crosses 2^31.
- */
+// avoids cub::DeviceHistogram::HistogramEven's int32 overflow when num_levels^2 > 2^31.
 template <typename SampleT>
 inline void compute_csr_offsets_from_samples(
     const SampleT* d_samples,

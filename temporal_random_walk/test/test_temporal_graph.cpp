@@ -227,7 +227,6 @@ TYPED_TEST(TemporalGraphTest, CountTimestampsTest) {
     EXPECT_EQ(test_util::count_timestamps_greater_than(d, 400), 0u);
     EXPECT_EQ(test_util::count_timestamps_greater_than(d, 500), 0u);
 
-    // Empty graph.
     this->graph = std::make_unique<core::TemporalRandomWalk>(true, TypeParam::value);
     EXPECT_EQ(test_util::count_timestamps_less_than(this->data(), 100), 0u);
     EXPECT_EQ(test_util::count_timestamps_greater_than(this->data(), 100), 0u);
@@ -355,7 +354,6 @@ TYPED_TEST(TemporalGraphTest, GetEdgeAtTest) {
     auto edge8 = test_util::get_edge_at(d, RandomPickerType::TEST_FIRST, 50, false);
     EXPECT_EQ(edge8.ts, -1);
 
-    // Empty graph.
     this->graph = std::make_unique<core::TemporalRandomWalk>(true, TypeParam::value);
     auto edge9 = test_util::get_edge_at(this->data(), RandomPickerType::TEST_FIRST, 100, true);
     EXPECT_EQ(edge9.ts, -1);

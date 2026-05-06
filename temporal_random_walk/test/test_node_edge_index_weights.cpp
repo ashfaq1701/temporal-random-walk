@@ -204,7 +204,6 @@ TYPED_TEST(NodeEdgeIndexWeightTest, WeightConsistencyAcrossUpdates) {
 
     const auto before = node_edge_index::snapshot(data);
 
-    // Reset and rebuild with a smaller edge set.
     edge_data::set_size(data, 0);
     do_update_timestamp_groups(data);
     edge_data::push_back(data, 1, 2, 10);

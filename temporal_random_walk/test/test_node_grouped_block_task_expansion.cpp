@@ -1,38 +1,5 @@
-// GPU-only tests for the NODE_GROUPED scheduler's block-task expansion stage.
-//
-// The expansion (task 7) runs after the block G-partition, on both
-// block_smem and block_global task lists. For every source task with
-// walk_count > W_THRESHOLD_MULTI_BLOCK (8192), it emits
-// ⌈count/cap⌉ disjoint sub-tasks carrying the same node_id:
-//   sub k : walk_start = start + k*cap,
-//           walk_count = min(cap, count - k*cap).
-// Tasks with count <= cap pass through as a single sub-task.
-//
-// Scope covered here:
-//   - W == cap  -> 1 sub-task (no expansion).
-//   - W <= cap  -> 1 sub-task (no expansion).
-//   - W == cap + 1   -> 2 sub-tasks with counts (cap, 1).
-//   - W == 3*cap + r -> 4 sub-tasks with counts (cap, cap, cap, r).
-//   - node_id is preserved across every sub-task of a mega-hub.
-//   - sub-task walk slices tile the original (start, count) range exactly
-//     (contiguous, disjoint, sum of counts == original W).
-//   - multiple mega-hub nodes in one step each expand independently.
-//   - block_global is expanded the same way as block_smem.
-//   - warp tier is NEVER expanded, even at W = cap (warp upper bound is
-//     BLOCK_DIM << cap, so this is a degenerate check).
-//   - count identity in mixed scenarios including expansion.
-//
-// Scope deferred to sibling files:
-//   - W-partition itself   -> test_node_grouped_w_partition.cpp
-//   - G-partition routing  -> test_node_grouped_g_partition.cpp
-//
-// Sub-task output order is non-deterministic (each thread atomicAdds to
-// reserve its range, but the order of those atomics races). Sub-tasks
-// for one source task ARE contiguous (single atomic reservation), but
-// different source tasks' ranges interleave. Assertions group by node_id
-// and sort sub-tasks by walk_start before checking counts.
-//
-// This file is guarded by HAS_CUDA. It is NOT paired with a CPU variant.
+// sub-task output order is non-deterministic across source tasks; assertions
+// group by node_id and sort by walk_start.
 
 #ifdef HAS_CUDA
 
@@ -59,11 +26,8 @@ namespace {
 using temporal_random_walk::NodeGroupedScheduler;
 
 constexpr int PAD = EMPTY_NODE_VALUE;
-constexpr int CAP = W_THRESHOLD_MULTI_BLOCK;  // 8192
+constexpr int CAP = W_THRESHOLD_MULTI_BLOCK;
 
-// --------------------------------------------------------------------------
-// Controllable WalkSetView (same shape as the other scheduler tests).
-// --------------------------------------------------------------------------
 struct DeviceWalkSet {
     int*         nodes              = nullptr;
     int64_t*     timestamps         = nullptr;
@@ -133,8 +97,6 @@ struct DeviceG {
     ~DeviceG() { if (ptr) cudaFree(ptr); }
 };
 
-// Build count_ts_group_per_node as a prefix-sum device array so that
-// count_ts_group_per_node[node+1] - count_ts_group_per_node[node] == G_node.
 std::unique_ptr<DeviceG> make_count_ts_group_per_node(
     const std::vector<int>& g_per_node) {
     auto g = std::make_unique<DeviceG>();
@@ -156,10 +118,6 @@ void set_g(std::vector<int>& g_per_node, int node_id, int g) {
     g_per_node[node_id] = g;
 }
 
-// --------------------------------------------------------------------------
-// Host-side materialization of one run_step output, focused on the block
-// tier task lists.
-// --------------------------------------------------------------------------
 struct ExpResult {
     int num_active_host        = 0;
     int num_solo_walks_host    = 0;
@@ -204,7 +162,6 @@ ExpResult run_and_materialize(
     const WalkSetView view = make_view(*ws);
     auto g = make_count_ts_group_per_node(g_per_node);
 
-    // Mixed-tier tests assert W=10 lands in warp — pin to original W=1 boundary.
     NodeGroupedScheduler scheduler(ws->num_walks, block_dim, /*w_threshold_warp=*/1, stream);
     auto outs = scheduler.run_step(
         view, STEP_NUMBER, MAX_WALK_LEN, g->ptr, picker);
@@ -240,10 +197,6 @@ ExpResult run_and_materialize(
     return r;
 }
 
-// Extract sub-tasks belonging to `node`, sorted by walk_start ascending.
-// Sub-task output order within a tier is non-deterministic across source
-// tasks (atomic reservation race), so this grouping is the right way to
-// inspect a single mega-hub node's expansion.
 struct SubTask { int walk_start; int walk_count; };
 
 std::vector<SubTask> sub_tasks_for_node(
@@ -284,12 +237,7 @@ protected:
     cudaStream_t stream_ = nullptr;
 };
 
-// ==========================================================================
-// Non-mega-hub block tasks: no expansion.
-// ==========================================================================
-
 TEST_F(GpuBlockTaskExpansionTest, BlockBelowCap_NoExpansion) {
-    // W=300 (>BLOCK_DIM so block tier) but W<CAP: one sub-task.
     const int NODE = 7;
     std::vector<int> last_nodes(300, NODE);
     std::vector<int> g; set_g(g, NODE, 10);
@@ -304,7 +252,6 @@ TEST_F(GpuBlockTaskExpansionTest, BlockBelowCap_NoExpansion) {
 }
 
 TEST_F(GpuBlockTaskExpansionTest, BlockExactlyAtCap_StillSingleTask) {
-    // W=CAP: ceil(CAP/CAP) = 1 -> no expansion.
     const int NODE = 7;
     std::vector<int> last_nodes(CAP, NODE);
     std::vector<int> g; set_g(g, NODE, 10);
@@ -319,12 +266,7 @@ TEST_F(GpuBlockTaskExpansionTest, BlockExactlyAtCap_StillSingleTask) {
     EXPECT_EQ(r.block_smem_walk_starts[0], 0);
 }
 
-// ==========================================================================
-// Mega-hub expansion: the interesting cases.
-// ==========================================================================
-
 TEST_F(GpuBlockTaskExpansionTest, BlockJustOverCap_SplitsIntoTwo) {
-    // W = CAP + 1: ceil(/CAP) = 2 -> sub-tasks (CAP, 1).
     const int NODE = 7;
     const int W = CAP + 1;
     std::vector<int> last_nodes(W, NODE);
@@ -343,13 +285,11 @@ TEST_F(GpuBlockTaskExpansionTest, BlockJustOverCap_SplitsIntoTwo) {
     ASSERT_EQ(subs.size(), 2u);
     EXPECT_EQ(subs[0].walk_count, CAP);
     EXPECT_EQ(subs[1].walk_count, 1);
-    // Slices tile [0, W): first starts at 0, second at CAP.
     EXPECT_EQ(subs[0].walk_start, 0);
     EXPECT_EQ(subs[1].walk_start, CAP);
 }
 
 TEST_F(GpuBlockTaskExpansionTest, BlockThreeTimesCap_SplitsIntoThree) {
-    // W = 3*CAP: ceil = 3, all full (CAP, CAP, CAP).
     const int NODE = 7;
     const int W = 3 * CAP;
     std::vector<int> last_nodes(W, NODE);
@@ -372,7 +312,6 @@ TEST_F(GpuBlockTaskExpansionTest, BlockThreeTimesCap_SplitsIntoThree) {
 }
 
 TEST_F(GpuBlockTaskExpansionTest, BlockThreeCapPlusRemainder_SplitsIntoFour) {
-    // W = 3*CAP + 5: ceil = 4, sub-tasks (CAP, CAP, CAP, 5).
     const int NODE = 7;
     const int REMAINDER = 5;
     const int W = 3 * CAP + REMAINDER;
@@ -399,14 +338,9 @@ TEST_F(GpuBlockTaskExpansionTest, BlockThreeCapPlusRemainder_SplitsIntoFour) {
     EXPECT_EQ(subs[3].walk_start, 3 * CAP);
 }
 
-// ==========================================================================
-// Slice tiling invariant: sub-task walk slices are contiguous, disjoint,
-// and sum to the original W.
-// ==========================================================================
-
 TEST_F(GpuBlockTaskExpansionTest, SubTasksTileOriginalRangeExactly) {
     const int NODE = 42;
-    const int W = 5 * CAP + 123;   // 41083
+    const int W = 5 * CAP + 123;
     std::vector<int> last_nodes(W, NODE);
     std::vector<int> g; set_g(g, NODE, 10);
 
@@ -414,30 +348,23 @@ TEST_F(GpuBlockTaskExpansionTest, SubTasksTileOriginalRangeExactly) {
                                  RandomPickerType::Linear,
                                  block_dim_, stream_);
 
-    ASSERT_EQ(r.num_block_smem_host, 6);  // ceil(W / CAP)
+    ASSERT_EQ(r.num_block_smem_host, 6);
     const auto subs = sub_tasks_for_node(r.block_smem_nodes,
                                          r.block_smem_walk_starts,
                                          r.block_smem_walk_counts,
                                          NODE);
     ASSERT_EQ(subs.size(), 6u);
 
-    // Contiguous: every sub k (except last) ends where sub k+1 starts.
     for (std::size_t k = 0; k + 1 < subs.size(); ++k) {
         EXPECT_EQ(subs[k].walk_start + subs[k].walk_count,
                   subs[k + 1].walk_start);
     }
-    // Last sub ends at W — total walks covered equals W.
     EXPECT_EQ(subs.back().walk_start + subs.back().walk_count, W);
 
-    // Sum of counts == W.
     int total = 0;
     for (const auto& s : subs) total += s.walk_count;
     EXPECT_EQ(total, W);
 }
-
-// ==========================================================================
-// node_id is preserved across every sub-task of a mega-hub.
-// ==========================================================================
 
 TEST_F(GpuBlockTaskExpansionTest, NodeIdPreservedAcrossSubTasks) {
     const int NODE = 12345;
@@ -451,19 +378,14 @@ TEST_F(GpuBlockTaskExpansionTest, NodeIdPreservedAcrossSubTasks) {
 
     ASSERT_EQ(r.num_block_smem_host, 3);
     for (int got : r.block_smem_nodes) {
-        EXPECT_EQ(got, NODE)
-            << "every sub-task of a mega-hub must carry the source node_id";
+        EXPECT_EQ(got, NODE);
     }
 }
 
-// ==========================================================================
-// Multiple mega-hubs: each expands independently, no cross-contamination.
-// ==========================================================================
-
 TEST_F(GpuBlockTaskExpansionTest, MultipleMegaHubs_EachExpandsIndependently) {
-    const int NODE_A = 10;   // W = CAP + 1    -> 2 sub-tasks
-    const int NODE_B = 20;   // W = 3*CAP      -> 3 sub-tasks
-    const int NODE_C = 30;   // W = CAP / 2    -> 1 sub-task (no split)
+    const int NODE_A = 10;
+    const int NODE_B = 20;
+    const int NODE_C = 30;
     const int W_A = CAP + 1;
     const int W_B = 3 * CAP;
     const int W_C = CAP / 2;
@@ -498,7 +420,6 @@ TEST_F(GpuBlockTaskExpansionTest, MultipleMegaHubs_EachExpandsIndependently) {
     ASSERT_EQ(subs_b.size(), 3u);
     ASSERT_EQ(subs_c.size(), 1u);
 
-    // Each node's sub-tasks cover its own W.
     int sum_a = 0; for (const auto& s : subs_a) sum_a += s.walk_count;
     int sum_b = 0; for (const auto& s : subs_b) sum_b += s.walk_count;
     int sum_c = 0; for (const auto& s : subs_c) sum_c += s.walk_count;
@@ -507,14 +428,9 @@ TEST_F(GpuBlockTaskExpansionTest, MultipleMegaHubs_EachExpandsIndependently) {
     EXPECT_EQ(sum_c, W_C);
 }
 
-// ==========================================================================
-// block_global is expanded the same way — not just block_smem.
-// ==========================================================================
-
 TEST_F(GpuBlockTaskExpansionTest, BlockGlobal_IsAlsoExpanded) {
     const int NODE = 7;
     const int W = 2 * CAP + 10;
-    // G > G_THRESHOLD_BLOCK_INDEX (2800) -> block_global.
     const int G_LARGE = G_THRESHOLD_BLOCK_INDEX + 1;
     std::vector<int> last_nodes(W, NODE);
     std::vector<int> g; set_g(g, NODE, G_LARGE);
@@ -539,13 +455,9 @@ TEST_F(GpuBlockTaskExpansionTest, BlockGlobal_IsAlsoExpanded) {
     EXPECT_EQ(subs[2].walk_start, 2 * CAP);
 }
 
-// ==========================================================================
-// Warp tier is never expanded. Its upper bound (BLOCK_DIM) is << CAP.
-// ==========================================================================
-
 TEST_F(GpuBlockTaskExpansionTest, WarpTier_NotExpanded_EvenAtWarpUpperBound) {
     const int NODE = 5;
-    const int W = static_cast<int>(BLOCK_DIM);   // 255, top of warp range
+    const int W = static_cast<int>(BLOCK_DIM);
     std::vector<int> last_nodes(W, NODE);
     std::vector<int> g; set_g(g, NODE, 10);
 
@@ -553,7 +465,6 @@ TEST_F(GpuBlockTaskExpansionTest, WarpTier_NotExpanded_EvenAtWarpUpperBound) {
                                  RandomPickerType::Linear,
                                  block_dim_, stream_);
 
-    // Stays in warp, not block — and warp expansion is a no-op path.
     EXPECT_EQ(r.num_block_smem_host, 0);
     EXPECT_EQ(r.num_block_global_host, 0);
     ASSERT_EQ(r.num_warp_smem_host, 1);
@@ -561,16 +472,11 @@ TEST_F(GpuBlockTaskExpansionTest, WarpTier_NotExpanded_EvenAtWarpUpperBound) {
     EXPECT_EQ(r.warp_smem_walk_counts[0], W);
 }
 
-// ==========================================================================
-// Count identity with expansion: in a mixed scenario with mega-hubs, the
-// sum of walk_counts across all five tiers still equals num_active.
-// ==========================================================================
-
 TEST_F(GpuBlockTaskExpansionTest, CountIdentity_WithMegaHubExpansion) {
-    const int NODE_SOLO   = 101;          // W=1 solo
-    const int NODE_WARP   = 11;           // W=10 warp
-    const int NODE_BLOCK  = 13;           // W < CAP block
-    const int NODE_MEGA   = 14;           // W > CAP mega-hub
+    const int NODE_SOLO   = 101;
+    const int NODE_WARP   = 11;
+    const int NODE_BLOCK  = 13;
+    const int NODE_MEGA   = 14;
 
     const int W_WARP  = 10;
     const int W_BLOCK = CAP / 2;
@@ -597,12 +503,10 @@ TEST_F(GpuBlockTaskExpansionTest, CountIdentity_WithMegaHubExpansion) {
     EXPECT_EQ(r.num_solo_walks_host,  1);
     EXPECT_EQ(r.num_warp_smem_host,   1);
     EXPECT_EQ(r.num_warp_global_host, 0);
-    // NODE_BLOCK stays 1 task (W<CAP); NODE_MEGA expands to ceil(W/CAP) sub-tasks.
-    const int expected_mega_subs = (W_MEGA + CAP - 1) / CAP;  // 4
+    const int expected_mega_subs = (W_MEGA + CAP - 1) / CAP;
     EXPECT_EQ(r.num_block_smem_host, 1 + expected_mega_subs);
     EXPECT_EQ(r.num_block_global_host, 0);
 
-    // Total walks covered across all five tiers.
     int total = r.num_solo_walks_host;
     total += std::accumulate(r.warp_smem_walk_counts.begin(),
                              r.warp_smem_walk_counts.end(), 0);
@@ -610,10 +514,7 @@ TEST_F(GpuBlockTaskExpansionTest, CountIdentity_WithMegaHubExpansion) {
                              r.block_smem_walk_counts.end(), 0);
     total += std::accumulate(r.block_global_walk_counts.begin(),
                              r.block_global_walk_counts.end(), 0);
-    // warp_global is empty in this scenario; skip its sum.
-    EXPECT_EQ(total, expected_active)
-        << "sum(walk_counts) across all tiers must equal num_active, "
-           "even when block mega-hubs are split into multiple sub-tasks";
+    EXPECT_EQ(total, expected_active);
 }
 
 #endif  // HAS_CUDA

@@ -11,13 +11,7 @@ namespace temporal_random_walk {
 
 #ifdef HAS_CUDA
 
-// Routes NODE_GROUPED to the scheduler+coop path or to per_walk_step_kernel
-// for Node2Vec (whose prev_node-dependent CDF can't share a coop panel).
-// force_global_only: ablation — route every coop task to *_global (no smem).
-// w_threshold_warp: solo/warp-tier boundary used by the W-partition; tasks
-// with W <= w_threshold_warp go to solo, W in (w_threshold_warp, block_dim.x]
-// go to warp tier, W > block_dim.x go to block tier. Both thresholds are
-// runtime values (block_dim.x is the per-call dispatcher block size).
+// node2vec uses per-walk path; coop panels can't share a prev-dependent CDF
 inline void dispatch_node_grouped_kernel(
     const TemporalGraphView& view,
     const bool is_directed,
@@ -45,7 +39,6 @@ inline void dispatch_node_grouped_kernel(
 
     const bool should_walk_forward = get_should_walk_forward(walk_direction);
 
-    // Node2Vec's per-walk CDF breaks coop panel sharing.
     const bool use_per_walk_path =
         (edge_picker_type == RandomPickerType::TemporalNode2Vec);
 
@@ -56,14 +49,8 @@ inline void dispatch_node_grouped_kernel(
         dispatch_bool(should_walk_forward, [&](auto fwd_tag) {
             constexpr bool kFwd = decltype(fwd_tag)::value;
 
-            // Step-0 routing:
-            //   unconstrained → pick_start_edges_kernel writes slots 0+1 in
-            //     a single per-walk launch. No coop benefit — every walk's
-            //     start node is independent across walks at this step.
-            //   constrained (walks-per-node) → pre-populate slot 0 with
-            //     (start_node_id, sentinel_ts) and let the scheduler/coop
-            //     pipeline handle step 0. Consecutive walks share a
-            //     start node, so warp/block panels amortize.
+            // unconstrained: per-walk start (no coop benefit at step 0).
+            // constrained: prepop slot 0 so coop pipeline handles step 0.
             int first_coop_step;
             if (use_per_walk_path || !starts_constrained) {
                 NVTX_RANGE_COLORED("NG step0 pick", nvtx_colors::walk_green);
@@ -81,16 +68,7 @@ inline void dispatch_node_grouped_kernel(
                 first_coop_step = 0;
             }
 
-            // Loop bound is `max_walk_len - 1` rather than `max_walk_len`: the final
-            // iteration would write slot max_walk_len (out of bounds) and is already
-            // guarded by an early-return in every pick kernel and in advance_one_walk
-            // (`if (step_number >= max_walk_len - 1) return`). The early-return makes
-            // the last iteration produce no walk output, but the host still pays the
-            // entire NG scheduler pipeline (filter / sort / RLE / partition / expand
-            // + 2 D2H syncs) plus the conditional pick-kernel dispatches. Skipping
-            // the last iteration saves those ~17 launches per walk call (~1–2% on
-            // saturated workloads). Defensive guards in the kernels stay — anyone
-            // calling them directly with step_number = max_walk_len - 1 still no-ops.
+            // loop bound max_walk_len-1: last iter would no-op anyway via kernel guards
             if (use_per_walk_path) {
                 for (int step_number = 1; step_number < max_walk_len - 1; ++step_number) {
                     NVTX_RANGE_COLORED("NG per-walk step", nvtx_colors::walk_green);
@@ -103,7 +81,7 @@ inline void dispatch_node_grouped_kernel(
             } else {
                 NodeGroupedScheduler scheduler(num_walks, block_dim, w_threshold_warp, stream);
 
-                // Direction-dependent ts-group offsets; matches get_node_edge_at_device.
+                // direction-dependent; mirrors get_node_edge_at_device
                 const std::size_t* count_ts_group_per_node =
                     kFwd
                         ? view.count_ts_group_per_node_outbound
@@ -111,9 +89,7 @@ inline void dispatch_node_grouped_kernel(
                                 : view.count_ts_group_per_node_outbound);
 
                 for (int step_number = first_coop_step; step_number < max_walk_len - 1; ++step_number) {
-                    // At step 0 the coop pipeline samples the START edge from
-                    // the user-pinned start node, so it must use the
-                    // start-picker. Step 1+ uses the regular edge-picker.
+                    // step 0 uses start-picker (samples from start node)
                     const RandomPickerType picker_for_step =
                         (step_number == 0) ? start_picker_type : edge_picker_type;
 
@@ -122,7 +98,7 @@ inline void dispatch_node_grouped_kernel(
                         count_ts_group_per_node, picker_for_step,
                         force_global_only);
 
-                    // Walk padding is absorbing — once all walks are dead, none revive.
+                    // padding is absorbing
                     if (step_outs.num_active_host <= 0) break;
 
                     NVTX_RANGE_COLORED("NG pick", nvtx_colors::walk_green);
