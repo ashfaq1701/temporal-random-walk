@@ -71,14 +71,14 @@ resolve_node_dir_ptrs(const TemporalGraphView& view) {
 
 template <RandomPickerType PickerType>
 HOST DEVICE constexpr inline int coop_block_smem_g_cap() {
-    return random_pickers::is_index_based_picker_v<PickerType>
+    return random_pickers::is_index_based_picker(PickerType)
                ? G_THRESHOLD_BLOCK_INDEX
                : G_THRESHOLD_BLOCK_WEIGHT;
 }
 
 template <RandomPickerType PickerType>
 HOST DEVICE constexpr inline int coop_warp_smem_g_cap() {
-    return random_pickers::is_index_based_picker_v<PickerType>
+    return random_pickers::is_index_based_picker(PickerType)
                ? G_THRESHOLD_WARP_INDEX
                : G_THRESHOLD_WARP_WEIGHT;
 }

@@ -133,9 +133,6 @@ namespace random_pickers {
             || picker_type == RandomPickerType::TEST_LAST;
     }
 
-    template <RandomPickerType T>
-    inline constexpr bool is_index_based_picker_v = is_index_based_picker(T);
-
     HOST DEVICE inline int pick_using_index_based_picker(
         const RandomPickerType random_picker,
         const int start,

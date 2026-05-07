@@ -40,7 +40,7 @@ __global__ void node_grouped_block_smem_kernel(
 
     constexpr int  kGCap     = coop_block_smem_g_cap<EdgePickerType>();
     constexpr bool kIsWeight =
-        !random_pickers::is_index_based_picker_v<EdgePickerType>;
+        !random_pickers::is_index_based_picker(EdgePickerType);
     constexpr size_t kHeaderBytes        = 64;
     constexpr size_t kGroupOffsetsOffset = kHeaderBytes;
     constexpr size_t kFirstTsOffset      =
@@ -105,7 +105,7 @@ HOST constexpr inline size_t block_smem_dynamic_smem_bytes() {
     constexpr size_t kGCap     = static_cast<size_t>(
         coop_block_smem_g_cap<PickerType>());
     constexpr bool   kIsWeight =
-        !random_pickers::is_index_based_picker_v<PickerType>;
+        !random_pickers::is_index_based_picker(PickerType);
     constexpr size_t kPerGroupBytes =
         sizeof(size_t) + sizeof(int64_t) + (kIsWeight ? sizeof(double) : 0);
     return size_t{64} + kPerGroupBytes * kGCap;

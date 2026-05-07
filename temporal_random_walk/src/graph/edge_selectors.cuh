@@ -119,7 +119,7 @@ namespace temporal_graph {
             valid_begin, valid_end);
         if (valid_begin >= valid_end) return -1;
 
-        if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
+        if constexpr (random_pickers::is_index_based_picker(PickerType)) {
             const int available = valid_end - valid_begin;
             const int index = random_pickers::pick_using_index_based_picker(
                 PickerType, 0, available, !Forward, r_group);
@@ -163,7 +163,7 @@ namespace temporal_graph {
                 const size_t available_groups = num_groups - first_group;
                 if (available_groups == 0) return InternalEdge{-1, -1, -1, -1};
 
-                if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
+                if constexpr (random_pickers::is_index_based_picker(PickerType)) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available_groups),
                         false, group_selector_rand_num);
@@ -184,7 +184,7 @@ namespace temporal_graph {
                 if (last_group == static_cast<size_t>(-1)) return InternalEdge{-1, -1, -1, -1};
 
                 const size_t available_groups = last_group + 1;
-                if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
+                if constexpr (random_pickers::is_index_based_picker(PickerType)) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available_groups),
                         true, group_selector_rand_num);
@@ -202,7 +202,7 @@ namespace temporal_graph {
                 }
             }
         } else {
-            if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
+            if constexpr (random_pickers::is_index_based_picker(PickerType)) {
                 const auto index = random_pickers::pick_using_index_based_picker(
                     PickerType, 0, static_cast<int>(num_groups), !Forward, group_selector_rand_num);
                 if (index == -1) return InternalEdge{-1, -1, -1, -1};
@@ -474,7 +474,7 @@ namespace temporal_graph {
                 const size_t available_groups = num_groups - first_group;
                 if (available_groups == 0) return InternalEdge{-1, -1, -1, -1};
 
-                if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
+                if constexpr (random_pickers::is_index_based_picker(PickerType)) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available_groups),
                         false, group_selector_rand_num);
@@ -495,7 +495,7 @@ namespace temporal_graph {
                 if (last_group == static_cast<size_t>(-1)) return InternalEdge{-1, -1, -1, -1};
 
                 const size_t available_groups = last_group + 1;
-                if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
+                if constexpr (random_pickers::is_index_based_picker(PickerType)) {
                     const auto index = random_pickers::pick_using_index_based_picker(
                         PickerType, 0, static_cast<int>(available_groups),
                         true, group_selector_rand_num);
@@ -513,7 +513,7 @@ namespace temporal_graph {
                 }
             }
         } else {
-            if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
+            if constexpr (random_pickers::is_index_based_picker(PickerType)) {
                 const auto index = random_pickers::pick_using_index_based_picker(
                     PickerType, 0, static_cast<int>(num_groups), !Forward, group_selector_rand_num);
                 if (index == -1) return InternalEdge{-1, -1, -1, -1};
@@ -664,7 +664,7 @@ namespace temporal_graph {
 
         long group_pos = -1;
 
-        if constexpr (random_pickers::is_index_based_picker_v<PickerType>) {
+        if constexpr (random_pickers::is_index_based_picker(PickerType)) {
             const size_t available = valid_end - valid_begin;
 
             const auto index = random_pickers::pick_using_index_based_picker(
