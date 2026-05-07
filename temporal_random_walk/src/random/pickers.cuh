@@ -10,16 +10,6 @@
 #include "../common/macros.cuh"
 #include "../data/enums.cuh"
 
-template <RandomPickerType T>
-struct is_index_based_picker_trait {
-    static constexpr bool value =
-        T == RandomPickerType::Linear ||
-        T == RandomPickerType::Uniform ||
-        T == RandomPickerType::ExponentialIndex ||
-        T == RandomPickerType::TEST_FIRST ||
-        T == RandomPickerType::TEST_LAST;
-};
-
 namespace random_pickers {
 
     HOST DEVICE inline int pick_random_linear(
@@ -135,21 +125,16 @@ namespace random_pickers {
         return static_cast<int>(lo);
     }
 
-    HOST DEVICE inline bool is_index_based_picker(const RandomPickerType picker_type) {
-        switch (picker_type) {
-            case RandomPickerType::Linear:
-            case RandomPickerType::Uniform:
-            case RandomPickerType::ExponentialIndex:
-            case RandomPickerType::TEST_FIRST:
-            case RandomPickerType::TEST_LAST:
-                return true;
-            default:
-                return false;
-        }
+    HOST DEVICE constexpr inline bool is_index_based_picker(const RandomPickerType picker_type) {
+        return picker_type == RandomPickerType::Linear
+            || picker_type == RandomPickerType::Uniform
+            || picker_type == RandomPickerType::ExponentialIndex
+            || picker_type == RandomPickerType::TEST_FIRST
+            || picker_type == RandomPickerType::TEST_LAST;
     }
 
     template <RandomPickerType T>
-    inline constexpr bool is_index_based_picker_v = is_index_based_picker_trait<T>::value;
+    inline constexpr bool is_index_based_picker_v = is_index_based_picker(T);
 
     HOST DEVICE inline int pick_using_index_based_picker(
         const RandomPickerType random_picker,
