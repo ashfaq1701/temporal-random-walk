@@ -1,6 +1,7 @@
 #ifndef NODE_GROUPED_KERNELS_PER_WALK_CUH
 #define NODE_GROUPED_KERNELS_PER_WALK_CUH
 
+#include "common.cuh"
 #include "../../../data/walk_set/walk_set_view.cuh"
 #include "../../../data/temporal_graph_view.cuh"
 #include "../../../graph/temporal_graph.cuh"
@@ -119,11 +120,8 @@ __global__ void prepopulate_start_slot_kernel(
     const int node_id = start_node_ids[walk_idx];
     if (!temporal_graph::is_node_active(view, node_id)) return;
 
-    // mirrors get_node_edge_at_device direction resolution
     const size_t* count_ts_group_per_node =
-        Forward ? view.count_ts_group_per_node_outbound
-                : (IsDirected ? view.count_ts_group_per_node_inbound
-                              : view.count_ts_group_per_node_outbound);
+        count_ts_group_per_node_for_dir<IsDirected, Forward>(view);
     const size_t group_begin = count_ts_group_per_node[node_id];
     const size_t group_end   = count_ts_group_per_node[node_id + 1];
     if (group_begin == group_end) return;  // dead start

@@ -24,6 +24,14 @@ struct NodeDirPtrs {
 };
 
 template <bool IsDirected, bool Forward>
+HOST DEVICE __forceinline__ const size_t*
+count_ts_group_per_node_for_dir(const TemporalGraphView& view) {
+    return Forward ? view.count_ts_group_per_node_outbound
+                   : (IsDirected ? view.count_ts_group_per_node_inbound
+                                 : view.count_ts_group_per_node_outbound);
+}
+
+template <bool IsDirected, bool Forward>
 DEVICE __forceinline__ NodeDirPtrs
 resolve_node_dir_ptrs(const TemporalGraphView& view) {
     NodeDirPtrs p;

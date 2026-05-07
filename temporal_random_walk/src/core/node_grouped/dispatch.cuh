@@ -81,12 +81,8 @@ inline void dispatch_node_grouped_kernel(
             } else {
                 NodeGroupedScheduler scheduler(num_walks, block_dim, w_threshold_warp, stream);
 
-                // direction-dependent; mirrors get_node_edge_at_device
                 const std::size_t* count_ts_group_per_node =
-                    kFwd
-                        ? view.count_ts_group_per_node_outbound
-                        : (kDir ? view.count_ts_group_per_node_inbound
-                                : view.count_ts_group_per_node_outbound);
+                    count_ts_group_per_node_for_dir<kDir, kFwd>(view);
 
                 const unsigned warps_per_block = block_dim.x / 32u;
 
