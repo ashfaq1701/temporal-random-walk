@@ -26,11 +26,12 @@ TemporaryDirectory, then runs FW and NG (only — not NG_global) on each
 variant, --reps times each, with ±10% median-relative outlier rejection.
 A final ranked table reports gap_pct per variant.
 
-Usage (laptop-scoped defaults, wpn=100 baseline / wpn=20 LowW; bump to
-500/100 for A40):
+Usage (A40-scoped defaults: wpn=500 baseline / wpn=100 LowW; drop to
+100/20 for laptop sanity):
 
     source ../../tempest-benchmarks/.venv/bin/activate
-    python e2e_three_factor_ablation.py
+    python e2e_three_factor_ablation.py                    # A40 (default)
+    python e2e_three_factor_ablation.py --wpn-full 100 --wpn-low 20   # laptop
 """
 import argparse
 import csv
@@ -251,15 +252,24 @@ def main():
     ap = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    # Default knob values: laptop-scaled. wpn-full=100 puts walks in
-    # block tier on the 24,600-node graph (W ≈ 535 per active hub at
-    # baseline mixing); wpn-low=20 puts them in warp tier (W ≈ 107).
-    # For A40 server, override: --wpn-full 500 --wpn-low 100.
-    ap.add_argument('--wpn-full',  type=int, default=100,
-                    help='wpn for Full / HighG / ShortWalk (block tier '
-                         'on Hub-Synthetic at this value).')
-    ap.add_argument('--wpn-low',   type=int, default=20,
-                    help='wpn for LowW / AllOff (warp tier; Factor A off).')
+    # Default knob values: A40-scaled, matching bench_synthetic.py's
+    # baseline cell. wpn-full=500 puts walks deeply in block tier on
+    # the 24,600-node Hub-Synthetic graph (W ≈ 2670 per active hub at
+    # baseline mixing, well past the BLOCK_DIM=256 saturation). wpn-low
+    # is a 5× reduction (W ≈ 535) — still block tier on Hub-Synthetic
+    # but reduces panel-amortization 5× relative to Full. For a sharper
+    # Factor-A disabling that crosses into warp tier, override to
+    # wpn-low ≤ 40 (W < 256). For laptop sanity, override:
+    # --wpn-full 100 --wpn-low 20 (the laptop wpn=20 W ≈ 107 is
+    # genuinely warp tier).
+    ap.add_argument('--wpn-full',  type=int, default=500,
+                    help='wpn for Full / HighG / ShortWalk (block tier; '
+                         'A40 default = 500).')
+    ap.add_argument('--wpn-low',   type=int, default=100,
+                    help='wpn for LowW / AllOff. Default (100) is a 5× '
+                         'reduction from wpn-full, still block tier on '
+                         'Hub-Synthetic; drop to ≤ 40 for warp-tier '
+                         'crossing.')
     ap.add_argument('--mwl-full',  type=int, default=50,
                     help='mwl for Full / LowW / HighG (compounding).')
     ap.add_argument('--mwl-short', type=int, default=10,
