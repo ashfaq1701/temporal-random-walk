@@ -12,12 +12,17 @@ measures purely "does NG's per-step advantage grow with the number of
 steps" without confounding from walk-decimation behavior.
 
 For each mwl in the sweep:
-  1. Invoke the ablation_streaming C++ binary with FW and NG, REPS each.
+  1. Invoke the ablation_streaming C++ binary with FW and NG, --reps each
+     (default 5).
   2. Parse Throughput / Steps/sec / Final avg walk length from stdout.
-  3. Compute gap = (NG_steps_per_sec - FW_steps_per_sec) / FW_steps_per_sec.
+  3. Reject reps whose steps/sec deviates from the running median by more
+     than --outlier-threshold (default 0.10 = ±10%), iteratively, until
+     min-keep (default 3) reps remain.
+  4. Mean+std on the kept reps.
+  5. Compute gap = (NG_sps_mean - FW_sps_mean) / FW_sps_mean.
 
 At the end, print a single DataFrame: mwl | avg_len | FW Msps | NG Msps
-| gap %.
+| kept-counts | gap %.
 
 Path assumption: script lives in
     <root>/temporal-random-walk/synthetic_data_generator/
@@ -178,6 +183,29 @@ def mean_std(xs):
     return statistics.mean(xs), statistics.stdev(xs) if len(xs) > 1 else 0.0
 
 
+def reject_outliers_by_key(rows, key, threshold_frac, min_keep):
+    """Iterative median-relative outlier rejection on `rows[i][key]`.
+    On each pass: find the entry whose deviation from the running
+    median exceeds threshold_frac and drop it; stop when the worst
+    remaining entry is within threshold OR the kept count hits
+    min_keep. Returns (kept_rows, dropped_rows). Same semantics as
+    tempest-benchmarks/ablation_runner/common.py:reject_outliers."""
+    kept = list(rows)
+    dropped = []
+    while len(kept) > min_keep:
+        vals = [r[key] for r in kept]
+        med = statistics.median(vals)
+        if med == 0:
+            break
+        devs = [abs(v - med) / med for v in vals]
+        worst_idx = max(range(len(kept)), key=lambda i: devs[i])
+        if devs[worst_idx] > threshold_frac:
+            dropped.append(kept.pop(worst_idx))
+        else:
+            break
+    return kept, dropped
+
+
 def main():
     here = Path(__file__).resolve().parent
     default_binary = here.parent / 'build' / 'bin' / 'ablation_streaming'
@@ -187,7 +215,16 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--mwls', nargs='+', type=int,
                     default=[10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
-    ap.add_argument('--reps', type=int, default=3)
+    ap.add_argument('--reps', type=int, default=5,
+                    help='Reps per (mwl, variant). 5 is enough headroom for '
+                         'iterative outlier rejection at min-keep=3.')
+    ap.add_argument('--outlier-threshold', type=float, default=0.10,
+                    help='Reject reps whose steps/sec deviates from the '
+                         'running median by more than this fraction. '
+                         '0.10 = ±10%% of median.')
+    ap.add_argument('--min-keep', type=int, default=3,
+                    help='Stop rejecting once this many reps remain, even '
+                         'if the worst is still out of band.')
     ap.add_argument('--wpn', type=int, default=500,
                     help='Walks per node (500 matches bench_synthetic.py for '
                          'A40; drop to 50-100 for laptop)')
@@ -204,12 +241,14 @@ def main():
     if not binary.is_file():
         sys.exit(f'binary not found: {binary}')
 
-    print(f'# binary    : {binary}')
-    print(f'# wpn       : {args.wpn}')
-    print(f'# reps      : {args.reps}')
-    print(f'# picker    : {args.picker}')
-    print(f'# W (NG)    : {args.w_warp}    (FW pinned to 1)')
-    print(f'# mwls      : {args.mwls}')
+    print(f'# binary       : {binary}')
+    print(f'# wpn          : {args.wpn}')
+    print(f'# reps (raw)   : {args.reps}')
+    print(f'# outlier band : ±{args.outlier_threshold*100:.0f}% of running median '
+          f'(steps/sec); min-keep={args.min_keep}')
+    print(f'# picker       : {args.picker}')
+    print(f'# W (NG)       : {args.w_warp}    (FW pinned to 1)')
+    print(f'# mwls         : {args.mwls}')
     print()
 
     if args.tmp_dir:
@@ -245,7 +284,7 @@ def main():
             per_variant = {}
             for variant in VARIANTS:
                 w = args.w_warp if variant != 'full_walk' else 1
-                wps_list, sps_list, len_list = [], [], []
+                rep_records = []  # list of {sps, wps, avg_len}
                 for r in range(args.reps):
                     t0 = time.perf_counter()
                     parsed, err = run_binary(
@@ -256,25 +295,40 @@ def main():
                               file=sys.stderr)
                         continue
                     wps, sps, avg_len = parsed
-                    wps_list.append(wps)
-                    sps_list.append(sps)
-                    len_list.append(avg_len)
+                    rep_records.append({'sps': sps, 'wps': wps,
+                                        'avg_len': avg_len})
                     print(f'  {variant:<13} rep {r+1}/{args.reps}: '
                           f'steps/s={sps/1e6:6.2f}M  '
                           f'walks/s={wps/1e6:5.2f}M  '
                           f'avg_len={avg_len:6.2f}  '
                           f'({time.perf_counter()-t0:4.1f}s)',
                           flush=True)
-                if not sps_list:
+                if not rep_records:
                     per_variant[variant] = None
                     continue
-                wps_m, _ = mean_std(wps_list)
-                sps_m, sps_s = mean_std(sps_list)
-                len_m, _ = mean_std(len_list)
+
+                # Reject outliers on steps/sec (the primary metric for the
+                # gap calculation), then aggregate every metric over the
+                # surviving reps so all metrics share one consistent kept set.
+                kept, dropped = reject_outliers_by_key(
+                    rep_records, key='sps',
+                    threshold_frac=args.outlier_threshold,
+                    min_keep=args.min_keep)
+                if dropped:
+                    drop_strs = ', '.join(
+                        f'{d["sps"]/1e6:.2f}M' for d in dropped)
+                    print(f'  {variant:<13} dropped {len(dropped)} '
+                          f'outlier(s) [steps/s]: {drop_strs}  '
+                          f'(kept {len(kept)}/{len(rep_records)})')
+
+                sps_m, sps_s = mean_std([r['sps']     for r in kept])
+                wps_m, _     = mean_std([r['wps']     for r in kept])
+                len_m, _     = mean_std([r['avg_len'] for r in kept])
                 per_variant[variant] = {
                     'sps_mean': sps_m, 'sps_std': sps_s,
                     'wps_mean': wps_m, 'avg_len': len_m,
-                    'n_reps': len(sps_list),
+                    'n_reps_raw':  len(rep_records),
+                    'n_reps_kept': len(kept),
                 }
 
             fw = per_variant.get('full_walk')
@@ -292,8 +346,10 @@ def main():
                 'avg_len_ng':  ng['avg_len'],
                 'fw_msps':     fw['sps_mean'] / 1e6,
                 'fw_msps_std': fw['sps_std']  / 1e6,
+                'fw_kept':     f'{fw["n_reps_kept"]}/{fw["n_reps_raw"]}',
                 'ng_msps':     ng['sps_mean'] / 1e6,
                 'ng_msps_std': ng['sps_std']  / 1e6,
+                'ng_kept':     f'{ng["n_reps_kept"]}/{ng["n_reps_raw"]}',
                 'gap_pct':     gap_pct,
             })
     finally:
