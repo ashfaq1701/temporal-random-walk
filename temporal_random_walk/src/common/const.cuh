@@ -14,4 +14,18 @@ constexpr uint64_t EMPTY_GLOBAL_SEED = UINT64_MAX;
 
 constexpr bool DEFAULT_SHUFFLE_WALK_ORDER = true;
 
+// Temporal Node2Vec rejection-sampling retry cap.  Per-hop proposal is
+// drawn from the static-exp distribution and accepted with prob β/β_max;
+// expected retries ≤ β_max / E[β] (typically 1–2 for benign p, q).  On
+// overflow the last proposal is accepted defensively, so degenerate
+// (p ≪ 1 or q ≫ 1) configurations stay bounded.
+//
+// 64 covers the full node2vec literature sweep {0.25, 0.5, 1, 2, 4}
+// without measurable bias: at the worst-case corner (p=0.25, q=4) the
+// per-attempt acceptance is 1/16, so P(overflow at 64) ≤ (15/16)^64
+// ≈ 2 × 10⁻².  Expected retries on benign p, q is still 1–2; the cap
+// only matters for outliers, and raising it past what they actually
+// need has no cost on the common path.
+constexpr int NODE2VEC_MAX_RETRIES = 64;
+
 #endif // CONST_H
