@@ -230,46 +230,6 @@ inline void dispatch_node_grouped_solo_kernel(
     });
 }
 
-// node2vec: prev-dependent CDF rules out coop panels
-template <bool IsDirected, bool Forward, RandomPickerType EdgePickerType>
-__global__ void per_walk_step_kernel(
-    TemporalGraphView view,
-    WalkSetView walk_set,
-    const int step_number,
-    const int max_walk_len,
-    const size_t num_walks,
-    const uint64_t base_seed) {
-
-    const size_t walk_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (walk_idx >= num_walks) return;
-
-    advance_one_walk<IsDirected, Forward, EdgePickerType>(
-        view, walk_set, static_cast<int>(walk_idx),
-        step_number, max_walk_len, base_seed);
-}
-
-template <bool IsDirected, bool Forward>
-inline void dispatch_per_walk_step_kernel(
-    const TemporalGraphView& view,
-    WalkSetView walk_set_view,
-    const int step_number,
-    const int max_walk_len,
-    const size_t num_walks,
-    const RandomPickerType edge_picker_type,
-    const uint64_t base_seed,
-    const dim3& grid,
-    const dim3& block_dim,
-    const cudaStream_t stream) {
-
-    dispatch_picker_type(edge_picker_type, [&](auto edge_tag) {
-        constexpr auto kEdge = decltype(edge_tag)::value;
-        per_walk_step_kernel<IsDirected, Forward, kEdge>
-            <<<grid, block_dim, 0, stream>>>(
-                view, walk_set_view,
-                step_number, max_walk_len, num_walks, base_seed);
-    });
-}
-
 __global__ static void reverse_walks_kernel(
     WalkSetView walk_set, const size_t num_walks) {
     const size_t walk_idx = blockIdx.x * blockDim.x + threadIdx.x;

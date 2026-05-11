@@ -161,7 +161,8 @@ TYPED_TEST(NodeGroupedTierRoutingTest, BlockGlobal_WalksAreValid) {
         assert_all_walks_valid(walks, static_cast<size_t>(MAX_WALK_LEN)));
 }
 
-// Node2Vec is gated off the cooperative pipeline; smoke check only.
+// Node2Vec now flows through the cooperative pipeline like every other
+// picker; smoke check that the path is wired correctly end-to-end.
 TYPED_TEST(NodeGroupedTierRoutingTest, Node2Vec_NodeGroupedSmokeTest) {
     auto trw = this->make_trw(/*enable_weights=*/true,
                               /*enable_node2vec=*/true);
