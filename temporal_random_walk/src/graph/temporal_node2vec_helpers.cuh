@@ -133,7 +133,6 @@ namespace temporal_graph {
         const size_t node_group_end,
         const size_t* node_ts_groups_offsets,
         const size_t* node_ts_sorted_indices,
-        const size_t* node_edge_offsets,
         const double* weights,
         const size_t weights_size,
         const double group_selector_rand_num,
@@ -192,7 +191,6 @@ namespace temporal_graph {
 
         // Defensive: retry cap exceeded (only reachable for degenerate p, q).
         // Accept the last proposal — its bias is bounded by the cap.
-        (void)node_edge_offsets;
         return last_edge_idx;
     }
 
@@ -253,7 +251,6 @@ namespace temporal_graph {
         const size_t node_group_end,
         const size_t* node_ts_groups_offsets,
         const size_t* node_ts_sorted_indices,
-        const size_t* node_edge_offsets,
         const double* weights,
         const size_t weights_size,
         const double group_selector_rand_num,
@@ -306,7 +303,6 @@ namespace temporal_graph {
             }
         }
 
-        (void)node_edge_offsets;
         return last_edge_idx;
     }
 

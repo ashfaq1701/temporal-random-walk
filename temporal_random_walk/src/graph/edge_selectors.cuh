@@ -317,7 +317,6 @@ namespace temporal_graph {
         // node2vec stays inline since its picker depends on prev_node
         const int G = static_cast<int>(node_group_end - node_group_begin);
         long group_pos = -1;
-        long n2v_edge_idx = -1;  // set by the n2v rejection sampler; consumed below
 
         if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
             int local_begin = 0;
@@ -349,16 +348,16 @@ namespace temporal_graph {
             } else {
                 // Stage-2 rejection sampling: returns final edge_idx directly,
                 // bypassing the group+edge split used for non-n2v pickers.
-                n2v_edge_idx = pick_random_temporal_node2vec_host<Forward, IsDirected>(
-                    view, node_id, prev_node,
-                    valid_begin, valid_end,
-                    node_group_begin, node_group_end,
-                    node_ts_groups_offsets,
-                    node_ts_sorted_indices,
-                    node_edge_offsets,
-                    weights, weights_size,
-                    group_selector_rand_num,
-                    edge_selector_rand_num);
+                const long n2v_edge_idx =
+                    pick_random_temporal_node2vec_host<Forward, IsDirected>(
+                        view, node_id, prev_node,
+                        valid_begin, valid_end,
+                        node_group_begin, node_group_end,
+                        node_ts_groups_offsets,
+                        node_ts_sorted_indices,
+                        weights, weights_size,
+                        group_selector_rand_num,
+                        edge_selector_rand_num);
                 if (n2v_edge_idx == -1) {
                     return InternalEdge{-1, -1, -1, -1};
                 }
@@ -692,7 +691,6 @@ namespace temporal_graph {
                             node_group_begin, node_group_end,
                             node_ts_groups_offsets,
                             node_ts_sorted_indices,
-                            node_edge_offsets,
                             weights, weights_size,
                             group_selector_rand_num,
                             edge_selector_rand_num);
