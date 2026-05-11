@@ -317,6 +317,7 @@ namespace temporal_graph {
         // node2vec stays inline since its picker depends on prev_node
         const int G = static_cast<int>(node_group_end - node_group_begin);
         long group_pos = -1;
+        long n2v_edge_idx = -1;  // set by the n2v rejection sampler; consumed below
 
         if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
             int local_begin = 0;
@@ -335,25 +336,38 @@ namespace temporal_graph {
             const size_t valid_end   = node_group_begin + static_cast<size_t>(local_end);
 
             if (prev_node == -1) {
-                // per-node piecewise CDF; node_group_begin == "prefix 0"
+                // First-hop: no β term — fall through to plain ExponentialWeight.
                 group_pos = random_pickers::pick_using_weight_based_picker(
                     RandomPickerType::ExponentialWeight,
                     weights, weights_size,
                     valid_begin, valid_end,
                     group_selector_rand_num,
                     /*slice_start=*/node_group_begin);
+                if (group_pos == -1) {
+                    return InternalEdge{-1, -1, -1, -1};
+                }
             } else {
-                group_pos = pick_random_temporal_node2vec_host<Forward, IsDirected>(
+                // Stage-2 rejection sampling: returns final edge_idx directly,
+                // bypassing the group+edge split used for non-n2v pickers.
+                n2v_edge_idx = pick_random_temporal_node2vec_host<Forward, IsDirected>(
                     view, node_id, prev_node,
                     valid_begin, valid_end,
                     node_group_begin, node_group_end,
                     node_ts_groups_offsets,
                     node_ts_sorted_indices,
-                    weights,
-                    group_selector_rand_num);
-            }
-            if (group_pos == -1) {
-                return InternalEdge{-1, -1, -1, -1};
+                    node_edge_offsets,
+                    weights, weights_size,
+                    group_selector_rand_num,
+                    edge_selector_rand_num);
+                if (n2v_edge_idx == -1) {
+                    return InternalEdge{-1, -1, -1, -1};
+                }
+                return InternalEdge{
+                    view.sources[n2v_edge_idx],
+                    view.targets[n2v_edge_idx],
+                    view.timestamps[n2v_edge_idx],
+                    n2v_edge_idx
+                };
             }
         } else {
             const long local_pos = find_group_pos_slice<Forward, PickerType>(
@@ -383,36 +397,14 @@ namespace temporal_graph {
             return InternalEdge{-1, -1, -1, -1};
         }
 
-        long edge_idx = -1;
-
-        if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-            if (prev_node == -1) {
-                edge_idx = static_cast<long>(node_ts_sorted_indices[
-                    valid_edge_start +
-                    generate_random_number_bounded_by(
-                        static_cast<int>(valid_edge_end - valid_edge_start),
-                        edge_selector_rand_num)]);
-            } else {
-                edge_idx = pick_random_temporal_node2vec_edge_host<Forward, IsDirected>(
-                    view,
-                    node_id,
-                    prev_node,
-                    valid_edge_start,
-                    valid_edge_end,
-                    node_ts_sorted_indices,
-                    edge_selector_rand_num);
-
-                if (edge_idx == -1) {
-                    return InternalEdge{-1, -1, -1, -1};
-                }
-            }
-        } else {
-            edge_idx = static_cast<long>(node_ts_sorted_indices[
-                valid_edge_start +
-                generate_random_number_bounded_by(
-                    static_cast<int>(valid_edge_end - valid_edge_start),
-                    edge_selector_rand_num)]);
-        }
+        // TN2V with prev_node != -1 returned early via the rejection sampler.
+        // Remaining paths (non-n2v, or first-hop n2v) sample uniformly within
+        // the chosen group.
+        const long edge_idx = static_cast<long>(node_ts_sorted_indices[
+            valid_edge_start +
+            generate_random_number_bounded_by(
+                static_cast<int>(valid_edge_end - valid_edge_start),
+                edge_selector_rand_num)]);
 
         return InternalEdge{
             view.sources[edge_idx],
@@ -684,6 +676,7 @@ namespace temporal_graph {
         } else {
             if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
                 if (prev_node == -1) {
+                    // First-hop: no β — plain ExponentialWeight.
                     group_pos = random_pickers::pick_using_weight_based_picker(
                         RandomPickerType::ExponentialWeight,
                         weights, weights_size,
@@ -691,14 +684,27 @@ namespace temporal_graph {
                         group_selector_rand_num,
                         /*slice_start=*/node_group_begin);
                 } else {
-                    group_pos = pick_random_temporal_node2vec_device<Forward, IsDirected>(
-                        view, node_id, prev_node,
-                        valid_begin, valid_end,
-                        node_group_begin, node_group_end,
-                        node_ts_groups_offsets,
-                        node_ts_sorted_indices,
-                        weights,
-                        group_selector_rand_num);
+                    // Stage-2 rejection sampler returns final edge_idx directly.
+                    const long n2v_edge_idx =
+                        pick_random_temporal_node2vec_device<Forward, IsDirected>(
+                            view, node_id, prev_node,
+                            valid_begin, valid_end,
+                            node_group_begin, node_group_end,
+                            node_ts_groups_offsets,
+                            node_ts_sorted_indices,
+                            node_edge_offsets,
+                            weights, weights_size,
+                            group_selector_rand_num,
+                            edge_selector_rand_num);
+                    if (n2v_edge_idx == -1) {
+                        return InternalEdge{-1, -1, -1, -1};
+                    }
+                    return InternalEdge{
+                        view.sources[n2v_edge_idx],
+                        view.targets[n2v_edge_idx],
+                        view.timestamps[n2v_edge_idx],
+                        n2v_edge_idx
+                    };
                 }
             } else {
                 group_pos = random_pickers::pick_using_weight_based_picker(
@@ -726,36 +732,12 @@ namespace temporal_graph {
             return InternalEdge{-1, -1, -1, -1};
         }
 
-        long edge_idx = -1;
-
-        if constexpr (PickerType == RandomPickerType::TemporalNode2Vec) {
-            if (prev_node == -1) {
-                edge_idx = static_cast<long>(node_ts_sorted_indices[
-                    valid_edge_start +
-                    generate_random_number_bounded_by(
-                        static_cast<int>(valid_edge_end - valid_edge_start),
-                        edge_selector_rand_num)]);
-            } else {
-                edge_idx = pick_random_temporal_node2vec_edge_device<Forward, IsDirected>(
-                    view,
-                    node_id,
-                    prev_node,
-                    valid_edge_start,
-                    valid_edge_end,
-                    node_ts_sorted_indices,
-                    edge_selector_rand_num);
-
-                if (edge_idx == -1) {
-                    return InternalEdge{-1, -1, -1, -1};
-                }
-            }
-        } else {
-            edge_idx = static_cast<long>(node_ts_sorted_indices[
-                valid_edge_start +
-                generate_random_number_bounded_by(
-                    static_cast<int>(valid_edge_end - valid_edge_start),
-                    edge_selector_rand_num)]);
-        }
+        // TN2V with prev_node != -1 returned early via the rejection sampler.
+        const long edge_idx = static_cast<long>(node_ts_sorted_indices[
+            valid_edge_start +
+            generate_random_number_bounded_by(
+                static_cast<int>(valid_edge_end - valid_edge_start),
+                edge_selector_rand_num)]);
 
         return InternalEdge{
             view.sources[edge_idx],
