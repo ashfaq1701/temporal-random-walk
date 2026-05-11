@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include "../common/const.cuh"
 #include "../common/macros.cuh"
 #include "../data/temporal_graph_view.cuh"
 #include "../random/pickers.cuh"
@@ -33,9 +34,8 @@ namespace temporal_graph {
     // previous β-weighted ITS's O(L · log D_prev).  For typical p, q
     // with β_max ≤ 2 · E[β], expected retries ≤ 2.
     //
-    // The retry cap defensively accepts the last proposal — degenerate
-    // (p ≪ 1 or q ≫ 1) configurations would otherwise loop indefinitely.
-    constexpr int kNode2VecMaxRetries = 16;
+    // NODE2VEC_MAX_RETRIES (const.cuh) caps the rejection loop;
+    // on overflow we accept the last proposal defensively.
 
     // Stateless retry-random derivation.  Each retry consumes three
     // uniforms (group, edge, accept); we hash the seed doubles + retry
@@ -148,7 +148,7 @@ namespace temporal_graph {
 
         long last_edge_idx = -1;
 
-        for (int retry = 0; retry < kNode2VecMaxRetries; ++retry) {
+        for (int retry = 0; retry < NODE2VEC_MAX_RETRIES; ++retry) {
             const double g_rand = derive_uniform(
                 group_selector_rand_num, edge_selector_rand_num, retry * 3 + 0);
             const double e_rand = derive_uniform(
@@ -268,7 +268,7 @@ namespace temporal_graph {
 
         long last_edge_idx = -1;
 
-        for (int retry = 0; retry < kNode2VecMaxRetries; ++retry) {
+        for (int retry = 0; retry < NODE2VEC_MAX_RETRIES; ++retry) {
             const double g_rand = derive_uniform(
                 group_selector_rand_num, edge_selector_rand_num, retry * 3 + 0);
             const double e_rand = derive_uniform(
