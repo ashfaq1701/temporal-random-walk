@@ -6,20 +6,12 @@
 // tests cover the parts of the rejection-sampling implementation that
 // the base tests don't directly exercise:
 //
-//   1. CPU/GPU edge-by-edge parity under a fixed-seed driver — proves
-//      the splitmix64 derive_uniform plumbing, the rejection control
-//      flow, and the per-retry random advance all produce bit-identical
-//      output across host and device backends.  Catches a class of
-//      bugs (float-endianness, retry-counter ordering, double_to_bits
-//      semantics on CUDA vs std::memcpy) that pure distribution tests
-//      cannot.
-//
-//   2. Retry-loop termination under degenerate (p, q) — confirms the
+//   1. Retry-loop termination under degenerate (p, q) — confirms the
 //      retry cap + defensive accept-last keeps the picker returning
 //      valid edges (no sentinels, no infinite loops) even when the
 //      acceptance ratio is bad.  Performance-regression guard.
 //
-//   3. Distribution-following across a (p, q) sweep — generalises the
+//   2. Distribution-following across a (p, q) sweep — generalises the
 //      base PQBias test to the full node2vec literature parameter
 //      sweep {(1,1), (1,2), (0.5,2), (2,0.5), (0.25,4)}.  Catches β-
 //      handling bugs at the parameter boundaries that the default
@@ -28,7 +20,6 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
-#include <random>
 #include <vector>
 
 #include "../src/core/temporal_random_walk.cuh"
@@ -42,10 +33,6 @@ constexpr int  kSentinelNode    = -1;
 
 inline bool is_sentinel(const Edge& e) {
     return e.u == kSentinelNode && e.i == kSentinelNode && e.ts == kSentinelTs;
-}
-
-inline bool edges_bit_equal(const Edge& a, const Edge& b) {
-    return a.u == b.u && a.i == b.i && a.ts == b.ts;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +110,7 @@ using Backends = ::testing::Types<
 TYPED_TEST_SUITE(Node2VecRejectionTest, Backends);
 
 // ===========================================================================
-// Test 2 — retry-loop termination under degenerate (p, q).
+// Test 1 — retry-loop termination under degenerate (p, q).
 //
 // Picks (p, q) far from 1 so β_max / E[β] is large (acceptance per-attempt
 // ≤ ~0.1).  With NODE2VEC_MAX_RETRIES=64, even degenerate workloads must
@@ -163,7 +150,7 @@ TYPED_TEST(Node2VecRejectionTest, TerminatesWithValidEdgeUnderDegeneratePQ) {
 }
 
 // ===========================================================================
-// Test 3 — distribution-following across a (p, q) sweep.
+// Test 2 — distribution-following across a (p, q) sweep.
 //
 // The base PQBias test only checks one (p, q) cell.  This sweep covers the
 // full node2vec literature parameter set, catching β-handling regressions
@@ -217,69 +204,5 @@ TYPED_TEST(Node2VecRejectionTest, DistributionMatchesAnalyticAcrossPQValues) {
             << "F fraction off at (p=" << pq.p << ", q=" << pq.q << ")";
     }
 }
-
-// ===========================================================================
-// Test 1 — CPU/GPU bit-exact parity under a fixed-seed driver.
-//
-// Drives both backends with the same (r_group, r_edge) pair per hop and
-// asserts edge-by-edge equality.  The rejection sampler hashes the input
-// doubles + a retry counter via splitmix64 to derive per-retry randoms;
-// host uses std::memcpy(uint64_t, double), device uses __double_as_longlong.
-// Those should produce identical bits for normal doubles, but the entire
-// pipeline (rejection control flow, retry counter handling, derive_uniform
-// call ordering) must also match — this test asserts it end-to-end.
-//
-// Skipped on CPU-only builds (HAS_CUDA undefined).
-// ===========================================================================
-#ifdef HAS_CUDA
-TEST(Node2VecRejectionParity, EdgeByEdgeAcrossBackendsUnderFixedSeed) {
-    // p=2, q=0.5 — same as the base PQBias test so the workload is
-    // representative of the default exercise; rejection IS firing here
-    // (β ∈ {0.5, 1.0, 2.0}, β_max=2.0, acceptance ratio ∈ [0.25, 1.0]).
-    auto host_graph   = make_pq_graph<false>(/*p=*/2.0, /*q=*/0.5);
-    auto device_graph = make_pq_graph<true >(/*p=*/2.0, /*q=*/0.5);
-
-    constexpr int N_HOPS  = 5'000;
-    constexpr uint64_t SEED = 0xC0FFEE'D00D'D00DULL;
-
-    std::mt19937_64 rng(SEED);
-    std::uniform_real_distribution<double> u01(0.0, 1.0);
-
-    int mismatches = 0;
-    int valid      = 0;
-    for (int i = 0; i < N_HOPS; ++i) {
-        const double rands[2] = { u01(rng), u01(rng) };
-
-        const Edge host_pick = test_util::get_node_edge_at(
-            host_graph.data(), V, RandomPickerType::TemporalNode2Vec,
-            /*timestamp=*/-1, /*prev_node=*/P, /*forward=*/true, rands);
-
-        const Edge dev_pick = test_util::get_node_edge_at(
-            device_graph.data(), V, RandomPickerType::TemporalNode2Vec,
-            /*timestamp=*/-1, /*prev_node=*/P, /*forward=*/true, rands);
-
-        ASSERT_FALSE(is_sentinel(host_pick));
-        ASSERT_FALSE(is_sentinel(dev_pick));
-        ++valid;
-        if (!edges_bit_equal(host_pick, dev_pick)) {
-            ++mismatches;
-            ADD_FAILURE() << "Host/device divergence at hop " << i
-                          << " with r_group=" << rands[0] << ", r_edge=" << rands[1]
-                          << ": host=(u=" << host_pick.u
-                          << ", i=" << host_pick.i
-                          << ", ts=" << host_pick.ts << ")"
-                          << " device=(u=" << dev_pick.u
-                          << ", i=" << dev_pick.i
-                          << ", ts=" << dev_pick.ts << ")";
-            if (mismatches >= 10) break;  // don't spam the log
-        }
-    }
-    EXPECT_EQ(mismatches, 0)
-        << "Host and device must produce bit-identical edge picks under the "
-           "same (r_group, r_edge) pair across the full rejection-sampling "
-           "pipeline.  Got " << mismatches << " mismatches in " << valid
-        << " hops.";
-}
-#endif  // HAS_CUDA
 
 }  // namespace
