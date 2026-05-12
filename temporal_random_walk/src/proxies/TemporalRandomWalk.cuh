@@ -88,12 +88,6 @@ public:
     void clear() const;
     [[nodiscard]] size_t get_memory_used() const;
 
-    // Seconds spent in the most recent walk-generation call doing the
-    // actual sampling work — kernel/loop only, excluding allocations,
-    // start-list build, and the D→H transfer.  -1 if no walk has run.
-    // See core::TemporalRandomWalk::get_last_walk_compute_time_sec.
-    [[nodiscard]] double get_last_walk_compute_time_sec() const;
-
     [[nodiscard]] int node_feature_dim() const;
     [[nodiscard]] int node_features_max_node_id() const;
     [[nodiscard]] std::vector<float> node_features_dense() const;

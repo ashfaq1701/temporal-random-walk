@@ -29,10 +29,9 @@ constexpr auto DEFAULT_WALK_DIRECTION_STR = "Forward_In_Time";
 void print_walk_performance_stats(
     const size_t num_walks,
     const size_t* walk_lens,
-    const double wall_seconds,
-    const double walk_seconds)
+    const double duration_seconds)
 {
-    if (walk_seconds <= 0.0) {
+    if (duration_seconds <= 0.0) {
         std::cout << "Duration too small to compute throughput.\n";
         return;
     }
@@ -42,25 +41,24 @@ void print_walk_performance_stats(
         total_steps += walk_lens[i];
     }
 
+    const double walks_per_sec =
+        static_cast<double>(num_walks) / duration_seconds;
+    const double steps_per_sec =
+        static_cast<double>(total_steps) / duration_seconds;
     const double avg_walk_length =
         num_walks > 0
             ? static_cast<double>(total_steps) / static_cast<double>(num_walks)
             : 0.0;
 
-    // Throughput is computed against walk_seconds (compute-only), not
-    // wall_seconds — that's the apples-to-apples figure since wall time
-    // includes setup, allocation, and D→H transfer.
-    const double walks_per_sec = static_cast<double>(num_walks) / walk_seconds;
-    const double steps_per_sec = static_cast<double>(total_steps) / walk_seconds;
-
     std::cout << std::fixed << std::setprecision(4);
-    std::cout << "Total walks: " << num_walks << "\n"
+    std::cout << "Walk generation completed.\n"
+              << "Total walks: " << num_walks << "\n"
               << "Total steps: " << total_steps << "\n"
               << "Average walk length: " << avg_walk_length << "\n"
-              << "Wall time: " << wall_seconds << " seconds\n"
-              << "Walk time: " << walk_seconds << " seconds\n"
-              << "Walks/sec: " << walks_per_sec << "\n"
-              << "Steps/sec: " << steps_per_sec << "\n";
+              << "Time taken: " << duration_seconds << " seconds\n"
+              << "Throughput:\n"
+              << "  Walks/sec: " << walks_per_sec << "\n"
+              << "  Steps/sec: " << steps_per_sec << "\n";
 }
 
 int main(int argc, char* argv[])
@@ -216,15 +214,16 @@ int main(int argc, char* argv[])
     const auto walk_end =
         std::chrono::high_resolution_clock::now();
 
-    const double wall_seconds =
+    const double walk_seconds =
         std::chrono::duration<double>(walk_end - walk_start).count();
-    const double walk_seconds = walker.get_last_walk_compute_time_sec();
+
+    std::cout << std::fixed << std::setprecision(6)
+              << "Walk time: " << walk_seconds << " seconds\n";
 
     const auto& walk_set = walks_with_edge_features.walk_set;
     print_walk_performance_stats(
         walk_set.num_walks(),
         walk_set.walk_lens_ptr(),
-        wall_seconds,
         walk_seconds);
 
     if (!walk_dump_file.empty()) {

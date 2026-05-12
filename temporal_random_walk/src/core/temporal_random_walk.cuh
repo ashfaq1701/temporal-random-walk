@@ -125,30 +125,11 @@ public:
     void clear();
     size_t get_memory_used() const;
 
-    // Wall-clock seconds the most recent walk-generation call spent
-    // doing the actual sampling work.  Brackets:
-    //   • GPU (cuda) path: from immediately before the first walk
-    //     kernel launch through the final cudaStreamSynchronize.
-    //   • CPU (std) path: from immediately before the per-walk loop
-    //     through the loop's completion.
-    // Excluded in both cases: start-vertex-list construction, output-
-    // buffer allocation, and (on GPU) the device→host transfer.
-    // -1 if no walk has run yet.
-    double get_last_walk_compute_time_sec() const {
-        return last_walk_compute_time_sec_;
-    }
-    // Internal: set by the walk-gen free functions in namespace
-    // temporal_random_walk after each invocation.
-    void set_last_walk_compute_time_sec(double s) {
-        last_walk_compute_time_sec_ = s;
-    }
-
 private:
     TemporalGraphData data_;
     int      walk_padding_value_;
     uint64_t global_seed_;
     bool     shuffle_walk_order_;
-    double   last_walk_compute_time_sec_ = -1.0;
     Buffer<int> last_batch_unique_sources_{/*use_gpu=*/false};
     Buffer<int> last_batch_unique_targets_{/*use_gpu=*/false};
 #ifdef HAS_CUDA

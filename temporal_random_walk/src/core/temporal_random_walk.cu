@@ -1,7 +1,6 @@
 #include "temporal_random_walk.cuh"
 
 #include <algorithm>
-#include <chrono>
 #include <cstring>
 #include <set>
 #include <stdexcept>
@@ -389,7 +388,6 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
 
     const TemporalGraphView view = make_temporal_graph_view(trw->data());
 
-    const auto compute_t0 = std::chrono::steady_clock::now();
     launch_random_walk_cpu_new(
         view,
         trw->is_directed(),
@@ -401,9 +399,6 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_std(
         *initial_edge_bias,
         walk_direction,
         rand_nums.data());
-    const auto compute_t1 = std::chrono::steady_clock::now();
-    trw->set_last_walk_compute_time_sec(
-        std::chrono::duration<double>(compute_t1 - compute_t0).count());
 
     return finalize_host_walks(trw, std::move(host_walks));
 }
@@ -437,7 +432,6 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_std(
 
     const TemporalGraphView view = make_temporal_graph_view(trw->data());
 
-    const auto compute_t0 = std::chrono::steady_clock::now();
     launch_random_walk_cpu_new(
         view,
         trw->is_directed(),
@@ -449,9 +443,6 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_std(
         *initial_edge_bias,
         walk_direction,
         rand_nums.data());
-    const auto compute_t1 = std::chrono::steady_clock::now();
-    trw->set_last_walk_compute_time_sec(
-        std::chrono::duration<double>(compute_t1 - compute_t0).count());
 
     return finalize_host_walks(trw, std::move(host_walks));
 }
@@ -480,7 +471,6 @@ temporal_random_walk::get_random_walks_and_times_std(
 
     const TemporalGraphView view = make_temporal_graph_view(trw->data());
 
-    const auto compute_t0 = std::chrono::steady_clock::now();
     launch_random_walk_cpu_new(
         view,
         trw->is_directed(),
@@ -492,9 +482,6 @@ temporal_random_walk::get_random_walks_and_times_std(
         *initial_edge_bias,
         walk_direction,
         rand_nums.data());
-    const auto compute_t1 = std::chrono::steady_clock::now();
-    trw->set_last_walk_compute_time_sec(
-        std::chrono::duration<double>(compute_t1 - compute_t0).count());
 
     return finalize_host_walks(trw, std::move(host_walks));
 }
@@ -611,7 +598,6 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
 
     CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
 
-    const auto compute_t0 = std::chrono::steady_clock::now();
     launch_walk_kernel_dispatch(
         kernel_launch_type, view, trw->is_directed(), walk_set_view,
         max_walk_len, repeated_node_ids.data, repeated_node_ids.size,
@@ -623,9 +609,6 @@ temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
         "After generate_random_walks_kernel in get_random_walks_and_times_for_all_nodes_cuda");
 
     trw->sync_stream();
-    const auto compute_t1 = std::chrono::steady_clock::now();
-    trw->set_last_walk_compute_time_sec(
-        std::chrono::duration<double>(compute_t1 - compute_t0).count());
 
     WalkSetHost host_walks = std::move(device_walks).download_to_host();
 
@@ -674,7 +657,6 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
 
     CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
 
-    const auto compute_t0 = std::chrono::steady_clock::now();
     launch_walk_kernel_dispatch(
         kernel_launch_type, view, trw->is_directed(), walk_set_view,
         max_walk_len, repeated_node_ids.data, repeated_node_ids.size,
@@ -686,9 +668,6 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
         "After generate_random_walks_kernel in get_random_walks_and_times_for_last_batch_cuda");
 
     trw->sync_stream();
-    const auto compute_t1 = std::chrono::steady_clock::now();
-    trw->set_last_walk_compute_time_sec(
-        std::chrono::duration<double>(compute_t1 - compute_t0).count());
 
     WalkSetHost host_walks = std::move(device_walks).download_to_host();
 
@@ -733,7 +712,6 @@ temporal_random_walk::get_random_walks_and_times_cuda(
 
     CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
 
-    const auto compute_t0 = std::chrono::steady_clock::now();
     launch_walk_kernel_dispatch(
         kernel_launch_type, view, trw->is_directed(), walk_set_view,
         max_walk_len, start_node_ids.data(), static_cast<size_t>(num_walks_total),
@@ -745,9 +723,6 @@ temporal_random_walk::get_random_walks_and_times_cuda(
         "After generate_random_walks_kernel in get_random_walks_and_times_cuda");
 
     trw->sync_stream();
-    const auto compute_t1 = std::chrono::steady_clock::now();
-    trw->set_last_walk_compute_time_sec(
-        std::chrono::duration<double>(compute_t1 - compute_t0).count());
 
     WalkSetHost host_walks = std::move(device_walks).download_to_host();
 

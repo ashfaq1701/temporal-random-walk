@@ -130,7 +130,6 @@ int main(int argc, char **argv) {
               });
 
     std::vector<double> ingestion_times;
-    std::vector<double> wall_times;
     std::vector<double> walk_times;
     size_t total_walks = 0;
     double total_walk_len_sum = 0.0;
@@ -206,8 +205,7 @@ int main(int argc, char **argv) {
         }
         ingestion_times.push_back(ingest_time);
 
-        double wall_seconds = 0.0;
-        double walk_seconds = 0.0;
+        double walk_time = 0.0;
         size_t walks_this_batch = 0;
         double avg_len_batch = 0.0;
 
@@ -230,8 +228,8 @@ int main(int argc, char **argv) {
             #endif
 
             const auto t1 = std::chrono::high_resolution_clock::now();
-            wall_seconds = std::chrono::duration<double>(t1 - t0).count();
-            walk_seconds = trw.get_last_walk_compute_time_sec();
+            walk_time =
+                std::chrono::duration<double>(t1 - t0).count();
 
             walks_this_batch = walks_with_edge_feats.walk_set.size();
             avg_len_batch = get_average_walk_length(walks_with_edge_feats.walk_set);
@@ -239,20 +237,16 @@ int main(int argc, char **argv) {
             total_walks += walks_this_batch;
             total_walk_len_sum += avg_len_batch * walks_this_batch;
         }
-        wall_times.push_back(wall_seconds);
-        walk_times.push_back(walk_seconds);
+        walk_times.push_back(walk_time);
 
-        std::cout << "  Ingest time: " << ingest_time   << " sec\n"
-                  << "  Wall time:   " << wall_seconds  << " sec\n"
-                  << "  Walk time:   " << walk_seconds  << " sec\n"
+        std::cout << "  Ingest time: " << ingest_time << " sec\n"
+                  << "  Walk time:   " << walk_time << " sec\n"
                   << "  Walks:       " << walks_this_batch << "\n"
                   << "  Avg length:  " << avg_len_batch << "\n";
     }
 
     const double total_ingestion =
         std::accumulate(ingestion_times.begin(), ingestion_times.end(), 0.0);
-    const double total_wall =
-        std::accumulate(wall_times.begin(), wall_times.end(), 0.0);
     const double total_walk =
         std::accumulate(walk_times.begin(), walk_times.end(), 0.0);
     const double final_avg_len =
@@ -264,16 +258,15 @@ int main(int argc, char **argv) {
               << "Total ingestion time: " << total_ingestion << " sec\n"
               << "Mean ingestion time:  "
               << (total_ingestion / num_batches) << " sec\n"
-              << "Total wall time:      " << total_wall << " sec\n"
               << "Total walk time:      " << total_walk << " sec\n"
               << "Mean walk time/batch: "
               << (total_walk / num_batches) << " sec\n"
               << "Total walks:          " << total_walks << "\n"
               << "Final avg walk length:" << final_avg_len << "\n"
-              << "Walks/sec:            "
-              << (total_walks / total_walk) << "\n"
+              << "Throughput:           "
+              << (total_walks / total_walk) << " walks/sec\n"
               << "Steps/sec:            "
-              << (total_walk_len_sum / total_walk) << "\n";
+              << (total_walk_len_sum / total_walk) << " steps/sec\n";
 
     return 0;
 }

@@ -101,10 +101,6 @@ bool TemporalRandomWalk::get_is_directed() const { return impl_->get_is_directed
 void TemporalRandomWalk::clear() const { impl_->clear(); }
 size_t TemporalRandomWalk::get_memory_used() const { return impl_->get_memory_used(); }
 
-double TemporalRandomWalk::get_last_walk_compute_time_sec() const {
-    return impl_->get_last_walk_compute_time_sec();
-}
-
 int TemporalRandomWalk::node_feature_dim() const {
     return static_cast<int>(impl_->data().node_feature_dim);
 }
