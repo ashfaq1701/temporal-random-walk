@@ -15,6 +15,7 @@ set(TEST_FILES
         test_walk_padding_value.cpp
         test_weight_based_random_picker.cpp
         test_temporal_node2vec.cpp
+        test_temporal_node2vec_rejection.cpp
         test_data_layer.cpp
         test_node_grouped_parity.cpp
         test_node_grouped_w_partition.cpp

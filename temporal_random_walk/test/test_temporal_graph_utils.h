@@ -130,18 +130,29 @@ inline Edge get_edge_at(
     return result;
 }
 
+// `explicit_rands` (when non-null) points to two doubles {r_group, r_edge}
+// that are forwarded to the picker instead of fresh non-deterministic draws.
+// Used by parity / determinism tests that need host and device to receive the
+// exact same input randoms for a bit-exact comparison.
 inline Edge get_node_edge_at(
     const TemporalGraphData& data,
     const int node_id,
     const RandomPickerType picker_type,
     const int64_t timestamp,
     const int prev_node,
-    const bool forward = true) {
+    const bool forward = true,
+    const double* explicit_rands = nullptr) {
     const TemporalGraphView view = make_temporal_graph_view(data);
     Edge result{};
     const bool is_directed = data.is_directed;
 
-    Buffer<double> rand_nums_buf = generate_n_random_numbers(2, data.use_gpu);
+    Buffer<double> rand_nums_buf;
+    if (explicit_rands != nullptr) {
+        rand_nums_buf = Buffer<double>(0, data.use_gpu);
+        rand_nums_buf.append_from_host(explicit_rands, 2);
+    } else {
+        rand_nums_buf = generate_n_random_numbers(2, data.use_gpu);
+    }
     double* rand_nums = rand_nums_buf.data();
 
     #define DISPATCH_HOST(FWD, PICKER, DIR) \
