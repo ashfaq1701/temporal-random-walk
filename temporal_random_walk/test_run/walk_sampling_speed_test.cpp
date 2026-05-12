@@ -23,6 +23,7 @@ constexpr int DEFAULT_NUM_WALKS_PER_NODE = -1;
 constexpr auto DEFAULT_EDGE_PICKER = "ExponentialIndex";
 constexpr auto DEFAULT_START_PICKER = "Uniform";
 constexpr auto DEFAULT_KERNEL_LAUNCH_TYPE_STR = "NODE_GROUPED";
+constexpr auto DEFAULT_WALK_DIRECTION_STR = "Forward_In_Time";
 // DEFAULT_TIMESCALE_BOUND is defined in common/const.cuh.
 
 void print_walk_performance_stats(
@@ -75,7 +76,9 @@ int main(int argc, char* argv[])
                   << " [start_picker]"
                   << " [kernel_launch_type=FULL_WALK|NODE_GROUPED|NODE_GROUPED_GLOBAL_ONLY]"
                   << " [walk_dump_file]"
-                  << " [timescale_bound (default=" << DEFAULT_TIMESCALE_BOUND << ")]\n";
+                  << " [timescale_bound (default=" << DEFAULT_TIMESCALE_BOUND << ")]"
+                  << " [walk_direction=Forward_In_Time|Backward_In_Time"
+                  << " (default=" << DEFAULT_WALK_DIRECTION_STR << ")]\n";
         return 1;
     }
 
@@ -115,6 +118,12 @@ int main(int argc, char* argv[])
     const double timescale_bound =
         (argc > 11) ? std::stod(argv[11]) : DEFAULT_TIMESCALE_BOUND;
 
+    const std::string walk_direction_str =
+        (argc > 12) ? argv[12] : DEFAULT_WALK_DIRECTION_STR;
+
+    const WalkDirection walk_direction =
+        walk_direction_from_string(walk_direction_str);
+
     std::cout << "Running on: " << (use_gpu ? "GPU" : "CPU") << "\n";
     std::cout << "Graph type: "
               << (is_directed ? "Directed" : "Undirected") << "\n";
@@ -122,6 +131,7 @@ int main(int argc, char* argv[])
     std::cout << "Edge picker: " << edge_picker
               << "  Start picker: " << start_picker << "\n";
     std::cout << "Timescale bound: " << timescale_bound << "\n";
+    std::cout << "Walk direction: " << walk_direction_str << "\n";
 
     const auto edge_infos = read_edges_from_csv(file_path);
 
@@ -191,14 +201,14 @@ int main(int argc, char* argv[])
                 &edge_picker_enum,
                 num_total_walks,
                 &start_picker_enum,
-                WalkDirection::Forward_In_Time,
+                walk_direction,
                 kernel_launch_type)
             : walker.get_random_walks_and_times_for_all_nodes(
                 max_walk_length,
                 &edge_picker_enum,
                 num_walks_per_node,
                 &start_picker_enum,
-                WalkDirection::Forward_In_Time,
+                walk_direction,
                 kernel_launch_type);
 
     const auto walk_end =
