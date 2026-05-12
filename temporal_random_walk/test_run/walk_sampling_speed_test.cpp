@@ -23,6 +23,7 @@ constexpr int DEFAULT_NUM_WALKS_PER_NODE = -1;
 constexpr auto DEFAULT_EDGE_PICKER = "ExponentialIndex";
 constexpr auto DEFAULT_START_PICKER = "Uniform";
 constexpr auto DEFAULT_KERNEL_LAUNCH_TYPE_STR = "NODE_GROUPED";
+// DEFAULT_TIMESCALE_BOUND is defined in common/const.cuh.
 
 void print_walk_performance_stats(
     const size_t num_walks,
@@ -73,7 +74,8 @@ int main(int argc, char* argv[])
                   << " [edge_picker]"
                   << " [start_picker]"
                   << " [kernel_launch_type=FULL_WALK|NODE_GROUPED|NODE_GROUPED_GLOBAL_ONLY]"
-                  << " [walk_dump_file]\n";
+                  << " [walk_dump_file]"
+                  << " [timescale_bound (default=" << DEFAULT_TIMESCALE_BOUND << ")]\n";
         return 1;
     }
 
@@ -110,12 +112,16 @@ int main(int argc, char* argv[])
     const std::string walk_dump_file =
         (argc > 10) ? argv[10] : "";
 
+    const double timescale_bound =
+        (argc > 11) ? std::stod(argv[11]) : DEFAULT_TIMESCALE_BOUND;
+
     std::cout << "Running on: " << (use_gpu ? "GPU" : "CPU") << "\n";
     std::cout << "Graph type: "
               << (is_directed ? "Directed" : "Undirected") << "\n";
     std::cout << "Kernel launch type: " << kernel_launch_type_str << "\n";
     std::cout << "Edge picker: " << edge_picker
               << "  Start picker: " << start_picker << "\n";
+    std::cout << "Timescale bound: " << timescale_bound << "\n";
 
     const auto edge_infos = read_edges_from_csv(file_path);
 
@@ -145,7 +151,7 @@ int main(int argc, char* argv[])
         -1,
         enable_weight_computation,
         enable_temporal_node2vec,
-        34
+        timescale_bound
     );
 
     std::cout << "\nIngesting edges in bulk...\n";
