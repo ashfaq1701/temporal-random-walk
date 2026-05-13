@@ -36,25 +36,35 @@ void print_walk_performance_stats(
         return;
     }
 
-    size_t total_steps = 0;
+    size_t total_steps        = 0;
+    size_t walks_with_steps   = 0;  // walks with len > 0; the rest died at start.
     for (size_t i = 0; i < num_walks; ++i) {
         total_steps += walk_lens[i];
+        if (walk_lens[i] > 0) ++walks_with_steps;
     }
+    const size_t dead_at_start = num_walks - walks_with_steps;
 
     const double walks_per_sec =
         static_cast<double>(num_walks) / duration_seconds;
     const double steps_per_sec =
         static_cast<double>(total_steps) / duration_seconds;
+    // Average length over walks that actually advanced.  Walks that died at
+    // the start (len == 0) contribute zero steps but would dilute the mean
+    // if they stayed in the denominator, hiding the realised walk length of
+    // the live cohort and breaking apples-to-apples with engines whose walks
+    // always include at least the start vertex (e.g. TEA-reimpl).
     const double avg_walk_length =
-        num_walks > 0
-            ? static_cast<double>(total_steps) / static_cast<double>(num_walks)
+        walks_with_steps > 0
+            ? static_cast<double>(total_steps) / static_cast<double>(walks_with_steps)
             : 0.0;
 
     std::cout << std::fixed << std::setprecision(4);
     std::cout << "Walk generation completed.\n"
               << "Total walks: " << num_walks << "\n"
               << "Total steps: " << total_steps << "\n"
-              << "Average walk length: " << avg_walk_length << "\n"
+              << "Dead at start: " << dead_at_start << "\n"
+              << "Average walk length: " << avg_walk_length
+              << "  (over " << walks_with_steps << " walks with len > 0)\n"
               << "Time taken: " << duration_seconds << " seconds\n"
               << "Throughput:\n"
               << "  Walks/sec: " << walks_per_sec << "\n"
