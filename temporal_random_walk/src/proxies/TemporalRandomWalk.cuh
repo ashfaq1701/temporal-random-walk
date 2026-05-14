@@ -67,6 +67,16 @@ public:
         size_t block_dim = BLOCK_DIM,
         int w_threshold_warp = W_THRESHOLD_WARP) const;
 
+    WalksWithEdgeFeaturesHost get_random_walks_and_times_for_nodes(
+        const int* seed_nodes, size_t num_seed_nodes,
+        int max_walk_len, const RandomPickerType* walk_bias,
+        int num_walks_per_node,
+        const RandomPickerType* initial_edge_bias = nullptr,
+        WalkDirection walk_direction = WalkDirection::Forward_In_Time,
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
+        size_t block_dim = BLOCK_DIM,
+        int w_threshold_warp = W_THRESHOLD_WARP) const;
+
     WalksWithEdgeFeaturesHost get_random_walks_and_times(
         int max_walk_len, const RandomPickerType* walk_bias,
         int num_walks_total,

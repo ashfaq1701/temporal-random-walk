@@ -103,6 +103,18 @@ public:
         size_t block_dim = BLOCK_DIM,
         int w_threshold_warp = W_THRESHOLD_WARP);
 
+    WalksWithEdgeFeaturesHost get_random_walks_and_times_for_nodes(
+        const int* seed_nodes,
+        size_t num_seed_nodes,
+        int max_walk_len,
+        const RandomPickerType* walk_bias,
+        int num_walks_per_node,
+        const RandomPickerType* initial_edge_bias = nullptr,
+        WalkDirection walk_direction = WalkDirection::Forward_In_Time,
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
+        size_t block_dim = BLOCK_DIM,
+        int w_threshold_warp = W_THRESHOLD_WARP);
+
     WalksWithEdgeFeaturesHost get_random_walks_and_times(
         int max_walk_len,
         const RandomPickerType* walk_bias,
@@ -172,6 +184,16 @@ namespace temporal_random_walk {
         const RandomPickerType* initial_edge_bias = nullptr,
         WalkDirection walk_direction = WalkDirection::Forward_In_Time);
 
+    HOST WalksWithEdgeFeaturesHost get_random_walks_and_times_for_nodes_std(
+        core::TemporalRandomWalk* trw,
+        const int* seed_nodes,
+        size_t num_seed_nodes,
+        int max_walk_len,
+        const RandomPickerType* walk_bias,
+        int num_walks_per_node,
+        const RandomPickerType* initial_edge_bias = nullptr,
+        WalkDirection walk_direction = WalkDirection::Forward_In_Time);
+
     HOST WalksWithEdgeFeaturesHost get_random_walks_and_times_std(
         core::TemporalRandomWalk* trw,
         int max_walk_len,
@@ -194,6 +216,19 @@ namespace temporal_random_walk {
 
     HOST WalksWithEdgeFeaturesHost get_random_walks_and_times_for_last_batch_cuda(
         core::TemporalRandomWalk* trw,
+        int max_walk_len,
+        const RandomPickerType* walk_bias,
+        int num_walks_per_node,
+        const RandomPickerType* initial_edge_bias = nullptr,
+        WalkDirection walk_direction = WalkDirection::Forward_In_Time,
+        KernelLaunchType kernel_launch_type = DEFAULT_KERNEL_LAUNCH_TYPE,
+        size_t block_dim = BLOCK_DIM,
+        int w_threshold_warp = W_THRESHOLD_WARP);
+
+    HOST WalksWithEdgeFeaturesHost get_random_walks_and_times_for_nodes_cuda(
+        core::TemporalRandomWalk* trw,
+        const int* seed_nodes,
+        size_t num_seed_nodes,
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_per_node,

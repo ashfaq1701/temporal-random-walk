@@ -448,6 +448,53 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_std(
 }
 
 HOST WalksWithEdgeFeaturesHost
+temporal_random_walk::get_random_walks_and_times_for_nodes_std(
+    core::TemporalRandomWalk* trw,
+    const int* seed_nodes,
+    const size_t num_seed_nodes,
+    const int max_walk_len,
+    const RandomPickerType* walk_bias,
+    const int num_walks_per_node,
+    const RandomPickerType* initial_edge_bias,
+    const WalkDirection walk_direction) {
+    NVTX_RANGE_COLORED("Walk Sampling (seed nodes, std)", nvtx_colors::walk_green);
+    if (!initial_edge_bias) {
+        initial_edge_bias = walk_bias;
+    }
+
+    const DataBlock<int> repeated_node_ids = repeat_elements(
+        seed_nodes, num_seed_nodes,
+        num_walks_per_node, trw->data().use_gpu);
+
+    if (trw->shuffle_walk_order()) {
+        shuffle_vector_host<int>(repeated_node_ids.data, repeated_node_ids.size);
+    }
+
+    WalkSetHost host_walks(repeated_node_ids.size, max_walk_len,
+                           trw->walk_padding_value());
+    WalkSetView walk_set_view = host_walks.make_host_view();
+
+    Buffer<double> rand_nums = generate_n_random_numbers(
+        repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, false);
+
+    const TemporalGraphView view = make_temporal_graph_view(trw->data());
+
+    launch_random_walk_cpu_new(
+        view,
+        trw->is_directed(),
+        walk_set_view,
+        max_walk_len,
+        repeated_node_ids.data,
+        repeated_node_ids.size,
+        *walk_bias,
+        *initial_edge_bias,
+        walk_direction,
+        rand_nums.data());
+
+    return finalize_host_walks(trw, std::move(host_walks));
+}
+
+HOST WalksWithEdgeFeaturesHost
 temporal_random_walk::get_random_walks_and_times_std(
     core::TemporalRandomWalk* trw,
     const int max_walk_len,
@@ -675,6 +722,68 @@ temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
 }
 
 HOST WalksWithEdgeFeaturesHost
+temporal_random_walk::get_random_walks_and_times_for_nodes_cuda(
+    core::TemporalRandomWalk* trw,
+    const int* seed_nodes,
+    const size_t num_seed_nodes,
+    const int max_walk_len,
+    const RandomPickerType* walk_bias,
+    const int num_walks_per_node,
+    const RandomPickerType* initial_edge_bias,
+    const WalkDirection walk_direction,
+    const KernelLaunchType kernel_launch_type,
+    const size_t block_dim,
+    const int w_threshold_warp) {
+    NVTX_RANGE_COLORED("Walk Sampling (seed nodes)", nvtx_colors::walk_green);
+    if (!initial_edge_bias) {
+        initial_edge_bias = walk_bias;
+    }
+
+    CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
+
+    const DataBlock<int> repeated_node_ids = repeat_elements(
+        seed_nodes, num_seed_nodes,
+        num_walks_per_node, trw->data().use_gpu);
+
+    const uint64_t base_seed = resolve_base_seed(trw);
+
+    auto [grid_dim, launch_block_dim] = get_optimal_launch_params(
+        repeated_node_ids.size,
+        &trw->cuda_device_prop(),
+        block_dim);
+
+    if (trw->shuffle_walk_order()) {
+        shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
+        CUDA_KERNEL_CHECK(
+            "After shuffle_vector_device in get_random_walks_and_times_for_nodes_cuda");
+    }
+
+    WalkSetDevice device_walks(repeated_node_ids.size, max_walk_len,
+                               trw->walk_padding_value());
+    const WalkSetView walk_set_view = device_walks.make_view();
+
+    const TemporalGraphView view = make_temporal_graph_view(trw->data());
+
+    CUDA_CHECK_AND_CLEAR(cudaStreamSynchronize(0));
+
+    launch_walk_kernel_dispatch(
+        kernel_launch_type, view, trw->is_directed(), walk_set_view,
+        max_walk_len, repeated_node_ids.data, repeated_node_ids.size,
+        /*all_starts_unconstrained=*/false,
+        *walk_bias, *initial_edge_bias, walk_direction,
+        base_seed, grid_dim, launch_block_dim, w_threshold_warp, trw->stream());
+
+    CUDA_KERNEL_CHECK(
+        "After generate_random_walks_kernel in get_random_walks_and_times_for_nodes_cuda");
+
+    trw->sync_stream();
+
+    WalkSetHost host_walks = std::move(device_walks).download_to_host();
+
+    return finalize_host_walks(trw, std::move(host_walks));
+}
+
+HOST WalksWithEdgeFeaturesHost
 temporal_random_walk::get_random_walks_and_times_cuda(
     core::TemporalRandomWalk* trw,
     const int max_walk_len,
@@ -803,6 +912,35 @@ core::TemporalRandomWalk::get_random_walks_and_times_for_last_batch(
     (void)w_threshold_warp;
     return temporal_random_walk::get_random_walks_and_times_for_last_batch_std(
         this, max_walk_len, walk_bias, num_walks_per_node,
+        initial_edge_bias, walk_direction);
+}
+
+WalksWithEdgeFeaturesHost
+core::TemporalRandomWalk::get_random_walks_and_times_for_nodes(
+    const int* seed_nodes,
+    const size_t num_seed_nodes,
+    const int max_walk_len, const RandomPickerType* walk_bias,
+    const int num_walks_per_node,
+    const RandomPickerType* initial_edge_bias,
+    const WalkDirection walk_direction,
+    const KernelLaunchType kernel_launch_type,
+    const size_t block_dim,
+    const int w_threshold_warp) {
+#ifdef HAS_CUDA
+    if (data_.use_gpu) {
+        return temporal_random_walk::get_random_walks_and_times_for_nodes_cuda(
+            this, seed_nodes, num_seed_nodes,
+            max_walk_len, walk_bias, num_walks_per_node,
+            initial_edge_bias, walk_direction, kernel_launch_type,
+            block_dim, w_threshold_warp);
+    }
+#endif
+    (void)kernel_launch_type;
+    (void)block_dim;
+    (void)w_threshold_warp;
+    return temporal_random_walk::get_random_walks_and_times_for_nodes_std(
+        this, seed_nodes, num_seed_nodes,
+        max_walk_len, walk_bias, num_walks_per_node,
         initial_edge_bias, walk_direction);
 }
 
