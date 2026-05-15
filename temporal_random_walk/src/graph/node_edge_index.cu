@@ -450,8 +450,19 @@ void compute_per_node_direction_weights_std(
         }
     }
 
-    std::vector<int64_t> node_min_ts(node_index_capacity);
-    std::vector<int64_t> node_max_ts(ComputeForward ? node_index_capacity : 0);
+    // Per-direction pivot rule (matches edge_data::update_temporal_weights_std):
+    //   • Backward weight grows toward the most-recent edge → pivot on t_max_u
+    //     so the max-weight edge lands at exp(0)=1 and earlier edges decay.
+    //   • Forward weight grows toward the earliest-after-t_prev edge → pivot
+    //     on t_min_u so the min-t edge lands at exp(0)=1 and later edges decay.
+    //
+    // Both pivots produce exponents ≤ 0; weights are bounded in (0, group_size]
+    // regardless of timescale_bound, preventing the cumulative-weight overflow
+    // (and downstream NaN poisoning of the ITS) that the original (t − t_min) /
+    // (t_max − t) pivots suffered on long-span unix-timestamp datasets.
+    // Softmax shift-invariance keeps the normalized distribution unchanged.
+    std::vector<int64_t> node_max_ts(node_index_capacity);
+    std::vector<int64_t> node_min_ts(ComputeForward ? node_index_capacity : 0);
     std::vector<double>  node_time_scale(node_index_capacity);
 
     #pragma omp parallel for
@@ -459,8 +470,8 @@ void compute_per_node_direction_weights_std(
         const size_t start = ts_group_per_node_offsets[node];
         const size_t end   = ts_group_per_node_offsets[node + 1];
         if (start >= end) {
-            node_min_ts[node] = 0;
-            if constexpr (ComputeForward) node_max_ts[node] = 0;
+            node_max_ts[node] = 0;
+            if constexpr (ComputeForward) node_min_ts[node] = 0;
             node_time_scale[node] = 1.0;
             continue;
         }
@@ -470,8 +481,8 @@ void compute_per_node_direction_weights_std(
         const double time_scale = (timescale_bound > 0 && time_diff > 0)
                                       ? timescale_bound / time_diff
                                       : 1.0;
-        node_min_ts[node] = min_ts;
-        if constexpr (ComputeForward) node_max_ts[node] = max_ts;
+        node_max_ts[node] = max_ts;
+        if constexpr (ComputeForward) node_min_ts[node] = min_ts;
         node_time_scale[node] = time_scale;
     }
 
@@ -489,19 +500,19 @@ void compute_per_node_direction_weights_std(
 
         const auto group_sz = static_cast<double>(edge_end - edge_start);
         const int64_t group_ts = timestamps[edge_sorted_indices[edge_start]];
-        const int64_t min_ts   = node_min_ts[node];
+        const int64_t max_ts   = node_max_ts[node];
         const double  scale    = node_time_scale[node];
 
         const double b_scaled = (timescale_bound > 0)
-                                    ? static_cast<double>(group_ts - min_ts) * scale
-                                    : static_cast<double>(group_ts - min_ts);
+                                    ? static_cast<double>(group_ts - max_ts) * scale
+                                    : static_cast<double>(group_ts - max_ts);
         raw_backward[pos] = group_sz * std::exp(b_scaled);
 
         if constexpr (ComputeForward) {
-            const int64_t max_ts = node_max_ts[node];
+            const int64_t min_ts = node_min_ts[node];
             const double f_scaled = (timescale_bound > 0)
-                                        ? static_cast<double>(max_ts - group_ts) * scale
-                                        : static_cast<double>(max_ts - group_ts);
+                                        ? static_cast<double>(min_ts - group_ts) * scale
+                                        : static_cast<double>(min_ts - group_ts);
             raw_forward[pos] = group_sz * std::exp(f_scaled);
         }
     }
@@ -999,8 +1010,11 @@ __global__ void compute_per_node_weights_fwd_bwd_kernel(
                 : node_to_edge_offsets[node + 1];
             const double group_sz  = static_cast<double>(edge_end - edge_start);
             const int64_t group_ts = timestamps[edge_sorted_indices[edge_start]];
-            const double tf = static_cast<double>(max_ts - group_ts) * scale;
-            const double tb = static_cast<double>(group_ts - min_ts) * scale;
+            // Pivot exponents ≤ 0 — see compute_per_node_direction_weights_std
+            // for rationale. Distribution preserved by softmax shift-invariance;
+            // weights stay bounded so the cumulative scan can't overflow.
+            const double tf = static_cast<double>(min_ts - group_ts) * scale;
+            const double tb = static_cast<double>(group_ts - max_ts) * scale;
             raw_f = group_sz * exp(tf);
             raw_b = group_sz * exp(tb);
             raw_fwd_scratch[pos] = raw_f;
@@ -1071,7 +1085,10 @@ __global__ void compute_per_node_weights_bwd_only_kernel(
     const size_t in_end   = group_offsets[node + 1];
     if (in_start >= in_end) return;
 
-    __shared__ int64_t s_min_ts;
+    // Inbound path is backward-only: pivot on max_ts so the most-recent edge
+    // lands at exp(0) = 1 and earlier edges decay (see CPU template comment
+    // for the full rationale).
+    __shared__ int64_t s_max_ts;
     __shared__ double  s_scale;
     if (tid == 0) {
         const size_t first_group_start = group_to_edge_start[in_start];
@@ -1079,14 +1096,14 @@ __global__ void compute_per_node_weights_bwd_only_kernel(
         const int64_t min_ts = timestamps[edge_sorted_indices[first_group_start]];
         const int64_t max_ts = timestamps[edge_sorted_indices[last_group_start]];
         const double time_diff = static_cast<double>(max_ts - min_ts);
-        s_min_ts = min_ts;
+        s_max_ts = max_ts;
         s_scale  = (timescale_bound > 0.0 && time_diff > 0.0)
                        ? (timescale_bound / time_diff)
                        : 1.0;
     }
     __syncthreads();
 
-    const int64_t min_ts = s_min_ts;
+    const int64_t max_ts = s_max_ts;
     const double  scale  = s_scale;
 
     using BlockReduce = cub::BlockReduce<double, BLOCK_SIZE>;
@@ -1117,7 +1134,7 @@ __global__ void compute_per_node_weights_bwd_only_kernel(
                 : node_to_edge_offsets[node + 1];
             const double group_sz  = static_cast<double>(edge_end - edge_start);
             const int64_t group_ts = timestamps[edge_sorted_indices[edge_start]];
-            const double tb = static_cast<double>(group_ts - min_ts) * scale;
+            const double tb = static_cast<double>(group_ts - max_ts) * scale;
             raw_b = group_sz * exp(tb);
             raw_bwd_scratch[pos] = raw_b;
         }

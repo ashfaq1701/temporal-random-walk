@@ -460,6 +460,20 @@ HOST void edge_data::update_temporal_weights_std(
     auto* backward = data.backward_cumulative_weights_exponential.data();
     const auto* offsets = data.timestamp_group_offsets.data();
 
+    // Pivot so that the largest weight in each direction lands at exp(0) = 1
+    // instead of exp(span·scale), which would overflow on long-span unix-
+    // timestamp data with timescale_bound = -1. The per-group exponent here
+    // is now ≤ 0, so weights live in (0, group_size]. The probability
+    // distribution is preserved by softmax shift-invariance — every weight
+    // is scaled by the same per-direction constant, which cancels in the
+    // normalization step below.
+    //
+    //   Forward picker biases toward the earliest-in-time group ⇒ pivot on
+    //   min_timestamp so the smallest group_timestamp gives the largest
+    //   weight (exp((min − ts) · scale) = exp(0) at ts = min).
+    //   Backward picker biases toward the latest-in-time group ⇒ pivot on
+    //   max_timestamp so the largest group_timestamp gives the largest
+    //   weight (exp((ts − max) · scale) = exp(0) at ts = max).
     #pragma omp parallel for
     for (size_t group = 0; group < num_groups; ++group) {
         const size_t start = offsets[group];
@@ -467,8 +481,8 @@ HOST void edge_data::update_temporal_weights_std(
 
         const int64_t ts = timestamps[start];
 
-        const auto t_fwd = static_cast<double>(max_timestamp - ts);
-        const auto t_bwd = static_cast<double>(ts - min_timestamp);
+        const auto t_fwd = static_cast<double>(min_timestamp - ts);  // ≤ 0
+        const auto t_bwd = static_cast<double>(ts - max_timestamp);  // ≤ 0
 
         const double fwd_scaled = (timescale_bound > 0) ? t_fwd * time_scale : t_fwd;
         const double bwd_scaled = (timescale_bound > 0) ? t_bwd * time_scale : t_bwd;
@@ -790,6 +804,10 @@ HOST void edge_data::update_temporal_weights_cuda(
             d_forward_weights_ptr,
             d_backward_weights_ptr
         )),
+        // See edge_data::update_temporal_weights_std for the pivot rationale —
+        // exponents are bounded ≤ 0 so the per-group weights stay in
+        // (0, group_size] regardless of timescale_bound, while the normalized
+        // distribution is unchanged by softmax shift-invariance.
         [d_offsets, d_timestamps, max_timestamp, min_timestamp, timescale_bound, time_scale]
         HOST DEVICE (const size_t group) {
             const size_t start = d_offsets[static_cast<long>(group)];
@@ -798,8 +816,8 @@ HOST void edge_data::update_temporal_weights_cuda(
 
             const int64_t group_timestamp = d_timestamps[static_cast<long>(start)];
 
-            const auto time_diff_forward = static_cast<double>(max_timestamp - group_timestamp);
-            const auto time_diff_backward = static_cast<double>(group_timestamp - min_timestamp);
+            const auto time_diff_forward  = static_cast<double>(min_timestamp - group_timestamp);
+            const auto time_diff_backward = static_cast<double>(group_timestamp - max_timestamp);
 
             const double forward_scaled = timescale_bound > 0 ? time_diff_forward * time_scale : time_diff_forward;
             const double backward_scaled = timescale_bound > 0

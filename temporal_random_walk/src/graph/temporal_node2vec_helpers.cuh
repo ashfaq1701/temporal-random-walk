@@ -24,8 +24,10 @@ namespace temporal_graph {
     //   1. Sample a candidate edge from the same per-edge distribution
     //      ExponentialWeight uses (group via cumulative-weight ITS,
     //      then uniform within the group — Tempest's weight tables
-    //      already encode group_size · exp(t_g) so this yields a per-
-    //      edge probability ∝ exp(t_e − t_min)).
+    //      already encode group_size · exp((t_g − t_max_u) · scale) for
+    //      backward / group_size · exp((t_min_u − t_g) · scale) for
+    //      forward, so this yields a per-edge probability ∝ exp(t_g · scale)
+    //      after the per-node pivot constant cancels in normalization).
     //   2. Compute β(prev, dest(candidate)) — one binary search on the
     //      sorted adjacency list of prev.
     //   3. Accept with probability β / β_max.  If reject, retry.
@@ -171,7 +173,9 @@ namespace temporal_graph {
             if (edge_start >= edge_end) continue;
 
             // Uniform within the proposed group → per-edge probability
-            // becomes ∝ group_size · exp(t_g − t_min) / group_size = exp(...).
+            // becomes ∝ group_size · exp((t_g − t_max_u) · scale) / group_size,
+            // which after per-node normalization matches the un-pivoted
+            // softmax over edge timestamps.
             const size_t local_pick = static_cast<size_t>(
                 e_rand * static_cast<double>(edge_end - edge_start));
             const size_t pick_idx = edge_start +
