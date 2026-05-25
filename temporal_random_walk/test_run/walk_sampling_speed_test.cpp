@@ -88,7 +88,8 @@ int main(int argc, char* argv[])
                   << " [walk_dump_file]"
                   << " [timescale_bound (default=" << DEFAULT_TIMESCALE_BOUND << ")]"
                   << " [walk_direction=Forward_In_Time|Backward_In_Time"
-                  << " (default=" << DEFAULT_WALK_DIRECTION_STR << ")]\n";
+                  << " (default=" << DEFAULT_WALK_DIRECTION_STR << ")]"
+                  << " [cuda_device_id (default=0; ignored if use_gpu=0)]\n";
         return 1;
     }
 
@@ -134,7 +135,13 @@ int main(int argc, char* argv[])
     const WalkDirection walk_direction =
         walk_direction_from_string(walk_direction_str);
 
+    const int cuda_device_id =
+        (argc > 13) ? std::stoi(argv[13]) : 0;
+
     std::cout << "Running on: " << (use_gpu ? "GPU" : "CPU") << "\n";
+    if (use_gpu) {
+        std::cout << "CUDA device: " << cuda_device_id << "\n";
+    }
     std::cout << "Graph type: "
               << (is_directed ? "Directed" : "Undirected") << "\n";
     std::cout << "Kernel launch type: " << kernel_launch_type_str << "\n";
@@ -168,10 +175,16 @@ int main(int argc, char* argv[])
     TemporalRandomWalk walker(
         is_directed,
         use_gpu,
-        -1,
+        /*max_time_capacity=*/-1,
         enable_weight_computation,
         enable_temporal_node2vec,
-        timescale_bound
+        timescale_bound,
+        /*node2vec_p=*/DEFAULT_NODE2VEC_P,
+        /*node2vec_q=*/DEFAULT_NODE2VEC_Q,
+        /*walk_padding_value=*/EMPTY_NODE_VALUE,
+        /*global_seed=*/EMPTY_GLOBAL_SEED,
+        /*shuffle_walk_order=*/DEFAULT_SHUFFLE_WALK_ORDER,
+        cuda_device_id
     );
 
     std::cout << "\nIngesting edges in bulk...\n";

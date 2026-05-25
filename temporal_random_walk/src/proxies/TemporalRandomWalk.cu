@@ -9,12 +9,14 @@ TemporalRandomWalk::TemporalRandomWalk(
     const double node2vec_p, const double node2vec_q,
     const int walk_padding_value,
     const uint64_t global_seed,
-    const bool shuffle_walk_order)
+    const bool shuffle_walk_order,
+    const int cuda_device_id)
     : impl_(std::make_unique<core::TemporalRandomWalk>(
         is_directed, use_gpu, max_time_capacity,
         enable_weight_computation, enable_temporal_node2vec,
         timescale_bound, node2vec_p, node2vec_q,
-        walk_padding_value, global_seed, shuffle_walk_order)) {}
+        walk_padding_value, global_seed, shuffle_walk_order,
+        cuda_device_id)) {}
 
 TemporalRandomWalk::~TemporalRandomWalk() = default;
 

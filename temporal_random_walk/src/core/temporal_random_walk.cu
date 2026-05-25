@@ -44,7 +44,8 @@ core::TemporalRandomWalk::TemporalRandomWalk(
     const double node2vec_p, const double node2vec_q,
     const int walk_padding_value,
     const uint64_t global_seed,
-    const bool shuffle_walk_order)
+    const bool shuffle_walk_order,
+    const int cuda_device_id)
     : data_(use_gpu),
       walk_padding_value_(walk_padding_value),
       global_seed_(global_seed),
@@ -67,7 +68,12 @@ core::TemporalRandomWalk::TemporalRandomWalk(
 
 #ifdef HAS_CUDA
     if (use_gpu) {
-        CUDA_CHECK_AND_CLEAR(cudaGetDeviceProperties(&cuda_device_prop_, 0));
+        cuda_device_id_ = cuda_device_id;
+        // pin this thread to our target device for the rest of the ctor,
+        // then restore on scope exit so callers (e.g. PyTorch) keep theirs.
+        CudaDeviceGuard _g(cuda_device_id_);
+        CUDA_CHECK_AND_CLEAR(cudaGetDeviceProperties(
+            &cuda_device_prop_, cuda_device_id_));
         // non-blocking: concurrent TRW instances must not serialize on stream 0
         CUDA_CHECK_AND_CLEAR(cudaStreamCreateWithFlags(
             &stream_, cudaStreamNonBlocking));
@@ -77,7 +83,17 @@ core::TemporalRandomWalk::TemporalRandomWalk(
 
 core::TemporalRandomWalk::~TemporalRandomWalk() {
 #ifdef HAS_CUDA
-    if (stream_ != nullptr) {
+    // Pin to our device before tearing down the stream and (implicitly,
+    // after this body) Buffer<T> members that may issue device-scoped
+    // frees. Restored on scope exit so the caller's context is preserved.
+    if (data_.use_gpu) {
+        CudaDeviceGuard _g(cuda_device_id_);
+        if (stream_ != nullptr) {
+            cudaStreamSynchronize(stream_);
+            cudaStreamDestroy(stream_);
+            stream_ = nullptr;
+        }
+    } else if (stream_ != nullptr) {
         cudaStreamSynchronize(stream_);
         cudaStreamDestroy(stream_);
         stream_ = nullptr;
@@ -94,7 +110,8 @@ core::TemporalRandomWalk::TemporalRandomWalk(TemporalRandomWalk&& other) noexcep
       last_batch_unique_targets_(std::move(other.last_batch_unique_targets_))
 #ifdef HAS_CUDA
     , cuda_device_prop_(other.cuda_device_prop_),
-      stream_(other.stream_)
+      stream_(other.stream_),
+      cuda_device_id_(other.cuda_device_id_)
 #endif
 {
 #ifdef HAS_CUDA
@@ -106,9 +123,18 @@ core::TemporalRandomWalk& core::TemporalRandomWalk::operator=(
     TemporalRandomWalk&& other) noexcept {
     if (this == &other) return *this;
 #ifdef HAS_CUDA
+    // Tear down our existing stream on our existing device, not whatever
+    // device the caller's thread happens to point at.
     if (stream_ != nullptr) {
-        cudaStreamSynchronize(stream_);
-        cudaStreamDestroy(stream_);
+        if (data_.use_gpu) {
+            CudaDeviceGuard _g(cuda_device_id_);
+            cudaStreamSynchronize(stream_);
+            cudaStreamDestroy(stream_);
+        } else {
+            cudaStreamSynchronize(stream_);
+            cudaStreamDestroy(stream_);
+        }
+        stream_ = nullptr;
     }
 #endif
     data_                       = std::move(other.data_);
@@ -120,6 +146,7 @@ core::TemporalRandomWalk& core::TemporalRandomWalk::operator=(
 #ifdef HAS_CUDA
     cuda_device_prop_ = other.cuda_device_prop_;
     stream_           = other.stream_;
+    cuda_device_id_   = other.cuda_device_id_;
     other.stream_     = nullptr;
 #endif
     return *this;
@@ -844,6 +871,9 @@ void core::TemporalRandomWalk::add_multiple_edges(
     const int* sources, const int* targets, const int64_t* timestamps,
     const size_t n, const float* edge_features, const size_t feature_dim,
     const size_t block_dim) {
+#ifdef HAS_CUDA
+    CudaDeviceGuard _g(data_.use_gpu ? cuda_device_id_ : -1);
+#endif
     temporal_random_walk::add_multiple_edges(
         this, sources, targets, timestamps, n, edge_features, feature_dim,
         block_dim);
@@ -853,6 +883,8 @@ void core::TemporalRandomWalk::add_multiple_edges(
     const std::vector<std::tuple<int, int, int64_t>>& edges,
     const float* edge_features, const size_t feature_dim,
     const size_t block_dim) {
+    // The other overload below acquires its own CudaDeviceGuard; no need
+    // to double-guard here.
     std::vector<int> sources; sources.reserve(edges.size());
     std::vector<int> targets; targets.reserve(edges.size());
     std::vector<int64_t> timestamps; timestamps.reserve(edges.size());
@@ -875,6 +907,7 @@ core::TemporalRandomWalk::get_random_walks_and_times_for_all_nodes(
     const size_t block_dim,
     const int w_threshold_warp) {
 #ifdef HAS_CUDA
+    CudaDeviceGuard _g(data_.use_gpu ? cuda_device_id_ : -1);
     if (data_.use_gpu) {
         return temporal_random_walk::get_random_walks_and_times_for_all_nodes_cuda(
             this, max_walk_len, walk_bias, num_walks_per_node,
@@ -900,6 +933,7 @@ core::TemporalRandomWalk::get_random_walks_and_times_for_last_batch(
     const size_t block_dim,
     const int w_threshold_warp) {
 #ifdef HAS_CUDA
+    CudaDeviceGuard _g(data_.use_gpu ? cuda_device_id_ : -1);
     if (data_.use_gpu) {
         return temporal_random_walk::get_random_walks_and_times_for_last_batch_cuda(
             this, max_walk_len, walk_bias, num_walks_per_node,
@@ -927,6 +961,7 @@ core::TemporalRandomWalk::get_random_walks_and_times_for_nodes(
     const size_t block_dim,
     const int w_threshold_warp) {
 #ifdef HAS_CUDA
+    CudaDeviceGuard _g(data_.use_gpu ? cuda_device_id_ : -1);
     if (data_.use_gpu) {
         return temporal_random_walk::get_random_walks_and_times_for_nodes_cuda(
             this, seed_nodes, num_seed_nodes,
@@ -954,6 +989,7 @@ core::TemporalRandomWalk::get_random_walks_and_times(
     const size_t block_dim,
     const int w_threshold_warp) {
 #ifdef HAS_CUDA
+    CudaDeviceGuard _g(data_.use_gpu ? cuda_device_id_ : -1);
     if (data_.use_gpu) {
         return temporal_random_walk::get_random_walks_and_times_cuda(
             this, max_walk_len, walk_bias, num_walks_total,
@@ -972,6 +1008,9 @@ core::TemporalRandomWalk::get_random_walks_and_times(
 void core::TemporalRandomWalk::set_node_features(
     const int* node_ids, const size_t num_nodes,
     const float* node_features_src, const size_t feature_dim) {
+#ifdef HAS_CUDA
+    CudaDeviceGuard _g(data_.use_gpu ? cuda_device_id_ : -1);
+#endif
     node_features::set_node_features(
         data_, data_.max_node_id, node_ids, num_nodes,
         node_features_src, feature_dim);
@@ -984,12 +1023,22 @@ size_t core::TemporalRandomWalk::get_edge_count() const {
     return temporal_random_walk::get_edge_count(this);
 }
 std::vector<int> core::TemporalRandomWalk::get_node_ids() const {
+#ifdef HAS_CUDA
+    CudaDeviceGuard _g(data_.use_gpu ? cuda_device_id_ : -1);
+#endif
     return temporal_random_walk::get_node_ids(this);
 }
 std::vector<Edge> core::TemporalRandomWalk::get_edges() const {
+#ifdef HAS_CUDA
+    CudaDeviceGuard _g(data_.use_gpu ? cuda_device_id_ : -1);
+#endif
     return temporal_random_walk::get_edges(this);
 }
 void core::TemporalRandomWalk::clear() {
+#ifdef HAS_CUDA
+    // reassigning data_ runs Buffer<T> dtors which call cudaFree
+    CudaDeviceGuard _g(data_.use_gpu ? cuda_device_id_ : -1);
+#endif
     temporal_random_walk::clear(this);
 }
 size_t core::TemporalRandomWalk::get_memory_used() const {

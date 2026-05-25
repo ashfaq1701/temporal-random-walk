@@ -29,7 +29,11 @@ public:
         double node2vec_q = DEFAULT_NODE2VEC_Q,
         int walk_padding_value = EMPTY_NODE_VALUE,
         uint64_t global_seed = EMPTY_GLOBAL_SEED,
-        bool shuffle_walk_order = DEFAULT_SHUFFLE_WALK_ORDER);
+        bool shuffle_walk_order = DEFAULT_SHUFFLE_WALK_ORDER,
+        // CUDA device index for this instance when use_gpu=true. Lets a
+        // multi-GPU process pin TRW to one GPU while another library
+        // (e.g. PyTorch) owns a different GPU. Ignored when use_gpu=false.
+        int cuda_device_id = 0);
 
     ~TemporalRandomWalk();
 

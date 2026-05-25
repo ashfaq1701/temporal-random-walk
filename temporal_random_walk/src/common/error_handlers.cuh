@@ -103,6 +103,41 @@ inline void clearCudaErrorState() {
     cudaGetLastError();
 }
 
+// RAII current-device pin. Snapshots the calling thread's current CUDA
+// device, switches to `target_device`, restores the prior device on scope
+// exit. Lets a multi-GPU process pin a single TemporalRandomWalk to one
+// GPU while another library (e.g. PyTorch) owns a different GPU on the
+// same thread.
+struct CudaDeviceGuard {
+    int prev_device_ = -1;
+    bool active_     = false;
+
+    explicit CudaDeviceGuard(const int target_device) {
+        if (target_device < 0) return;
+        if (cudaGetDevice(&prev_device_) != cudaSuccess) {
+            prev_device_ = -1;
+            return;
+        }
+        if (prev_device_ != target_device) {
+            if (cudaSetDevice(target_device) != cudaSuccess) return;
+        }
+        active_ = true;
+    }
+
+    ~CudaDeviceGuard() {
+        if (!active_) return;
+        if (prev_device_ >= 0) {
+            // best-effort restore; swallow errors so dtor stays noexcept
+            (void)cudaSetDevice(prev_device_);
+        }
+    }
+
+    CudaDeviceGuard(const CudaDeviceGuard&)            = delete;
+    CudaDeviceGuard& operator=(const CudaDeviceGuard&) = delete;
+    CudaDeviceGuard(CudaDeviceGuard&&)                 = delete;
+    CudaDeviceGuard& operator=(CudaDeviceGuard&&)      = delete;
+};
+
 #endif // HAS_CUDA
 
 #endif // CUDA_ERROR_HANDLERS

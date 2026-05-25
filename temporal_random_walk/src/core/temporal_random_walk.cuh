@@ -36,7 +36,12 @@ public:
         double node2vec_q = DEFAULT_NODE2VEC_Q,
         int walk_padding_value = EMPTY_NODE_VALUE,
         uint64_t global_seed = EMPTY_GLOBAL_SEED,
-        bool shuffle_walk_order = DEFAULT_SHUFFLE_WALK_ORDER);
+        bool shuffle_walk_order = DEFAULT_SHUFFLE_WALK_ORDER,
+        // CUDA device index for the instance when use_gpu=true. Ignored when
+        // use_gpu=false. Default 0 preserves single-GPU behavior; pass a
+        // non-zero value to pin this instance to a specific GPU while
+        // another library (e.g. PyTorch) holds a different one.
+        int cuda_device_id = 0);
 
     ~TemporalRandomWalk();
 
@@ -61,6 +66,10 @@ public:
 
 #ifdef HAS_CUDA
     const cudaDeviceProp& cuda_device_prop() const { return cuda_device_prop_; }
+
+    // CUDA device this instance is pinned to (use_gpu=true). Undefined
+    // when use_gpu=false.
+    int cuda_device_id() const { return cuda_device_id_; }
 
     // per-instance non-blocking stream; avoids serializing on legacy stream 0
     cudaStream_t stream() const { return stream_; }
@@ -147,6 +156,7 @@ private:
 #ifdef HAS_CUDA
     cudaDeviceProp cuda_device_prop_{};
     cudaStream_t   stream_{nullptr};
+    int            cuda_device_id_{0};
 #endif
 };
 
