@@ -317,11 +317,23 @@ HOST void temporal_graph::sort_and_merge_edges_cuda(
     thrust::device_vector<int> old_indices(static_cast<int>(start_idx));
     thrust::sequence(old_indices.begin(), old_indices.end(), 0);
 
-    thrust::device_vector<int> new_indices(static_cast<int>(new_edges_count));
-    thrust::sequence(new_indices.begin(), new_indices.end(), static_cast<int>(start_idx));
+    thrust::device_vector<int> new_indices_in(static_cast<int>(new_edges_count));
+    thrust::sequence(new_indices_in.begin(), new_indices_in.end(), static_cast<int>(start_idx));
 
-    cub_radix_sort_values_by_keys(
+    // Sort new edges' (timestamp, edge-index) pairs by timestamp. Keys
+    // output is discarded — only the permutation is used by the merge
+    // below. cub_sort_pairs is safe on zero items and checks every CUB
+    // return; the legacy in-place wrapper silently swallowed errors,
+    // and on tgbl-review's first batch (large int64 timestamps + tight
+    // same-key clustering) it returned cudaErrorInvalidValue without
+    // launching, surfacing as a misleading async error at the next
+    // CUDA_KERNEL_CHECK site.
+    thrust::device_vector<int64_t> sorted_keys_discard(new_edges_count);
+    thrust::device_vector<int> new_indices(static_cast<int>(new_edges_count));
+    cub_sort_pairs(
         d_timestamps + start_idx,
+        thrust::raw_pointer_cast(sorted_keys_discard.data()),
+        thrust::raw_pointer_cast(new_indices_in.data()),
         thrust::raw_pointer_cast(new_indices.data()),
         new_edges_count);
 

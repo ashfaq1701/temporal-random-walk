@@ -9,39 +9,6 @@
 #include "error_handlers.cuh"
 #include "../data/buffer.cuh"
 
-// legacy in-place values-by-keys sort, no streams. prefer cub_sort_pairs.
-template <typename KeyType, typename ValueType>
-void cub_radix_sort_values_by_keys(
-    const KeyType* d_keys,
-    ValueType* d_values,
-    size_t num_items)
-{
-    KeyType* d_keys_out = nullptr;
-    ValueType* d_values_out = nullptr;
-    cudaMalloc(&d_keys_out, sizeof(KeyType) * num_items);
-    cudaMalloc(&d_values_out, sizeof(ValueType) * num_items);
-
-    void* d_temp_storage = nullptr;
-    size_t temp_storage_bytes = 0;
-
-    cub::DeviceRadixSort::SortPairs(
-        d_temp_storage, temp_storage_bytes,
-        d_keys, d_keys_out, d_values, d_values_out, num_items);
-
-    cudaMalloc(&d_temp_storage, temp_storage_bytes);
-
-    cub::DeviceRadixSort::SortPairs(
-        d_temp_storage, temp_storage_bytes,
-        d_keys, d_keys_out, d_values, d_values_out, num_items);
-
-    cudaMemcpy(d_values, d_values_out, sizeof(ValueType) * num_items,
-               cudaMemcpyDeviceToDevice);
-
-    cudaFree(d_temp_storage);
-    cudaFree(d_keys_out);
-    cudaFree(d_values_out);
-}
-
 template <typename KeyType, typename ValueType>
 inline void cub_sort_pairs(
     const KeyType* d_keys_in,

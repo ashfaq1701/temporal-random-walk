@@ -691,37 +691,43 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_cuda(
     );
     CUDA_KERNEL_CHECK("Generated outbound_node_ids");
 
-    thrust::device_vector<size_t> indices(outbound_buffer_size);
+    thrust::device_vector<size_t> indices_in(outbound_buffer_size);
     thrust::sequence(
         DEVICE_EXECUTION_POLICY,
-        indices.begin(),
-        indices.end()
+        indices_in.begin(),
+        indices_in.end()
     );
     CUDA_KERNEL_CHECK("Generated permutation indices");
 
-    cub_radix_sort_values_by_keys(
+    // Sort node-id keys + index values out-of-place. cub_sort_pairs writes
+    // both sorted keys (sorted_outbound_node_ids — the sorted column we
+    // need downstream anyway) and sorted values (the permutation) into
+    // fresh buffers. The legacy in-place wrapper used to mutate `indices`
+    // and discard the sorted keys; we now keep both.
+    thrust::device_vector<int> sorted_outbound_node_ids(outbound_buffer_size);
+    thrust::device_vector<size_t> sorted_indices(outbound_buffer_size);
+
+    cub_sort_pairs(
         outbound_node_ids,
-        thrust::raw_pointer_cast(indices.data()),
+        thrust::raw_pointer_cast(sorted_outbound_node_ids.data()),
+        thrust::raw_pointer_cast(indices_in.data()),
+        thrust::raw_pointer_cast(sorted_indices.data()),
         outbound_buffer_size
     );
     CUDA_KERNEL_CHECK("Sorted indices by node keys");
 
     thrust::device_vector<size_t> sorted_outbound_indices(outbound_buffer_size);
-    thrust::device_vector<int> sorted_outbound_node_ids(outbound_buffer_size);
 
     thrust::for_each(
         DEVICE_EXECUTION_POLICY,
         thrust::make_counting_iterator<size_t>(0),
         thrust::make_counting_iterator<size_t>(outbound_buffer_size),
         [sorted_outbound_indices = sorted_outbound_indices.data(),
-         sorted_outbound_node_ids = sorted_outbound_node_ids.data(),
          outbound_indices,
-         outbound_node_ids,
-         indices = indices.data()] DEVICE (const size_t i) {
+         sorted_indices = sorted_indices.data()] DEVICE (const size_t i) {
             const auto idx = static_cast<long>(i);
-            const size_t sorted_idx = indices[idx];
+            const size_t sorted_idx = sorted_indices[idx];
             sorted_outbound_indices[idx] = outbound_indices[sorted_idx];
-            sorted_outbound_node_ids[idx] = outbound_node_ids[sorted_idx];
         }
     );
     CUDA_KERNEL_CHECK("Applied permutation");
@@ -743,10 +749,13 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_cuda(
     if (is_directed) {
         size_t* inbound_indices = data.node_ts_sorted_inbound_indices.data();
 
+        // Seed the permutation buffer 0..edges_size-1 in a temporary so
+        // the sort can run out-of-place into inbound_indices itself.
+        thrust::device_vector<size_t> inbound_indices_in(edges_size);
         thrust::sequence(
             DEVICE_EXECUTION_POLICY,
-            inbound_indices,
-            inbound_indices + edges_size
+            inbound_indices_in.begin(),
+            inbound_indices_in.end()
         );
         CUDA_KERNEL_CHECK("Initialized node_ts_sorted_inbound_indices");
 
@@ -757,24 +766,20 @@ HOST void node_edge_index::compute_node_ts_sorted_indices_cuda(
             cudaMemcpyDeviceToDevice
         ));
 
-        cub_radix_sort_values_by_keys(
+        // Sort keys (target node ids) + permutation values out-of-place.
+        // Keys output goes into a fresh buffer, then is copied back over
+        // inbound_node_ids so downstream code sees the sorted column.
+        thrust::device_vector<int> sorted_inbound_node_ids(edges_size);
+
+        cub_sort_pairs(
             inbound_node_ids,
+            thrust::raw_pointer_cast(sorted_inbound_node_ids.data()),
+            thrust::raw_pointer_cast(inbound_indices_in.data()),
             inbound_indices,
             edges_size
         );
         CUDA_KERNEL_CHECK("Sorted node_ts_sorted_inbound_indices");
 
-        thrust::device_vector<int> sorted_inbound_node_ids(edges_size);
-        thrust::for_each(
-            DEVICE_EXECUTION_POLICY,
-            thrust::make_counting_iterator<size_t>(0),
-            thrust::make_counting_iterator<size_t>(edges_size),
-            [sorted_inbound_node_ids = sorted_inbound_node_ids.data(),
-             inbound_node_ids, inbound_indices] DEVICE (const size_t i) {
-                const auto idx = static_cast<long>(i);
-                sorted_inbound_node_ids[idx] = inbound_node_ids[inbound_indices[idx]];
-            }
-        );
         thrust::copy(
             DEVICE_EXECUTION_POLICY,
             sorted_inbound_node_ids.begin(),
