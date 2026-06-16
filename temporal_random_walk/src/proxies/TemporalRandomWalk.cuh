@@ -97,6 +97,9 @@ public:
     [[nodiscard]] size_t get_node_count() const;
     [[nodiscard]] size_t get_edge_count() const;
     [[nodiscard]] std::vector<int> get_node_ids() const;
+    [[nodiscard]] std::vector<int64_t> get_node_degrees(
+        const int* nodes, size_t n,
+        WalkDirection direction = WalkDirection::Forward_In_Time) const;
     [[nodiscard]] std::vector<std::tuple<int, int, int64_t>> get_edges() const;
     [[nodiscard]] bool   get_is_directed() const;
     void clear() const;

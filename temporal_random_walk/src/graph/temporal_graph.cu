@@ -52,6 +52,14 @@ HOST std::vector<int> temporal_graph::get_node_ids(const TemporalGraphData& data
     return edge_data::get_active_node_ids(data);
 }
 
+HOST std::vector<int64_t> temporal_graph::get_node_degrees(
+    const TemporalGraphData& data,
+    const int* nodes,
+    const size_t n,
+    const bool forward) {
+    return node_edge_index::get_node_degrees(data, nodes, n, forward);
+}
+
 HOST std::vector<Edge> temporal_graph::get_edges(const TemporalGraphData& data) {
     return edge_data::get_edges(data);
 }

@@ -141,6 +141,9 @@ public:
     size_t get_node_count() const;
     size_t get_edge_count() const;
     std::vector<int> get_node_ids() const;
+    std::vector<int64_t> get_node_degrees(
+        const int* nodes, size_t n,
+        WalkDirection direction = WalkDirection::Forward_In_Time) const;
     std::vector<Edge> get_edges() const;
     bool get_is_directed() const { return data_.is_directed; }
     void clear();
@@ -174,6 +177,9 @@ namespace temporal_random_walk {
     HOST size_t get_node_count(const core::TemporalRandomWalk* trw);
     HOST size_t get_edge_count(const core::TemporalRandomWalk* trw);
     HOST std::vector<int>  get_node_ids(const core::TemporalRandomWalk* trw);
+    HOST std::vector<int64_t> get_node_degrees(
+        const core::TemporalRandomWalk* trw,
+        const int* nodes, size_t n, WalkDirection direction);
     HOST std::vector<Edge> get_edges(const core::TemporalRandomWalk* trw);
     HOST bool              get_is_directed(const core::TemporalRandomWalk* trw);
     HOST void              clear(core::TemporalRandomWalk* trw);

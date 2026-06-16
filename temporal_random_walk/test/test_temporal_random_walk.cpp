@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <cmath>
 #include <array>
+#include <unordered_map>
 
 #include "test_utils.h"
 #include "../src/proxies/TemporalRandomWalk.cuh"
@@ -174,6 +175,71 @@ TYPED_TEST(FilledDirectedTemporalRandomWalkTest, TestNodeFoundTest) {
     const auto nodes = this->temporal_random_walk->get_node_ids();
     const auto it = std::find(nodes.begin(), nodes.end(), TEST_NODE_ID);
     EXPECT_NE(it, nodes.end());
+}
+
+TYPED_TEST(FilledDirectedTemporalRandomWalkTest, NodeDegreesTest) {
+    // Ground truth straight from the edge list: directed out/in degree.
+    std::unordered_map<int, int64_t> expected_out;
+    std::unordered_map<int, int64_t> expected_in;
+    for (const auto& [src, dst, ts] : this->sample_edges) {
+        expected_out[src] += 1;
+        expected_in[dst]  += 1;
+    }
+
+    const auto node_ids = this->temporal_random_walk->get_node_ids();
+
+    // Query every node, then a duplicate and an out-of-range id (must be 0).
+    std::vector<int> query(node_ids.begin(), node_ids.end());
+    ASSERT_FALSE(query.empty());
+    query.push_back(query.front());   // duplicate is allowed
+    query.push_back(999999);          // inactive / out-of-range -> 0
+
+    const auto out_degrees = this->temporal_random_walk->get_node_degrees(
+        query.data(), query.size(), WalkDirection::Forward_In_Time);
+    const auto in_degrees = this->temporal_random_walk->get_node_degrees(
+        query.data(), query.size(), WalkDirection::Backward_In_Time);
+
+    ASSERT_EQ(out_degrees.size(), query.size());
+    ASSERT_EQ(in_degrees.size(), query.size());
+
+    for (size_t i = 0; i < query.size(); ++i) {
+        const int node = query[i];
+        const auto out_it = expected_out.find(node);
+        const auto in_it  = expected_in.find(node);
+        const int64_t want_out = (out_it == expected_out.end()) ? 0 : out_it->second;
+        const int64_t want_in  = (in_it  == expected_in.end())  ? 0 : in_it->second;
+        EXPECT_EQ(out_degrees[i], want_out) << "out-degree mismatch for node " << node;
+        EXPECT_EQ(in_degrees[i], want_in) << "in-degree mismatch for node " << node;
+    }
+
+    EXPECT_EQ(out_degrees.back(), 0);  // 999999
+    EXPECT_EQ(in_degrees.back(), 0);
+}
+
+TYPED_TEST(FilledUndirectedTemporalRandomWalkTest, NodeDegreesTest) {
+    // Undirected: each edge contributes to both endpoints; direction is ignored.
+    std::unordered_map<int, int64_t> expected_total;
+    for (const auto& [src, dst, ts] : this->sample_edges) {
+        expected_total[src] += 1;
+        expected_total[dst] += 1;
+    }
+
+    const auto node_ids = this->temporal_random_walk->get_node_ids();
+    std::vector<int> query(node_ids.begin(), node_ids.end());
+    ASSERT_FALSE(query.empty());
+
+    const auto forward_degrees = this->temporal_random_walk->get_node_degrees(
+        query.data(), query.size(), WalkDirection::Forward_In_Time);
+    const auto backward_degrees = this->temporal_random_walk->get_node_degrees(
+        query.data(), query.size(), WalkDirection::Backward_In_Time);
+
+    ASSERT_EQ(forward_degrees.size(), query.size());
+    for (size_t i = 0; i < query.size(); ++i) {
+        const int64_t want = expected_total[query[i]];
+        EXPECT_EQ(forward_degrees[i], want) << "degree mismatch for node " << query[i];
+        // undirected -> direction makes no difference
+        EXPECT_EQ(backward_degrees[i], want) << "direction should not matter (undirected), node " << query[i];
+    }
 }
 
 // length-1 walks are unreachable by the walk-state machine; strict `> 1`.

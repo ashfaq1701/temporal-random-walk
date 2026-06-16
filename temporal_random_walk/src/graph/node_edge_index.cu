@@ -73,6 +73,77 @@ HOST SizeRange node_edge_index::get_edge_range(
     return SizeRange{start, end};
 }
 
+namespace {
+    // Selects the CSR offset buffer that defines per-node degree, matching the
+    // direction semantics of get_edge_range: directed graphs split out/in,
+    // undirected graphs keep the full adjacency in the outbound buffer.
+    HOST const Buffer<size_t>& degree_offsets_buffer(
+        const TemporalGraphData& data, const bool forward) {
+        if (data.is_directed && !forward) {
+            return data.node_group_inbound_offsets;
+        }
+        return data.node_group_outbound_offsets;
+    }
+}
+
+HOST std::vector<int64_t> node_edge_index::get_node_degrees(
+    const TemporalGraphData& data,
+    const int* nodes,
+    const size_t n,
+    const bool forward) {
+    std::vector<int64_t> result(n);
+    if (n == 0) {
+        return result;
+    }
+
+    const Buffer<size_t>& offsets_buf = degree_offsets_buffer(data, forward);
+    const size_t* offsets = offsets_buf.data();
+    const int offsets_size = static_cast<int>(offsets_buf.size());
+
+    #ifdef HAS_CUDA
+    if (data.use_gpu) {
+        // input ids live on the host; stage them on device for the transform
+        Buffer<int> d_nodes(true);
+        d_nodes.resize(n);
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+            d_nodes.data(), nodes, n * sizeof(int), cudaMemcpyHostToDevice));
+
+        Buffer<int64_t> d_degrees(true);
+        d_degrees.resize(n);
+
+        thrust::transform(
+            DEVICE_EXECUTION_POLICY,
+            thrust::device_ptr<int>(d_nodes.data()),
+            thrust::device_ptr<int>(d_nodes.data() + n),
+            thrust::device_ptr<int64_t>(d_degrees.data()),
+            [offsets, offsets_size] __device__ (const int node) -> int64_t {
+                if (node < 0 || node >= offsets_size - 1) {
+                    return 0;
+                }
+                return static_cast<int64_t>(offsets[node + 1] - offsets[node]);
+            });
+        CUDA_KERNEL_CHECK("After thrust transform in get_node_degrees");
+
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+            result.data(), d_degrees.data(),
+            n * sizeof(int64_t), cudaMemcpyDeviceToHost));
+    } else
+    #endif
+    {
+        #pragma omp parallel for
+        for (size_t i = 0; i < n; ++i) {
+            const int node = nodes[i];
+            if (node < 0 || node >= offsets_size - 1) {
+                result[i] = 0;
+            } else {
+                result[i] = static_cast<int64_t>(offsets[node + 1] - offsets[node]);
+            }
+        }
+    }
+
+    return result;
+}
+
 HOST SizeRange node_edge_index::get_timestamp_group_range(
     const TemporalGraphData& data,
     const int dense_node_id,

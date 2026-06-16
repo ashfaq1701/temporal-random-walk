@@ -24,6 +24,19 @@ namespace node_edge_index {
         int dense_node_id,
         bool forward);
 
+    // Batched O(1)-per-node degree lookup. For each queried node id (the array
+    // may contain duplicates and out-of-range / inactive ids, which yield 0),
+    // reads degree = offsets[id+1] - offsets[id] from the CSR node-edge index.
+    // forward=true  -> outbound degree (directed) / total degree (undirected),
+    // forward=false -> inbound degree  (directed) / total degree (undirected).
+    // Mirrored CPU (OpenMP) / GPU (thrust) implementation, dispatched on
+    // data.use_gpu. Returns a host vector of length n.
+    HOST std::vector<int64_t> get_node_degrees(
+        const TemporalGraphData& data,
+        const int* nodes,
+        size_t n,
+        bool forward);
+
     HOST SizeRange get_timestamp_group_range(
         const TemporalGraphData& data,
         int dense_node_id,

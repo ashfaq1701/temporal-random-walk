@@ -28,6 +28,12 @@ namespace temporal_graph {
 
     HOST std::vector<int> get_node_ids(const TemporalGraphData& data);
 
+    HOST std::vector<int64_t> get_node_degrees(
+        const TemporalGraphData& data,
+        const int* nodes,
+        size_t n,
+        bool forward);
+
     HOST std::vector<Edge> get_edges(const TemporalGraphData& data);
 
     HOST void sort_and_merge_edges_std(

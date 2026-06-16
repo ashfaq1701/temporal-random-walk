@@ -108,6 +108,11 @@ size_t TemporalRandomWalk::get_node_count() const { return impl_->get_node_count
 size_t TemporalRandomWalk::get_edge_count() const { return impl_->get_edge_count(); }
 std::vector<int> TemporalRandomWalk::get_node_ids() const { return impl_->get_node_ids(); }
 
+std::vector<int64_t> TemporalRandomWalk::get_node_degrees(
+    const int* nodes, const size_t n, const WalkDirection direction) const {
+    return impl_->get_node_degrees(nodes, n, direction);
+}
+
 std::vector<std::tuple<int, int, int64_t>> TemporalRandomWalk::get_edges() const {
     const auto edges = impl_->get_edges();
     std::vector<std::tuple<int, int, int64_t>> out;

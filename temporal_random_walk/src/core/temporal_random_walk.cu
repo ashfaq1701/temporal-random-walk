@@ -340,6 +340,13 @@ HOST std::vector<int> temporal_random_walk::get_node_ids(const core::TemporalRan
     return temporal_graph::get_node_ids(trw->data());
 }
 
+HOST std::vector<int64_t> temporal_random_walk::get_node_degrees(
+    const core::TemporalRandomWalk* trw,
+    const int* nodes, const size_t n, const WalkDirection direction) {
+    const bool forward = direction == WalkDirection::Forward_In_Time;
+    return temporal_graph::get_node_degrees(trw->data(), nodes, n, forward);
+}
+
 HOST std::vector<Edge> temporal_random_walk::get_edges(const core::TemporalRandomWalk* trw) {
     return temporal_graph::get_edges(trw->data());
 }
@@ -1027,6 +1034,13 @@ std::vector<int> core::TemporalRandomWalk::get_node_ids() const {
     CudaDeviceGuard _g(data_.use_gpu ? cuda_device_id_ : -1);
 #endif
     return temporal_random_walk::get_node_ids(this);
+}
+std::vector<int64_t> core::TemporalRandomWalk::get_node_degrees(
+    const int* nodes, const size_t n, const WalkDirection direction) const {
+#ifdef HAS_CUDA
+    CudaDeviceGuard _g(data_.use_gpu ? cuda_device_id_ : -1);
+#endif
+    return temporal_random_walk::get_node_degrees(this, nodes, n, direction);
 }
 std::vector<Edge> core::TemporalRandomWalk::get_edges() const {
 #ifdef HAS_CUDA

@@ -764,6 +764,50 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             )"
         )
 
+        .def("get_node_degrees", [](const TemporalRandomWalk& tw,
+                              const py::array_t<int, py::array::c_style | py::array::forcecast>& nodes,
+                              const std::string& direction)
+             {
+                 const py::buffer_info nodes_info = nodes.request();
+                 if (nodes_info.ndim != 1) {
+                     throw std::runtime_error("nodes must be a 1D int32 array");
+                 }
+                 const WalkDirection direction_enum = walk_direction_from_string(direction);
+
+                 const auto* nodes_ptr = static_cast<const int*>(nodes_info.ptr);
+                 const auto num_nodes = static_cast<size_t>(nodes_info.shape[0]);
+
+                 const std::vector<int64_t> degrees = tw.get_node_degrees(
+                     nodes_ptr, num_nodes, direction_enum);
+
+                 py::array_t<int64_t> result(static_cast<ssize_t>(degrees.size()));
+                 if (!degrees.empty()) {
+                     std::copy_n(
+                         degrees.data(), degrees.size(),
+                         static_cast<int64_t*>(result.request().ptr));
+                 }
+                 return result;
+             },
+             R"(
+             Return the degree of each queried node, in the same order as the input.
+
+             Each node's degree is read in O(1) from the CSR node-edge index, and
+             all nodes are processed in parallel (thrust on GPU, OpenMP on CPU).
+             The input may contain duplicates; out-of-range or inactive node ids
+             yield a degree of 0.
+
+             Args:
+                 nodes (np.ndarray): 1D int32 array of node ids (duplicates allowed).
+                 direction (str, optional): "Forward_In_Time" (default) returns
+                     out-degree, "Backward_In_Time" returns in-degree. For
+                     undirected graphs both return the total degree.
+
+             Returns:
+                 np.ndarray: 1D int64 array of degrees, len == len(nodes).
+             )",
+             py::arg("nodes"),
+             py::arg("direction") = "Forward_In_Time")
+
         .def("clear", &TemporalRandomWalk::clear,
              R"(
             Clears and reinitiates the underlying graph.
