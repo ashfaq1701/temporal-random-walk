@@ -22,6 +22,7 @@ set(TEST_FILES
         test_node_grouped_g_partition.cpp
         test_node_grouped_block_task_expansion.cpp
         test_node_grouped_walk_tier_routing.cpp
+        test_walk_cutoff_times.cpp
 )
 
 set(MODULE_SRC_FILES ${SRC_FILES} ${TEST_FILES})

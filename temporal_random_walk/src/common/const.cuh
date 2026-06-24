@@ -12,6 +12,14 @@ constexpr int64_t EMPTY_TIMESTAMP_VALUE = -1;
 constexpr int64_t EMPTY_EDGE_ID = -1;
 constexpr uint64_t EMPTY_GLOBAL_SEED = UINT64_MAX;
 
+// Per-walk start-time cutoff sentinel: a walk whose cutoff equals this is
+// unbounded (samples from the whole graph). A real cutoff t is an EXCLUSIVE
+// upper bound — the walk may only traverse edges with timestamp < t ("walk
+// this node as of time t"). -1 is reused for parity with the existing
+// "no timestamp constraint" convention and because it is memset-friendly
+// (0xFF bytes), so default-filling a per-walk cutoff buffer is a plain fill.
+constexpr int64_t NO_WALK_CUTOFF = -1;
+
 constexpr bool DEFAULT_SHUFFLE_WALK_ORDER = true;
 
 // Temporal Node2Vec rejection-sampling retry cap.  Per-hop proposal is

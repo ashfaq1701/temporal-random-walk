@@ -486,6 +486,7 @@ temporal_random_walk::get_random_walks_and_times_for_nodes_std(
     core::TemporalRandomWalk* trw,
     const int* seed_nodes,
     const size_t num_seed_nodes,
+    const int64_t* cutoff_times,
     const int max_walk_len,
     const RandomPickerType* walk_bias,
     const int num_walks_per_node,
@@ -500,13 +501,32 @@ temporal_random_walk::get_random_walks_and_times_for_nodes_std(
         seed_nodes, num_seed_nodes,
         num_walks_per_node, trw->data().use_gpu);
 
+    // Per-seed cutoffs fan out to per-walk with the same seed-major layout, so
+    // a shared-seed co-shuffle keeps each walk paired with its seed's cutoff.
+    DataBlock<int64_t> repeated_cutoffs;
+    if (cutoff_times != nullptr) {
+        repeated_cutoffs = repeat_elements(
+            cutoff_times, num_seed_nodes, num_walks_per_node, trw->data().use_gpu);
+    }
+
     if (trw->shuffle_walk_order()) {
-        shuffle_vector_host<int>(repeated_node_ids.data, repeated_node_ids.size);
+        const unsigned int shuffle_seed = std::random_device{}();
+        shuffle_vector_host<int>(
+            repeated_node_ids.data, repeated_node_ids.size, shuffle_seed);
+        if (cutoff_times != nullptr) {
+            shuffle_vector_host<int64_t>(
+                repeated_cutoffs.data, repeated_cutoffs.size, shuffle_seed);
+        }
     }
 
     WalkSetHost host_walks(repeated_node_ids.size, max_walk_len,
                            trw->walk_padding_value());
     WalkSetView walk_set_view = host_walks.make_host_view();
+
+    if (cutoff_times != nullptr) {
+        std::memcpy(walk_set_view.cutoffs, repeated_cutoffs.data,
+                    repeated_cutoffs.size * sizeof(int64_t));
+    }
 
     Buffer<double> rand_nums = generate_n_random_numbers(
         repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, false);
@@ -760,6 +780,7 @@ temporal_random_walk::get_random_walks_and_times_for_nodes_cuda(
     core::TemporalRandomWalk* trw,
     const int* seed_nodes,
     const size_t num_seed_nodes,
+    const int64_t* cutoff_times,
     const int max_walk_len,
     const RandomPickerType* walk_bias,
     const int num_walks_per_node,
@@ -779,6 +800,14 @@ temporal_random_walk::get_random_walks_and_times_for_nodes_cuda(
         seed_nodes, num_seed_nodes,
         num_walks_per_node, trw->data().use_gpu);
 
+    // Per-seed cutoffs (host pointer) fan out to a per-walk DEVICE array with
+    // the same seed-major layout as the node ids — uploaded by repeat_elements.
+    DataBlock<int64_t> repeated_cutoffs;
+    if (cutoff_times != nullptr) {
+        repeated_cutoffs = repeat_elements(
+            cutoff_times, num_seed_nodes, num_walks_per_node, trw->data().use_gpu);
+    }
+
     const uint64_t base_seed = resolve_base_seed(trw);
 
     auto [grid_dim, launch_block_dim] = get_optimal_launch_params(
@@ -787,7 +816,14 @@ temporal_random_walk::get_random_walks_and_times_for_nodes_cuda(
         block_dim);
 
     if (trw->shuffle_walk_order()) {
-        shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
+        const unsigned int shuffle_seed =
+            static_cast<unsigned int>(std::random_device{}());
+        shuffle_vector_device<int>(
+            repeated_node_ids.data, repeated_node_ids.size, shuffle_seed);
+        if (cutoff_times != nullptr) {
+            shuffle_vector_device<int64_t>(
+                repeated_cutoffs.data, repeated_cutoffs.size, shuffle_seed);
+        }
         CUDA_KERNEL_CHECK(
             "After shuffle_vector_device in get_random_walks_and_times_for_nodes_cuda");
     }
@@ -795,6 +831,13 @@ temporal_random_walk::get_random_walks_and_times_for_nodes_cuda(
     WalkSetDevice device_walks(repeated_node_ids.size, max_walk_len,
                                trw->walk_padding_value());
     const WalkSetView walk_set_view = device_walks.make_view();
+
+    if (cutoff_times != nullptr) {
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(
+            walk_set_view.cutoffs, repeated_cutoffs.data,
+            repeated_cutoffs.size * sizeof(int64_t),
+            cudaMemcpyDeviceToDevice));
+    }
 
     const TemporalGraphView view = make_temporal_graph_view(trw->data());
 
@@ -960,6 +1003,7 @@ WalksWithEdgeFeaturesHost
 core::TemporalRandomWalk::get_random_walks_and_times_for_nodes(
     const int* seed_nodes,
     const size_t num_seed_nodes,
+    const int64_t* cutoff_times,
     const int max_walk_len, const RandomPickerType* walk_bias,
     const int num_walks_per_node,
     const RandomPickerType* initial_edge_bias,
@@ -971,7 +1015,7 @@ core::TemporalRandomWalk::get_random_walks_and_times_for_nodes(
     CudaDeviceGuard _g(data_.use_gpu ? cuda_device_id_ : -1);
     if (data_.use_gpu) {
         return temporal_random_walk::get_random_walks_and_times_for_nodes_cuda(
-            this, seed_nodes, num_seed_nodes,
+            this, seed_nodes, num_seed_nodes, cutoff_times,
             max_walk_len, walk_bias, num_walks_per_node,
             initial_edge_bias, walk_direction, kernel_launch_type,
             block_dim, w_threshold_warp);
@@ -981,7 +1025,7 @@ core::TemporalRandomWalk::get_random_walks_and_times_for_nodes(
     (void)block_dim;
     (void)w_threshold_warp;
     return temporal_random_walk::get_random_walks_and_times_for_nodes_std(
-        this, seed_nodes, num_seed_nodes,
+        this, seed_nodes, num_seed_nodes, cutoff_times,
         max_walk_len, walk_bias, num_walks_per_node,
         initial_edge_bias, walk_direction);
 }

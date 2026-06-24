@@ -42,8 +42,9 @@ __global__ void pick_start_edges_kernel(
 
     InternalEdge start_edge;
     if constexpr (Constrained) {
+        const int64_t cutoff = walk_set.cutoffs[walk_idx];
         start_edge = temporal_graph::get_node_edge_at_device<Forward, StartPickerType, IsDirected>(
-            view, start_node_ids[walk_idx], /*timestamp=*/-1, /*prev=*/-1,
+            view, start_node_ids[walk_idx], /*timestamp=*/-1, cutoff, /*prev=*/-1,
             r_start_a, r_start_b);
     } else {
         start_edge = temporal_graph::get_edge_at_device<Forward, StartPickerType>(
@@ -126,6 +127,19 @@ __global__ void prepopulate_start_slot_kernel(
     const size_t group_end   = count_ts_group_per_node[node_id + 1];
     if (group_begin == group_end) return;  // dead start
 
+    // Cutoff-aware dead start: groups are sorted ascending by time, so the
+    // earliest edge lives in the first group. If even it is at/after the
+    // cutoff, no edge qualifies and step 0 would find nothing — skip slot 0
+    // so the walk stays length 0, matching the CPU / full-walk paths.
+    const int64_t cutoff = walk_set.cutoffs[walk_idx];
+    if (cutoff != NO_WALK_CUTOFF) {
+        const auto ptrs = resolve_node_dir_ptrs<IsDirected, Forward>(view);
+        const size_t first_edge = ptrs.node_ts_groups_offsets[group_begin];
+        const int64_t earliest_ts =
+            view.timestamps[ptrs.node_ts_sorted_indices[first_edge]];
+        if (earliest_ts >= cutoff) return;
+    }
+
     constexpr int64_t sentinel_timestamp = Forward ? INT64_MIN : INT64_MAX;
     walk_set.add_hop(walk_idx, node_id, sentinel_timestamp);
 }
@@ -164,6 +178,7 @@ DEVICE __forceinline__ void advance_one_walk(
 
     const int     last_node = walk_set.nodes[offset];
     const int64_t last_ts   = walk_set.timestamps[offset];
+    const int64_t cutoff    = walk_set.cutoffs[walk_idx];
     const int     prev_node = step_number > 0 ? walk_set.nodes[offset - 1] : -1;
 
     PhiloxState rng;
@@ -174,7 +189,7 @@ DEVICE __forceinline__ void advance_one_walk(
 
     const InternalEdge next_edge =
         temporal_graph::get_node_edge_at_device<Forward, EdgePickerType, IsDirected>(
-            view, last_node, last_ts, prev_node, r_a, r_b);
+            view, last_node, last_ts, cutoff, prev_node, r_a, r_b);
 
     if (next_edge.ts == -1) return;
 

@@ -69,6 +69,7 @@ TemporalRandomWalk::get_random_walks_and_times_for_last_batch(
 WalksWithEdgeFeaturesHost
 TemporalRandomWalk::get_random_walks_and_times_for_nodes(
     const int* seed_nodes, const size_t num_seed_nodes,
+    const int64_t* cutoff_times,
     const int max_walk_len, const RandomPickerType* walk_bias,
     const int num_walks_per_node,
     const RandomPickerType* initial_edge_bias,
@@ -77,7 +78,7 @@ TemporalRandomWalk::get_random_walks_and_times_for_nodes(
     const size_t block_dim,
     const int w_threshold_warp) const {
     return impl_->get_random_walks_and_times_for_nodes(
-        seed_nodes, num_seed_nodes,
+        seed_nodes, num_seed_nodes, cutoff_times,
         max_walk_len, walk_bias, num_walks_per_node,
         initial_edge_bias, walk_direction, kernel_launch_type,
         block_dim, w_threshold_warp);

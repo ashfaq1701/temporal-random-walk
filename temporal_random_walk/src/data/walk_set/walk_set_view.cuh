@@ -14,6 +14,11 @@ struct WalkSetView {
     size_t*  walk_lens;
     int64_t* edge_ids;
 
+    // Per-walk exclusive start-time cutoff (length num_walks). NO_WALK_CUTOFF
+    // = unbounded. Read by the edge selectors at every hop; it is in-progress
+    // walk state (the walk's time horizon), not part of the released output.
+    int64_t* cutoffs;
+
     size_t num_walks;
     size_t max_len;
     int    walk_padding_value;

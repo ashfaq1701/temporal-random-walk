@@ -87,6 +87,7 @@ __global__ void node_grouped_warp_smem_kernel(
             walk_idx * static_cast<size_t>(max_walk_len)
             + static_cast<size_t>(step_number);
         const int64_t last_ts = walk_set.timestamps[offset];
+        const int64_t cutoff  = walk_set.cutoffs[walk_idx];
 
         PhiloxState rng;
         init_philox_state(rng, base_seed, walk_idx,
@@ -99,7 +100,7 @@ __global__ void node_grouped_warp_smem_kernel(
             /*node_ts_sorted_indices=*/nullptr,
             /*view_timestamps=*/nullptr,
             ptrs.weights, ptrs.weights_size,
-            node_group_begin, G, last_ts, r_group,
+            node_group_begin, G, last_ts, cutoff, r_group,
             /*s_cum_weights=*/s_cum_weights);
         if (local_pos == -1) continue;
 
@@ -196,6 +197,7 @@ __global__ void node_grouped_warp_global_kernel(
             walk_idx * static_cast<size_t>(max_walk_len)
             + static_cast<size_t>(step_number);
         const int64_t last_ts = walk_set.timestamps[offset];
+        const int64_t cutoff  = walk_set.cutoffs[walk_idx];
 
         PhiloxState rng;
         init_philox_state(rng, base_seed, walk_idx,
@@ -208,7 +210,7 @@ __global__ void node_grouped_warp_global_kernel(
             /*first_ts=*/nullptr,
             ptrs.node_ts_sorted_indices, view.timestamps,
             ptrs.weights, ptrs.weights_size,
-            node_group_begin, G, last_ts, r_group);
+            node_group_begin, G, last_ts, cutoff, r_group);
         if (local_pos == -1) continue;
 
         sample_edge_and_add_hop<IsDirected, Forward>(

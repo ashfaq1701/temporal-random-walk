@@ -76,6 +76,7 @@ public:
         v.timestamps         = timestamps_.data();
         v.walk_lens          = walk_lens_.data();
         v.edge_ids           = edge_ids_.data();
+        v.cutoffs            = cutoffs_.data();
         v.num_walks          = num_walks_;
         v.max_len            = max_len_;
         v.walk_padding_value = walk_padding_value_;
@@ -87,6 +88,7 @@ private:
     Buffer<int64_t> timestamps_{false};
     Buffer<size_t>  walk_lens_{false};
     Buffer<int64_t> edge_ids_{false};
+    Buffer<int64_t> cutoffs_{false};   // per-walk start-time cutoff (host generation scratch)
 
     size_t num_walks_          = 0;
     size_t max_len_            = 0;

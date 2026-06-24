@@ -36,6 +36,8 @@ namespace temporal_random_walk {
         const double r0 = draw_u01_philox(rng);
         const double r1 = draw_u01_philox(rng);
 
+        const int64_t cutoff = walk_set.cutoffs[walk_idx];
+
         const auto padding_value = walk_set.nodes[walk_idx * max_walk_len];
         InternalEdge start_edge;
         if (start_node_ids[walk_idx] == -1) {
@@ -50,8 +52,9 @@ namespace temporal_random_walk {
             start_edge = temporal_graph::get_node_edge_at_device<Forward, StartPickerType, IsDirected>(
                 view,
                 start_node_ids[walk_idx],
-                -1,
-                -1,
+                /*timestamp=*/-1,
+                cutoff,
+                /*prev_node=*/-1,
                 r0,
                 r1);
         }
@@ -101,6 +104,7 @@ namespace temporal_random_walk {
                 view,
                 current_node,
                 current_timestamp,
+                cutoff,
                 prev_node,
                 r_step0,
                 r_step1);
