@@ -115,6 +115,7 @@ public:
     WalksWithEdgeFeaturesHost get_random_walks_and_times_for_nodes(
         const int* seed_nodes,
         size_t num_seed_nodes,
+        const int64_t* cutoff_times,
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_per_node,
@@ -204,6 +205,7 @@ namespace temporal_random_walk {
         core::TemporalRandomWalk* trw,
         const int* seed_nodes,
         size_t num_seed_nodes,
+        const int64_t* cutoff_times,
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_per_node,
@@ -245,6 +247,7 @@ namespace temporal_random_walk {
         core::TemporalRandomWalk* trw,
         const int* seed_nodes,
         size_t num_seed_nodes,
+        const int64_t* cutoff_times,
         int max_walk_len,
         const RandomPickerType* walk_bias,
         int num_walks_per_node,

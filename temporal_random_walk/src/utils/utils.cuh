@@ -54,19 +54,24 @@ HOST inline DataBlock<int> repeat_elements(const DataBlock<int>& arr, int times,
     return repeated_items;
 }
 
-HOST inline DataBlock<int> repeat_elements(const int* arr, const size_t input_size, int times, const bool use_gpu) {
+// Element-type-generic: each of `input_size` elements is repeated `times`
+// contiguously (seed-major). Used for per-walk node ids (int) and per-walk
+// start-time cutoffs (int64_t), which must fan out with identical layout so a
+// shared-seed co-shuffle keeps them aligned.
+template <typename T>
+HOST inline DataBlock<T> repeat_elements(const T* arr, const size_t input_size, int times, const bool use_gpu) {
     const size_t output_size = input_size * times;
 
-    DataBlock<int> repeated_items(output_size, use_gpu);
+    DataBlock<T> repeated_items(output_size, use_gpu);
     if (input_size == 0 || times <= 0) {
         return repeated_items;
     }
 
     #ifdef HAS_CUDA
     if (use_gpu) {
-        Buffer<int> d_arr_buf(input_size, true);
-        int* d_arr = d_arr_buf.data();
-        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_arr, arr, input_size * sizeof(int), cudaMemcpyHostToDevice));
+        Buffer<T> d_arr_buf(input_size, true);
+        T* d_arr = d_arr_buf.data();
+        CUDA_CHECK_AND_CLEAR(cudaMemcpy(d_arr, arr, input_size * sizeof(T), cudaMemcpyHostToDevice));
 
         thrust::transform(
             DEVICE_EXECUTION_POLICY,

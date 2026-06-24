@@ -38,6 +38,7 @@ private:
     Buffer<int64_t> timestamps_{true};
     Buffer<size_t>  walk_lens_{true};
     Buffer<int64_t> edge_ids_{true};
+    Buffer<int64_t> cutoffs_{true};   // per-walk start-time cutoff (generation scratch)
 
     size_t num_walks_          = 0;
     size_t max_len_            = 0;

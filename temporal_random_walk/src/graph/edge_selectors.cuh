@@ -52,6 +52,16 @@ namespace temporal_graph {
     // slice-parameterized stage-1 helpers; positions are local to the slice [0, G).
     // first_ts non-null = single-indirect probe (cooperative kernels preload smem);
     // null = double-indirect fallback used by solo/host callers.
+    // Restrict a node's timestamp groups [0, G) to the slice a walk may sample.
+    //   timestamp : the previous hop's time (monotonic walk bound). -1 = none
+    //               (start hop). Forward keeps groups with ts > timestamp;
+    //               Backward keeps groups with ts < timestamp.
+    //   cutoff    : per-walk EXCLUSIVE upper bound on edge time (NO_WALK_CUTOFF
+    //               = unbounded). Applies in BOTH directions — it always drops
+    //               groups with ts >= cutoff, i.e. trims out_valid_end. This is
+    //               what realises "walk this node as of time t": forward it caps
+    //               every hop below t; backward it only bites on the start hop
+    //               (later hops are already earlier than t by monotonicity).
     template <bool Forward>
     HOST DEVICE inline void filter_valid_groups_by_timestamp_slice(
         const size_t*  group_offsets,
@@ -60,33 +70,50 @@ namespace temporal_graph {
         const int64_t* view_timestamps,
         const int      G,
         const int64_t  timestamp,
+        const int64_t  cutoff,
         int&           out_valid_begin,
         int&           out_valid_end) {
 
         out_valid_begin = 0;
         out_valid_end   = G;
 
-        if (timestamp == -1) return;
+        if (timestamp == -1 && cutoff == NO_WALK_CUTOFF) return;
 
         auto ts_of = [&](const int p) -> int64_t {
             if (first_ts != nullptr) return first_ts[p];
             return view_timestamps[node_ts_sorted_indices[group_offsets[p]]];
         };
 
-        if constexpr (Forward) {
-            int lo = 0, hi = G;
-            while (lo < hi) {
-                const int mid = lo + ((hi - lo) >> 1);
-                if (timestamp < ts_of(mid)) hi = mid;
-                else                         lo = mid + 1;
+        // Directional monotonic bound from the previous hop's timestamp.
+        if (timestamp != -1) {
+            if constexpr (Forward) {
+                int lo = 0, hi = G;
+                while (lo < hi) {
+                    const int mid = lo + ((hi - lo) >> 1);
+                    if (timestamp < ts_of(mid)) hi = mid;
+                    else                         lo = mid + 1;
+                }
+                out_valid_begin = lo;
+            } else {
+                int lo = 0, hi = G;
+                while (lo < hi) {
+                    const int mid = lo + ((hi - lo) >> 1);
+                    if (ts_of(mid) < timestamp) lo = mid + 1;
+                    else                          hi = mid;
+                }
+                out_valid_end = lo;
             }
-            out_valid_begin = lo;
-        } else {
-            int lo = 0, hi = G;
+        }
+
+        // Universal cutoff: exclude every group with ts >= cutoff. Search the
+        // first such group within the surviving slice and pull out_valid_end
+        // down to it (a no-op when the slice is already entirely below cutoff).
+        if (cutoff != NO_WALK_CUTOFF) {
+            int lo = out_valid_begin, hi = out_valid_end;
             while (lo < hi) {
                 const int mid = lo + ((hi - lo) >> 1);
-                if (ts_of(mid) < timestamp) lo = mid + 1;
-                else                          hi = mid;
+                if (ts_of(mid) < cutoff) lo = mid + 1;
+                else                      hi = mid;
             }
             out_valid_end = lo;
         }
@@ -107,6 +134,7 @@ namespace temporal_graph {
         const size_t   slice_global_begin,
         const int      G,
         const int64_t  timestamp,
+        const int64_t  cutoff,
         const double   r_group,
         const double*  s_cum_weights = nullptr) {
 
@@ -115,7 +143,7 @@ namespace temporal_graph {
         filter_valid_groups_by_timestamp_slice<Forward>(
             group_offsets, first_ts,
             node_ts_sorted_indices, view_timestamps,
-            G, timestamp,
+            G, timestamp, cutoff,
             valid_begin, valid_end);
         if (valid_begin >= valid_end) return -1;
 
@@ -251,6 +279,7 @@ namespace temporal_graph {
         const TemporalGraphView& view,
         const int node_id,
         const int64_t timestamp,
+        const int64_t cutoff,
         const int prev_node,
         const double group_selector_rand_num,
         const double edge_selector_rand_num) {
@@ -326,7 +355,7 @@ namespace temporal_graph {
                 /*first_ts=*/nullptr,
                 node_ts_sorted_indices,
                 view.timestamps,
-                G, timestamp,
+                G, timestamp, cutoff,
                 local_begin, local_end);
             if (local_begin >= local_end) {
                 return InternalEdge{-1, -1, -1, -1};
@@ -376,7 +405,7 @@ namespace temporal_graph {
                 view.timestamps,
                 weights, weights_size,
                 node_group_begin,
-                G, timestamp,
+                G, timestamp, cutoff,
                 group_selector_rand_num);
             if (local_pos == -1) {
                 return InternalEdge{-1, -1, -1, -1};
@@ -553,6 +582,7 @@ namespace temporal_graph {
         const TemporalGraphView& view,
         const int node_id,
         const int64_t timestamp,
+        const int64_t cutoff,
         const int prev_node,
         const double group_selector_rand_num,
         const double edge_selector_rand_num) {
@@ -621,9 +651,9 @@ namespace temporal_graph {
         // and a per-probe runtime branch on first_ts. solo/host hot path.
         size_t valid_begin = node_group_begin;
         size_t valid_end = node_group_end;
+        const int64_t* view_timestamps = view.timestamps;
 
         if (timestamp != -1) {
-            const int64_t* view_timestamps = view.timestamps;
             if constexpr (Forward) {
                 const auto it = cuda::std::upper_bound(
                     node_ts_groups_offsets + static_cast<long>(node_group_begin),
@@ -634,7 +664,6 @@ namespace temporal_graph {
                     });
 
                 valid_begin = static_cast<size_t>(it - node_ts_groups_offsets);
-                valid_end = node_group_end;
             } else {
                 const auto it = cuda::std::lower_bound(
                     node_ts_groups_offsets + static_cast<long>(node_group_begin),
@@ -644,13 +673,27 @@ namespace temporal_graph {
                         return view_timestamps[node_ts_sorted_indices[pos]] < ts;
                     });
 
-                valid_begin = node_group_begin;
                 valid_end = static_cast<size_t>(it - node_ts_groups_offsets);
             }
+        }
 
-            if (valid_begin >= valid_end) {
-                return InternalEdge{-1, -1, -1, -1};
-            }
+        // Universal cutoff: drop groups with ts >= cutoff (exclusive upper
+        // bound). lower_bound over the surviving slice → first group at/after
+        // the cutoff; pull valid_end down to it.
+        if (cutoff != NO_WALK_CUTOFF) {
+            const auto it = cuda::std::lower_bound(
+                node_ts_groups_offsets + static_cast<long>(valid_begin),
+                node_ts_groups_offsets + static_cast<long>(valid_end),
+                cutoff,
+                [view_timestamps, node_ts_sorted_indices](const size_t pos, const int64_t ts) {
+                    return view_timestamps[node_ts_sorted_indices[pos]] < ts;
+                });
+
+            valid_end = static_cast<size_t>(it - node_ts_groups_offsets);
+        }
+
+        if (valid_begin >= valid_end) {
+            return InternalEdge{-1, -1, -1, -1};
         }
 
         long group_pos = -1;

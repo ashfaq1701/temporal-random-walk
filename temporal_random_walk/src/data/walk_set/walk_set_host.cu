@@ -20,11 +20,13 @@ WalkSetHost::WalkSetHost(const size_t num_walks,
     timestamps_.resize(total);
     walk_lens_.resize(num_walks);
     edge_ids_.resize(edge_total);
+    cutoffs_.resize(num_walks);
 
     nodes_.fill(walk_padding_value);
     timestamps_.fill(EMPTY_TIMESTAMP_VALUE);
     walk_lens_.fill(static_cast<size_t>(0));
     edge_ids_.fill(EMPTY_EDGE_ID);
+    cutoffs_.fill(NO_WALK_CUTOFF);
 }
 
 size_t WalkSetHost::non_empty_count() const noexcept {

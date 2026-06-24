@@ -33,10 +33,11 @@ __global__ void get_edge_at_kernel(
 template <bool IsDirected, bool Forward, RandomPickerType PickerType>
 __global__ void get_node_edge_at_kernel(
     Edge* result, TemporalGraphView view, const int node_id,
-    const int64_t timestamp, const int prev_node, const double* rand_nums) {
+    const int64_t timestamp, const int64_t cutoff, const int prev_node,
+    const double* rand_nums) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = temporal_graph::get_node_edge_at_device<Forward, PickerType, IsDirected>(
-            view, node_id, timestamp, prev_node, rand_nums[0], rand_nums[1]);
+            view, node_id, timestamp, cutoff, prev_node, rand_nums[0], rand_nums[1]);
     }
 }
 
@@ -136,7 +137,8 @@ inline Edge get_node_edge_at(
     const RandomPickerType picker_type,
     const int64_t timestamp,
     const int prev_node,
-    const bool forward = true) {
+    const bool forward = true,
+    const int64_t cutoff = NO_WALK_CUTOFF) {
     const TemporalGraphView view = make_temporal_graph_view(data);
     Edge result{};
     const bool is_directed = data.is_directed;
@@ -146,12 +148,12 @@ inline Edge get_node_edge_at(
 
     #define DISPATCH_HOST(FWD, PICKER, DIR) \
         result = temporal_graph::get_node_edge_at_host<FWD, PICKER, DIR>( \
-            view, node_id, timestamp, prev_node, rand_nums[0], rand_nums[1]); break;
+            view, node_id, timestamp, cutoff, prev_node, rand_nums[0], rand_nums[1]); break;
 
 #ifdef HAS_CUDA
     #define DISPATCH_DEVICE(FWD, PICKER, DIR) \
         test_util_detail::get_node_edge_at_kernel<DIR, FWD, PICKER><<<1, 1>>>( \
-            d_result, view, node_id, timestamp, prev_node, rand_nums); \
+            d_result, view, node_id, timestamp, cutoff, prev_node, rand_nums); \
         CUDA_KERNEL_CHECK("get_node_edge_at_kernel"); break;
 #endif
 

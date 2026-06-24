@@ -506,7 +506,8 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                                                const int num_walks_per_node,
                                                const std::optional<std::string>& initial_edge_bias = std::nullopt,
                                                const std::string& walk_direction = "Forward_In_Time",
-                                               const std::string& kernel_launch_type = "NODE_GROUPED")
+                                               const std::string& kernel_launch_type = "NODE_GROUPED",
+                                               const std::optional<py::array_t<int64_t, py::array::c_style | py::array::forcecast>>& cutoff_times = std::nullopt)
             {
                 const RandomPickerType walk_bias_enum = picker_type_from_string(walk_bias);
                 std::optional<RandomPickerType> edge_bias_enum_opt;
@@ -523,9 +524,27 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 const int* seed_ptr = static_cast<const int*>(seed_info.ptr);
                 const auto num_seed_nodes = static_cast<size_t>(seed_info.shape[0]);
 
+                // Optional per-seed start-time cutoff. nullptr => unbounded.
+                // Each cutoff is an EXCLUSIVE upper bound: the seed's walk may
+                // only traverse edges strictly before it ("as of time t").
+                const int64_t* cutoff_ptr = nullptr;
+                py::buffer_info cutoff_info;
+                if (cutoff_times.has_value()) {
+                    cutoff_info = cutoff_times->request();
+                    if (cutoff_info.ndim != 1) {
+                        throw std::runtime_error("cutoff_times must be a 1D int64 array");
+                    }
+                    if (static_cast<size_t>(cutoff_info.shape[0]) != num_seed_nodes) {
+                        throw std::runtime_error(
+                            "cutoff_times must have the same length as seed_nodes");
+                    }
+                    cutoff_ptr = static_cast<const int64_t*>(cutoff_info.ptr);
+                }
+
                 auto walks = tw.get_random_walks_and_times_for_nodes(
                     seed_ptr,
                     num_seed_nodes,
+                    cutoff_ptr,
                     max_walk_len,
                     &walk_bias_enum,
                     num_walks_per_node,
@@ -603,6 +622,12 @@ PYBIND11_MODULE(_temporal_random_walk, m)
                 kernel_launch_type (str, optional): "NODE_GROUPED" (default),
                     "NODE_GROUPED_GLOBAL_ONLY" (ablation: coop without smem preload),
                     or "FULL_WALK" (one thread per walk, baseline).
+                cutoff_times (np.ndarray, optional): 1D int64 array, same length as
+                    seed_nodes. Each entry is an EXCLUSIVE per-seed time horizon —
+                    that seed's walks may only traverse edges with timestamp strictly
+                    less than it ("walk this node as of time t"). For backward walks
+                    this bounds the start edge (later hops are already earlier); for
+                    forward walks it caps every hop. Omit (or None) for unbounded walks.
 
             Returns:
                 Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
@@ -618,7 +643,8 @@ PYBIND11_MODULE(_temporal_random_walk, m)
             py::arg("num_walks_per_node"),
             py::arg("initial_edge_bias") = py::none(),
             py::arg("walk_direction") = "Forward_In_Time",
-            py::arg("kernel_launch_type") = "NODE_GROUPED")
+            py::arg("kernel_launch_type") = "NODE_GROUPED",
+            py::arg("cutoff_times") = py::none())
 
         .def("get_random_walks_and_times", [](TemporalRandomWalk& tw,
                                                const int max_walk_len,
