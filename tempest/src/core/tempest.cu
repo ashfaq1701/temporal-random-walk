@@ -36,6 +36,27 @@
 #include "../data/walk_set/walk_set_view.cuh"
 #include "../data/temporal_graph_view.cuh"
 
+namespace {
+
+// Single source of truth for a walk's RNG seed: the user's global_seed when set,
+// else a fresh random one. Shared by the CPU and GPU walk paths so both honor
+// global_seed. Resolve once per call, then feed the walk RNG directly and the
+// walk-order shuffle via shuffle_seed_from() so both derive from the same base.
+uint64_t resolve_base_seed(const core::Tempest* trw) {
+    return (trw->global_seed() != EMPTY_GLOBAL_SEED)
+        ? trw->global_seed()
+        : secure_random_seed();
+}
+
+// Pure derivation of the shuffle seed from an already-resolved base seed. Runs
+// it through splitmix64 so the shuffle stream does not share the same integer as
+// the walk RNG, and narrows to the 32-bit seed the shuffle engines take.
+unsigned int shuffle_seed_from(const uint64_t base_seed) {
+    return static_cast<unsigned int>(splitmix64(base_seed));
+}
+
+} // namespace
+
 core::Tempest::Tempest(
     const bool is_directed, const bool use_gpu,
     const int64_t max_time_capacity,
@@ -547,8 +568,11 @@ tempest::get_random_walks_and_times_for_all_nodes_std(
         node_ids.data(), node_ids.size(),
         num_walks_per_node, trw->data().use_gpu);
 
+    const uint64_t base_seed = resolve_base_seed(trw);
+
     if (trw->shuffle_walk_order()) {
-        shuffle_vector_host<int>(repeated_node_ids.data, repeated_node_ids.size);
+        shuffle_vector_host<int>(repeated_node_ids.data, repeated_node_ids.size,
+                                 shuffle_seed_from(base_seed));
     }
 
     WalkSetHost host_walks(repeated_node_ids.size, max_walk_len,
@@ -556,7 +580,8 @@ tempest::get_random_walks_and_times_for_all_nodes_std(
     WalkSetView walk_set_view = host_walks.make_host_view();
 
     Buffer<double> rand_nums = generate_n_random_numbers(
-        repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, false);
+        repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, false,
+        base_seed);
 
     const TemporalGraphView view = make_temporal_graph_view(trw->data());
 
@@ -591,8 +616,11 @@ tempest::get_random_walks_and_times_for_last_batch_std(
     const DataBlock<int> repeated_node_ids =
         get_last_batch_start_nodes_new(trw, num_walks_per_node);
 
+    const uint64_t base_seed = resolve_base_seed(trw);
+
     if (trw->shuffle_walk_order()) {
-        shuffle_vector_host<int>(repeated_node_ids.data, repeated_node_ids.size);
+        shuffle_vector_host<int>(repeated_node_ids.data, repeated_node_ids.size,
+                                 shuffle_seed_from(base_seed));
     }
 
     WalkSetHost host_walks(repeated_node_ids.size, max_walk_len,
@@ -600,7 +628,8 @@ tempest::get_random_walks_and_times_for_last_batch_std(
     WalkSetView walk_set_view = host_walks.make_host_view();
 
     Buffer<double> rand_nums = generate_n_random_numbers(
-        repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, false);
+        repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, false,
+        base_seed);
 
     const TemporalGraphView view = make_temporal_graph_view(trw->data());
 
@@ -647,8 +676,10 @@ tempest::get_random_walks_and_times_for_nodes_std(
             cutoff_times, num_seed_nodes, num_walks_per_node, trw->data().use_gpu);
     }
 
+    const uint64_t base_seed = resolve_base_seed(trw);
+
     if (trw->shuffle_walk_order()) {
-        const unsigned int shuffle_seed = std::random_device{}();
+        const unsigned int shuffle_seed = shuffle_seed_from(base_seed);
         shuffle_vector_host<int>(
             repeated_node_ids.data, repeated_node_ids.size, shuffle_seed);
         if (cutoff_times != nullptr) {
@@ -667,7 +698,8 @@ tempest::get_random_walks_and_times_for_nodes_std(
     }
 
     Buffer<double> rand_nums = generate_n_random_numbers(
-        repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, false);
+        repeated_node_ids.size + repeated_node_ids.size * max_walk_len * 2, false,
+        base_seed);
 
     const TemporalGraphView view = make_temporal_graph_view(trw->data());
 
@@ -704,7 +736,8 @@ tempest::get_random_walks_and_times_std(
     WalkSetView walk_set_view = host_walks.make_host_view();
 
     Buffer<double> rand_nums = generate_n_random_numbers(
-        num_walks_total + num_walks_total * max_walk_len * 2, false);
+        num_walks_total + num_walks_total * max_walk_len * 2, false,
+        resolve_base_seed(trw));
 
     const std::vector<int> start_node_ids(num_walks_total, -1);
 
@@ -728,12 +761,6 @@ tempest::get_random_walks_and_times_std(
 #ifdef HAS_CUDA
 
 namespace {
-
-uint64_t resolve_base_seed(const core::Tempest* trw) {
-    return (trw->global_seed() != EMPTY_GLOBAL_SEED)
-        ? trw->global_seed()
-        : secure_random_seed();
-}
 
 void launch_walk_kernel_dispatch(
     const KernelLaunchType kernel_launch_type,
@@ -824,7 +851,8 @@ tempest::get_random_walks_and_times_for_all_nodes_cuda(
         block_dim);
 
     if (trw->shuffle_walk_order()) {
-        shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
+        shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size,
+                                   shuffle_seed_from(base_seed));
         CUDA_KERNEL_CHECK(
             "After shuffle_vector_device in get_random_walks_and_times_for_all_nodes_cuda");
     }
@@ -883,7 +911,8 @@ tempest::get_random_walks_and_times_for_last_batch_cuda(
         block_dim);
 
     if (trw->shuffle_walk_order()) {
-        shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size);
+        shuffle_vector_device<int>(repeated_node_ids.data, repeated_node_ids.size,
+                                   shuffle_seed_from(base_seed));
         CUDA_KERNEL_CHECK(
             "After shuffle_vector_device in get_random_walks_and_times_for_last_batch_cuda");
     }
@@ -954,8 +983,7 @@ tempest::get_random_walks_and_times_for_nodes_cuda(
         block_dim);
 
     if (trw->shuffle_walk_order()) {
-        const unsigned int shuffle_seed =
-            static_cast<unsigned int>(std::random_device{}());
+        const unsigned int shuffle_seed = shuffle_seed_from(base_seed);
         shuffle_vector_device<int>(
             repeated_node_ids.data, repeated_node_ids.size, shuffle_seed);
         if (cutoff_times != nullptr) {
