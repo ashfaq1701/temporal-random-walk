@@ -60,6 +60,13 @@ public:
     bool     shuffle_walk_order() const { return shuffle_walk_order_; }
     bool     is_directed()        const { return data_.is_directed; }
 
+    // Advance and return the per-instance walk RNG state. Called once per walk
+    // request when a global_seed is set, so successive calls draw fresh walks
+    // (variation within a run) while a new instance built with the same seed
+    // replays the same chain of states (reproducibility across runs). Defined in
+    // tempest.cu where the splitmix64 mixer is visible.
+    uint64_t next_seed();
+
     Buffer<int>&       last_batch_unique_sources()       { return last_batch_unique_sources_; }
     const Buffer<int>& last_batch_unique_sources() const { return last_batch_unique_sources_; }
     Buffer<int>&       last_batch_unique_targets()       { return last_batch_unique_targets_; }
@@ -167,6 +174,7 @@ private:
     TemporalGraphData data_;
     int      walk_padding_value_;
     uint64_t global_seed_;
+    uint64_t seed_state_;   // mutable walk RNG state; advanced once per walk call
     bool     shuffle_walk_order_;
     Buffer<int> last_batch_unique_sources_{/*use_gpu=*/false};
     Buffer<int> last_batch_unique_targets_{/*use_gpu=*/false};

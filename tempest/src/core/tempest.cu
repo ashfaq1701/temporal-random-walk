@@ -38,13 +38,15 @@
 
 namespace {
 
-// Single source of truth for a walk's RNG seed: the user's global_seed when set,
-// else a fresh random one. Shared by the CPU and GPU walk paths so both honor
-// global_seed. Resolve once per call, then feed the walk RNG directly and the
-// walk-order shuffle via shuffle_seed_from() so both derive from the same base.
-uint64_t resolve_base_seed(const core::Tempest* trw) {
+// Single source of truth for a walk's RNG seed. Seeded: advance the per-instance
+// walk RNG state (next_seed()) so each call draws fresh walks within a run, while
+// a new instance built with the same global_seed replays the same chain of
+// states across runs. Unseeded: a fresh random seed every call. Resolve once per
+// call, then feed the walk RNG directly and the walk-order shuffle via
+// shuffle_seed_from() so both derive from the same base.
+uint64_t resolve_base_seed(core::Tempest* trw) {
     return (trw->global_seed() != EMPTY_GLOBAL_SEED)
-        ? trw->global_seed()
+        ? trw->next_seed()
         : secure_random_seed();
 }
 
@@ -71,6 +73,7 @@ core::Tempest::Tempest(
     : data_(use_gpu),
       walk_padding_value_(walk_padding_value),
       global_seed_(global_seed),
+      seed_state_(global_seed),
       shuffle_walk_order_(shuffle_walk_order) {
 
     // header default pinned use_gpu=false; rebind
@@ -127,6 +130,7 @@ core::Tempest::Tempest(Tempest&& other) noexcept
     : data_(std::move(other.data_)),
       walk_padding_value_(other.walk_padding_value_),
       global_seed_(other.global_seed_),
+      seed_state_(other.seed_state_),
       shuffle_walk_order_(other.shuffle_walk_order_),
       last_batch_unique_sources_(std::move(other.last_batch_unique_sources_)),
       last_batch_unique_targets_(std::move(other.last_batch_unique_targets_))
@@ -162,6 +166,7 @@ core::Tempest& core::Tempest::operator=(
     data_                       = std::move(other.data_);
     walk_padding_value_         = other.walk_padding_value_;
     global_seed_                = other.global_seed_;
+    seed_state_                 = other.seed_state_;
     shuffle_walk_order_         = other.shuffle_walk_order_;
     last_batch_unique_sources_  = std::move(other.last_batch_unique_sources_);
     last_batch_unique_targets_  = std::move(other.last_batch_unique_targets_);
@@ -172,6 +177,14 @@ core::Tempest& core::Tempest::operator=(
     other.stream_     = nullptr;
 #endif
     return *this;
+}
+
+uint64_t core::Tempest::next_seed() {
+    // splitmix64 is a bijection, so iterating it gives a full-period, well-mixed
+    // sequence of base seeds. Re-initialized to global_seed on a fresh instance,
+    // so the chain splitmix64(S), splitmix64^2(S), ... replays identically.
+    seed_state_ = splitmix64(seed_state_);
+    return seed_state_;
 }
 
 namespace {
